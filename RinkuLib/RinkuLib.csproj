@@ -6,8 +6,8 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	  <PackageId>Rinku</PackageId>
-	  <Version>0.0.1</Version>
-	  <Author>Adam</Author>
+	  <Version>0.0.1-alpha</Version>
+	  <Author>adam.therrien.marois</Author>
 	  <Product>Rinku</Product>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
