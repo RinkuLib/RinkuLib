@@ -63,6 +63,7 @@ public struct QueryFactory {
     public int NbBaseHandlers;
     public int NbRequired;
     public int NbNonVarComment;
+    public bool HasSelect;
     /// <summary>
     /// Bitmask of letters ('a'-'z') representing the <b>non-claimed base handlers</b>.
     /// Derived at construction by filtering the current state of <see cref="BaseHandlerMapper.PresenceMap"/> 
@@ -97,7 +98,7 @@ public struct QueryFactory {
     /// </remarks>
     public QueryFactory(string query, bool extractSelects, char variableChar, uint specialHandlerPresenceMap = 0) {
         this.BaseHandlerPresenceMap = BaseHandlerMapper.PresenceMap & ~specialHandlerPresenceMap;
-        using var condInfos = QueryExtracter.Segment(query, extractSelects, variableChar, out Query);
+        using var condInfos = QueryExtracter.Segment(query, extractSelects, variableChar, out Query, out HasSelect);
         if (condInfos.Length == 0) {
             Segments = [new(0, Query.Length, 0, false, null)];
             Mapper = Mapper.GetEmptyMapper();

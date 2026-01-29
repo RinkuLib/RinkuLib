@@ -165,6 +165,7 @@ public unsafe ref struct QueryExtracter {
     private bool ExtractSelects;
     private PooledArray<CondInfo> Conditions;
     private uint LastCondSectionLength;
+    public bool HasSelects;
     /// <summary>
     /// Performs a single-pass scan of the query to identify and map condition footprints.
     /// </summary>
@@ -177,16 +178,16 @@ public unsafe ref struct QueryExtracter {
     /// found.
     /// </returns>
     /// <exception cref="Exception">Thrown on invalid syntax, such as unclosed comments, quotes, or excessive nesting depth.</exception>
-    public static PooledArray<CondInfo>.Locked Segment(string query, bool extractSelects, char variableChar, out string newQuery) {
+    public static PooledArray<CondInfo>.Locked Segment(string query, bool extractSelects, char variableChar, out string newQuery, out bool hasSelect) {
         var seg = new QueryExtracter();
-        return seg.SegmentQuery(query, extractSelects, variableChar, out newQuery);
+        return seg.SegmentQuery(query, extractSelects, variableChar, out newQuery, out hasSelect);
     }
     /// <summary>
     /// The primary scanning loop. It uses a single pass with raw pointers to minimize allocations.
     /// The 'Builder' serves as a normalization buffer, while 'Conditions' tracks the metadata
     /// for segments that can be toggled later.
     /// </summary>
-    private unsafe PooledArray<CondInfo>.Locked SegmentQuery(string query, bool extractSelects, char variableChar, out string newQuery) {
+    private unsafe PooledArray<CondInfo>.Locked SegmentQuery(string query, bool extractSelects, char variableChar, out string newQuery, out bool selectManaged) {
         ExtractSelects = extractSelects;
         Length = query.Length;
         if (Length <= 1)
@@ -200,6 +201,7 @@ public unsafe ref struct QueryExtracter {
         var startIndexes = ArrayPool<int>.Shared.Rent(64);
         var excesses = ArrayPool<int>.Shared.Rent(64);
         ParMap = 1;
+        selectManaged = false;
 
         fixed (int* ps = startIndexes)
         fixed (int* pe = excesses)
@@ -233,8 +235,8 @@ public unsafe ref struct QueryExtracter {
                     UpdateCurrentStart(BuilderInd + 1, 0);
                 else if (IsEnd(CurrentChar))
                     LowerParentesis();
-                else if (TryManageSection())
-                    ManageStartSelect();
+                else if (TryManageSection() && !selectManaged)
+                    selectManaged = ManageStartSelect();
             }
             UpdateConditionsEnd(BuilderInd, true, 0);
         }
@@ -264,23 +266,24 @@ public unsafe ref struct QueryExtracter {
         Conditions.Add(CondInfo.NewSelect(targetCond.StartIndex, false, true));
     }
 
-    private void ManageStartSelect() {
+    private bool ManageStartSelect() {
         if (ParMap != 1)
-            return;
+            return false;
         if (InSelect && IsFromBack(CurrentChar)) {
             InSelect = false;
-            return;
+            return false;
         }
         if (!IsSelectBack(CurrentChar))
-            return;
+            return false;
         if (ExtractSelects)
             for (int i = 0; i < Conditions.Length; i++)
                 if (Conditions[i].Type == CondInfo.Select)
-                    return;
+                    return false;
         InSelect = true;
         //to implement skip before select;
         if (ExtractSelects)
             Conditions.Add(CondInfo.NewSelect(BuilderInd, true));
+        return true;
     }
 
     private bool TryManageSection() {

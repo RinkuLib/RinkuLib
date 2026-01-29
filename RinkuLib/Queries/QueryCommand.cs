@@ -7,35 +7,11 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
 
-public interface ICache {
-    /// <summary> 
-    /// Synchronizes the parser with the active execution context to perform metadata 
-    /// updates, caching, or logic initialization. 
-    /// </summary>
-    void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc);
-    /// <summary> 
-    /// Synchronizes the parser with the active execution context to perform metadata 
-    /// updates, caching, or logic initialization. 
-    /// </summary>
-    void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, Task<T>>? parsingFunc);
-}
-public interface IAsyncCache {
-    /// <summary> 
-    /// Synchronizes the parser with the active execution context to perform metadata 
-    /// updates, caching, or logic initialization. 
-    /// </summary>
-    Task<Func<DbDataReader, Task<T>>?> UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, Task<T>>? parser);
-    /// <summary> 
-    /// Synchronizes the parser with the active execution context to perform metadata 
-    /// updates, caching, or logic initialization. 
-    /// </summary>
-    Task<Func<DbDataReader, T>?> UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parser);
-}
 /// <summary>
 /// Defines the contract for an executable query unit, managing the transition 
 /// from a state-snapshot to a configured database command.
 /// </summary>
-public interface IQueryCommand : ICache {
+public interface IQueryCommand : IParserCache {
 #pragma warning disable CA2211
     public static char DefaultVariableChar = '@';
 #pragma warning restore CA2211
@@ -63,6 +39,7 @@ public interface IQueryCommand : ICache {
     public int StartVariables { get; }
     /// <summary> The index marking the end of the selectable column definitions (and the total count of select segments). </summary>
     public int EndSelect { get; }
+    public bool NeedToCache(object?[] variables);
 }
 /// <summary>
 /// The central orchestration engine that integrates SQL text generation (<see cref="Queries.QueryText"/>) 
@@ -90,6 +67,7 @@ public class QueryCommand : IQueryCommand {
     public readonly QueryParameters Parameters;
     /// <summary> The SQL template and segment parsing logic. </summary>
     public readonly QueryText QueryText;
+    public readonly ParsingCache? ParsingCache;
     public readonly int StartBaseHandlers;
     public readonly int StartSpecialHandlers;
     public readonly int StartVariables;
@@ -105,7 +83,20 @@ public class QueryCommand : IQueryCommand {
         var specialHandlers = GetHandlers(queryString, segments);
         QueryText = new(queryString, segments, factory.Conditions);
         Parameters = new(StartVariables, StartSpecialHandlers, specialHandlers);
+        if (factory.HasSelect)
+            ParsingCache = ParsingCache.New(factory.NbSelects);
     }
+    public IParserCache? GetCacheAndParser<T>(object?[] variables, out CommandBehavior behavior, out Func<DbDataReader, T>? parser) {
+        IParserCache? cache = null;
+        parser = null;
+        behavior = default;
+        ParsingCache?.GetCacheAndParser(variables, out parser, out behavior, out cache);
+        if (NeedToCache(variables))
+            cache = cache is null ? this : new CacheWrapper(cache, this);
+        return cache;
+    }
+    public bool NeedToCache(object?[] variables)
+        => Parameters.NeedToCache(variables);
     private SpecialHandler[] GetHandlers(string queryString, QuerySegment[] segments) {
         if (StartSpecialHandlers == StartBaseHandlers)
             return [];
@@ -136,7 +127,7 @@ public class QueryCommand : IQueryCommand {
     /// <see cref="IDbParamInfoGetter.ParamGetterMakers"/>. If no provider-specific 
     /// match is found, it falls back to the <see cref="DefaultParamCache"/>.
     /// </remarks>
-    public virtual void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc) {
+    public void UpdateCache(IDbCommand cmd) {
         var makers = CollectionsMarshal.AsSpan(IDbParamInfoGetter.ParamGetterMakers);
         for (int i = 0; i < makers.Length; i++) {
             if (!makers[i](cmd, out var getter))
@@ -146,16 +137,8 @@ public class QueryCommand : IQueryCommand {
         }
         UpdateCache(new DefaultParamCache(cmd));
     }
-    public virtual void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, Task<T>>? parsingFunc) {
-        var makers = CollectionsMarshal.AsSpan(IDbParamInfoGetter.ParamGetterMakers);
-        for (int i = 0; i < makers.Length; i++) {
-            if (!makers[i](cmd, out var getter))
-                continue;
-            UpdateCache(getter);
-            return;
-        }
-        UpdateCache(new DefaultParamCache(cmd));
-    }
+    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc)
+        => UpdateCache(cmd);
     private bool UpdateCache<T>(T infoGetter) where T : IDbParamInfoGetter {
         foreach (var item in infoGetter.EnumerateParameters()) {
             var ind = Mapper.GetIndex(item.Key) - StartVariables;
@@ -167,6 +150,9 @@ public class QueryCommand : IQueryCommand {
         Parameters.UpdateNbCached();
         return true;
     }
+
+
+    public void UpdateParser<T>(Func<DbDataReader, T> _, CommandBehavior __) { }
     /// <summary>
     /// Synchronizes the database command with the current state of the entire query context.
     /// </summary>

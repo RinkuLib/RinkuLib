@@ -1,12 +1,18 @@
 ﻿using System.Data.Common;
-using RinkuLib.Queries;
-using RinkuLib.Commands;
-using Xunit;
 using Microsoft.Data.Sqlite;
+using RinkuLib.Commands;
+using RinkuLib.DbParsing;
+using RinkuLib.Queries;
+using Xunit;
 
 namespace RinkuLib.Tests.Commands; 
 public class CompleteTests {
-    public CompleteTests() {
+    private readonly ITestOutputHelper _output;
+    public CompleteTests(ITestOutputHelper output) {
+        _output = output;
+#if DEBUG
+        //Generator.Write = output.WriteLine;
+#endif
         SQLitePCL.Batteries.Init();
     }
     public static DbConnection GetDbCnn() {
@@ -23,6 +29,13 @@ public class CompleteTests {
         Assert.Equal(1, p.ID);
         Assert.Equal("John", p.Username);
         Assert.Null(p.Email);
+
+        var builder2 = query.StartBuilder(("@Active", 0));
+        var p2 = builder2.QuerySingle<Person>(cnn);
+        Assert.NotNull(p2);
+        Assert.Equal(2, p2.ID);
+        Assert.Equal("Victor", p2.Username);
+        Assert.Equal("abc@email.com", p2.Email);
     }
     [Fact]
     public async Task Example1_StaticQuery_Async() {

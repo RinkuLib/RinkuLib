@@ -30,6 +30,7 @@ public interface INameComparer {
     public INameComparer AddAltName(string altName);
 }
 public class NoNameComparer : INameComparer {
+    public static readonly NoNameComparer Instance = new();
     public bool Equals(ReadOnlySpan<char> name) => true;
     public string GetDefaultName() => "";
     public bool TryMatchStart(ReadOnlySpan<char> colName, out ReadOnlySpan<char> remaining) {

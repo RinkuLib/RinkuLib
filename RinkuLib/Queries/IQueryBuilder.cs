@@ -48,6 +48,11 @@ public interface IQueryBuilder {
     /// <param name="condition">The name of the condition to activate.</param>
     void Use(string condition);
     /// <summary>
+    /// Activates a condition that only functions as a toggle (such as a column or a conditional marker).
+    /// </summary>
+    /// <param name="condition">The name of the condition to activate.</param>
+    void SafelyUse(string condition);
+    /// <summary>
     /// Activates a variable and assigns it a data value.
     /// </summary>
     /// <param name="variable">The name of the item to activate.</param>

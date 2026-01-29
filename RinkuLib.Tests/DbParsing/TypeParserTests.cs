@@ -12,7 +12,7 @@ public class TypeParserTests {
     public TypeParserTests(ITestOutputHelper output) {
         _output = output;
 #if DEBUG
-        Generator.Write = output.WriteLine;
+        //Generator.Write = output.WriteLine;
 #endif
     }
     private static DataTableReader CreateReader(ColumnInfo[] columns, params Span<object[]> rows) {
@@ -31,8 +31,8 @@ public class TypeParserTests {
             new("Name", typeof(string), false)
         ];
 
-        using var reader = CreateReader(columns, 
-            [1, "John Doe"], 
+        using var reader = CreateReader(columns,
+            [1, "John Doe"],
             [3, "Jane Smith"]
         );
 
@@ -48,6 +48,74 @@ public class TypeParserTests {
         var user2 = parser(reader);
         Assert.Equal(3, user2.Id);
         Assert.Equal("Jane Smith", user2.Name);
+    }
+    [Fact]
+    public void Using_ValueTuple() {
+        ColumnInfo[] columns = [
+            new("Id", typeof(int), false),
+            new("Name", typeof(string), false)
+        ];
+
+        using var reader = CreateReader(columns,
+            [1, "John Doe"],
+            [3, "Jane Smith"]
+        );
+
+        if (!TypeParser<(int ID, string Name)>.TryGetParser(columns, out _, out var parser))
+            throw new Exception("Failed to get parser");
+
+        reader.Read();
+        var user1 = parser(reader);
+        Assert.Equal(1, user1.ID);
+        Assert.Equal("John Doe", user1.Name);
+
+        reader.Read();
+        var user2 = parser(reader);
+        Assert.Equal(3, user2.ID);
+        Assert.Equal("Jane Smith", user2.Name);
+    }
+    [Fact]
+    public void Using_ValueTuple_Same() {
+        ColumnInfo[] columns = [
+            new("Id", typeof(int), false),
+            new("ID", typeof(int), false)
+        ];
+
+        using var reader = CreateReader(columns,
+            [1, 2]
+        );
+
+        if (!TypeParser<(int ID, int ID2)>.TryGetParser(columns, out _, out var parser))
+            throw new Exception("Failed to get parser");
+
+        reader.Read();
+        var (ID, ID2) = parser(reader);
+        Assert.Equal(1, ID);
+        Assert.Equal(2, ID2);
+
+    }
+    [Fact]
+    public void Scalar() {
+        ColumnInfo[] columns = [
+            new("Id", typeof(int), false),
+            new("Name", typeof(string), false)
+        ];
+
+        using var reader = CreateReader(columns,
+            [1, "John Doe"],
+            [3, "Jane Smith"]
+        );
+
+        if (!TypeParser<int>.TryGetParser(columns, out _, out var parser))
+            throw new Exception("Failed to get parser");
+
+        reader.Read();
+        var id1 = parser(reader);
+        Assert.Equal(1, id1);
+
+        reader.Read();
+        var id2 = parser(reader);
+        Assert.Equal(3, id2);
     }
 
     [Fact]

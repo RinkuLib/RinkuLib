@@ -66,6 +66,11 @@ public readonly struct QueryBuilderCommand<TQueryCmd, TCommand>(TQueryCmd QueryC
             throw new ArgumentException(condition);
         Variables[ind] = IQueryBuilder.Used;
     }
+    public void SafelyUse(string condition) {
+        var ind = QueryCommand.Mapper.GetIndex(condition);
+        if (ind >= 0 && ind < QueryCommand.StartVariables)
+            Variables[ind] = IQueryBuilder.Used;
+    }
     /// <summary>
     /// Activates a variable and binds its data to the live <see cref="Command"/>.
     /// </summary>

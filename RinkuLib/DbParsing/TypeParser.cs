@@ -46,6 +46,24 @@ public static class Helper {
         return true;
     }
 }
+public readonly ref struct ColumnUsage(Span<bool> Span) {
+    public readonly Span<bool> Span = Span;
+    public readonly int Length => Span.Length;
+    public readonly void InitCheckpoint(Span<bool> checkpoint) {
+        if (checkpoint.Length != Span.Length)
+            throw new Exception($"must be the same length expected:{Span.Length} actual:{checkpoint.Length}");
+        for (var i = 0; i < Span.Length; i++)
+            checkpoint[i] = Span[i];
+    }
+    public readonly void Rollback(Span<bool> checkpoint) {
+        if (checkpoint.Length != Span.Length)
+            throw new Exception($"must be the same length expected:{Span.Length} actual:{checkpoint.Length}");
+        for (var i = 0; i < Span.Length; i++)
+            Span[i] = checkpoint[i];
+    }
+    public readonly bool IsUsed(int ind) => Span[ind];
+    public readonly void Use(int ind) => Span[ind] = true;
+}
 /// <summary>
 /// Manages the generation and caching of specialized parsers for <typeparamref name="T"/>.
 /// </summary>
@@ -95,8 +113,9 @@ public static class TypeParser<T> {
     private static bool TryMakeParser(Type closedType, INullColHandler? nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out DbParsingInfo<T> parser) {
         bool isNullable = Nullable.GetUnderlyingType(typeof(T)) is not null;
         nullColHandler ??= isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance;
+        var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
         var rd = TypeParsingInfo.GetOrAdd(closedType)
-            .TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], nullColHandler, cols, new(), isNullable);
+            .TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], nullColHandler, cols, new(), isNullable, ref colUsage);
         if (rd is null) {
             parser = default;
             return false;
