@@ -23,7 +23,7 @@ public static class Helper {
         for (var i = 0; i < schema.Count; i++) {
             var column = schema[i];
             string name = column.ColumnName ?? string.Empty;
-            if (column.IsAliased == false || column.IsExpression == true)
+            if (column.IsAliased == false && column.IsExpression == true)
                 name = string.Empty;
             columns[i] = new ColumnInfo {
                 Name = name,
