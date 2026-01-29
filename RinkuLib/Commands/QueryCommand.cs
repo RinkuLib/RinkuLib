@@ -26,8 +26,7 @@ public abstract class QueryCommand<T>(QueryFactory factory) : QueryCommand(facto
             return new DynamicQueryCommand<T, Masker256, Int256>(factory);
         return new DynamicQueryCommand<T, MaskerInfinite, ulong[]>(factory);
     }
-    public abstract Func<DbDataReader, T>? GetFunc(object?[] variables, out CommandBehavior behavior);
-    public abstract Func<DbDataReader, T> GetFunc(object?[] variables, DbDataReader reader);
+    public abstract Func<DbDataReader, T>? GetFuncAndCache(object?[] variables, out CommandBehavior behavior, out ICache? cache);
     public static KeyValuePair<string, Type>[] GetColumns(DbDataReader reader) {
         var schema = reader.GetColumnSchema();
         var columns = new KeyValuePair<string, Type>[schema.Count];
@@ -42,20 +41,22 @@ internal sealed class StaticQueryCommand<T> : QueryCommand<T> {
     internal StaticQueryCommand(QueryFactory factory) : base(factory) {
         MethodFunc = null;
     }
-    public override Func<DbDataReader, T>? GetFunc(object?[] variables, out CommandBehavior behavior) {
+    public override Func<DbDataReader, T>? GetFuncAndCache(object?[] variables, out CommandBehavior behavior, out ICache? cache) {
         behavior = DefaultBehavior;
-        if (Parameters.NeedToCache(variables))
-            return null;
+        cache = Parameters.NeedToCache(variables) ? this : null;
         return MethodFunc;
     }
-    public override Func<DbDataReader, T> GetFunc(object?[] variables, DbDataReader reader) {
-        if (MethodFunc is not null)
-            return MethodFunc;
-        if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out var defaultBehavior, out var method))
-            throw new NotSupportedException();
-        DefaultBehavior = defaultBehavior;
-        MethodFunc = method;
-        return method;
+    public override void UpdateCache<TImp>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, TImp>? parsingFunc) {
+        if (parsingFunc is null && typeof(TImp) == typeof(T) 
+            && (MethodFunc is not null || TypeParser<T>.TryGetParser(reader.GetColumns(), out DefaultBehavior, out MethodFunc)))
+                parsingFunc = Unsafe.As<Func<DbDataReader, T>, Func<DbDataReader, TImp>>(ref MethodFunc);
+        base.UpdateCache(reader, cmd, ref parsingFunc);
+    }
+    public override void UpdateCache<TImp>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, Task<TImp>>? parsingFunc) {
+        if (parsingFunc is null && typeof(TImp) == typeof(T) 
+            && (MethodFunc is not null || TypeParser<T>.TryGetParser(reader.GetColumns(), out DefaultBehavior, out MethodFunc)))
+                parsingFunc = r => Task.FromResult(Unsafe.As<Func<DbDataReader, T>, Func<DbDataReader, TImp>>(ref MethodFunc)(r));
+        base.UpdateCache(reader, cmd, ref parsingFunc);
     }
 }
 public interface IKeyMasker<TMask> {
@@ -64,33 +65,42 @@ public interface IKeyMasker<TMask> {
 }
 internal sealed class DynamicQueryCommand<T, TMasker, TMask>(QueryFactory factory) : QueryCommand<T>(factory) where TMasker : IKeyMasker<TMask> {
     public static readonly Lock SharedLock = new();
-    private KeyValuePair<Func<DbDataReader, T>, CommandBehavior>[] Cache = [];
+    private InternalCache[] Cache = [];
     private TMask[] Keys = [];
-    public override Func<DbDataReader, T>? GetFunc(object?[] variables, out CommandBehavior behavior) {
+    private class InternalCache(QueryCommand QueryCommand) : ICache {
+        public QueryCommand QueryCommand = QueryCommand;
+        public CommandBehavior Behavior;
+        public Func<DbDataReader, T>? Parser;
+        public void UpdateCache<TImp>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, TImp>? parsingFunc) {
+            if (parsingFunc is null && typeof(TImp) == typeof(T)
+                && (Parser is not null || TypeParser<T>.TryGetParser(reader.GetColumns(), out Behavior, out Parser)))
+                parsingFunc = Unsafe.As<Func<DbDataReader, T>, Func<DbDataReader, TImp>>(ref Parser);
+            QueryCommand.UpdateCache(reader, cmd, ref parsingFunc);
+        }
+        public void UpdateCache<TImp>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, Task<TImp>>? parsingFunc) {
+            if (parsingFunc is null && typeof(TImp) == typeof(T)
+                && (Parser is not null || TypeParser<T>.TryGetParser(reader.GetColumns(), out Behavior, out Parser)))
+                parsingFunc = r => Task.FromResult(Unsafe.As<Func<DbDataReader, T>, Func<DbDataReader, TImp>>(ref Parser)(r));
+            QueryCommand.UpdateCache(reader, cmd, ref parsingFunc);
+        }
+    }
+    public override Func<DbDataReader, T>? GetFuncAndCache(object?[] variables, out CommandBehavior behavior, out ICache? cache) {
         var mask = TMasker.ToMask(variables);
         var keys = Keys;
         for (int i = 0; i < keys.Length; i++)
             if (TMasker.Equals(keys[i], mask)) {
-                var kvp = Cache[i];
-                behavior = kvp.Value;
-                return kvp.Key;
+                var item = Cache[i];
+                behavior = item.Behavior;
+                cache = Parameters.NeedToCache(variables) ? this : null;
+                return item.Parser;
             }
         behavior = default;
-        return null;
-    }
-    public override Func<DbDataReader, T> GetFunc(object?[] variables, DbDataReader reader) {
-        var mask = TMasker.ToMask(variables);
-        var keys = Keys;
-        for (int i = 0; i < keys.Length; i++)
-            if (TMasker.Equals(keys[i], mask))
-                return Cache[i].Key;
-        if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out var defaultBehavior, out var method))
-            throw new NotSupportedException();
         lock (SharedLock) {
-            Cache = [.. Cache, new(method, defaultBehavior)];
+            Cache = [.. Cache, new InternalCache(this)];
             Keys = [.. Keys, mask];
+            cache = Cache[^1];
         }
-        return method;
+        return null;
     }
 }
 public class Masker32 : IKeyMasker<uint> {

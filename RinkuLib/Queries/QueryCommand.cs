@@ -6,11 +6,36 @@ using System.Runtime.InteropServices;
 using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
+
+public interface ICache {
+    /// <summary> 
+    /// Synchronizes the parser with the active execution context to perform metadata 
+    /// updates, caching, or logic initialization. 
+    /// </summary>
+    void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc);
+    /// <summary> 
+    /// Synchronizes the parser with the active execution context to perform metadata 
+    /// updates, caching, or logic initialization. 
+    /// </summary>
+    void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, Task<T>>? parsingFunc);
+}
+public interface IAsyncCache {
+    /// <summary> 
+    /// Synchronizes the parser with the active execution context to perform metadata 
+    /// updates, caching, or logic initialization. 
+    /// </summary>
+    Task<Func<DbDataReader, Task<T>>?> UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, Task<T>>? parser);
+    /// <summary> 
+    /// Synchronizes the parser with the active execution context to perform metadata 
+    /// updates, caching, or logic initialization. 
+    /// </summary>
+    Task<Func<DbDataReader, T>?> UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parser);
+}
 /// <summary>
 /// Defines the contract for an executable query unit, managing the transition 
 /// from a state-snapshot to a configured database command.
 /// </summary>
-public interface IQueryCommand {
+public interface IQueryCommand : ICache {
 #pragma warning disable CA2211
     public static char DefaultVariableChar = '@';
 #pragma warning restore CA2211
@@ -104,13 +129,24 @@ public class QueryCommand : IQueryCommand {
     }
     /// <summary>
     /// Synchronizes the command with a database provider's metadata. 
+    /// Or any overrided comportement
     /// </summary>
     /// <remarks>
     /// Attempts to find a specialized <see cref="IDbParamInfoGetter"/> from 
     /// <see cref="IDbParamInfoGetter.ParamGetterMakers"/>. If no provider-specific 
     /// match is found, it falls back to the <see cref="DefaultParamCache"/>.
     /// </remarks>
-    public void UpdateCache(IDbCommand cmd) {
+    public virtual void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc) {
+        var makers = CollectionsMarshal.AsSpan(IDbParamInfoGetter.ParamGetterMakers);
+        for (int i = 0; i < makers.Length; i++) {
+            if (!makers[i](cmd, out var getter))
+                continue;
+            UpdateCache(getter);
+            return;
+        }
+        UpdateCache(new DefaultParamCache(cmd));
+    }
+    public virtual void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, Task<T>>? parsingFunc) {
         var makers = CollectionsMarshal.AsSpan(IDbParamInfoGetter.ParamGetterMakers);
         for (int i = 0; i < makers.Length; i++) {
             if (!makers[i](cmd, out var getter))

@@ -3,65 +3,6 @@ using System.Data.Common;
 using RinkuLib.Queries;
 
 namespace RinkuLib.Commands;
-public readonly struct ParserCacher<T>(QueryCommand QueryCommand, Func<DbDataReader, T> Func, CommandBehavior DefaultBehavior) : IParser<T> {
-    private readonly QueryCommand QueryCommand = QueryCommand;
-    private readonly Func<DbDataReader, T> Func = Func;
-    public CommandBehavior DefaultBehavior { get; } = DefaultBehavior;
-    public readonly T Parse(DbDataReader reader) => Func(reader);
-    public void Prepare(DbDataReader reader, IDbCommand cmd) => QueryCommand.UpdateCache(cmd);
-}
-public struct ParserGetFunc<T>(QueryCommand<T> QueryCommand, object?[] Variables) : IParser<T> {
-    public readonly QueryCommand<T> QueryCommand = QueryCommand;
-    public readonly object?[] Variables = Variables;
-    public readonly CommandBehavior DefaultBehavior => default;
-    private Func<DbDataReader, T> Func = null!;
-    public readonly T Parse(DbDataReader reader) => Func(reader);
-    public void Prepare(DbDataReader reader, IDbCommand cmd)
-        => Func = QueryCommand.GetFunc(Variables, reader);
-}
-public struct ParserAll<T>(QueryCommand<T> QueryCommand, object?[] Variables) : IParser<T> {
-    public readonly QueryCommand<T> QueryCommand = QueryCommand;
-    public readonly object?[] Variables = Variables;
-    public readonly CommandBehavior DefaultBehavior => default;
-    private Func<DbDataReader, T> Func = null!;
-    public readonly T Parse(DbDataReader reader) => Func(reader);
-    public void Prepare(DbDataReader reader, IDbCommand cmd) {
-        QueryCommand.UpdateCache(cmd);
-        Func = QueryCommand.GetFunc(Variables, reader);
-    }
-}
-public unsafe interface IDispatcher<T, TRet> {
-    public abstract static delegate* managed<DbCommand, Func<DbDataReader, T>, CommandBehavior, bool, TRet> Direct { get; }
-    public abstract static delegate* managed<DbCommand, ParserCacher<T>, bool, TRet> Cacher { get; }
-    public abstract static delegate* managed<DbCommand, ParserGetFunc<T>, bool, TRet> GetFunc { get; }
-    public abstract static delegate* managed<DbCommand, ParserAll<T>, bool, TRet> All { get; }
-}
-public unsafe interface IDispatcherAsync<T, TRet> {
-    public abstract static delegate* managed<DbCommand, Func<DbDataReader, T>, CommandBehavior, bool, CancellationToken, TRet> DirectAsync { get; }
-    public abstract static delegate* managed<DbCommand, ParserCacher<T>, bool, CancellationToken, TRet> CacherAsync { get; }
-    public abstract static delegate* managed<DbCommand, ParserGetFunc<T>, bool, CancellationToken, TRet> GetFuncAsync { get; }
-    public abstract static delegate* managed<DbCommand, ParserAll<T>, bool, CancellationToken, TRet> AllAsync { get; }
-}
-public readonly unsafe struct QuerySingleVTable<T> : IDispatcher<T, T?>, IDispatcherAsync<T, Task<T?>> {
-    public static delegate* managed<DbCommand, Func<DbDataReader, T>, CommandBehavior, bool, T?> Direct => &CommandExtensions.QuerySingle;
-    public static delegate* managed<DbCommand, ParserCacher<T>, bool, T?> Cacher => &CommandExtensions.QuerySingle<ParserCacher<T>, T>;
-    public static delegate* managed<DbCommand, ParserGetFunc<T>, bool, T?> GetFunc => &CommandExtensions.QuerySingle<ParserGetFunc<T>, T>;
-    public static delegate* managed<DbCommand, ParserAll<T>, bool, T?> All => &CommandExtensions.QuerySingle<ParserAll<T>, T>;
-    public static delegate* managed<DbCommand, Func<DbDataReader, T>, CommandBehavior, bool, CancellationToken, Task<T?>> DirectAsync => &CommandExtensions.QuerySingleAsync;
-    public static delegate* managed<DbCommand, ParserCacher<T>, bool, CancellationToken, Task<T?>> CacherAsync => &CommandExtensions.QuerySingleAsync<ParserCacher<T>, T>;
-    public static delegate* managed<DbCommand, ParserGetFunc<T>, bool, CancellationToken, Task<T?>> GetFuncAsync => &CommandExtensions.QuerySingleAsync<ParserGetFunc<T>, T>;
-    public static delegate* managed<DbCommand, ParserAll<T>, bool, CancellationToken, Task<T?>> AllAsync => &CommandExtensions.QuerySingleAsync<ParserAll<T>, T>;
-}
-public readonly unsafe struct QueryMultipleVTable<T> : IDispatcher<T, IEnumerable<T>>, IDispatcherAsync<T, IAsyncEnumerable<T>> {
-    public static delegate* managed<DbCommand, Func<DbDataReader, T>, CommandBehavior, bool, IEnumerable<T>> Direct => &CommandExtensions.QueryMultiple;
-    public static delegate* managed<DbCommand, ParserCacher<T>, bool, IEnumerable<T>> Cacher => &CommandExtensions.QueryMultiple<ParserCacher<T>, T>;
-    public static delegate* managed<DbCommand, ParserGetFunc<T>, bool, IEnumerable<T>> GetFunc => &CommandExtensions.QueryMultiple<ParserGetFunc<T>, T>;
-    public static delegate* managed<DbCommand, ParserAll<T>, bool, IEnumerable<T>> All => &CommandExtensions.QueryMultiple<ParserAll<T>, T>;
-    public static delegate* managed<DbCommand, Func<DbDataReader, T>, CommandBehavior, bool, CancellationToken, IAsyncEnumerable<T>> DirectAsync => &CommandExtensions.QueryMultipleAsync;
-    public static delegate* managed<DbCommand, ParserCacher<T>, bool, CancellationToken, IAsyncEnumerable<T>> CacherAsync => &CommandExtensions.QueryMultipleAsync<ParserCacher<T>, T>;
-    public static delegate* managed<DbCommand, ParserGetFunc<T>, bool, CancellationToken, IAsyncEnumerable<T>> GetFuncAsync => &CommandExtensions.QueryMultipleAsync<ParserGetFunc<T>, T>;
-    public static delegate* managed<DbCommand, ParserAll<T>, bool, CancellationToken, IAsyncEnumerable<T>> AllAsync => &CommandExtensions.QueryMultipleAsync<ParserAll<T>, T>;
-}
 public static class QueryBuilderExtensions {
     public static QueryBuilder<QueryCommand<T>> StartBuilder<T>(this QueryCommand<T> command)
         => new(command);
@@ -88,61 +29,55 @@ public static class QueryBuilderExtensions {
             builder.QueryCommand.SetCommand(cmd, builder.Variables);
         return cmd;
     }
-    private static unsafe TRet Query<TDispatcher, T, TRet>(QueryCommand queryCommand, object?[] variables, DbCommand cmd, Func<DbDataReader, T> func, CommandBehavior defaultBehavior, DbTransaction? transaction, int? timeout, bool disposeCommand)
-        where TDispatcher : IDispatcher<T, TRet> {
+    private static DbCommand GetCommandAndInfo<T>(this QueryBuilder<T> builder, DbConnection cnn, DbTransaction? transaction, int? timeout, out ICache? cache) where T : QueryCommand {
+        var cmd = cnn.CreateCommand();
         if (transaction is not null)
             cmd.Transaction = transaction;
         if (timeout.HasValue)
             cmd.CommandTimeout = timeout.Value;
-        queryCommand.SetCommand(cmd, variables);
-        var needToCache = queryCommand.Parameters.NeedToCache(variables);
-        if (needToCache)
-            return TDispatcher.Cacher(cmd, new(queryCommand, func, defaultBehavior), disposeCommand);
-        return TDispatcher.Direct(cmd, func, defaultBehavior, disposeCommand);
+        var qc = builder.QueryCommand;
+        qc.SetCommand(cmd, builder.Variables);
+        cache = qc.Parameters.NeedToCache(builder.Variables) ? qc : null;
+        return cmd;
     }
-    private static unsafe TRet QueryAsync<TDispatcher, T, TRet>(QueryCommand queryCommand, object?[] variables, DbCommand cmd, Func<DbDataReader, T> func, CommandBehavior defaultBehavior, DbTransaction? transaction, int? timeout, bool disposeCommand, CancellationToken ct)
-        where TDispatcher : IDispatcherAsync<T, TRet> {
+    private static IDbCommand GetCommandAndInfo<T>(this QueryBuilder<T> builder, IDbConnection cnn, IDbTransaction? transaction, int? timeout, out ICache? cache) where T : QueryCommand {
+        var cmd = cnn.CreateCommand();
         if (transaction is not null)
             cmd.Transaction = transaction;
         if (timeout.HasValue)
             cmd.CommandTimeout = timeout.Value;
-        queryCommand.SetCommand(cmd, variables);
-        var needToCache = queryCommand.Parameters.NeedToCache(variables);
-        if (needToCache)
-            return TDispatcher.CacherAsync(cmd, new(queryCommand, func, defaultBehavior), disposeCommand, ct);
-        return TDispatcher.DirectAsync(cmd, func, defaultBehavior, disposeCommand, ct);
+        var qc = builder.QueryCommand;
+        if (cmd is DbCommand c)
+            qc.SetCommand(c, builder.Variables);
+        else
+            qc.SetCommand(cmd, builder.Variables);
+        cache = qc.Parameters.NeedToCache(builder.Variables) ? qc : null;
+        return cmd;
     }
-    private static unsafe TRet Query<TDispatcher, T, TRet>(QueryCommand<T> queryCommand, object?[] variables, DbCommand cmd, DbTransaction? transaction, int? timeout, bool disposeCommand) where TDispatcher : IDispatcher<T, TRet> {
+    private static DbCommand GetCommandAndInfo<TQuery, T>(this QueryBuilder<TQuery> builder, DbConnection cnn, DbTransaction? transaction, int? timeout, out ICache? cache, out Func<DbDataReader, T>? parser, out CommandBehavior behavior) where TQuery : QueryCommand<T> {
+        var cmd = cnn.CreateCommand();
         if (transaction is not null)
             cmd.Transaction = transaction;
         if (timeout.HasValue)
             cmd.CommandTimeout = timeout.Value;
-        queryCommand.SetCommand(cmd, variables);
-        var needToCache = queryCommand.Parameters.NeedToCache(variables);
-        var func = queryCommand.GetFunc(variables, out var behavior);
-        if (!needToCache && func is not null)
-            return TDispatcher.Direct(cmd, func, behavior, disposeCommand);
-        if (func is not null)
-            return TDispatcher.Cacher(cmd, new ParserCacher<T>(queryCommand, func, behavior), disposeCommand);
-        if (!needToCache)
-            return TDispatcher.GetFunc(cmd, new ParserGetFunc<T>(queryCommand, variables), disposeCommand);
-        return TDispatcher.All(cmd, new ParserAll<T>(queryCommand, variables), disposeCommand);
+        var qc = builder.QueryCommand;
+        qc.SetCommand(cmd, builder.Variables);
+        parser = qc.GetFuncAndCache(builder.Variables, out behavior, out cache);
+        return cmd;
     }
-    private static unsafe TRet QueryAsync<TDispatcher, T, TRet>(QueryCommand<T> queryCommand, object?[] variables, DbCommand cmd, DbTransaction? transaction, int? timeout, bool disposeCommand, CancellationToken ct) where TDispatcher : IDispatcherAsync<T, TRet> {
+    private static IDbCommand GetCommandAndInfo<TQuery, T>(this QueryBuilder<TQuery> builder, IDbConnection cnn, IDbTransaction? transaction, int? timeout, out ICache? cache, out Func<DbDataReader, T>? parser, out CommandBehavior behavior) where TQuery : QueryCommand<T> {
+        var cmd = cnn.CreateCommand();
         if (transaction is not null)
             cmd.Transaction = transaction;
         if (timeout.HasValue)
             cmd.CommandTimeout = timeout.Value;
-        queryCommand.SetCommand(cmd, variables);
-        var needToCache = queryCommand.Parameters.NeedToCache(variables);
-        var func = queryCommand.GetFunc(variables, out var behavior);
-        if (!needToCache && func is not null)
-            return TDispatcher.DirectAsync(cmd, func, behavior, disposeCommand, ct);
-        if (func is not null)
-            return TDispatcher.CacherAsync(cmd, new ParserCacher<T>(queryCommand, func, behavior), disposeCommand, ct);
-        if (!needToCache)
-            return TDispatcher.GetFuncAsync(cmd, new ParserGetFunc<T>(queryCommand, variables), disposeCommand, ct);
-        return TDispatcher.AllAsync(cmd, new ParserAll<T>(queryCommand, variables), disposeCommand, ct);
+        var qc = builder.QueryCommand;
+        if (cmd is DbCommand c)
+            qc.SetCommand(c, builder.Variables);
+        else
+            qc.SetCommand(cmd, builder.Variables);
+        parser = qc.GetFuncAndCache(builder.Variables, out behavior, out cache);
+        return cmd;
     }
     private static int Execute(QueryCommand queryCommand, object?[] variables, DbCommand cmd, DbTransaction? transaction, int? timeout, bool disposeCommand) {
         if (transaction is not null)
@@ -163,22 +98,58 @@ public static class QueryBuilderExtensions {
     extension<T>(QueryBuilder<QueryCommand<T>> builder) {
 
         public T? QuerySingle(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null)
-            => Query<QuerySingleVTable<T>, T, T?>(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), transaction, timeout, true);
+            => builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior)
+                .QuerySingle(parser, cache, behavior, true);
         public T? QuerySingle(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null)
-            => Query<QuerySingleVTable<T>, T, T?>(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), transaction, timeout, false);
+            => (cmd = builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior))
+                .QuerySingle(parser, cache, behavior, false);
         public IEnumerable<T> QueryMultiple(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null)
-            => Query<QueryMultipleVTable<T>, T, IEnumerable<T>>(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), transaction, timeout, true);
+            => builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior)
+                .QueryMultiple(parser, cache, behavior, true);
         public IEnumerable<T> QueryMultiple(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null)
-            => Query<QueryMultipleVTable<T>, T, IEnumerable<T>>(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), transaction, timeout, false);
+            => (cmd = builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior))
+                .QueryMultiple(parser, cache, behavior, false);
 
         public Task<T?> QuerySingleAsync(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
-            => QueryAsync<QuerySingleVTable<T>, T, Task<T?>>(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), transaction, timeout, true, ct);
+            => builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior)
+                .QuerySingleAsync(parser, cache, behavior, true, ct);
         public Task<T?> QuerySingleAsync(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
-            => QueryAsync<QuerySingleVTable<T>, T, Task<T?>>(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), transaction, timeout, false, ct);
+            => (cmd = builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior))
+                .QuerySingleAsync(parser, cache, behavior, false, ct);
         public IAsyncEnumerable<T> QueryMultipleAsync(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
-            => QueryAsync<QueryMultipleVTable<T>, T, IAsyncEnumerable<T>>(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), transaction, timeout, true, ct);
+            => builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior)
+                .QueryMultipleAsync(parser, cache, behavior, true, ct);
         public IAsyncEnumerable<T> QueryMultipleAsync(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
-            => QueryAsync<QueryMultipleVTable<T>, T, IAsyncEnumerable<T>>(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), transaction, timeout, false, ct);
+            => (cmd = builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior))
+                .QueryMultipleAsync(parser, cache, behavior, false, ct);
+
+
+
+        public T? QuerySingle(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior)
+                .QuerySingle(parser, cache, behavior, true);
+        public T? QuerySingle(IDbConnection cnn, out IDbCommand cmd, IDbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior))
+                .QuerySingle(parser, cache, behavior, false);
+        public IEnumerable<T> QueryMultiple(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior)
+                .QueryMultiple(parser, cache, behavior, true);
+        public IEnumerable<T> QueryMultiple(IDbConnection cnn, out IDbCommand cmd, IDbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior))
+                .QueryMultiple(parser, cache, behavior, false);
+
+        public Task<T?> QuerySingleAsync(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior)
+                .QuerySingleAsync(parser, cache, behavior, true, ct);
+        public Task<T?> QuerySingleAsync(IDbConnection cnn, out IDbCommand cmd, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior))
+                .QuerySingleAsync(parser, cache, behavior, false, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior)
+                .QueryMultipleAsync(parser, cache, behavior, true, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync(IDbConnection cnn, out IDbCommand cmd, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo<QueryCommand<T>, T>(cnn, transaction, timeout, out var cache, out var parser, out var behavior))
+                .QueryMultipleAsync(parser, cache, behavior, false, ct);
     }
     extension(QueryBuilder<QueryCommand> builder) {
         public int Execute(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null)
@@ -189,26 +160,117 @@ public static class QueryBuilderExtensions {
             => ExecuteAsync(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), transaction, timeout, true, ct);
         public Task<int> ExecuteAsync(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
             => ExecuteAsync(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), transaction, timeout, false, ct);
+
+
+        public T? QuerySingle<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QuerySingle<T>(null, cache, default, true);
+        public T? QuerySingle<T>(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QuerySingle<T>(null, cache, default, false);
+        public IEnumerable<T> QueryMultiple<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QueryMultiple<T>(null, cache, default, true);
+        public IEnumerable<T> QueryMultiple<T>(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QueryMultiple<T>(null, cache, default, false);
+
+        public Task<T?> QuerySingleAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QuerySingleAsync<T>(null, cache, default, true, ct);
+        public Task<T?> QuerySingleAsync<T>(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QuerySingleAsync<T>(null, cache, default, false, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QueryMultipleAsync<T>(null, cache, default, true, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync<T>(DbConnection cnn, out DbCommand cmd, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QueryMultipleAsync<T>(null, cache, default, false, ct);
+
+
+
+        public T? QuerySingle<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QuerySingle<T>(null, cache, default, true);
+        public T? QuerySingle<T>(IDbConnection cnn, out IDbCommand cmd, IDbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QuerySingle<T>(null, cache, default, false);
+        public IEnumerable<T> QueryMultiple<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QueryMultiple<T>(null, cache, default, true);
+        public IEnumerable<T> QueryMultiple<T>(IDbConnection cnn, out IDbCommand cmd, IDbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QueryMultiple<T>(null, cache, default, false);
+
+        public Task<T?> QuerySingleAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QuerySingleAsync<T>(null, cache, default, true, ct);
+        public Task<T?> QuerySingleAsync<T>(IDbConnection cnn, out IDbCommand cmd, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QuerySingleAsync<T>(null, cache, default, false, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QueryMultipleAsync<T>(null, cache, default, true, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync<T>(IDbConnection cnn, out IDbCommand cmd, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QueryMultipleAsync<T>(null, cache, default, false, ct);
     }
     extension<TQuery>(QueryBuilder<TQuery> builder) where TQuery : QueryCommand {
 
-        public T? QuerySingle<T>(DbConnection cnn, Func<DbDataReader, T> func, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null)
-            => Query<QuerySingleVTable<T>, T, T?>(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), func, defaultBehavior, transaction, timeout, true);
-        public T? QuerySingle<T>(DbConnection cnn, out DbCommand cmd, Func<DbDataReader, T> func, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null)
-            => Query<QuerySingleVTable<T>, T, T?>(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), func, defaultBehavior, transaction, timeout, false);
-        public IEnumerable<T> QueryMultiple<T>(DbConnection cnn, Func<DbDataReader, T> func, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null)
-            => Query<QueryMultipleVTable<T>, T, IEnumerable<T>>(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), func, defaultBehavior, transaction, timeout, true);
-        public IEnumerable<T> QueryMultiple<T>(DbConnection cnn, out DbCommand cmd, Func<DbDataReader, T> func, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null)
-            => Query<QueryMultipleVTable<T>, T, IEnumerable<T>>(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), func, defaultBehavior, transaction, timeout, false);
+        public T? QuerySingle<T>(DbConnection cnn, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QuerySingle(func, cache, defaultBehavior, true);
+        public T? QuerySingle<T>(DbConnection cnn, out DbCommand cmd, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QuerySingle(func, cache, defaultBehavior, false);
+        public IEnumerable<T> QueryMultiple<T>(DbConnection cnn, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QueryMultiple(func, cache, defaultBehavior, true);
+        public IEnumerable<T> QueryMultiple<T>(DbConnection cnn, out DbCommand cmd, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QueryMultiple(func, cache, defaultBehavior, false);
 
-        public Task<T?> QuerySingleAsync<T>(DbConnection cnn, Func<DbDataReader, T> func, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
-            => QueryAsync<QuerySingleVTable<T>, T, Task<T?>>(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), func, defaultBehavior, transaction, timeout, true, ct);
-        public Task<T?> QuerySingleAsync<T>(DbConnection cnn, out DbCommand cmd, Func<DbDataReader, T> func, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
-            => QueryAsync<QuerySingleVTable<T>, T, Task<T?>>(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), func, defaultBehavior, transaction, timeout, false, ct);
-        public IAsyncEnumerable<T> QueryMultipleAsync<T>(DbConnection cnn, Func<DbDataReader, T> func, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
-            => QueryAsync<QueryMultipleVTable<T>, T, IAsyncEnumerable<T>>(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), func, defaultBehavior, transaction, timeout, true, ct);
-        public IAsyncEnumerable<T> QueryMultipleAsync<T>(DbConnection cnn, out DbCommand cmd, Func<DbDataReader, T> func, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
-            => QueryAsync<QueryMultipleVTable<T>, T, IAsyncEnumerable<T>>(builder.QueryCommand, builder.Variables, cmd = cnn.CreateCommand(), func, defaultBehavior, transaction, timeout, false, ct);
+        public Task<T?> QuerySingleAsync<T>(DbConnection cnn, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QuerySingleAsync(func, cache, defaultBehavior, true, ct);
+        public Task<T?> QuerySingleAsync<T>(DbConnection cnn, out DbCommand cmd, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QuerySingleAsync(func, cache, defaultBehavior, false, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync<T>(DbConnection cnn, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QueryMultipleAsync(func, cache, defaultBehavior, true, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync<T>(DbConnection cnn, out DbCommand cmd, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QueryMultipleAsync(func, cache, defaultBehavior, false, ct);
+
+
+
+        public T? QuerySingle<T>(IDbConnection cnn, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, IDbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QuerySingle(func, cache, defaultBehavior, true);
+        public T? QuerySingle<T>(IDbConnection cnn, out IDbCommand cmd, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, IDbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QuerySingle(func, cache, defaultBehavior, false);
+        public IEnumerable<T> QueryMultiple<T>(IDbConnection cnn, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, IDbTransaction? transaction = null, int? timeout = null)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QueryMultiple(func, cache, defaultBehavior, true);
+        public IEnumerable<T> QueryMultiple<T>(IDbConnection cnn, out IDbCommand cmd, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, IDbTransaction? transaction = null, int? timeout = null)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QueryMultiple(func, cache, defaultBehavior, false);
+
+        public Task<T?> QuerySingleAsync<T>(IDbConnection cnn, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QuerySingleAsync(func, cache, defaultBehavior, true, ct);
+        public Task<T?> QuerySingleAsync<T>(IDbConnection cnn, out IDbCommand cmd, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QuerySingleAsync(func, cache, defaultBehavior, false, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync<T>(IDbConnection cnn, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache)
+                .QueryMultipleAsync(func, cache, defaultBehavior, true, ct);
+        public IAsyncEnumerable<T> QueryMultipleAsync<T>(IDbConnection cnn, out IDbCommand cmd, Func<DbDataReader, T>? func = null, CommandBehavior defaultBehavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => (cmd = builder.GetCommandAndInfo(cnn, transaction, timeout, out var cache))
+                .QueryMultipleAsync(func, cache, defaultBehavior, false, ct);
 
         public int Execute(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null)
             => Execute(builder.QueryCommand, builder.Variables, cnn.CreateCommand(), transaction, timeout, true);
