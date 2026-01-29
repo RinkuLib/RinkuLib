@@ -45,6 +45,11 @@ public readonly struct QueryBuilder<TQueryCmd>(TQueryCmd QueryCommand) : IQueryB
             throw new ArgumentException(condition);
         Variables[ind] = IQueryBuilder.Used;
     }
+    public void SafelyUse(string condition) {
+        var ind = QueryCommand.Mapper.GetIndex(condition);
+        if (ind >= 0 && ind < QueryCommand.StartVariables)
+            Variables[ind] = IQueryBuilder.Used;
+    }
     public readonly bool Use(string variable, object value) {
         var ind = QueryCommand.Mapper.GetIndex(variable);
         var i = ind - QueryCommand.StartVariables;
