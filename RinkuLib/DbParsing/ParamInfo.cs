@@ -26,7 +26,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>
     /// The logic used to match column names against this member's identifiers.
     /// </summary>
-    public INameComparer NameComparer = NameComparer;
+    public INameComparer NameComparer { get => field; set => Interlocked.Exchange(ref field, value); } = NameComparer;
     /// <summary>
     /// The C# type of the parameter or member. (Can be generic)
     /// </summary>
@@ -40,7 +40,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// Adds an alternative name to the existing <see cref="NameComparer"/>.
     /// </summary>
     public void AddAltName(string altName)
-        => Interlocked.Exchange(ref NameComparer, NameComparer.AddAltName(altName));
+        => NameComparer = NameComparer.AddAltName(altName);
     /// <summary>
     /// Returns the primary name defined for this member.
     /// </summary>
@@ -65,19 +65,22 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// </item>
     /// </list>
     /// </remarks>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier) {
+    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
         var t = Nullable.GetUnderlyingType(Type);
         var closedType = (t ?? Type).CloseType(declaringTypeArguments);
-        if (TypeParsingInfo.TryGetInfo(closedType, out var typeInfo))
-            return typeInfo.TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], NullColHandler, columns, colModifier.Add(NameComparer), t is not null);
+        if (TypeParsingInfo.TryGetInfo(closedType, out var typeInfo) && typeInfo.Matcher != BaseTypeMatcher.Instance)
+            return typeInfo.TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], NullColHandler, columns, colModifier.Add(NameComparer), t is not null, ref colUsage);
         int i = 0;
         for (; i < columns.Length; i++) {
+            if (colUsage.IsUsed(i))
+                continue;
             var column = columns[i];
             if (column.Type.CanConvert(closedType) && colModifier.Match(column.Name, NameComparer))
                 break;
         }
         if (i >= columns.Length)
             return null;
+        colUsage.Use(i);
         if (t is not null)
             closedType = typeof(Nullable<>).MakeGenericType(closedType);
         return new BasicParser(closedType, NullColHandler, i);

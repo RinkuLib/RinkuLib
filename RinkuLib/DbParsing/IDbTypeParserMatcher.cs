@@ -18,6 +18,10 @@ public interface IDbTypeParserMatcher {
     /// </summary>
     public INullColHandler NullColHandler { get; set; }
     /// <summary>
+    /// The strategy used to handle names from the schema for this specific item.
+    /// </summary>
+    public INameComparer NameComparer { get; set; }
+    /// <summary>
     /// Registers an additional name that this item can match against in the schema.
     /// </summary>
     public void AddAltName(string altName);
@@ -37,19 +41,18 @@ public interface IDbTypeParserMatcher {
     /// <param name="columns">The available schema to match against.</param>
     /// <param name="colModifier">Transformation logic for column names/types.</param>
     /// <returns>A parser node if the item successfully matches a column; otherwise, null.</returns>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier);
+    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
 }
 /// <summary>
 /// Defines a custom strategy for matching a specific Type against a schema.
 /// </summary>
 public interface IDbTypeParserInfoMatcher {
-    /// <summary>The Type this matcher is responsible for.</summary>
-    public Type TargetType { get; }
     /// <summary>
     /// Negotiates the schema for the target type. 
     /// If successful, returns a parser node that handles the entire object construction.
     /// </summary>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable);
+    public DbItemParser? TryGetParser(Type closedTargetType, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage);
+    public bool CanUseType(Type TargetType);
 }
 /// <summary>
 /// A factory for creating <see cref="IDbTypeParserMatcher"/> instances.

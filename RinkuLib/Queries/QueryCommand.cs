@@ -83,7 +83,8 @@ public class QueryCommand : IQueryCommand {
         var specialHandlers = GetHandlers(queryString, segments);
         QueryText = new(queryString, segments, factory.Conditions);
         Parameters = new(StartVariables, StartSpecialHandlers, specialHandlers);
-        ParsingCache = ParsingCache.New(factory.NbSelects, factory.ExtratSelects);
+        if (factory.HasSelect)
+            ParsingCache = ParsingCache.New(factory.NbSelects);
     }
     public IParserCache? GetCacheAndParser<T>(object?[] variables, out CommandBehavior behavior, out Func<DbDataReader, T>? parser) {
         IParserCache? cache = null;

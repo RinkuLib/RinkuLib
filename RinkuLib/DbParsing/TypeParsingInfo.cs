@@ -3,26 +3,29 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace RinkuLib.DbParsing;
-/*
-    private void InsertMCI(MethodCtorInfo mci) {
-        lock (WriteLock) {
-            mci.InsertInto(ref MCIs);
+
+public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
+    public static readonly BaseTypeMatcher Instance = new();
+    private BaseTypeMatcher() {}
+    public bool CanUseType(Type TargetType)
+        => TargetType.IsBaseType() || TargetType.IsEnum;
+    public DbItemParser? TryGetParser(Type closedTargetType, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
+        int i = 0;
+        for (; i < columns.Length; i++) {
+            if (colUsage.IsUsed(i))
+                continue;
+            var column = columns[i];
+            if (column.Type.CanConvert(closedTargetType))
+                break;
         }
+        if (i >= columns.Length)
+            return null;
+        colUsage.Use(i);
+        if (isNullable && closedTargetType.IsValueType)
+            closedTargetType = typeof(Nullable<>).MakeGenericType(closedTargetType);
+        return new BasicParser(closedTargetType, nullColHandler, i);
     }
-    public static void AddReadingOption(Type type, MethodInfo method) {
-        if (method.ReturnType != type || !method.IsStatic)
-            throw new Exception($"the method must return {type} and be static");
-        var ps = MethodCtorInfo.TryMakeParameters(method);
-        if (!MethodCtorInfo.TryNew(method, ps, out var mci))
-            throw new Exception("this method cannot be used because it contains parameters that cannot be converted to readers");
-        GetOrAdd(type).InsertMCI(mci);
-    }
-    public static void AddReadingOption(Type type, MethodCtorInfo mci) {
-        if (mci.TargetType != type)
-            throw new InvalidOperationException($"the method or constructor must be of type {type} (returning type)");
-        GetOrAdd(type).InsertMCI(mci);
-    }
-*/
+}
 /// <summary>
 /// A metadata registry representing a specific <see cref="Type"/>. 
 /// It stores the construction paths and members required to transform a schema into an object.
@@ -45,6 +48,43 @@ namespace RinkuLib.DbParsing;
 /// this process to be replaced with custom logic.
 /// </remarks>
 public class TypeParsingInfo {
+    static TypeParsingInfo() {
+        AddValueTuple(typeof(ValueTuple<>));
+        AddValueTuple(typeof(ValueTuple<,>));
+        AddValueTuple(typeof(ValueTuple<,,>));
+        AddValueTuple(typeof(ValueTuple<,,,>));
+        AddValueTuple(typeof(ValueTuple<,,,,>));
+        AddValueTuple(typeof(ValueTuple<,,,,,>));
+        AddValueTuple(typeof(ValueTuple<,,,,,,>));
+        AddValueTuple(typeof(ValueTuple<,,,,,,,>));
+    }
+    private static void AddValueTuple(Type tupleType) {
+        ConstructorInfo[] ctors = tupleType.GetConstructors();
+        Type[] genericArgs = tupleType.GetGenericArguments();
+        int argCount = genericArgs.Length;
+        ConstructorInfo ctor = null!;
+        ParameterInfo[] parameters = null!;
+        for (int i = 0; i < ctors.Length; i++) {
+            ctor = ctors[i];
+            parameters = ctor.GetParameters();
+
+            if (parameters.Length != argCount)
+                continue;
+            bool isMatch = true;
+            for (int j = 0; j < argCount; j++) {
+                if (parameters[j].ParameterType != genericArgs[j]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            if (isMatch)
+                break;
+        }
+        var methodCtorInfo = new MethodCtorInfo(ctor);
+        for (int i = 0; i < parameters.Length; i++)
+            methodCtorInfo.Parameters[i].NameComparer = NoNameComparer.Instance;
+        GetOrAdd(tupleType).AddPossibleConstruction(methodCtorInfo);
+    }
     private TypeParsingInfo(Type Type, IDbTypeParserInfoMatcher? Matcher) {
         this.Type = Nullable.GetUnderlyingType(Type) ?? Type;
         IsInit = false;
@@ -76,7 +116,7 @@ public class TypeParsingInfo {
                 Init();
             return _matcher;
         } set {
-            if (value is not null && value.TargetType != Type)
+            if (value is not null && value.CanUseType(Type))
                 throw new InvalidOperationException($"the Matcher must be of type {Type}");
             Interlocked.Exchange(ref _matcher, value);
         }
@@ -240,7 +280,8 @@ public class TypeParsingInfo {
             if (IsInit)
                 return;
             var type = Nullable.GetUnderlyingType(Type) ?? Type;
-            if (type.IsEnum) {
+            if (BaseTypeMatcher.Instance.CanUseType(type)) {
+                _matcher = BaseTypeMatcher.Instance;
                 IsInit = true;
                 return;
             }
@@ -365,22 +406,24 @@ public class TypeParsingInfo {
     /// <returns>
     /// A configured <see cref="DbItemParser"/> if the schema satisfies a construction path; otherwise, null.
     /// </returns>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable) {
+    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
         if (!IsInit)
             Init();
+        var closedType = Type.CloseType(declaringTypeArguments);
         if (_matcher is not null)
-            return _matcher.TryGetParser(declaringTypeArguments, nullColHandler, columns, colModifier, isNullable);
+            return _matcher.TryGetParser(closedType, nullColHandler, columns, colModifier, isNullable, ref colUsage);
+        var actualType = isNullable && closedType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedType) : closedType;
+        Span<bool> checkpoint = stackalloc bool[colUsage.Length];
+        colUsage.InitCheckpoint(checkpoint);
         var mcis = MCIs;
         List<DbItemParser> readers = [];
         MemberInfo? method = null;
-        var closedType = Type.CloseType(declaringTypeArguments);
-        var actualType = isNullable && closedType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedType) : closedType;
         bool canCompleteWithMembers = false;
         for (int i = 0; i < mcis.Length; i++) {
             var mci = mcis[i];
             var parameters = mci.Parameters;
             for (int j = 0; j < parameters.Length; j++) {
-                var r = parameters[j].TryGetParser(declaringTypeArguments, columns, colModifier);
+                var r = parameters[j].TryGetParser(declaringTypeArguments, columns, colModifier, ref colUsage);
                 if (r is null)
                     break;
                 readers.Add(r);
@@ -390,6 +433,7 @@ public class TypeParsingInfo {
                 canCompleteWithMembers = mci.CanCompleteWithMembers;
                 break;
             }
+            colUsage.Rollback(checkpoint);
             readers.Clear();
         }
         if (method is null) {
@@ -403,7 +447,7 @@ public class TypeParsingInfo {
         List<(MemberInfo, DbItemParser)> memberReaders = [];
         var members = Members;
         for (int i = 0; i < members.Length; i++) {
-            var r = members[i].Param.TryGetParser(declaringTypeArguments, columns, colModifier);
+            var r = members[i].Param.TryGetParser(declaringTypeArguments, columns, colModifier, ref colUsage);
             if (r is not null)
                 memberReaders.Add((members[i].Member.GetClosedMember(closedType), r));
         }

@@ -6,6 +6,22 @@ public static class BuilderStarter {
         => new(command);
     public static QueryBuilderCommand<QueryCommand, T> StartBuilder<T>(this QueryCommand command, T cmd) where T : IDbCommand
         => new(command, cmd);
+    public static QueryBuilder<QueryCommand> StartBuilder(this QueryCommand command, params Span<(string, object)> values) { 
+        var builder = new QueryBuilder<QueryCommand>(command);
+        for (int i = 0; i < values.Length; i++) {
+            var (key, value) = values[i];
+            builder.Use(key, value);
+        }
+        return builder;
+    }
+    public static QueryBuilderCommand<QueryCommand, T> StartBuilder<T>(this QueryCommand command, T cmd, params Span<(string, object)> values) where T : IDbCommand {
+        var builder = new QueryBuilderCommand<QueryCommand, T>(command, cmd);
+        for (int i = 0; i < values.Length; i++) {
+            var (key, value) = values[i];
+            builder.Use(key, value);
+        }
+        return builder;
+    }
 }
 /// <summary>
 /// A stateful builder for configuring a specific query execution.

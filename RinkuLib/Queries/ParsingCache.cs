@@ -6,10 +6,8 @@ using System.Runtime.InteropServices;
 namespace RinkuLib.Queries; 
 public abstract class ParsingCache {
     public static readonly Lock SharedLock = new();
-    public static ParsingCache? New(int nbSelects, bool extractSelects) {
+    public static ParsingCache? New(int nbSelects) {
         if (nbSelects <= 0)
-            return null;
-        if (!extractSelects)
             return new SingleItemCache();
         if (nbSelects <= 32)
             return new DynamicQueryCache<Masker32, uint>();
