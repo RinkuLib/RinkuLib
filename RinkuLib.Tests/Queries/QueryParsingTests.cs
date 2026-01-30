@@ -496,9 +496,8 @@ public class QueryParsingTests {
         Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees WHERE Department = @DeptName AND Status = @EmployeeStatus ORDER BY Salary DESC",
             [("@DeptName", "Marketing"), ("@EmployeeStatus", "Employed")]);
 
-        builder = query.StartBuilder();
         var t2 = new TestDtoClass(10, "Marketing", "Employed") { Year = true };
-        builder.Use(ref t2);
+        builder = query.StartBuilder(ref t2);
         Verify(builder, "SELECT EmployeeId, FirstName, Salary, Year FROM Employees WHERE Salary >= @MinSalary AND Department = @DeptName AND Status = @EmployeeStatus ORDER BY Salary DESC",
             [("@MinSalary", 10), ("@DeptName", "Marketing"), ("@EmployeeStatus", "Employed")]);
     }

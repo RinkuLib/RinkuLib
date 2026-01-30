@@ -13,7 +13,7 @@ public delegate void QueryFillAction<T, TBuilder>(ref T instance, TBuilder build
 /// from the properties and fields of a source object.
 /// </summary>
 public static class QueryBuilderExtensions {
-    public static QueryBuilder<QueryCommand> StartBuilder<TQC, T>(this QueryCommand command, ref T value) {
+    public static QueryBuilder<QueryCommand> StartBuilder<T>(this QueryCommand command, ref T value) {
         var builder = new QueryBuilder<QueryCommand>(command);
         builder.Use(ref value);
         return builder;
@@ -23,7 +23,7 @@ public static class QueryBuilderExtensions {
         builder.Use(ref value);
         return builder;
     }
-    public static QueryBuilder<QueryCommand> StartBuilder<TQC, T>(this QueryCommand command, T value) {
+    public static QueryBuilder<QueryCommand> StartBuilder<T>(this QueryCommand command, T value) {
         var builder = new QueryBuilder<QueryCommand>(command);
         builder.Use(ref value);
         return builder;

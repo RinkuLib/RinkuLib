@@ -53,7 +53,7 @@ public interface IQueryCommand : IParserCache {
 /// and literal injections.</para>
 /// </remarks>
 public class QueryCommand : IQueryCommand {
-    public static QueryCommand New(string query, bool extractSelects, char variableChar = default) {
+    public static QueryCommand New(string query, bool extractSelects = false, char variableChar = default) {
         var factory = new QueryFactory(query, extractSelects, variableChar == default ? IQueryCommand.DefaultVariableChar : variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap);
         return new QueryCommand(factory);
     }

@@ -6,7 +6,7 @@ public static class BuilderStarter {
         => new(command);
     public static QueryBuilderCommand<QueryCommand, T> StartBuilder<T>(this QueryCommand command, T cmd) where T : IDbCommand
         => new(command, cmd);
-    public static QueryBuilder<QueryCommand> StartBuilder(this QueryCommand command, params Span<(string, object)> values) { 
+    public static QueryBuilder<QueryCommand> StartBuilderWith(this QueryCommand command, params Span<(string, object)> values) { 
         var builder = new QueryBuilder<QueryCommand>(command);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];
@@ -14,7 +14,7 @@ public static class BuilderStarter {
         }
         return builder;
     }
-    public static QueryBuilderCommand<QueryCommand, T> StartBuilder<T>(this QueryCommand command, T cmd, params Span<(string, object)> values) where T : IDbCommand {
+    public static QueryBuilderCommand<QueryCommand, T> StartBuilderWith<T>(this QueryCommand command, T cmd, params Span<(string, object)> values) where T : IDbCommand {
         var builder = new QueryBuilderCommand<QueryCommand, T>(command, cmd);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];
