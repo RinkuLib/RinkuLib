@@ -13,27 +13,14 @@ public readonly struct ColModifier(params INameComparer[] Comparers) {
     /// <param name="comparer">The comparer to add to the chain.</param>
     /// <returns>A new modifier containing the updated chain.</returns>
     public readonly ColModifier Add(INameComparer comparer) {
+        if (comparer == NoNameComparer.Instance)
+            return this;
         if (_comparers.Length == 0)
             return new([comparer]);
         int newLen = _comparers.Length + 1;
         var newArr = new INameComparer[newLen];
         Array.Copy(_comparers, newArr, _comparers.Length);
         newArr[newLen - 1] = comparer;
-        return new ColModifier(newArr);
-    }
-    /// <summary>
-    /// Creates a new <see cref="ColModifier"/> by appending multiple <see cref="INameComparer"/> 
-    /// instances to the current chain.
-    /// </summary>
-    /// <param name="comparers">The comparers to append.</param>
-    /// <returns>A new modifier containing the merged chain.</returns>
-    public readonly ColModifier Add(params INameComparer[] comparers) {
-        if (_comparers.Length == 0)
-            return new(comparers);
-        int newLen = _comparers.Length + comparers.Length;
-        var newArr = new INameComparer[newLen];
-        _comparers.CopyTo(newArr.AsSpan());
-        comparers.CopyTo(newArr.AsSpan(_comparers.Length));
         return new ColModifier(newArr);
     }
     /// <summary>

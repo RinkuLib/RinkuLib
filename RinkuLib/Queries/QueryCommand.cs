@@ -72,6 +72,8 @@ public class QueryCommand : IQueryCommand {
     public readonly int StartSpecialHandlers;
     public readonly int StartVariables;
     public readonly int EndSelect;
+    public QueryCommand(string query, bool extractSelects = false, char variableChar = default)
+        : this(new QueryFactory(query, extractSelects, variableChar == default ? IQueryCommand.DefaultVariableChar : variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap)) { }
     protected QueryCommand(QueryFactory factory) {
         Mapper = factory.Mapper;
         var segments = factory.Segments;

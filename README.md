@@ -11,23 +11,28 @@ The library is designed as two independent, highly customizable parts—one for 
 ```csharp
 // 1. INTERPRETATION: The blueprint (SQL Generation Part)
 // Define the template once; the structure is analyzed and cached.
-var sql = "SELECT ID, Name FROM Users WHERE Group = @Grp AND Age > ?@MinAge AND Cat = ?@Category";
-var query = QueryCommand.New(sql);
+string sql = "SELECT ID, Name FROM Users WHERE Group = @Grp AND Age > ?@MinAge AND Cat = ?@Category";
+QueryCommand query = new QueryCommand(sql);
 
 // 2. STATE DEFINITION: The transient builder (State Data)
 // Create a builder for a specific database trip.
-var builder = query.StartBuilder();
+QueryBuilder builder = query.StartBuilder();
 builder.Use("@Grp", "Admin");    // Required: Fails if missing.
 builder.Use("@MinAge", 18);      // Optional: Used, so segment is preserved.
                                  // @Category: NOT used, so segment is pruned.
 
 // 3. EXECUTION: Unified process (SQL Generation + Type Parsing Negotiation)
 // RinkuLib generates the final SQL and fetches the compiled parser delegate.
-using var cnn = GetConnection();
-var users = builder.QueryMultiple<User>(cnn);
+using DbConnection cnn = GetConnection();
+IEnumerable<User> users = builder.QueryMultiple<User>(cnn);
 
 // Resulting SQL: SELECT ID, Name FROM Users WHERE Group = @Grp AND Age > @MinAge
 ```
+
+### The Philosophy: A Cohesive, Recursive Toolkit
+
+RinkuLib is a full-process data tool designed as a series of interconnected, independent modules that work together for a seamless ORM experience. Its "open" architecture is built on a Tree of Responsibility—a nested hierarchy where every major process is decomposable into specialized sub-processes. This ensures you are never "locked in"; you can override a high-level engine, parameterize a mid-level branch, or inject logic into a single leaf-node, allowing you to "plug in" at any level of granularity without breaking the chain.
+
 
 ### The 3-Step Process
 
@@ -38,7 +43,74 @@ var users = builder.QueryMultiple<User>(cnn);
 3.  **Execution (`QueryX` methods):** This is the **final operation**. Using methods (such as `QueryMultipleAsync`, `QueryFirst`, etc.), the engine takes the blueprint from Step 1 and the data from Step 2 to generate the finalized SQL. It then negotiates for the compiled mapping function—either fetching or generating the most appropriate construction process for the current database schema—to turn the results into your C# objects.
 
 
+
+
 ---
+
+## Templating Syntax
+
+RinkuLib uses a SQL template to build a **structural blueprint**. This blueprint identifies **Conditional Segments** and their boundaries. When generating the final SQL, the blueprint prunes these segments if their associated keys are not used, while ensuring the resulting string maintains valid SQL syntax.
+
+> **Data Provision Warning:** Standard parameters (e.g., `@ID`) are treated as static text by the blueprint. If a parameter's segment is preserved but no value is provided by your code, the **Database Provider** will throw an error during execution. The blueprint only manages the *presence* of the parameter string, not its value.
+
+### Guide to Examples
+The following examples illustrate how the blueprint transforms the template when conditions are not met:
+* **Template:** The source SQL template string.
+* **Result:** The generated SQL when the conditional keys are **Not Used**.
+
+---
+
+## 1. Foundation: Standard SQL
+Standard SQL and parameters are treated as static text. If they are not wrapped in conditional markers, they are always preserved.
+
+### Static Parameters
+* **Template:** `SELECT * FROM Users WHERE ID = @ID`
+* **Result:** `SELECT * FROM Users WHERE ID = @ID`
+
+---
+
+## 2. Dynamic Filtering: Optional Variables (`?@`)
+The `?@` prefix tells the blueprint that the surrounding segment depends on that specific key. If the key is Not Used, the blueprint prunes the footprint.
+
+### Basic Filter Pruning
+* **Template:** `SELECT * FROM Users WHERE Group = 'Admin' AND Age > ?@MinAge`
+* **Result:** `SELECT * FROM Users WHERE Group = 'Admin'`
+
+### Automatic Keyword Management
+The blueprint omits keywords like `WHERE` if the internal conditions are pruned.
+* **Template:** `SELECT * FROM Users WHERE Name = ?@Name`
+* **Result:** `SELECT * FROM Users`
+
+### List Management (Commas)
+Commas in lists are managed so that pruning an item doesn't leave a syntax error.
+* **Template:** `UPDATE Users SET Name = @Name, ?@Email, ?@Phone WHERE ID = @ID`
+* **Result:** `UPDATE Users SET Name = @Name WHERE ID = @ID`
+
+---
+
+## 3. Structural Control: Logic Markers (`/*...*/`)
+Markers define segments based on keys without requiring a parameter at that specific location.
+
+### Boolean Toggles (Flags)
+Control a branch with a simple signal.
+* **Template:** `SELECT * FROM Users WHERE IsActive = 1 /*ShowDeleted*/ OR IsDeleted = 1`
+* **Result:** `SELECT * FROM Users WHERE IsActive = 1`
+
+### Dependency Links
+Ties a structural block (like a `JOIN`) to a key used elsewhere in the query.
+* **Template:** `SELECT u.*, /*@Grp*/ g.Name FROM Users u /*@Grp*/ JOIN Groups g ON g.ID = u.GID WHERE u.ID = @ID`
+* **Result:** `SELECT u.* FROM Users u WHERE u.ID = @ID`
+
+### Section Toggles (Keyword Blocks)
+A marker placed immediately before a keyword captures that entire functional block.
+* **Template:** `SELECT * FROM Users u /*WithLogs*/ LEFT JOIN Logs l ON l.UID = u.ID WHERE u.ID = 1`
+* **Result:** `SELECT * FROM Users u WHERE u.ID = 1`
+
+### Linear Logic Gates
+Markers can combine multiple keys using `&` (AND) and `|` (OR), evaluated strictly left-to-right.
+* **Template:** `SELECT * FROM Orders WHERE ID > 0 /*Admin|Manager*/ AND InternalNote IS NOT NULL`
+* **Result:** `SELECT * FROM Orders WHERE ID > 0`
+
 # RinkuLib
 
 # RinkuLib: Logic-Agnostic SQL Templating

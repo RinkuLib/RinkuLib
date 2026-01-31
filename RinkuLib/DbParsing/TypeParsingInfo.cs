@@ -15,7 +15,7 @@ public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
             if (colUsage.IsUsed(i))
                 continue;
             var column = columns[i];
-            if (column.Type.CanConvert(closedTargetType))
+            if (column.Type.CanConvert(closedTargetType) && colModifier.Match(column.Name, NoNameComparer.Instance))
                 break;
         }
         if (i >= columns.Length)

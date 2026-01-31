@@ -1,21 +1,22 @@
 ﻿using System.Data;
+using System.Data.Common;
 
 namespace RinkuLib.Queries;
 public static class BuilderStarter {
-    public static QueryBuilder<QueryCommand> StartBuilder(this QueryCommand command)
+    public static QueryBuilder StartBuilder(this QueryCommand command)
         => new(command);
-    public static QueryBuilderCommand<QueryCommand, T> StartBuilder<T>(this QueryCommand command, T cmd) where T : IDbCommand
+    public static QueryBuilderCommand<T> StartBuilder<T>(this QueryCommand command, T cmd) where T : IDbCommand
         => new(command, cmd);
-    public static QueryBuilder<QueryCommand> StartBuilderWith(this QueryCommand command, params Span<(string, object)> values) { 
-        var builder = new QueryBuilder<QueryCommand>(command);
+    public static QueryBuilder StartBuilderWith(this QueryCommand command, params Span<(string, object)> values) { 
+        var builder = new QueryBuilder(command);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];
             builder.Use(key, value);
         }
         return builder;
     }
-    public static QueryBuilderCommand<QueryCommand, T> StartBuilderWith<T>(this QueryCommand command, T cmd, params Span<(string, object)> values) where T : IDbCommand {
-        var builder = new QueryBuilderCommand<QueryCommand, T>(command, cmd);
+    public static QueryBuilderCommand<T> StartBuilderWith<T>(this QueryCommand command, T cmd, params Span<(string, object)> values) where T : IDbCommand {
+        var builder = new QueryBuilderCommand<T>(command, cmd);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];
             builder.Use(key, value);
@@ -32,9 +33,9 @@ public static class BuilderStarter {
 /// The builder translates semantic names (like "ActiveOnly") into the specific state 
 /// tracking required by the underlying <see cref="QueryCommand"/>.
 /// </remarks>
-public readonly struct QueryBuilder<TQueryCmd>(TQueryCmd QueryCommand) : IQueryBuilder where TQueryCmd : QueryCommand {
+public readonly struct QueryBuilder(QueryCommand QueryCommand) : ICommandBuilder {
     /// <summary> The underlying command definition. </summary>
-    public readonly TQueryCmd QueryCommand = QueryCommand;
+    public readonly QueryCommand QueryCommand = QueryCommand;
     /// <summary> 
     /// The state-snapshot that drives SQL generation.
     /// <list type="bullet">
@@ -99,4 +100,46 @@ public readonly struct QueryBuilder<TQueryCmd>(TQueryCmd QueryCommand) : IQueryB
     }
     public readonly string GetQueryText()
         => QueryCommand.QueryText.Parse(Variables);
+
+    public DbCommand GetCommand(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
+        var cmd = cnn.CreateCommand();
+        if (transaction is not null)
+            cmd.Transaction = transaction;
+        if (timeout.HasValue)
+            cmd.CommandTimeout = timeout.Value;
+        QueryCommand.SetCommand(cmd, Variables);
+        return cmd;
+    }
+    public IDbCommand GetCommand(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
+        var cmd = cnn.CreateCommand();
+        if (transaction is not null)
+            cmd.Transaction = transaction;
+        if (timeout.HasValue)
+            cmd.CommandTimeout = timeout.Value;
+        if (cmd is DbCommand c)
+            QueryCommand.SetCommand(c, Variables);
+        else
+            QueryCommand.SetCommand(cmd, Variables);
+        return cmd;
+    }
+    public DbCommand GetCommandAndCache(DbConnection cnn, DbTransaction? transaction, int? timeout, out IParserCache? cache) {
+        var cmd = GetCommand(cnn, transaction, timeout);
+        cache = QueryCommand.NeedToCache(Variables) ? QueryCommand : null;
+        return cmd;
+    }
+    public IDbCommand GetCommandAndCache(IDbConnection cnn, IDbTransaction? transaction, int? timeout, out IParserCache? cache) {
+        var cmd = GetCommand(cnn, transaction, timeout);
+        cache = QueryCommand.NeedToCache(Variables) ? QueryCommand : null;
+        return cmd;
+    }
+    public DbCommand GetCommandAndInfo<T>(DbConnection cnn, DbTransaction? transaction, int? timeout, out IParserCache? cache, out Func<DbDataReader, T>? parser, out CommandBehavior behavior) {
+        var cmd = GetCommand(cnn, transaction, timeout);
+        cache = QueryCommand.GetCacheAndParser(Variables, out behavior, out parser);
+        return cmd;
+    }
+    public IDbCommand GetCommandAndInfo<T>(IDbConnection cnn, IDbTransaction? transaction, int? timeout, out IParserCache? cache, out Func<DbDataReader, T>? parser, out CommandBehavior behavior) {
+        var cmd = GetCommand(cnn, transaction, timeout);
+        cache = QueryCommand.GetCacheAndParser(Variables, out behavior, out parser);
+        return cmd;
+    }
 }

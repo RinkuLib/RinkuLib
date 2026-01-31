@@ -13,23 +13,23 @@ public delegate void QueryFillAction<T, TBuilder>(ref T instance, TBuilder build
 /// from the properties and fields of a source object.
 /// </summary>
 public static class QueryBuilderExtensions {
-    public static QueryBuilder<QueryCommand> StartBuilder<T>(this QueryCommand command, ref T value) {
-        var builder = new QueryBuilder<QueryCommand>(command);
+    public static QueryBuilder StartBuilder<T>(this QueryCommand command, ref T value) {
+        var builder = new QueryBuilder(command);
         builder.Use(ref value);
         return builder;
     }
-    public static QueryBuilderCommand<QueryCommand, TCmd> StartBuilder<TCmd, T>(this QueryCommand command, TCmd cmd, ref T value) where TCmd : IDbCommand {
-        var builder = new QueryBuilderCommand<QueryCommand, TCmd>(command, cmd);
+    public static QueryBuilderCommand<TCmd> StartBuilder<TCmd, T>(this QueryCommand command, TCmd cmd, ref T value) where TCmd : IDbCommand {
+        var builder = new QueryBuilderCommand<TCmd>(command, cmd);
         builder.Use(ref value);
         return builder;
     }
-    public static QueryBuilder<QueryCommand> StartBuilder<T>(this QueryCommand command, T value) {
-        var builder = new QueryBuilder<QueryCommand>(command);
+    public static QueryBuilder StartBuilder<T>(this QueryCommand command, T value) {
+        var builder = new QueryBuilder(command);
         builder.Use(ref value);
         return builder;
     }
-    public static QueryBuilderCommand<QueryCommand, TCmd> StartBuilder<TCmd, T>(this QueryCommand command, TCmd cmd, T value) where TCmd : IDbCommand {
-        var builder = new QueryBuilderCommand<QueryCommand, TCmd>(command, cmd);
+    public static QueryBuilderCommand<TCmd> StartBuilder<TCmd, T>(this QueryCommand command, TCmd cmd, T value) where TCmd : IDbCommand {
+        var builder = new QueryBuilderCommand<TCmd>(command, cmd);
         builder.Use(ref value);
         return builder;
     }

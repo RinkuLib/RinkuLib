@@ -12,9 +12,9 @@ namespace RinkuLib.Queries;
 /// every call to <see cref="Use"/> or <see cref="Remove"/> immediately updates 
 /// the underlying <see cref="Command"/> (e.g., adding, updating, or removing DB parameters).
 /// </remarks>
-public readonly struct QueryBuilderCommand<TQueryCmd, TCommand>(TQueryCmd QueryCommand, TCommand Command) : IQueryBuilder where TQueryCmd : QueryCommand where TCommand : IDbCommand {
+public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, TCommand Command) : IQueryBuilder where TCommand : IDbCommand {
     /// <summary> The underlying command definition. </summary>
-    public readonly TQueryCmd QueryCommand = QueryCommand;
+    public readonly QueryCommand QueryCommand = QueryCommand;
     /// <summary> 
     /// The current state map. Changes here are mirrored in the <see cref="Command"/>'s parameter collection.
     /// </summary>
