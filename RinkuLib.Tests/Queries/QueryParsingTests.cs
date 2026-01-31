@@ -5,7 +5,7 @@ namespace RinkuLib.Tests.Queries;
 public class QueryParsingTests {
     public static readonly DummyConnection DummyCnn = new();
 
-    private static void Verify(QueryBuilder<QueryCommand> builder, string finalQuery, ValueTuple<string, object>[] parameters) {
+    private static void Verify(QueryBuilder builder, string finalQuery, ValueTuple<string, object>[] parameters) {
         var cmd = DummyCnn.CreateDummyCommand();
         builder.QueryCommand.SetCommand(cmd, builder.Variables);
         var actualParameters = cmd.ParametersList;
@@ -16,15 +16,30 @@ public class QueryParsingTests {
         }
         Assert.Equal(finalQuery, cmd.CommandText);
     }
+
+    [Fact]
+    public void With_complete_condition() {
+        var sql = "WITH/*cte*/ parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = 1) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
+        var query = new QueryCommand(sql);
+        var builder = query.StartBuilder();
+        Verify(builder, " SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", []);
+    }
+    [Fact]
+    public void With_inner_condition() {
+        var sql = "WITH parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = ?@inner) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
+        var query = new QueryCommand(sql);
+        var builder = query.StartBuilder();
+        Verify(builder, "WITH parentTable AS (SELECT column1, column2 FROM table_name ) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", []);
+    }
     [Fact]
     public void Example1_StaticQuery() {
-        var query = QueryCommand.New("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", false);
+        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active");
         var builder = query.StartBuilder();
         Verify(builder, "SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", []);
     }
     [Fact]
     public void Example1_UnaviableParams() {
-        var query = QueryCommand.New("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", false);
+        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active");
         var builder = query.StartBuilder();
         // @Status is not provided
         Assert.False(builder.Use("NotInQuery", true));
@@ -33,28 +48,28 @@ public class QueryParsingTests {
     }
     [Fact]
     public void Example2_OptionalVariableFilter_NotProvided() {
-        var query = QueryCommand.New("SELECT ID, Username FROM Users WHERE IsActive = 1 AND Status = ?@Status", false);
+        var query = new QueryCommand("SELECT ID, Username FROM Users WHERE IsActive = 1 AND Status = ?@Status");
         var builder = query.StartBuilder();
         // @Status is not provided
         Verify(builder, "SELECT ID, Username FROM Users WHERE IsActive = 1 ", []);
     }
     [Fact]
     public void Example2_OptionalVariableFilter_Provided() {
-        var query = QueryCommand.New("SELECT ID, Username FROM Users WHERE IsActive = 1 AND Status = ?@Status", false);
+        var query = new QueryCommand("SELECT ID, Username FROM Users WHERE IsActive = 1 AND Status = ?@Status");
         var builder = query.StartBuilder();
         builder.Use("@Status", "Active");
         Verify(builder, "SELECT ID, Username FROM Users WHERE IsActive = 1 AND Status = @Status", [("@Status", "Active")]);
     }
     [Fact]
     public void Example3_BooleanToggle_NotProvided() {
-        var query = QueryCommand.New("SELECT ID, Username, Email FROM Users WHERE /*ActiveOnly*/Active = 1 ORDER BY Username", false);
+        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE /*ActiveOnly*/Active = 1 ORDER BY Username");
         var builder = query.StartBuilder();
         // ActiveOnly not used
         Verify(builder, "SELECT ID, Username, Email FROM Users  ORDER BY Username", []);
     }
     [Fact]
     public void Example3_BooleanToggle_Provided() {
-        var query = QueryCommand.New("SELECT ID, Username, Email FROM Users WHERE /*ActiveOnly*/Active = 1 ORDER BY Username", false);
+        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE /*ActiveOnly*/Active = 1 ORDER BY Username");
         var builder = query.StartBuilder();
         builder.Use("ActiveOnly");
         Verify(builder, "SELECT ID, Username, Email FROM Users WHERE Active = 1 ORDER BY Username", []);
@@ -62,13 +77,13 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example4_FunctionalFootprint_NotProvided() {
-        var query = QueryCommand.New("SELECT ID, u.Name FROM Users u WHERE u.Name LIKE CONCAT('%', ?@Name, '%')", false);
+        var query = new QueryCommand("SELECT ID, u.Name FROM Users u WHERE u.Name LIKE CONCAT('%', ?@Name, '%')");
         var builder = query.StartBuilder();
         Verify(builder, "SELECT ID, u.Name FROM Users u ", []);
     }
     [Fact]
     public void Example4_FunctionalFootprint_Provided() {
-        var query = QueryCommand.New("SELECT ID, u.Name FROM Users u WHERE u.Name LIKE CONCAT('%', ?@Name, '%')", false);
+        var query = new QueryCommand("SELECT ID, u.Name FROM Users u WHERE u.Name LIKE CONCAT('%', ?@Name, '%')");
         var builder = query.StartBuilder();
         builder.Use("@Name", "Dev");
         Verify(builder, "SELECT ID, u.Name FROM Users u WHERE u.Name LIKE CONCAT('%', @Name, '%')", [("@Name", "Dev")]);
@@ -76,7 +91,7 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example5_ImplicitAnd_PartialProvided() {
-        var query = QueryCommand.New("SELECT ID, Name FROM Products WHERE Price * ?@Modifier > ?@Minimum", false);
+        var query = new QueryCommand("SELECT ID, Name FROM Products WHERE Price * ?@Modifier > ?@Minimum");
         var builder = query.StartBuilder();
         builder.Use("@Modifier", 1.1);
         // @Minimum is missing, segment fails
@@ -84,7 +99,7 @@ public class QueryParsingTests {
     }
     [Fact]
     public void Example5_ImplicitAnd_AllProvided() {
-        var query = QueryCommand.New("SELECT ID, Name FROM Products WHERE Price * ?@Modifier > ?@Minimum", false);
+        var query = new QueryCommand("SELECT ID, Name FROM Products WHERE Price * ?@Modifier > ?@Minimum");
         var builder = query.StartBuilder();
         builder.Use("@Modifier", 1.5);
         builder.Use("@Minimum", 10.0);
@@ -93,13 +108,13 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example6_ContextJoining_NotProvided() {
-        var query = QueryCommand.New("SELECT * FROM Products WHERE Price IS NOT NULL &AND Price > ?@MinPrice", false);
+        var query = new QueryCommand("SELECT * FROM Products WHERE Price IS NOT NULL &AND Price > ?@MinPrice");
         var builder = query.StartBuilder();
         Verify(builder, "SELECT * FROM Products ", []);
     }
     [Fact]
     public void Example6_ContextJoining_Provided() {
-        var query = QueryCommand.New("SELECT * FROM Products WHERE Price IS NOT NULL &AND Price > ?@MinPrice", false);
+        var query = new QueryCommand("SELECT * FROM Products WHERE Price IS NOT NULL &AND Price > ?@MinPrice");
         var builder = query.StartBuilder();
         builder.Use("@MinPrice", 50);
         Verify(builder, "SELECT * FROM Products WHERE Price IS NOT NULL AND Price > @MinPrice", [("@MinPrice", 50)]);
@@ -108,14 +123,13 @@ public class QueryParsingTests {
     [Fact]
     public void Example7_SectionToggle_NotProvided() {
         var template = "SELECT p.ID, p.Name FROM Products p /*@VendorName*/INNER JOIN Vendors v ON v.ID = p.VendorID WHERE p.IsActive = 1 AND v.VendorName = ?@VendorName";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         Verify(builder, "SELECT p.ID, p.Name FROM Products p WHERE p.IsActive = 1 ", []);
     }
     [Fact]
     public void Example7_SectionToggle_Provided() {
-        var template = "SELECT p.ID, p.Name FROM Products p /*@VendorName*/INNER JOIN Vendors v ON v.ID = p.VendorID WHERE p.IsActive = 1 AND v.VendorName = ?@VendorName";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand("SELECT p.ID, p.Name FROM Products p /*@VendorName*/INNER JOIN Vendors v ON v.ID = p.VendorID WHERE p.IsActive = 1 AND v.VendorName = ?@VendorName");
         var builder = query.StartBuilder();
         builder.Use("@VendorName", "Microsoft");
         Verify(builder, "SELECT p.ID, p.Name FROM Products p INNER JOIN Vendors v ON v.ID = p.VendorID WHERE p.IsActive = 1 AND v.VendorName = @VendorName", [("@VendorName", "Microsoft")]);
@@ -123,7 +137,7 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example8_LinearLogic_AndGate_Partial() {
-        var query = QueryCommand.New("SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users", false);
+        var query = new QueryCommand("SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users");
         var builder = query.StartBuilder();
         builder.Use("Internal");
         // Authorized missing
@@ -131,7 +145,7 @@ public class QueryParsingTests {
     }
     [Fact]
     public void Example8_LinearLogic_AndGate_Partial2() {
-        var query = QueryCommand.New("SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users", false);
+        var query = new QueryCommand("SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users");
         var builder = query.StartBuilder();
         builder.Use("Authorized");
         // Internal missing
@@ -139,7 +153,7 @@ public class QueryParsingTests {
     }
     [Fact]
     public void Example8_LinearLogic_AndGate_Full() {
-        var query = QueryCommand.New("SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users", false);
+        var query = new QueryCommand("SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users");
         var builder = query.StartBuilder();
         builder.Use("Internal");
         builder.Use("Authorized");
@@ -148,15 +162,13 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example9_AtomicSubquery_NotProvided() {
-        var template = "SELECT ID, Name FROM Users WHERE /*@ActionType*/(SELECT Count(*) FROM Actions WHERE UserID = ID AND Type = @ActionType) > 0";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand("SELECT ID, Name FROM Users WHERE /*@ActionType*/(SELECT Count(*) FROM Actions WHERE UserID = ID AND Type = @ActionType) > 0");
         var builder = query.StartBuilder();
         Verify(builder, "SELECT ID, Name FROM Users ", []);
     }
     [Fact]
     public void Example9_AtomicSubquery_Provided() {
-        var template = "SELECT ID, Name FROM Users WHERE /*@ActionType*/(SELECT Count(*) FROM Actions WHERE UserID = ID AND Type = @ActionType) > 0";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand("SELECT ID, Name FROM Users WHERE /*@ActionType*/(SELECT Count(*) FROM Actions WHERE UserID = ID AND Type = @ActionType) > 0");
         var builder = query.StartBuilder();
         builder.Use("@ActionType", 2);
         Verify(builder, "SELECT ID, Name FROM Users WHERE (SELECT Count(*) FROM Actions WHERE UserID = ID AND Type = @ActionType) > 0", [("@ActionType", 2)]);

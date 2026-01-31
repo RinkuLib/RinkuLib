@@ -1,4 +1,7 @@
-﻿namespace RinkuLib.Queries;
+﻿using System.Data;
+using System.Data.Common;
+
+namespace RinkuLib.Queries;
 
 /// <summary>
 /// The control interface for deciding which parts of a query are active and what data they carry.
@@ -64,4 +67,12 @@ public interface IQueryBuilder {
     /// However, passing <c>false</c> will simply result in a no-op (does not call <see cref="Remove"/>).
     /// </remarks>
     bool Use(string variable, object value);
+}
+public interface ICommandBuilder : IQueryBuilder {
+    public DbCommand GetCommand(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null);
+    public IDbCommand GetCommand(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null);
+    public DbCommand GetCommandAndCache(DbConnection cnn, DbTransaction? transaction, int? timeout, out IParserCache? cache);
+    public IDbCommand GetCommandAndCache(IDbConnection cnn, IDbTransaction? transaction, int? timeout, out IParserCache? cache);
+    public DbCommand GetCommandAndInfo<T>(DbConnection cnn, DbTransaction? transaction, int? timeout, out IParserCache? cache, out Func<DbDataReader, T>? parser, out CommandBehavior behavior);
+    public IDbCommand GetCommandAndInfo<T>(IDbConnection cnn, IDbTransaction? transaction, int? timeout, out IParserCache? cache, out Func<DbDataReader, T>? parser, out CommandBehavior behavior);
 }

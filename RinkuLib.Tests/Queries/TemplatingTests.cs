@@ -68,6 +68,24 @@ public class TemplatingTests {
         }
     }
     [Fact]
+    public void With_complete_condition() {
+        var sql = "WITH/*cte*/ parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = 1) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
+        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+
+        // No markers mean the entire query is one "Always" segment.
+        var expectedSegments = new[] {
+            new SegmentVerify("WITH", 4, false),
+            new SegmentVerify(" parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = 1)", 0, false),
+            new SegmentVerify(" SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", 0, true)
+        };
+
+        var expectedConditions = new[] {
+            new ConditionVerify("cte", " parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = 1)", 1)
+        };
+
+        Verify(factory, expectedSegments, expectedConditions, ["cte", "@Active"]);
+    }
+    [Fact]
     public void Example1_StaticQuery() {
         var sql = "SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
         var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);

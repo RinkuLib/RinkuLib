@@ -1,6 +1,7 @@
 ﻿using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using RinkuLib.Commands;
+using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using Xunit;
 
@@ -48,5 +49,18 @@ public class CompleteTests {
         Assert.Equal("John", p.Username);
         Assert.Null(p.Email);
     }
+    [Fact]
+    public async Task Example1_StaticQuery_Object() {
+        var query = new QueryCommand("SELECT ID, Username, Email AS Emaill FROM Users WHERE IsActive = @Active");
+        var builder = query.StartBuilder();
+        builder.Use("@Active", true);
+        using var cnn = GetDbCnn();
+        var (p, email) = builder.QuerySingle<(Person, object)>(cnn);
+        Assert.Equal(1, p.ID);
+        Assert.Equal("John", p.Username);
+        Assert.Null(email);
+    }
 }
-public record Person(int ID, string Username, string Email);
+public record Person(int ID, string Username, string? Email) : IDbReadable {
+    public Person(int ID, string Username) :this(ID, Username, null) { }
+}
