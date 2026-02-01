@@ -86,6 +86,40 @@ public class TemplatingTests {
         Verify(factory, expectedSegments, expectedConditions, ["cte", "@Active"]);
     }
     [Fact]
+    public void Ignored_Comment() {
+        var sql = "SELECT /*~ optimizer hint */ ID, Username, Email FROM Users WHERE IsActive = @Active";
+        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+
+        // No markers mean the entire query is one "Always" segment.
+        var expectedSegments = new[] {
+            new SegmentVerify("SELECT /* optimizer hint */ ID, Username, Email FROM Users WHERE IsActive = @Active", 0, false)
+        };
+
+        // No conditional keys are extracted.
+        var expectedConditions = Array.Empty<ConditionVerify>();
+
+        Verify(factory, expectedSegments, expectedConditions, ["@Active"]);
+    }
+    [Fact]
+    public void Ignored_Comment_InOptional() {
+        var sql = "SELECT /*~ optimizer hint *//*ID*/ ID, Username, Email FROM Users WHERE IsActive = @Active";
+        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+
+        // No markers mean the entire query is one "Always" segment.
+        var expectedSegments = new[] {
+            new SegmentVerify("SELECT", 6, false),
+            new SegmentVerify(" /* optimizer hint */ ID,", 1, false),
+            new SegmentVerify(" Username, Email FROM Users WHERE IsActive = @Active", 0, false)
+        };
+
+
+        var expectedConditions = new[] {
+            new ConditionVerify("ID", " /* optimizer hint */ ID,", 1)
+        };
+
+        Verify(factory, expectedSegments, expectedConditions, ["ID", "@Active"]);
+    }
+    [Fact]
     public void Example1_StaticQuery() {
         var sql = "SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
         var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
@@ -99,6 +133,25 @@ public class TemplatingTests {
         var expectedConditions = Array.Empty<ConditionVerify>();
 
         Verify(factory, expectedSegments, expectedConditions, ["@Active"]);
+    }
+    [Fact]
+    public void Using_Empty_Join_Conds() {
+        var sql = "SELECT ID, Username FROM Users INNER JOIN Table t ON t.ID = ?@Cond WHERE IsActive = 1 AND Status = ?@Status";
+        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+
+        var expectedSegments = new[] {
+            new SegmentVerify("SELECT ID, Username FROM Users INNER JOIN Table t ON", 0, false),
+            new SegmentVerify(" t.ID = @Cond", 0, false),
+            new SegmentVerify(" WHERE IsActive = 1 AND", 3, true),
+            new SegmentVerify(" Status = @Status", 0, false)
+        };
+
+        var expectedConditions = new[] {
+            new ConditionVerify("@Cond", " t.ID = @Cond", 1),
+            new ConditionVerify("@Status", " Status = @Status", 1)
+        };
+
+        Verify(factory, expectedSegments, expectedConditions, ["@Cond", "@Status"]);
     }
     [Fact]
     public void Example2_OptionalVariableFilter() {

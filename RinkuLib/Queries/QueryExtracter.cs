@@ -144,8 +144,10 @@ public unsafe ref struct QueryExtracter {
     public const char OptionalVariableIdentifier = '?';
     /// <summary>Identifier for joining two (or more) footprint together (default '&amp;'). e.g., (SELECT A&amp;, B) or (WHERE A &gt; @A &amp;AND B &lt; @B)</summary>
     public const char JoinAndOrChar = '&';
+    public const char CommentAsCommentChar = '~';
     private int Length;
     private char* CurrentChar;
+    private char* LastChar;
     private char[] Builder;
     private Span<char> BuilderSpan;
     private int BuilderInd;
@@ -209,7 +211,8 @@ public unsafe ref struct QueryExtracter {
             CurrentChar = p;
             CurrentStart = ps;
             CurrentExcess = pe;
-            for (; *CurrentChar != '\0'; CurrentChar++) {
+            LastChar = p + Length;
+            for (; CurrentChar < LastChar; CurrentChar++) {
                 Builder[BuilderInd++] = *CurrentChar;
                 if (IsBoundary(*CurrentChar)) {
                     ManageBoundary();
@@ -404,6 +407,19 @@ public unsafe ref struct QueryExtracter {
         if (currentCharAddedToBuilder)
             BuilderInd--;
         CurrentChar += 2;
+        if (*CurrentChar == CommentAsCommentChar) {
+            Builder[BuilderInd++] = '/';
+            Builder[BuilderInd++] = '*';
+            CurrentChar++;
+            while (!(*CurrentChar == '*' && CurrentChar[1] == '/') && CurrentChar < LastChar)
+                Builder[BuilderInd++] = *CurrentChar++;
+            if (CurrentChar >= LastChar)
+                throw new Exception("comment unclosed");
+            CurrentChar++;
+            Builder[BuilderInd++] = '*';
+            Builder[BuilderInd++] = '/';
+            return false;
+        }
         var type = CondInfo.AndComment;
         var nbCond = 0;
         while (true) {
@@ -412,7 +428,7 @@ public unsafe ref struct QueryExtracter {
                 continue;
             nbCond++;
             Conditions.Add(CondInfo.NewOptional(cond, type, BuilderInd - 1, *CurrentStart, ParMap, *CurrentExcess));
-            if ((*CurrentChar == '*' && CurrentChar[1] == '/') || *CurrentChar == '\0')
+            if ((*CurrentChar == '*' && CurrentChar[1] == '/') || CurrentChar >= LastChar)
                 break;
             type = *CurrentChar == CondInfo.OrCommentChar ? CondInfo.OrComment : CondInfo.AndComment;
             CurrentChar++;
@@ -437,14 +453,14 @@ public unsafe ref struct QueryExtracter {
         while (char.IsWhiteSpace(*start))
             start++;
         CurrentChar = start;
-        while (*CurrentChar != 0) {
+        while (CurrentChar < LastChar) {
             if ((*CurrentChar == '*' && CurrentChar[1] == '/')
                 || *CurrentChar == '|'
                 || *CurrentChar == '&')
                 break;
             CurrentChar++;
         }
-        if (*CurrentChar == '\0')
+        if (CurrentChar >= LastChar)
             throw new Exception("comment unclosed");
         var i = (int)(CurrentChar - start);
         while (char.IsWhiteSpace(start[i]))
