@@ -269,9 +269,9 @@ An handled variable can also be used with optional parameters.
 
 > The keyword `FETCH` is not considered as a keyword, meaning that the footprint of `@Skip` cover it
 
-## Difference between `IBaseHandler` and `SpecialHandler`
+### Difference between `IBaseHandler` and `SpecialHandler`
 
-### `IBaseHandler`
+#### `IBaseHandler`
 
 An `IBaseHandler` handles only the query string. It modifies the SQL by injecting values directly into the string through its `Handle` method.
 
@@ -279,7 +279,7 @@ An `IBaseHandler` handles only the query string. It modifies the SQL by injectin
 
 ---
 
-### `SpecialHandler`
+#### `SpecialHandler`
 
 A `SpecialHandler` implements `IBaseHandler` but goes beyond just modifying the query string. In addition to modifying the SQL being generated, it also interacts with the `DbCommand`. It can bind values to parameters or perform additional actions that affect how the SQL query is executed.
 
