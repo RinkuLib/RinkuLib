@@ -118,7 +118,7 @@ public static class TypeParser<T> {
         bool isNullable = Nullable.GetUnderlyingType(typeof(T)) is not null;
         nullColHandler ??= isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance;
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
-        var rd = TypeParsingInfo.GetOrAdd(closedType)
+        var rd = TypeParsingInfo.ForceGet(closedType)
             .TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], nullColHandler, cols, new(), isNullable, ref colUsage);
         if (rd is null) {
             parser = default;

@@ -168,8 +168,13 @@ public class TypeParsingInfo {
     /// </summary>
     public static bool IsUsableType(Type type) {
         type = Nullable.GetUnderlyingType(type) ?? type;
-        if (type.IsGenericParameter || type.IsBaseType() || type.IsEnum 
-            || Get(type) is not null || type.IsAssignableTo(typeof(IDbReadable)))
+        if (type.IsGenericParameter || type.IsBaseType() || type.IsEnum)
+            return true;
+        if (TypeInfos.ContainsKey(type))
+            return true;
+        if (type.IsGenericType && TypeInfos.ContainsKey(type.GetGenericTypeDefinition()))
+            return true;
+        if (type.IsAssignableTo(typeof(IDbReadable)))
             return true;
         return false;
     }
@@ -189,26 +194,36 @@ public class TypeParsingInfo {
     /// </remarks>
     public static bool TryGetInfo(Type type, [MaybeNullWhen(false)] out TypeParsingInfo typeInfo) {
         type = Nullable.GetUnderlyingType(type) ?? type;
-        typeInfo = Get(type);
-        if (typeInfo is not null)
+        if (TypeInfos.TryGetValue(type, out typeInfo))
             return true;
+        if (type.IsBaseType() || type.IsEnum) {
+            typeInfo = Add(type);
+            return true;
+        }
+        if (type.IsGenericType) {
+            type = type.GetGenericTypeDefinition();
+            if (TypeInfos.TryGetValue(type, out typeInfo))
+                return true;
+        }
         if (!type.IsAssignableTo(typeof(IDbReadable)))
             return false;
-        if (type.IsGenericType)
-            type = type.GetGenericTypeDefinition();
         typeInfo = Add(type);
         return true;
     }
     /// <summary>
     /// Standard access point to retrieve or create a type's metadata registry.
     /// </summary>
-    public static TypeParsingInfo GetOrAdd(Type type)
-        => Get(type) ?? Add(type);
-    /// <summary>
-    /// Standard access point to retrieve or create a type's metadata registry.
-    /// </summary>
-    public static TypeParsingInfo GetOrAdd<T>() => GetOrAdd(typeof(T));
-    public static TypeParsingInfo GetOrAddGeneric<T>() => GetOrAdd(typeof(T).GetGenericTypeDefinition());
+    public static TypeParsingInfo ForceGet(Type type) {
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (TypeInfos.TryGetValue(type, out var infos))
+            return infos;
+        if (!type.IsGenericType)
+            return Add(type);
+        type = type.GetGenericTypeDefinition();
+        if (TypeInfos.TryGetValue(type, out infos))
+            return infos;
+        return Add(type);
+    }
     /// <summary>
     /// Performs a prioritized lookup in the global cache.
     /// </summary>
@@ -231,41 +246,30 @@ public class TypeParsingInfo {
             return infos;
         return null;
     }
-    public static void Add(params Span<KeyValuePair<Type, IDbTypeParserInfoMatcher?>> typesAndMakers) {
-        lock (WriteLock) {
-            var newDict = new Dictionary<Type, TypeParsingInfo>(TypeInfos);
-            for (var i = 0; i < typesAndMakers.Length; i++) {
-                var kvp = typesAndMakers[i];
-                var type = kvp.Key;
-                type = Nullable.GetUnderlyingType(type) ?? type;
-                if (!newDict.TryGetValue(type, out var infos))
-                    newDict[type] = new(type, kvp.Value);
-                else if (kvp.Value is not null)
-                    infos.Matcher = kvp.Value;
-            }
-            TypeInfos = newDict;
-        }
+    /// <summary>
+    /// Standard access point to retrieve or create a type's metadata registry.
+    /// </summary>
+    public static TypeParsingInfo GetOrAdd(Type type, bool saveAsGenericDefinitionWhenGeneric = true) {
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (TypeInfos.TryGetValue(type, out var infos))
+            return infos;
+        if (!type.IsGenericType)
+            return Add(type);
+        if (!saveAsGenericDefinitionWhenGeneric)
+            return Add(type);
+        type = type.GetGenericTypeDefinition();
+        if (TypeInfos.TryGetValue(type, out infos))
+            return infos;
+        return Add(type);
     }
-    public static void Add(params Span<Type> types) {
+    /// <summary>
+    /// Standard access point to retrieve or create a type's metadata registry.
+    /// </summary>
+    public static TypeParsingInfo GetOrAdd<T>(bool saveAsGenericDefinitionWhenGeneric = true) => GetOrAdd(typeof(T), saveAsGenericDefinitionWhenGeneric);
+    private static TypeParsingInfo Add(Type type) {
         lock (WriteLock) {
             var newDict = new Dictionary<Type, TypeParsingInfo>(TypeInfos);
-            for (var i = 0; i < types.Length; i++) {
-                var type = types[i];
-                type = Nullable.GetUnderlyingType(type) ?? type;
-                if (!newDict.ContainsKey(type))
-                    newDict[type] = new(type, null);
-            }
-            TypeInfos = newDict;
-        }
-    }
-    public static TypeParsingInfo Add(Type type) {
-        lock (WriteLock) {
-            var res = Get(type);
-            if (res is not null)
-                return res;
-            var newDict = new Dictionary<Type, TypeParsingInfo>(TypeInfos);
-            type = Nullable.GetUnderlyingType(type) ?? type;
-            res = new TypeParsingInfo(type, null);
+            var res = new TypeParsingInfo(type, null);
             newDict[type] = res;
             TypeInfos = newDict;
             return res;

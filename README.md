@@ -392,10 +392,10 @@ The mapping of letters to specific handlers is entirely flexible. While `N`, `S`
 
 Handlers are registered in two separate mappers depending on their complexity. Both mappers use a `char` as a key and a factory delegate as the value:
 
-| Mapper | Target Type | Register Type | Purpose |
-| --- | --- | --- | --- |
-| `QueryFactory.BaseHandlerMapper` | `IQuerySegmentHandler` | `LetterMap<HandlerGetter<IQuerySegmentHandler>>` | For handlers that only modify the **SQL string** (e.g., `_N`, `_S`). |
-| `SpecialHandler.SpecialHandlerGetter` | `SpecialHandler` | `LetterMap<HandlerGetter<SpecialHandler>>` | For handlers that interact with the **`DbCommand`** (e.g., `_X`). |
+| Mapper | Register Type | Purpose |
+| --- | --- | --- |
+| `QueryFactory.BaseHandlerMapper` | `LetterMap<HandlerGetter<IQuerySegmentHandler>>` | Only modify the **SQL string** (e.g., `_N`, `_S`). |
+| `SpecialHandler.SpecialHandlerGetter` | `LetterMap<HandlerGetter<SpecialHandler>>` | Also interact with the **`DbCommand`** (e.g., `_X`). |
 
 ##### Mapping Rules:
 
@@ -446,6 +446,280 @@ Keys are registered in a deterministic order during compilation:
 
 >Markers of the form `/*@Var*/` do not register a key since the referenced `@Var` is already registered as a variable.
 
+---
+
+# The Mapping Engine: Registry & Negotiation
+
+The Mapping Engine is a system for defining how C# types should be interpreted. Its sole purpose is to produce an optimized `Func<DbDataReader, T>` based on a specific database schema.
+
+As a developer, you interact with the **Metadata Cache**—a registry of rules that the engine builds as it encounters types—which it later uses to **Negotiate** with the database to generate the final function.
+
+## The Goal: `GetParser`
+
+To get the compiled function, a `ColumnInfo[]` is required.
+A `ColumnInfo` is a simple `struct` that save the `Type`, the `Name` and the nullability of a column.
+
+```csharp
+// 1. Identify the columns from the reader
+ColumnInfo[] cols = reader.GetColumns();
+
+// 2. Obtain the parser and the execution behavior
+var parser = TypeParser<User>.GetParser(cols, out var behavior);
+
+```
+
+### Caching for Performance
+
+While `TypeParser<T>` internally caches the generated function for a given schema, the `defaultBehavior` is returned so that you can implement your own high-level cache. 
+
+By storing the `parser` alongside the `behavior`, you can bypass the need for the schema and optimize futur reader execution.
+> The `defaultBehavior` may indicate `SequentialAccess` or `SingleResult`
+
+---
+
+### **Type Registration**
+
+A type must be registered for the engine to know how to handle it. This happens in one of four ways:
+
+1. **Implicit Use:** Calling `GetParser<T>` for the first time automatically registers that type.
+2. **Basic Types & Enums:** The engine automatically registers any type supported directly by `DbDataReader` (like `string`, `int`, etc.) and all **Enums** the first time they are encountered.
+3. **Marker Interface:** Any class that implements the `IDbReadable` interface is automatically registered.
+4. **Manual Registration:** You can manually add a type using static methods on `TypeParsingInfo`. This is useful if you cannot modify the type or want to configure it before its first use.
+
+```csharp
+var info = TypeParsingInfo.GetOrAdd<User>();
+var info = TypeParsingInfo.GetOrAdd(typeof(KeyValuePair<,>));
+```
+
+---
+
+### Discovery Criteria
+
+The engine searches for "Entry Points" (constructors and factory methods) using these strict rules:
+
+* **Public Visibility:** Only **public** constructors and **public** static methods are discovered.
+* **Static Factory Methods:** A static method is only considered a factory if it:
+1. Is **non-generic**.
+2. Returns the **exact target type**.
+
+
+* **Viable Parameters:** Every parameter in the signature must be a type the engine knows how to handle. A parameter is viable if it is:
+* A **Basic Type** (string, int, DateTime, etc.) or an **Enum**.
+* An **IDbReadable** type.
+* A **Generic placeholder** (resolved at generation time).
+* Any type already registered in **TypeParsingInfo**.
+
+
+### **Specificity & Ordering Logic**
+
+When the engine populates the registry, it keeps the items in the order they were discovered (typically the order they appear in the code). However, it applies a **Specificity Rule** to resolve priority between related paths.
+
+#### **The Specificity Rule**
+
+A signature is considered **More Specific** than another if:
+
+1. It has **equal or more parameters**.
+AND
+2. **Every parameter** in the signature is either the same type or a more specific implementation of the corresponding parameter in the other signature.
+
+#### **The Move-Forward Behavior**
+
+The engine doesn't do a global "sort." Instead:
+
+* It maintains the natural order of appearance.
+* If a signature is identified as **More Specific** than one that currently precedes it, the engine moves the specific one **directly in front** of the less specific one.
+
+
+---
+
+### Example: Discovery and Specificity
+
+The engine automatically sorts these paths. It will always attempt to use the most "informative" path—the one that maps the most columns—before falling back to simpler ones.
+
+```csharp
+public class Product : IDbReadable
+{
+    // Path 1 (Priority 1): 3 parameters. 
+    // All types (int, string, decimal) are Basic.
+    public Product(int id, string name, decimal price) { ... }
+
+    // Path 2 (Priority 2): 2 parameters.
+    public Product(int id, string name) { ... }
+
+    // Path 3 (Priority 3): Static Factory.
+    // Public, Non-generic, returns Product, uses Basic type.
+    public static Product Create(int id) => new Product(id, "Unknown");
+
+    // IGNORED: Private
+    private Product() { }
+
+    // IGNORED: Static but returns the wrong type
+    public static int GetDefaultTax() => 15;
+
+    // IGNORED: Static but is a Generic Method
+    public static T CreateCustom<T>(int id) where T : Product => ...;
+}
+
+```
+
+### The Selection Logic
+
+When you call `GetParser`, the engine checks these paths in order:
+
+1. **Can I fill Path 1?** (Does the SQL have `id`, `name`, and `price`?)
+2. If not, **Can I fill Path 2?** (Does the SQL have `id` and `name`?)
+3. If not, **Can I fill Path 3?** (Does the SQL have `id`?)
+
+If no path can be fully satisfied by the columns in your `ColumnInfo[]`, the negotiation for this type fails.
+
+---
+
+
+
+
+
+
+
+### **The Specificity & Ordering Logic**
+
+When the engine populates the registry, it keeps the items in the order they were discovered (typically the order they appear in the code). However, it applies a **Specificity Rule** to resolve priority between related paths.
+
+#### **The Specificity Rule**
+
+A signature is considered **More Specific** than another if:
+
+1. It has **equal or more parameters**.
+2. **Every parameter** in the signature is either the same type or a more specific implementation of the corresponding parameter in the other signature.
+
+#### **The Move-Forward Behavior**
+
+The engine doesn't do a global "sort." Instead:
+
+* It maintains the natural order of appearance.
+* If a signature is identified as **More Specific** than one that currently precedes it, the engine moves the specific one **directly in front** of the less specific one.
+
+---
+
+### **Example: Targeted Promotion**
+
+Consider this class where the "Master" creator is defined at the bottom of the file:
+
+```csharp
+public class User
+{
+    // Path A: Appears first (2 params)
+    public User(int id, string name) { ... }
+
+    // Path B: Appears second (1 param)
+    public User(int id) { ... }
+
+    // Path C: Appears third (3 params)
+    // This is MORE SPECIFIC than Path A and Path B.
+    public User(int id, string name, string email) { ... }
+}
+
+```
+
+**How the Registry orders them:**
+
+1. **Initial discovery:** [Path A, Path B, Path C]
+2. **Evaluation:** The engine sees **Path C** is more specific than **Path A**.
+3. **Reordering:** It moves Path C to the first available slot that satisfies the specificity requirement.
+4. **Final Order:** **[Path C, Path A, Path B]**
+
+### **Why this matters for Negotiation**
+
+This logic ensures that if your SQL result contains `id`, `name`, and `email`, the engine will successfully match **Path C** first. Without this promotion, the engine might have "settled" for **Path A** (since it only requires `id` and `name`), leaving the `email` column unused.
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+---
+## 1. The Metadata Cache (The Blueprint)
+
+The engine maintains a cache of **Blueprints** for every type it encounters. This cache is the "source of truth" that defines how a type can be constructed and which members are available for mapping.
+
+### Construction Paths
+
+The blueprint stores a list of "Entry Points"—constructors or static factory methods—that the engine can use to create an instance.
+
+* **Discovery & Acceptance Criteria (Automatic):** Registers **public** constructors and **public, static, non-generic** factory methods returning the exact target type.
+* **Manual Additions (Explicit Registration):** Allows for non-public paths (internal/private).
+    * **Requirement for Generics:** If the target type is generic, a manual factory method **must be generic and possess the exact same generic signature** as the target type to allow for specialization during the generation phase.
+* **Path Viability & Known Types:** A path is only viable if all parameters are **Known Types** (types with their own `TypeParsingInfo`, `IReadable` implementations, or Basic Types).
+    * **Basic Types:** `string`, `int`, `DateTime`, `bool`, `long`, `decimal`, `Guid`, `object`, `float`, `double`, `char`, `byte`, `short`, all **Enums**, and all **Unsigned equivalents**.
+* **Specificity & Ordering:** Prioritizes the order of appearance but moves **More Specific** signatures ahead.
+    * **Specificity Rule:** A signature is more specific if it has **equal or more parameters AND every parameter is the same type or a more specific implementation**.
+
+
+### Member Metadata
+* **Scope:** Includes **public editable Fields** and **Properties**.
+* **Conditional Completion:** Only the **parameterless constructor** authorizes member completion by default. Other paths must be explicitly configured to allow it.
+* **Post-Instantiation Overwriting:** Authorized member population occurs after construction, potentially overwriting values set by the constructor if the schema provides a match for that member.
+
+### Custom Orchestration
+Developers can replace the default strategy with a custom implementation to take full control over the **Tree Generation** process and the **Matching Conditions**.
+
+### Member and Parameters registery
+Each members and each parameters are saved as a `IDbTypeParserMatcher`, this item handle the negotiation for its specific item. 
+
+A custom `IDbTypeParserMatcher` may be used, but by default, a `ParamInfo` is created.
+
+## ParamInfo
+
+* **Name & Alternative Names:** Defines the primary identity and alternatives which constitute the **Name Comparer** used to recognize columns in the reader.
+* **Type Context:** Stores the target C# type, including generic placeholders to be resolved during generation.
+* **Nullability Handling & Structural Anchors:** Defines the intended reaction to nullable columns (to be used later during Step B: Emission).
+---
+
+## 2. The Negotiation Phase
+
+Negotiation is a transient process that occurs when the engine compares a **Cached Blueprint** against a **Live Database Schema**.
+
+### Path Selection
+
+When a query is executed, the engine evaluates the columns in the `DbDataReader` against the available paths in the blueprint:
+
+1. It iterates through the construction paths in order of priority.
+2. It verifies if the SQL result contains a matching column for **every** parameter in that signature.
+3. **Commitment:** If all parameters match, it commits to that path. If any parameter is missing, it discards that path and moves to the next one.
+
+### Recursive Mapping
+
+If a constructor parameter or property is a complex type, the engine "dives" into that type's blueprint to continue the negotiation. It uses the parent's member name as a prefix (e.g., `Address_City`) to ensure the child object finds its specific data in the row.
+
+---
+
+## 3. Generation and Performance
+
+The developer's role is to manage the **Blueprint**; the engine's role is to handle the **Generation**.
+
+* **The Result:** The output of a successful negotiation is a compiled IL delegate. This function is as fast as hand-written mapping code because it eliminates reflection during the actual data loop.
+* **Execution Caching:** The final function is cached based on the **Type + SQL Schema**. If you run the same query again, the engine executes the cached function immediately. If you change the SQL (changing the "context"), the engine simply performs a new negotiation using your existing blueprint.
+
+---
+
+### Summary of Workflow
+
+| Component | Responsibility | Developer Interaction |
+| --- | --- | --- |
+| **Metadata Cache** | Stores the rules for a Type. | Add, remove, or modify construction paths and member authorization. |
+| **Negotiation** | Matches rules against SQL columns. | Provide the schema via a query. |
+| **Generated Func** | Executes the mapping. | None (Automated output). |
+
+---
+
+**Since we've established that you participate in the "Rules" stage, would you like to see how to manually add a private factory method to a type's Blueprint so the Negotiation phase can use it?**
 
 
 ---
@@ -461,29 +735,7 @@ Keys are registered in a deterministic order during compilation:
 ---
 ---
 ---
-### 1. Automatic Clause Handling
-When a variable is marked as optional, the engine identifies the footprint of the condition. If the key is not used, the engine prunes the segment and ensures no dangling keywords remain.
 
-* **Template:** `SELECT * FROM Users WHERE Name = ?@Name`
-* **Result:** `SELECT * FROM Users`
-
----
-
-
-
-
-# Technical Documentation: The Recursive Parser Engine
-
-## Overview
-
-The **Recursive Parser Engine** is a Parser Factory that generates optimized `Func<DbDataReader, T>` delegates through a two-step process:
-
-1.  **Registration Phase**: Mapping components and configurations are defined within the engine’s registry.
-2.  **Negotiation Phase**: The engine evaluates the database schema against the target object graph to emit the final IL delegate.
-
-The tool is designed to provide high granularity for custom logic insertion points, allowing for precise control over the registered items used during the negotiation phase.
-
----
 
 ## Part 1: The Building Blocks (`TypeParsingInfo`)
 The engine maps every type to a `TypeParsingInfo` instance, which acts as the authoritative metadata registry.
