@@ -499,322 +499,330 @@ The engine searches for "Entry Points" (constructors and factory methods) using 
 
 * **Public Visibility:** Only **public** constructors and **public** static methods are discovered.
 * **Static Factory Methods:** A static method is only considered a factory if it:
-1. Is **non-generic**.
-2. Returns the **exact target type**.
+    * Is **non-generic**.
+    * Returns the **exact target type**.
 
 
 * **Viable Parameters:** Every parameter in the signature must be a type the engine knows how to handle. A parameter is viable if it is:
-* A **Basic Type** (string, int, DateTime, etc.) or an **Enum**.
-* An **IDbReadable** type.
-* A **Generic placeholder** (resolved at generation time).
-* Any type already registered in **TypeParsingInfo**.
-
+    * A **Basic Type** (string, int, DateTime, etc.) or an **Enum**.
+    * An **IDbReadable** type.
+    * A **Generic placeholder** (resolved at generation time).
+    * Any type already registered in **TypeParsingInfo**.
 
 ### **Specificity & Ordering Logic**
 
 When the engine populates the registry, it keeps the items in the order they were discovered (typically the order they appear in the code). However, it applies a **Specificity Rule** to resolve priority between related paths.
 
-#### **The Specificity Rule**
+* **The Specificity Rule:** A signature is considered **More Specific** than another if:
+    * It has **equal or more parameters**. AND
+    * **Every parameter** in the signature is either the same type or a more specific implementation of the corresponding parameter in the other signature.
 
-A signature is considered **More Specific** than another if:
-
-1. It has **equal or more parameters**.
-AND
-2. **Every parameter** in the signature is either the same type or a more specific implementation of the corresponding parameter in the other signature.
-
-#### **The Move-Forward Behavior**
-
-The engine doesn't do a global "sort." Instead:
-
-* It maintains the natural order of appearance.
-* If a signature is identified as **More Specific** than one that currently precedes it, the engine moves the specific one **directly in front** of the less specific one.
-
+* **The Move-Forward Behavior:** The engine doesn't do a global "sort." Instead:
+    * It maintains the natural order of appearance.
+    * If a signature is identified as **More Specific** than one that currently precedes it, the engine moves the specific one **directly in front** of the less specific one.
 
 ---
 
-### Example: Discovery and Specificity
+## **Example: Discovery & Specificity**
 
-The engine automatically sorts these paths. It will always attempt to use the most "informative" path—the one that maps the most columns—before falling back to simpler ones.
+The following example demonstrates how the engine handles discovery, filters out invalid signatures, and reorders the registry based on specificity.
 
 ```csharp
-public class Product : IDbReadable
-{
-    // Path 1 (Priority 1): 3 parameters. 
-    // All types (int, string, decimal) are Basic.
-    public Product(int id, string name, decimal price) { ... }
+public class UserProfile {
+    // A: Discovered first. Remains at top (nothing below is "More Specific").
+    public UserProfile(string username) { }
 
-    // Path 2 (Priority 2): 2 parameters.
-    public Product(int id, string name) { ... }
+    // B: Discovered second. 
+    public UserProfile(int id) { }
 
-    // Path 3 (Priority 3): Static Factory.
-    // Public, Non-generic, returns Product, uses Basic type.
-    public static Product Create(int id) => new Product(id, "Unknown");
+    // IGNORED: Private visibility.
+    private UserProfile(Guid internalId) { }
 
-    // IGNORED: Private
-    private Product() { }
+    // C: More specific than B. Moves directly in front of B.
+    public UserProfile(int id, string username) { }
 
-    // IGNORED: Static but returns the wrong type
-    public static int GetDefaultTax() => 15;
+    // D: Most specific. Moves directly in front of C.
+    public static UserProfile Create(int id, string username, DateTime lastLogin) { }
 
-    // IGNORED: Static but is a Generic Method
-    public static T CreateCustom<T>(int id) where T : Product => ...;
+    // E: Unrelated to B/C/D. Stays at the end in discovery order.
+    public UserProfile(DateTime manualExpiry, bool isAdmin) { }
+
+    // IGNORED: Returns 'object', not exact type 'UserProfile'.
+    public static object Build(int id) => new UserProfile(id);
+
+    // IGNORED: Static factories must be non-generic.
+    public static UserProfile Build<T>(T parameter) => ...;
 }
 
 ```
 
-### The Selection Logic
+### **Final Registry Order**
 
-When you call `GetParser`, the engine checks these paths in order:
+The "Move-Forward" logic creates "bubbles" of specificity without performing a global sort. Notice that **A** remains at the top because **D** and **C** are only more specific than **B**, not **A**.
 
-1. **Can I fill Path 1?** (Does the SQL have `id`, `name`, and `price`?)
-2. If not, **Can I fill Path 2?** (Does the SQL have `id` and `name`?)
-3. If not, **Can I fill Path 3?** (Does the SQL have `id`?)
-
-If no path can be fully satisfied by the columns in your `ColumnInfo[]`, the negotiation for this type fails.
-
----
-
-
-
-
-
-
-
-### **The Specificity & Ordering Logic**
-
-When the engine populates the registry, it keeps the items in the order they were discovered (typically the order they appear in the code). However, it applies a **Specificity Rule** to resolve priority between related paths.
-
-#### **The Specificity Rule**
-
-A signature is considered **More Specific** than another if:
-
-1. It has **equal or more parameters**.
-2. **Every parameter** in the signature is either the same type or a more specific implementation of the corresponding parameter in the other signature.
-
-#### **The Move-Forward Behavior**
-
-The engine doesn't do a global "sort." Instead:
-
-* It maintains the natural order of appearance.
-* If a signature is identified as **More Specific** than one that currently precedes it, the engine moves the specific one **directly in front** of the less specific one.
+| Priority | Signature | Source | Logic |
+| --- | --- | --- | --- |
+| **1** | `(string)` | **A** | **First Found:** No subsequent item was "More Specific" than this. |
+| **2** | `(int, string, DateTime)` | **D** | **Jumped:** Moved to front of **C** because it is more specific. |
+| **3** | `(int, string)` | **C** | **Jumped:** Moved to front of **B** because it is more specific. |
+| **4** | `(int)` | **B** | **Base Case:** Pushed down by its more specific variants. |
+| **5** | `(DateTime, bool)` | **E** | **Unrelated:** No overlap with B/C/D; maintains discovery order. |
 
 ---
 
-### **Example: Targeted Promotion**
+## **Manual Registration**
 
-Consider this class where the "Master" creator is defined at the bottom of the file:
+Manual registration allows you to explicitly define "Entry Points" that the engine might not otherwise find. This is useful for methods inside the class that are not public, or for logic located in entirely different classes.
+
+### **Working with Stack Equivalence**
+
+Manual registration is governed by **Stack Equivalence**. The engine will accept any `MethodBase` (constructor or method) as long as the resulting object can be treated as the target type on the evaluation stack.
+
+This allows you to map constructors from derived classes or factory methods from external builders directly to the target type's registry.
+
+### **Key Use Cases**
 
 ```csharp
-public class User
-{
-    // Path A: Appears first (2 params)
-    public User(int id, string name) { ... }
+var info = registry.GetOrAdd<UserProfile>();
 
-    // Path B: Appears second (1 param)
-    public User(int id) { ... }
+// 1. Visibility Overrides
+// Manually register a private constructor.
+var privateCtor = typeof(UserProfile).GetConstructor(
+    BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(Guid) }, null);
+info.AddPossibleConstruction(privateCtor);
 
-    // Path C: Appears third (3 params)
-    // This is MORE SPECIFIC than Path A and Path B.
-    public User(int id, string name, string email) { ... }
+// 2. External Factory Builders
+// Register a static method from an external "UserFactory" class.
+var externalFactory = typeof(UserFactory).GetMethod("CreateLegacyUser");
+info.AddPossibleConstruction(externalFactory);
+
+// 3. Constructors from Derived Types
+// Register a constructor from a derived type. This is valid because 
+// DerivedUserProfile is stack-equivalent to UserProfile.
+var derivedCtor = typeof(DerivedUserProfile).GetConstructor(new[] { typeof(int), typeof(int) });
+info.AddPossibleConstruction(derivedCtor);
+```
+
+### **Prioritization Logic**
+
+When you manually add a construction, it is treated as a **High Priority** item.
+
+1. **The Jump:** It attempts to move to the very top of the registry.
+2. **The Constraint:** It will only be stopped if an existing entry is **More Specific** than the one being added.
+3. **The Result:** If stopped, it settles directly behind that more specific entry.
+
+---
+Ah, that makes the API even cleaner. Having `PossibleConstructors` as a property with a setter implies a very direct "get, modify, set" workflow.
+
+Here is the final, corrected version of that section.
+
+---
+
+## **Refinement & Bulk Injection**
+
+For scenarios requiring total control, you can directly manipulate the collection of entry points. This is useful for re-sorting, filtering, or adding multiple items at once by interacting with the registry property.
+
+`public ReadOnlySpan<MethodCtorInfo> PossibleConstructors { get{...} set{...} }`
+
+### **Lazy Discovery & The `Init()` Method**
+
+The engine performs its automatic discovery **lazily**. This means that if you access or modify the registry before it has been initialized, the engine may still find and append public constructors later.
+
+* **To ensure you are working with the full set:** You should explicitly call `info.Init()` first. This forces the discovery phase to complete immediately.
+* **If you don't call `Init()`:** Any items you add manually will still follow the **Priority Logic**, but subsequent naturally discovered items will be added at the end (unless they are more specific than an existing item, in which case they will jump forward as usual).
+
+> You can create a `MethodCtorInfo` directly from any `MethodBase` using:
+> `new MethodCtorInfo(MethodBase methodBase)`. The `MethodCtorInfo` constructor performs validation for **Viable Parameters**. Use `public static bool TryNew(MethodBase MethodBase, out MethodCtorInfo mci)` for a safe alternative.
+
+> **Return Type Validation:** When setting the `PossibleConstructors` property, the engine performs a final check to ensure every entry is **Stack Equivalent** to the target type. If a method with an incompatible return type is found in your new collection, the engine will **throw an exception**.
+
+---
+
+## **Generic Type Handling**
+
+The engine treats generic types as their **Generic Type Definition** (e.g., `Result<>` rather than `Result<int>`) by default. This design ensures a single, centralized registry; any configurations or manual entry points added to the definition will automatically apply to every variation of that type.
+
+### **Priority: Closed vs. Open Definitions**
+
+When resolving a type, the engine prioritizes specificity to allow for "special case" overrides:
+
+1. **Exact Match:** It first checks if there is a registry entry for the specific **closed type** (e.g., a specialized configuration for `Result<string>`).
+2. **Generic Definition:** If no exact match is found, it uses the registry for the **generic definition** (e.g., `Result<>`) and closes the discovered methods during usage to match the required type arguments.
+
+### **Adding Generic Entry Points**
+
+To ensure the engine can successfully close methods at runtime, the following rules apply when adding entry points to a generic definition:
+
+* **Argument Mapping:** You can add a generic method as an entry point only if its generic arguments **match the target type exactly** in order and count.
+* **Non-Generic Declaring Types (Universal Rule):** Regardless of whether your target type is generic or non-generic, the **declaring class** of the method or constructor you are adding **cannot be generic**. The engine requires a concrete host to resolve the call.
+
+### **Example: Generic Factory Mapping**
+
+```csharp
+// The target type definition
+public class DataWrapper<T> 
+{ 
+    public DataWrapper(T value) { } 
 }
+
+// VALID: Non-generic static class
+public static class WrapperFactory
+{
+    public static DataWrapper<T> Create<T>(T value) => new DataWrapper<T>(value);
+}
+
+// INVALID: The declaring class is generic. 
+// Even if the method is valid, the engine cannot use this.
+public static class GenericFactory<T> 
+{
+    public static DataWrapper<T> Create(T value) => new DataWrapper<T>(value);
+}
+```
+
+## **Post-Creation Initialization**
+
+The `AvailableMembers` collection defines how the engine can continue to populate an object after it has been instantiated.
+
+`public ReadOnlySpan<MemberParser> AvailableMembers { get{...} set{...} }`
+
+### **Automatic Discovery**
+
+The engine identifies standard members for post-creation assignment:
+
+* **Fields:** Public fields (excluding `readonly` or `const`).
+* **Properties:** Properties with a **public setter**.
+
+> **Init-Only Properties are ignored**. Since this phase occurs after construction, `init` accessors cannot be called without causing runtime errors.
+
+### **Manual Registration & External Setters**
+
+You can manually add entries to `AvailableMembers` to include private members or **external setter methods**. When using an external method to initialize a value, it must follow these rules:
+
+* **Signature:** The method must be `static`. The **first parameter** must be the object instance being populated, and the **second parameter** must be the value to assign. (exactly 2 parameters)
+* **Non-Generic Declaring Types:** The class hosting the method **cannot be generic**.
+* **Generic Alignment:** If the target type is generic (e.g., `Wrapper<T>`), the setter method must also be generic with the exact same type arguments in the same order.
+
+```csharp
+public static class ExternalLogic
+{
+    // Instance first (UserProfile), Value second (string)
+    public static void SetSecretCode(UserProfile instance, string code) => ...
+}
+
+// Wrapping the method for the registry
+var method = typeof(ExternalLogic).GetMethod("SetSecretCode");
+var matcher = ParamInfo.TryNew(method.GetParameters()[1]); // Match against the value parameter
+var manualInit = new MemberParser(method, matcher);
 
 ```
 
-**How the Registry orders them:**
+---
 
-1. **Initial discovery:** [Path A, Path B, Path C]
-2. **Evaluation:** The engine sees **Path C** is more specific than **Path A**.
-3. **Reordering:** It moves Path C to the first available slot that satisfies the specificity requirement.
-4. **Final Order:** **[Path C, Path A, Path B]**
+## **Authorization & Execution**
 
-### **Why this matters for Negotiation**
+During negociation, the engine only consider these post-creation assignments if the selected construction path allows it:
 
-This logic ensures that if your SQL result contains `id`, `name`, and `email`, the engine will successfully match **Path C** first. Without this promotion, the engine might have "settled" for **Path A** (since it only requires `id` and `name`), leaving the `email` column unused.
+* **Authorized by Default:** Onlt the **parameterless constructor** authorize post-creation assignements by default.
+* **Authorized by Attribute:** Any path (constructor or factory) decorated with **`[CanCompleteWithMembers]`**.
+
+### **Warning: The Overwrite Risk**
+
+Post-initialization happens **after** the constructor runs. If a constructor sets a value that is also available in the data source, the post-initialization phase **will overwrite** the constructor's value.
+
+> When using `[CanCompleteWithMembers]`, ensure that values set by your constructor won't be overridden. You can prevent this by:
+>   1. Making the member non-public or non-writable (so it isn't discovered).
+>   2. Manually removing the member from the `AvailableMembers` collection.
 
 ---
 
+## **The Negotiation Matcher**
 
+The **`IDbTypeParserMatcher`** is the component that negotiates with the data schema. Every "slot" (constructor parameter or available member) is paired with a matcher that decides if the schema can satisfy its requirements.
 
+### **1. Discovery & Registry Building**
 
+When the engine builds its internal registry, it decides which matcher to use based on the attributes present on the item:
 
-
-
-
-
-
-
-
----
-## 1. The Metadata Cache (The Blueprint)
-
-The engine maintains a cache of **Blueprints** for every type it encounters. This cache is the "source of truth" that defines how a type can be constructed and which members are available for mapping.
-
-### Construction Paths
-
-The blueprint stores a list of "Entry Points"—constructors or static factory methods—that the engine can use to create an instance.
-
-* **Discovery & Acceptance Criteria (Automatic):** Registers **public** constructors and **public, static, non-generic** factory methods returning the exact target type.
-* **Manual Additions (Explicit Registration):** Allows for non-public paths (internal/private).
-    * **Requirement for Generics:** If the target type is generic, a manual factory method **must be generic and possess the exact same generic signature** as the target type to allow for specialization during the generation phase.
-* **Path Viability & Known Types:** A path is only viable if all parameters are **Known Types** (types with their own `TypeParsingInfo`, `IReadable` implementations, or Basic Types).
-    * **Basic Types:** `string`, `int`, `DateTime`, `bool`, `long`, `decimal`, `Guid`, `object`, `float`, `double`, `char`, `byte`, `short`, all **Enums**, and all **Unsigned equivalents**.
-* **Specificity & Ordering:** Prioritizes the order of appearance but moves **More Specific** signatures ahead.
-    * **Specificity Rule:** A signature is more specific if it has **equal or more parameters AND every parameter is the same type or a more specific implementation**.
-
-
-### Member Metadata
-* **Scope:** Includes **public editable Fields** and **Properties**.
-* **Conditional Completion:** Only the **parameterless constructor** authorizes member completion by default. Other paths must be explicitly configured to allow it.
-* **Post-Instantiation Overwriting:** Authorized member population occurs after construction, potentially overwriting values set by the constructor if the schema provides a match for that member.
-
-### Custom Orchestration
-Developers can replace the default strategy with a custom implementation to take full control over the **Tree Generation** process and the **Matching Conditions**.
-
-### Member and Parameters registery
-Each members and each parameters are saved as a `IDbTypeParserMatcher`, this item handle the negotiation for its specific item. 
-
-A custom `IDbTypeParserMatcher` may be used, but by default, a `ParamInfo` is created.
-
-## ParamInfo
-
-* **Name & Alternative Names:** Defines the primary identity and alternatives which constitute the **Name Comparer** used to recognize columns in the reader.
-* **Type Context:** Stores the target C# type, including generic placeholders to be resolved during generation.
-* **Nullability Handling & Structural Anchors:** Defines the intended reaction to nullable columns (to be used later during Step B: Emission).
----
-
-## 2. The Negotiation Phase
-
-Negotiation is a transient process that occurs when the engine compares a **Cached Blueprint** against a **Live Database Schema**.
-
-### Path Selection
-
-When a query is executed, the engine evaluates the columns in the `DbDataReader` against the available paths in the blueprint:
-
-1. It iterates through the construction paths in order of priority.
-2. It verifies if the SQL result contains a matching column for **every** parameter in that signature.
-3. **Commitment:** If all parameters match, it commits to that path. If any parameter is missing, it discards that path and moves to the next one.
-
-### Recursive Mapping
-
-If a constructor parameter or property is a complex type, the engine "dives" into that type's blueprint to continue the negotiation. It uses the parent's member name as a prefix (e.g., `Address_City`) to ensure the child object finds its specific data in the row.
+* **Attribute Presence (`IDbReadingMatcherMaker`):** If a parameter or member is decorated with an attribute that implements this interface, the engine calls that attribute to create the matcher. This provides **total control** over how that specific slot negotiates with the schema.
+* **Default Fallback (`ParamInfo`):** If no such attribute is present, the engine defaults to `ParamInfo`. While it is the default, it is highly configurable through other specific functional attributes.
 
 ---
+## **ParamInfo: The Type**
 
-## 3. Generation and Performance
+Since the type may not be final, the `ParamInfo` doesn't store a fixed set of matching rules. Instead, it waits until it is actually used. During the **negotiation phase**, it "closes" the type. Once the type is concrete, the `ParamInfo` decides how to handle it:
 
-The developer's role is to manage the **Blueprint**; the engine's role is to handle the **Generation**.
-
-* **The Result:** The output of a successful negotiation is a compiled IL delegate. This function is as fast as hand-written mapping code because it eliminates reflection during the actual data loop.
-* **Execution Caching:** The final function is cached based on the **Type + SQL Schema**. If you run the same query again, the engine executes the cached function immediately. If you change the SQL (changing the "context"), the engine simply performs a new negotiation using your existing blueprint.
-
+* **Basic Types:** If it resolves to something like an `int`, `string`, or `Enum`, it looks for a single column in the schema that matches the name and is implicitly convertible.
+* **Complex Types:** If it resolves to a complex type (like `T` becoming a specific class or `Result<T>` becoming `Result<User>`), it delegates the work. It asks the `TypeParsingInfo` for that specific type to handle the matching.
+That’s the most accurate way to frame it. The logic doesn't change based on depth; it is a consistent, recursive process where every `ParamInfo` simply applies the **Column Modifier** it received, regardless of whether that modifier is currently empty or already contains three layers of prefixes.
 ---
 
-### Summary of Workflow
+## **ParamInfo: The Names**
 
-| Component | Responsibility | Developer Interaction |
-| --- | --- | --- |
-| **Metadata Cache** | Stores the rules for a Type. | Add, remove, or modify construction paths and member authorization. |
-| **Negotiation** | Matches rules against SQL columns. | Provide the schema via a query. |
-| **Generated Func** | Executes the mapping. | None (Automated output). |
+The **`INameComparer`** manages a list of candidate names (the parameter/member name plus any **`[Alt(string altName)]`** names). This list is used to negotiate with the schema, but it never acts in isolation—it always operates through a **Column Modifier**. The Column Modifier is essentially a cumulative prefix that is passed down the construction tree. At the root level, this modifier is empty. As the engine moves deeper into nested types, the modifier grows.
 
+* **Simple Types:** The engine looks for a column by combining the current **Column Modifier** with its own **Candidate Names**. It iterates through its candidates and tries to find a match for `[Modifier] + [Candidate]`. The first one that is both name-matched and type-compatible wins.
+* **Complex Types (Delegation):** The `ParamInfo` doesn't match a column itself. Instead, it "updates" the Column Modifier. It appends its own name(s) to the existing modifier and passes this new, cumulative version down to the `TypeParsingInfo` registry.
 ---
 
-**Since we've established that you participate in the "Rules" stage, would you like to see how to manually add a private factory method to a type's Blueprint so the Negotiation phase can use it?**
+## **ParamInfo: The Null Handler**
 
+The **`INullColHandler`** provides instructions for the execution phase. It does not participate in the negotiation or the search for matching columns; instead, it defines how the compiled function reacts when a data source returns a `NULL`.
 
----
----
----
----
----
----
----
----
----
----
----
----
----
+### **Passing the Instruction**
 
+The `ParamInfo` carries the handler and dispatches it based on how the type is handled:
 
-## Part 1: The Building Blocks (`TypeParsingInfo`)
-The engine maps every type to a `TypeParsingInfo` instance, which acts as the authoritative metadata registry.
+* **Simple Types:** If a match is determined, the handler is passed to the compiler to generate the specific IL for that field or argument.
+* **Complex Types:** The handler is passed down to the **`TypeParsingInfo`**. It is made available to the sub-registry to be applied if a valid construction path is found.
 
-### 1. Construction Options (with Smart Prioritization)
-This is a registry of valid "entry points" (constructors or factory methods) for creating the type.
+### **Functional Control**
 
-* **Discovery & Acceptance Criteria (Automatic):** Registers **public** constructors and **public, static, non-generic** factory methods returning the exact target type.
-* **Manual Additions (Explicit Registration):** Allows for non-public paths (internal/private).
-    * **Requirement for Generics:** If the target type is generic, a manual factory method **must be generic and possess the exact same generic signature** as the target type to allow for specialization during the generation phase.
-* **Path Viability & Known Types:** A path is only viable if all parameters are **Known Types** (types with their own `TypeParsingInfo`, `IReadable` implementations, or Basic Types).
-    * **Basic Types:** `string`, `int`, `DateTime`, `bool`, `long`, `decimal`, `Guid`, `object`, `float`, `double`, `char`, `byte`, `short`, all **Enums**, and all **Unsigned equivalents**.
-* **Specificity & Ordering:** Prioritizes the order of appearance but moves **More Specific** signatures ahead.
-    * **Specificity Rule:** A signature is more specific if it has **equal or more parameters AND every parameter is the same type or a more specific implementation**.
+The engine assigns a handler based on the type's nature, which can be overridden by attributes:
 
-### 2. Member Metadata
-* **Scope:** Includes **public editable Fields** and **Properties**.
-* **Conditional Completion:** Only the **parameterless constructor** authorizes member completion by default. Other paths must be explicitly configured to allow it.
-* **Post-Instantiation Overwriting:** Authorized member population occurs after construction, potentially overwriting values set by the constructor if the schema provides a match for that member.
+* **`NullableColHandler`**: The default for reference types and `Nullable<T>`. It allows the `NULL` value to be passed through to the object.
+* **`NotNullColHandler`**: The default for non-nullable structs. It is also used when the **`[NotNull]`** attribute is applied to a reference type or `Nullable<T>`, ensuring an exception is thrown if a `NULL` is encountered.
+* **`[JumpIfNull]`**: This instruction tells the compiled function to immediately exit the current construction path. The "jump" moves execution to a predetermined jump-point, which usually bubbles up to the first nullable parent in the object graph. This allows the engine to return a `null` for a higher-level object rather than throwing an exception or returning a partially-filled instance.
+* **Custom Implementations**:
+* **`INullColHandler`**: Defines the logic for checking nulls and deciding the jump or exception behavior at execution time.
+* **`INullColHandlerMaker`**: A factory used during metadata discovery to produce the specific `INullColHandler` for a parameter or member.
 
-### 3. Custom Orchestration
-Developers can replace the default strategy with a custom implementation to take full control over the **Tree Generation** process and the **Matching Conditions**.
+### **Registry Example**
 
----
+#### **Source Code**
 
-## Part 2: The Atomic Unit: The Matching Item
-A **Matching Item** (representing a parameter, field, or property) is a definition of how a specific member should behave during negotiation.
+```csharp
+public class Container<T> {
+    public Container(
+        [NotNull] string label, 
+        [Alt("Item")] Item<T>? content
+    ) { ... }
+}
 
-### The Default Implementation
-* **Name & Alternative Names:** Defines the primary identity and alternatives which constitute the **Name Comparer** used to recognize columns in the reader.
-* **Type Context:** Stores the target C# type, including generic placeholders to be resolved during generation.
-* **Nullability Handling & Structural Anchors:** Defines the intended reaction to nullable columns (to be used later during Step B: Emission).
+public class Item<T> {
+    public Item(
+        [JumpIfNull] T id, 
+        string description
+    ) { ... }
+}
+```
+#### **1. Registry Entry: `Container<T>`**
 
----
+The engine has discovered and registered the following constructor for the `Container<T>` type.
 
-## Part 3: The Generation Phase (Default Process)
+**Constructor Signature:** `public Container(string label, Item<T>? content)`
 
-### Step A: Recursive Negotiation & Tree Generation
-The engine attempts to build an **Emission Tree**. If no custom matching logic is registered, it proceeds with the **Default Matching Implementation** described below.
+| Parameter | Saved Type | Name Candidates | Null Handler |
+| --- | --- | --- | --- |
+| **`label`** | `string` | `["label"]` | **`NotNullColHandler`** |
+| **`content`** | `Item<T>` | `["content", "Item"]` | **`NullableColHandler`** |
 
-#### 1. Type-Level Negotiation (Default)
-Determines how to instantiate a complex type by evaluating available paths:
-* **Path Selection:** Iterates through **Construction Options** in prioritized order.
-* **Path Validation:** Triggers a **Member-Level Negotiation** for every parameter in the signature.
-* **Commitment:** A path is selected only if **every** parameter successfully resolves to a node. If any parameter fails to generate a node, the entire path is discarded.
-* **The "Null" Result:** If all paths for a type are exhausted without a match, the negotiation returns **null**. The parent node interprets this result—usually by discarding its current path.
-* **Member Enrichment:** If a path is chosen and authorizes it, the engine negotiates for **Member Metadata** to append additional setters to the resulting node.
+#### **2. Registry Entry: `Item<T>`**
 
+The engine has discovered and registered the following constructor for the `Item<T>` type. This is stored as a reusable blueprint.
 
+**Constructor Signature:** `public Item(T id, string description)`
 
-#### 2. Member-Level Negotiation (Default)
-Handles the schema reconciliation for a specific parameter, field, or property:
-* **Type Specialization:** The engine first resolves the member's type. If generic, it uses the **Parent's Closed Type** to resolve placeholders into a concrete **Closed Type**.
-* **Complex Type Detection:** The engine attempts to retrieve `TypeParsingInfo` for the closed type.
-    * **If Complex:** It passes handling recursively to the associated **Type-Level Negotiation** call, passing the closed type, the **Column Modifier** (using its Name Comparer as a prefix), and its **Nullability Handle Info**.
-    * **If Terminal:** It searches for a column matching its **Name Comparer** (within the current modifier context) and its **Type**. If a match is found, it creates a node using the found index; otherwise, it returns **null**.
-
-#### 3. Tree Termination
-Recursion stops at **Terminal Points** (Basic Types or custom implementations that handle their own parsing).
-
----
-
-### Step B: Emission & Jump Points
-The engine traverses the negotiated tree to emit optimized IL.
-
-#### 1. Jump Point Management
-The engine maintains a **Stack of Recovery Locations** (Jump Points). Each complex node represents a potential return point for the logic flow.
-
-#### 2. Branch Pruning (The Nullability Handle)
-The **Nullability Handling Info** assigned during negotiation dictates the emitted IL:
-
-* **JumpIfNull:** Emits a branch instruction to skip instantiation and "jump" to the parent's recovery point if the column is `DBNull`.
-* **Nullable:** Emits code to return `null` or `default` and continues execution.
-* **Required (No Check):** Emits a direct cast. This will throw an exception if the column is `DBNull`.
-
-
-
----
-
-## Caching and Scope
-* **Function Caching:** Compiled delegates are cached against the **Target Type + Database Schema signature**.
-* **Schema Evolution:** Changes in SQL columns or aliases trigger a new **Negotiation Phase** to rebuild the tree, ensuring the IL is always optimized for the current data shape.
+| Parameter | Saved Type | Name Candidates | Null Handler |
+| --- | --- | --- | --- |
+| **`id`** | `T` (Generic) | `["id"]` | **`JumpIfNull`** |
+| **`description`** | `string` | `["description"]` | **`NullableColHandler`** |

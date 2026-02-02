@@ -92,6 +92,8 @@ public record class MemberParser {
                 break;
 
             case MethodInfo method:
+                if (method.ReturnType != typeof(void))
+                    return new Exception("A member setter method must return void");
                 var parameters = method.GetParameters();
                 if (method.IsStatic) {
                     if (parameters.Length != 2)
