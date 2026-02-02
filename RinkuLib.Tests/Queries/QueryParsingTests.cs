@@ -29,7 +29,7 @@ public class QueryParsingTests {
         var sql = "WITH parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = ?@inner) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
         var query = new QueryCommand(sql);
         var builder = query.StartBuilder();
-        Verify(builder, "WITH parentTable AS (SELECT column1, column2 FROM table_name ) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", []);
+        Verify(builder, "WITH parentTable AS (SELECT column1, column2 FROM table_name) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", []);
     }
     [Fact]
     public void Example1_StaticQuery() {
@@ -51,7 +51,25 @@ public class QueryParsingTests {
         var query = new QueryCommand("SELECT ID, Username FROM Users WHERE IsActive = 1 AND Status = ?@Status");
         var builder = query.StartBuilder();
         // @Status is not provided
-        Verify(builder, "SELECT ID, Username FROM Users WHERE IsActive = 1 ", []);
+        Verify(builder, "SELECT ID, Username FROM Users WHERE IsActive = 1", []);
+    }
+    [Fact]
+    public void Conditional_FirstCol_Usage() {
+        var query = new QueryCommand("SELECT DISTINCT??? /*ShowId*/ID, Name FROM Users");
+        var builder = query.StartBuilder();
+        Verify(builder, "SELECT DISTINCT Name FROM Users", []);
+    }
+    [Fact]
+    public void Conditional_FirstCol_Usage_No_Forced() {
+        var query = new QueryCommand("SELECT DISTINCT /*ShowId*/ID, Name FROM Users");
+        var builder = query.StartBuilder();
+        Verify(builder, "SELECT Name FROM Users", []);
+    }
+    [Fact]
+    public void Conditional_Distinct_Usage() {
+        var query = new QueryCommand("SELECT /*UseDistinct*/DISTINCT??? ID, Name FROM Users");
+        var builder = query.StartBuilder();
+        Verify(builder, "SELECT ID, Name FROM Users", []);
     }
     [Fact]
     public void Example2_OptionalVariableFilter_Provided() {
@@ -65,7 +83,7 @@ public class QueryParsingTests {
         var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE /*ActiveOnly*/Active = 1 ORDER BY Username");
         var builder = query.StartBuilder();
         // ActiveOnly not used
-        Verify(builder, "SELECT ID, Username, Email FROM Users  ORDER BY Username", []);
+        Verify(builder, "SELECT ID, Username, Email FROM Users ORDER BY Username", []);
     }
     [Fact]
     public void Example3_BooleanToggle_Provided() {
@@ -79,7 +97,7 @@ public class QueryParsingTests {
     public void Example4_FunctionalFootprint_NotProvided() {
         var query = new QueryCommand("SELECT ID, u.Name FROM Users u WHERE u.Name LIKE CONCAT('%', ?@Name, '%')");
         var builder = query.StartBuilder();
-        Verify(builder, "SELECT ID, u.Name FROM Users u ", []);
+        Verify(builder, "SELECT ID, u.Name FROM Users u", []);
     }
     [Fact]
     public void Example4_FunctionalFootprint_Provided() {
@@ -95,7 +113,7 @@ public class QueryParsingTests {
         var builder = query.StartBuilder();
         builder.Use("@Modifier", 1.1);
         // @Minimum is missing, segment fails
-        Verify(builder, "SELECT ID, Name FROM Products ", [("@Modifier", 1.1)]);
+        Verify(builder, "SELECT ID, Name FROM Products", [("@Modifier", 1.1)]);
     }
     [Fact]
     public void Example5_ImplicitAnd_AllProvided() {
@@ -110,7 +128,7 @@ public class QueryParsingTests {
     public void Example6_ContextJoining_NotProvided() {
         var query = new QueryCommand("SELECT * FROM Products WHERE Price IS NOT NULL &AND Price > ?@MinPrice");
         var builder = query.StartBuilder();
-        Verify(builder, "SELECT * FROM Products ", []);
+        Verify(builder, "SELECT * FROM Products", []);
     }
     [Fact]
     public void Example6_ContextJoining_Provided() {
@@ -125,7 +143,7 @@ public class QueryParsingTests {
         var template = "SELECT p.ID, p.Name FROM Products p /*@VendorName*/INNER JOIN Vendors v ON v.ID = p.VendorID WHERE p.IsActive = 1 AND v.VendorName = ?@VendorName";
         var query = new QueryCommand(template);
         var builder = query.StartBuilder();
-        Verify(builder, "SELECT p.ID, p.Name FROM Products p WHERE p.IsActive = 1 ", []);
+        Verify(builder, "SELECT p.ID, p.Name FROM Products p WHERE p.IsActive = 1", []);
     }
     [Fact]
     public void Example7_SectionToggle_Provided() {
@@ -164,7 +182,7 @@ public class QueryParsingTests {
     public void Example9_AtomicSubquery_NotProvided() {
         var query = new QueryCommand("SELECT ID, Name FROM Users WHERE /*@ActionType*/(SELECT Count(*) FROM Actions WHERE UserID = ID AND Type = @ActionType) > 0");
         var builder = query.StartBuilder();
-        Verify(builder, "SELECT ID, Name FROM Users ", []);
+        Verify(builder, "SELECT ID, Name FROM Users", []);
     }
     [Fact]
     public void Example9_AtomicSubquery_Provided() {
@@ -177,14 +195,14 @@ public class QueryParsingTests {
     private static readonly string[] MultipleValues = ["Test1", "Test2"];
     [Fact]
     public void Example10_CollectionHandler_X() {
-        var query = QueryCommand.New("SELECT * FROM Tasks WHERE CategoryID IN (?@Cats_X)", false);
+        var query = new QueryCommand("SELECT * FROM Tasks WHERE CategoryID IN (?@Cats_X)");
         var builder = query.StartBuilder();
         builder.Use("@Cats", MultipleValues);
         Verify(builder, "SELECT * FROM Tasks WHERE CategoryID IN (@Cats_1, @Cats_2)", [("@Cats_1", "Test1"), ("@Cats_2", "Test2")]);
     }
     [Fact]
     public void Example10_CollectionHandler_X_Many() {
-        var query = QueryCommand.New("SELECT * FROM Tasks WHERE CategoryID IN (?@Cats_X)", false);
+        var query = new QueryCommand("SELECT * FROM Tasks WHERE CategoryID IN (?@Cats_X)");
         var builder = query.StartBuilder();
         var amount = 150;
         builder.Use("@Cats", Enumerable.Range(1, amount));
@@ -194,14 +212,14 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example11_Missing() {
-        var query = QueryCommand.New("SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY", false);
+        var query = new QueryCommand("SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY");
         var builder = query.StartBuilder();
-        Verify(builder, "SELECT Name FROM Products ORDER BY ID ", []);
+        Verify(builder, "SELECT Name FROM Products ORDER BY ID", []);
     }
 
     [Fact]
     public void Example11_PassengerDependency_MissingRequired() {
-        var query = QueryCommand.New("SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY", false);
+        var query = new QueryCommand("SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY");
         var builder = query.StartBuilder();
         builder.Use("@Skip", 50);
         // @Take is not provided but is required inside the activated segment
@@ -211,7 +229,7 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example11_Complete() {
-        var query = QueryCommand.New("SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY", false);
+        var query = new QueryCommand("SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY");
         var builder = query.StartBuilder();
         builder.Use("@Skip", 50);
         builder.Use("@Take", 50);
@@ -219,7 +237,7 @@ public class QueryParsingTests {
     }
     [Fact]
     public void Example12_RawInjection_R() {
-        var query = QueryCommand.New("SELECT ID, Name FROM @Table_R WHERE IsActive = 1 AND Name = @Name_S", false);
+        var query = new QueryCommand("SELECT ID, Name FROM @Table_R WHERE IsActive = 1 AND Name = @Name_S");
         var builder = query.StartBuilder();
         builder.Use("@Table", "Logs");
         builder.Use("@Name", "Name");
@@ -229,7 +247,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example13_DynamicProjection_AggNotProvided() {
         var template = "SELECT /*Agg*/COUNT(*) AS Total&, SUM(Price) AS Revenue, p.CategoryName, /*NotAgg*/p.BrandName&, p.ID FROM Products p WHERE p.IsActive = 1 /*Agg*/GROUP BY p.CategoryName, p.BrandName";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("NotAgg");
         Verify(builder, "SELECT p.CategoryName, p.BrandName, p.ID FROM Products p WHERE p.IsActive = 1", []);
@@ -237,7 +255,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example13_DynamicProjection_AggProvided() {
         var template = "SELECT /*Agg*/COUNT(*) AS Total&, SUM(Price) AS Revenue, p.CategoryName, /*NotAgg*/p.BrandName&, p.ID FROM Products p WHERE p.IsActive = 1 /*Agg*/GROUP BY p.CategoryName, p.BrandName";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("Agg");
         // NotAgg is missing, but Agg is present
@@ -246,7 +264,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example13_DynamicProjection_BothProvided() {
         var template = "SELECT /*Agg*/COUNT(*) AS Total&, SUM(Price) AS Revenue, p.CategoryName, /*NotAgg*/p.BrandName&, p.ID FROM Products p WHERE p.IsActive = 1 /*Agg*/GROUP BY p.CategoryName, p.BrandName";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("Agg");
         builder.Use("NotAgg");
@@ -255,7 +273,7 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example14_ColumnJoining() {
-        var query = QueryCommand.New("SELECT ID, Username, /*IncludeAddress*/City&, Street&, ZipCode FROM Users", false);
+        var query = new QueryCommand("SELECT ID, Username, /*IncludeAddress*/City&, Street&, ZipCode FROM Users");
         var builder = query.StartBuilder();
         builder.Use("IncludeAddress");
         Verify(builder, "SELECT ID, Username, City, Street, ZipCode FROM Users", []);
@@ -263,7 +281,7 @@ public class QueryParsingTests {
 
     [Fact]
     public void Example14_ColumnJoining_Missing() {
-        var query = QueryCommand.New("SELECT ID, Username, /*IncludeAddress*/City&, Street&, ZipCode FROM Users", false);
+        var query = new QueryCommand("SELECT ID, Username, /*IncludeAddress*/City&, Street&, ZipCode FROM Users");
         var builder = query.StartBuilder();
         Verify(builder, "SELECT ID, Username FROM Users", []);
     }
@@ -271,7 +289,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example15_UpdateListCleanup() {
         var template = "UPDATE Users SET LastModified = GETDATE(), Username = ?@Username, Email = ?@Email WHERE ID = @ID";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Username", "jdoe");
         builder.Use("@ID", 1);
@@ -281,7 +299,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example15_UpdateListCleanup_AllProvided() {
         var template = "UPDATE Users SET LastModified = GETDATE(), Username = ?@Username, Email = ?@Email WHERE ID = @ID";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Username", "jdoe");
         builder.Use("@Email", "j@doe.com");
@@ -291,7 +309,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example15_UpdateListCleanup_MissingID() {
         var template = "UPDATE Users SET LastModified = GETDATE(), Username = ?@Username, Email = ?@Email WHERE ID = @ID";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Username", "jdoe");
         // @Email missing
@@ -301,7 +319,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example16_InsertColumnDependency() {
         var template = "INSERT INTO Users (Username, /*@Email*/Email) VALUES (@Username, ?@Email)";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Username", "alice");
         Verify(builder, "INSERT INTO Users (Username) VALUES (@Username)", [("@Username", "alice")]);
@@ -309,7 +327,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example16_InsertColumnDependency_Provided() {
         var template = "INSERT INTO Users (Username, /*@Email*/Email) VALUES (@Username, ?@Email)";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Username", "alice");
         builder.Use("@Email", "a@a.com");
@@ -319,7 +337,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example17_MultiColumnInsert() {
         var template = "INSERT INTO Profiles (UserID, /*Details*/Bio&, Website&, AvatarURL) VALUES (@UID, /*Details*/@Bio&, @Web&, @Img)";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("Details");
         builder.Use("@UID", 5);
@@ -332,7 +350,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example17_MultiColumnInsert_Provided() {
         var template = "INSERT INTO Profiles (UserID, /*Details*/Bio&, Website&, AvatarURL) VALUES (@UID, /*Details*/@Bio&, @Web&, @Img)";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("Details");
         builder.Use("@UID", 5);
@@ -344,7 +362,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example17_MultiColumnInsert_Alternative_Template() {
         var template = "INSERT INTO Profiles (UserID, /*@Bio&@Web&@Img*/Bio&, Website&, AvatarURL) VALUES (@UID, ?@Bio&, ?@Web&, ?@Img)";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Bio", "Hi");
         builder.Use("@Web", "site.com");
@@ -354,7 +372,7 @@ public class QueryParsingTests {
     [Fact]
     public void Example17_MultiColumnInsert_Alternative_Template_Provided() {
         var template = "INSERT INTO Profiles (UserID, /*@Bio&@Web&@Img*/Bio&, Website&, AvatarURL) VALUES (@UID, ?@Bio&, ?@Web&, ?@Img)";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Bio", "Hi");
         builder.Use("@Web", "site.com");
@@ -366,14 +384,14 @@ public class QueryParsingTests {
     [Fact]
     public void Example18_DeleteAndCleanup() {
         var template = "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND /*PurgeOldOnly*/IsArchived = 1";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
-        Verify(builder, "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 ", []);
+        Verify(builder, "DELETE FROM Logs WHERE LogDate < GETDATE() - 30", []);
     }
     [Fact]
     public void Example18_DeleteAndCleanup_Provided() {
         var template = "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND /*PurgeOldOnly*/IsArchived = 1";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("PurgeOldOnly");
         Verify(builder, "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND IsArchived = 1", []);
@@ -382,14 +400,14 @@ public class QueryParsingTests {
     [Fact]
     public void Example18_DeleteAndCleanup_Alternative() {
         var template = "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND (/*PurgeFromAll*/1=1 OR IsArchived = 1)";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         Verify(builder, "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND ( IsArchived = 1)", []);
     }
     [Fact]
     public void Example18_DeleteAndCleanup_Alternative_Provided() {
         var template = "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND (/*PurgeFromAll*/1=1 OR IsArchived = 1)";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("PurgeFromAll");
         Verify(builder, "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND (1=1 OR IsArchived = 1)", []);
@@ -397,16 +415,16 @@ public class QueryParsingTests {
     [Fact]
     public void Example19_DynamicOrderBy_Cleanup() {
         var template = "SELECT * FROM Products WHERE IsActive = 1 /*@Sort*/ORDER BY @Sort_R ?@Dir_R";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Sort", "Price");
         // @Dir is missing, footprint @Sort_R @Dir_R fails, leaving ORDER BY empty
-        Verify(builder, "SELECT * FROM Products WHERE IsActive = 1 ", []);
+        Verify(builder, "SELECT * FROM Products WHERE IsActive = 1", []);
     }
     [Fact]
     public void Example19_DynamicOrderBy_FullyProvided() {
         var template = "SELECT * FROM Products WHERE IsActive = 1 /*@Sort*/ORDER BY @Sort_R ?@Dir_R";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Sort", "Price");
         builder.Use("@Dir", "DESC");
@@ -415,31 +433,48 @@ public class QueryParsingTests {
     [Fact]
     public void Case_NotProvided() {
         var template = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category THEN 1 WHEN Category = 0 THEN ?@NoCategory_S ELSE 0 END = ?@CatFlag";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
-        Verify(builder, "SELECT * FROM Products ", []);
+        Verify(builder, "SELECT * FROM Products", []);
+    }
+    [Fact]
+    public void Case_Main_Not_Provided() {
+        var template = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category THEN 1 WHEN Category = 0 THEN ?@NoCategory_S ELSE 0 END = ?@CatFlag";
+        var query = new QueryCommand(template);
+        var builder = query.StartBuilder();
+        builder.Use("@CatFlag", 1);
+        Verify(builder, "SELECT * FROM Products WHERE CASE THEN 1 WHEN Category = 0 ELSE 0 END = @CatFlag", [("@CatFlag", 1)]);
     }
     [Fact]
     public void Case_Main_Provided() {
-        var template = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category THEN 1 WHEN Category = 0 THEN ?@NoCategory_S ELSE 0 END = ?@CatFlag";
-        var query = QueryCommand.New(template, false);
+        var template = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category /*@Category*/THEN 1 WHEN Category = 0 THEN ?@NoCategory_S ELSE 0 END = ?@CatFlag";
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@CatFlag", 1);
-        Verify(builder, "SELECT * FROM Products WHERE CASE  ELSE 0 END = @CatFlag", [("@CatFlag", 1)]);
+        Verify(builder, "SELECT * FROM Products WHERE CASE WHEN Category = 0 ELSE 0 END = @CatFlag", [("@CatFlag", 1)]);
     }
     [Fact]
     public void Case_One_Provided() {
         var template = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category THEN 1 WHEN Category = 0 THEN ?@NoCategory_S ELSE 0 END = ?@CatFlag";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@CatFlag", 1);
         builder.Use("@Category", 1);
-        Verify(builder, "SELECT * FROM Products WHERE CASE WHEN Category = @Category THEN 1  ELSE 0 END = @CatFlag", [("@Category", 1), ("@CatFlag", 1)]);
+        Verify(builder, "SELECT * FROM Products WHERE CASE WHEN Category = @Category THEN 1 WHEN Category = 0 ELSE 0 END = @CatFlag", [("@Category", 1), ("@CatFlag", 1)]);
+    }
+    [Fact]
+    public void Case_One_Provided_ActualUse() {
+        var template = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category THEN 1 /*@NoCategory*/WHEN Category = 0 THEN ?@NoCategory_S ELSE 0 END = ?@CatFlag";
+        var query = new QueryCommand(template);
+        var builder = query.StartBuilder();
+        builder.Use("@CatFlag", 1);
+        builder.Use("@Category", 1);
+        Verify(builder, "SELECT * FROM Products WHERE CASE WHEN Category = @Category THEN 1 ELSE 0 END = @CatFlag", [("@Category", 1), ("@CatFlag", 1)]);
     }
     [Fact]
     public void Case_All_Provided() {
         var template = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category THEN 1 WHEN Category = 0 THEN ?@NoCategory_N ELSE 0 END = ?@CatFlag";
-        var query = QueryCommand.New(template, false);
+        var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@CatFlag", 1);
         builder.Use("@Category", 1);
@@ -448,26 +483,35 @@ public class QueryParsingTests {
     }
     [Fact]
     public void Pure_String() {
-        var query = QueryCommand.New("SELECT ID, Username, Email FROM Users WHERE IsActive = 1", false);
+        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = 1");
         var builder = query.StartBuilder();
         Verify(builder, "SELECT ID, Username, Email FROM Users WHERE IsActive = 1", []);
     }
     [Fact]
     public void Extract_Select_None() {
-        var query = QueryCommand.New("SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1", true);
+        var query = new QueryCommand("?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1");
         var builder = query.StartBuilder();
-        Verify(builder, "SELECT FROM Users WHERE IsActive = 1", []);
+        Verify(builder, " FROM Users WHERE IsActive = 1", []);
     }
     [Fact]
+    public void Extract_Select_None_Union() {
+        var query = new QueryCommand("?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1 UNION ALL ?SELECT ID, Username, Email&, Test FROM Other");
+        var builder = query.StartBuilder();
+        builder.Use("ID");
+        builder.Use("Test");
+        Verify(builder, "SELECT ID, Email, Test FROM Users WHERE IsActive = 1 UNION ALL SELECT ID, Email, Test FROM Other", []);
+    }
+
+    [Fact]
     public void Extract_Select_One() {
-        var query = QueryCommand.New("SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1", true);
+        var query = new QueryCommand("?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1");
         var builder = query.StartBuilder();
         builder.Use("ID");
         Verify(builder, "SELECT ID FROM Users WHERE IsActive = 1", []);
     }
     [Fact]
     public void Extract_Select_Part_Join() {
-        var query = QueryCommand.New("SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1", true);
+        var query = new QueryCommand("?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1");
         var builder = query.StartBuilder();
         builder.Use("ID");
         builder.Use("Test");
@@ -475,7 +519,7 @@ public class QueryParsingTests {
     }
     [Fact]
     public void Extract_Select_Part_Join2() {
-        var query = QueryCommand.New("SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1", true);
+        var query = new QueryCommand("?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1");
         var builder = query.StartBuilder();
         builder.Use("ID");
         builder.Use("Email");
@@ -483,7 +527,7 @@ public class QueryParsingTests {
     }
     [Fact]
     public void Extract_Select_All() {
-        var query = QueryCommand.New("SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1", true);
+        var query = new QueryCommand("?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1");
         var builder = query.StartBuilder();
         builder.Use("Test");
         builder.Use("Username");
@@ -492,14 +536,21 @@ public class QueryParsingTests {
         Verify(builder, "SELECT ID, Username, Email, Test FROM Users WHERE IsActive = 1", []);
     }
     [Fact]
+    public void Extract_Select_Cte() {
+        var query = new QueryCommand("WITH U AS (?SELECT ID, Name, Salary FROM Users) SELECT * FROM U");
+        var builder = query.StartBuilder();
+        builder.Use("Name");
+        Verify(builder, "WITH U AS (SELECT Name FROM Users) SELECT * FROM U", []);
+    }
+    [Fact]
     public void Using_ObjectMapping() {
-        var query = QueryCommand.New("SELECT EmployeeId, FirstName, Salary, /*Year*/Year FROM Employees WHERE Salary >= ?@MinSalary AND Department = ?@DeptName AND Status = ?@EmployeeStatus ORDER BY Salary DESC", false);
+        var query = new QueryCommand("SELECT EmployeeId, FirstName, Salary, /*Year*/Year FROM Employees WHERE Salary >= ?@MinSalary AND Department = ?@DeptName AND Status = ?@EmployeeStatus ORDER BY Salary DESC");
         var builder = query.StartBuilder();
         builder.Use(new TestDtoClass(null, null, null));
-        Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees  ORDER BY Salary DESC", []);
+        Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees ORDER BY Salary DESC", []);
 
         builder.Use(new TestDtoStruct(10, null, null));
-        Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees WHERE Salary >= @MinSalary  ORDER BY Salary DESC", 
+        Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees WHERE Salary >= @MinSalary ORDER BY Salary DESC", 
             [("@MinSalary", 10)]);
 
         builder = query.StartBuilder();

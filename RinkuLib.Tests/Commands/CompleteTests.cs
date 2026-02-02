@@ -20,7 +20,7 @@ public class CompleteTests {
     }
     [Fact]
     public void Example1_StaticQuery() {
-        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", false);
+        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active");
         var builder = query.StartBuilder();
         builder.Use("@Active", true);
         using var cnn = GetDbCnn();

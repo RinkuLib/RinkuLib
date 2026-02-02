@@ -70,7 +70,7 @@ public class TemplatingTests {
     [Fact]
     public void With_complete_condition() {
         var sql = "WITH/*cte*/ parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = 1) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
@@ -88,7 +88,7 @@ public class TemplatingTests {
     [Fact]
     public void Ignored_Comment() {
         var sql = "SELECT /*~ optimizer hint */ ID, Username, Email FROM Users WHERE IsActive = @Active";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
@@ -103,12 +103,12 @@ public class TemplatingTests {
     [Fact]
     public void Ignored_Comment_InOptional() {
         var sql = "SELECT /*~ optimizer hint *//*ID*/ ID, Username, Email FROM Users WHERE IsActive = @Active";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
             new SegmentVerify("SELECT", 6, false),
-            new SegmentVerify(" /* optimizer hint */ ID,", 1, false),
+            new SegmentVerify(" /* optimizer hint */ ID,", 0, false),
             new SegmentVerify(" Username, Email FROM Users WHERE IsActive = @Active", 0, false)
         };
 
@@ -122,7 +122,7 @@ public class TemplatingTests {
     [Fact]
     public void Example1_StaticQuery() {
         var sql = "SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
@@ -135,14 +135,33 @@ public class TemplatingTests {
         Verify(factory, expectedSegments, expectedConditions, ["@Active"]);
     }
     [Fact]
+    public void Forced_Boundary() {
+        var sql = "SELECT TOP (1)??? /*ID*/ID, Username, Email FROM Users WHERE IsActive = @Active";
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+
+        // No markers mean the entire query is one "Always" segment.
+        var expectedSegments = new[] {
+            new SegmentVerify("SELECT TOP (1)", 0, false),
+            new SegmentVerify(" ID,", 0, false),
+            new SegmentVerify(" Username, Email FROM Users WHERE IsActive = @Active", 0, false)
+        };
+
+
+        var expectedConditions = new[] {
+            new ConditionVerify("ID", " ID,", 1)
+        };
+
+        Verify(factory, expectedSegments, expectedConditions, ["ID", "@Active"]);
+    }
+    [Fact]
     public void Using_Empty_Join_Conds() {
         var sql = "SELECT ID, Username FROM Users INNER JOIN Table t ON t.ID = ?@Cond WHERE IsActive = 1 AND Status = ?@Status";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("SELECT ID, Username FROM Users INNER JOIN Table t ON", 0, false),
             new SegmentVerify(" t.ID = @Cond", 0, false),
-            new SegmentVerify(" WHERE IsActive = 1 AND", 3, true),
+            new SegmentVerify(" WHERE IsActive = 1 AND", 4, true),
             new SegmentVerify(" Status = @Status", 0, false)
         };
 
@@ -156,10 +175,10 @@ public class TemplatingTests {
     [Fact]
     public void Example2_OptionalVariableFilter() {
         var sql = "SELECT ID, Username FROM Users WHERE IsActive = 1 AND Status = ?@Status";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT ID, Username FROM Users WHERE IsActive = 1 AND", 3, false),
+            new SegmentVerify("SELECT ID, Username FROM Users WHERE IsActive = 1 AND", 4, false),
             new SegmentVerify(" Status = @Status", 0, false)
         };
 
@@ -172,10 +191,10 @@ public class TemplatingTests {
     [Fact]
     public void Example3_BooleanToggle_KeywordCleanup() {
         var sql = "SELECT ID, Username, Email FROM Users WHERE /*ActiveOnly*/Active = 1 ORDER BY Username";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT ID, Username, Email FROM Users WHERE", 5, false),
+            new SegmentVerify("SELECT ID, Username, Email FROM Users WHERE", 6, false),
             new SegmentVerify(" Active = 1", 0, false),
             new SegmentVerify(" ORDER BY Username", 0, true)
         };
@@ -190,10 +209,10 @@ public class TemplatingTests {
     [Fact]
     public void Example4_FunctionalFootprint() {
         var sql = "SELECT ID, u.Name FROM Users u WHERE u.Name LIKE CONCAT('%', ?@Name, '%')";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT ID, u.Name FROM Users u WHERE", 5, false),
+            new SegmentVerify("SELECT ID, u.Name FROM Users u WHERE", 6, false),
             new SegmentVerify(" u.Name LIKE CONCAT('%', @Name, '%')", 0, false)
         };
 
@@ -207,10 +226,10 @@ public class TemplatingTests {
     [Fact]
     public void Example5_ImplicitAnd_SharedFootprint() {
         var sql = "SELECT ID, Name FROM Products WHERE Price * ?@Modifier > ?@Minimum";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT ID, Name FROM Products WHERE", 5, false),
+            new SegmentVerify("SELECT ID, Name FROM Products WHERE", 6, false),
             new SegmentVerify(" Price * @Modifier > @Minimum", 0, false)
         };
 
@@ -226,10 +245,10 @@ public class TemplatingTests {
     [Fact]
     public void Example6_ContextJoining() {
         var sql = "SELECT * FROM Products WHERE Price IS NOT NULL &AND Price > ?@MinPrice";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-        new SegmentVerify("SELECT * FROM Products WHERE", 5, false),
+        new SegmentVerify("SELECT * FROM Products WHERE", 6, false),
         new SegmentVerify(" Price IS NOT NULL AND Price > @MinPrice", 0, false)
     };
 
@@ -243,12 +262,12 @@ public class TemplatingTests {
     [Fact]
     public void Example7_SectionToggle_JoinDependency() {
         var sql = "SELECT p.ID, p.Name FROM Products p /*@VendorName*/INNER JOIN Vendors v ON v.ID = p.VendorID WHERE p.IsActive = 1 AND v.VendorName = ?@VendorName";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("SELECT p.ID, p.Name FROM Products p", 0, false),
-            new SegmentVerify(" INNER JOIN Vendors v ON v.ID = p.VendorID", 0, true),
-            new SegmentVerify(" WHERE p.IsActive = 1 AND", 3, true),
+            new SegmentVerify(" INNER JOIN Vendors v ON v.ID = p.VendorID", 0, false),
+            new SegmentVerify(" WHERE p.IsActive = 1 AND", 4, true),
             new SegmentVerify(" v.VendorName = @VendorName", 0, false)
         };
 
@@ -263,7 +282,7 @@ public class TemplatingTests {
     [Fact]
     public void Example8_LinearLogic_AndGate() {
         var sql = "SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("SELECT ID, Username, Email,", 1, false),
@@ -282,10 +301,10 @@ public class TemplatingTests {
     [Fact]
     public void Example9_AtomicSubquery_FootprintExtension() {
         var sql = "SELECT ID, Name FROM Users WHERE /*@ActionType*/(SELECT Count(*) FROM Actions WHERE UserID = ID AND Type = @ActionType) > 0";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT ID, Name FROM Users WHERE", 5, false),
+            new SegmentVerify("SELECT ID, Name FROM Users WHERE", 6, false),
             new SegmentVerify(" (SELECT Count(*) FROM Actions WHERE UserID = ID AND Type = @ActionType) > 0", 0, false)
         };
 
@@ -298,13 +317,13 @@ public class TemplatingTests {
     [Fact]
     public void Example10_CollectionHandler_X() {
         var sql = "SELECT * FROM Tasks WHERE CategoryID IN (?@Cats_X)";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT * FROM Tasks WHERE", 5, false),
+            new SegmentVerify("SELECT * FROM Tasks WHERE", 6, false),
             new SegmentVerify(" CategoryID IN (", 0, false),
             new SegmentVerify("@Cats_X", 0, false),
-            new SegmentVerify(")", 0, true)
+            new SegmentVerify(")", 0, false)
         };
 
         var expectedConditions = new[] {
@@ -318,10 +337,10 @@ public class TemplatingTests {
     public void Example11_PassengerDependency_Enclosure() {
         // Both variables share a segment because FETCH is not a keyword anchor
         var sql = "SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT Name FROM Products ORDER BY ID OFFSET", 6, false),
+            new SegmentVerify("SELECT Name FROM Products ORDER BY ID OFFSET", 7, false),
             new SegmentVerify(" ", 0, false),
             new SegmentVerify("@Skip_N", 0, false),
             new SegmentVerify(" ROWS FETCH NEXT ", 0, false),
@@ -339,12 +358,12 @@ public class TemplatingTests {
     [Fact]
     public void Example12_RawInjectionHandler_R() {
         var sql = "SELECT ID, Name FROM @Table_R WHERE IsActive = 1 AND Name = @Name_S";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("SELECT ID, Name FROM ", 0, false),
             new SegmentVerify("@Table_R", 0, false),
-            new SegmentVerify(" WHERE IsActive = 1 AND Name = ", 0, true),
+            new SegmentVerify(" WHERE IsActive = 1 AND Name = ", 0, false),
             new SegmentVerify("@Name_S", 0, false)
         };
 
@@ -354,15 +373,15 @@ public class TemplatingTests {
     [Fact]
     public void Example13_DynamicProjectionAndGrouping() {
         var sql = "SELECT /*Agg*/COUNT(*) AS Total&, SUM(Price) AS Revenue, p.CategoryName, /*NotAgg*/p.BrandName&, p.ID FROM Products p WHERE p.IsActive = 1 /*Agg*/GROUP BY p.CategoryName, p.BrandName";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("SELECT", 6, false),
-            new SegmentVerify(" COUNT(*) AS Total, SUM(Price) AS Revenue,", 1, false),
+            new SegmentVerify(" COUNT(*) AS Total, SUM(Price) AS Revenue,", 0, false),
             new SegmentVerify(" p.CategoryName,", 1, false),
             new SegmentVerify(" p.BrandName, p.ID", 0, false),
             new SegmentVerify(" FROM Products p WHERE p.IsActive = 1", 0, true),
-            new SegmentVerify(" GROUP BY p.CategoryName, p.BrandName", 0, true) 
+            new SegmentVerify(" GROUP BY p.CategoryName, p.BrandName", 0, false) 
         };
 
         var expectedConditions = new[] {
@@ -377,7 +396,7 @@ public class TemplatingTests {
     [Fact]
     public void Example14_ColumnJoining_AmperComma() {
         var sql = "SELECT ID, Username, /*IncludeAddress*/City&, Street&, ZipCode FROM Users";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("SELECT ID, Username,", 1, false),
@@ -391,7 +410,7 @@ public class TemplatingTests {
     [Fact]
     public void Example15_UpdateListCleanup() {
         var sql = "UPDATE Users SET LastModified = GETDATE(), Username = ?@Username, Email = ?@Email WHERE ID = @ID";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("UPDATE Users SET LastModified = GETDATE(),", 1, false),
@@ -411,7 +430,7 @@ public class TemplatingTests {
     [Fact]
     public void Example16_InsertColumnDependency() {
         var sql = "INSERT INTO Users (Username, /*@Email*/Email) VALUES (@Username, ?@Email)";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("INSERT INTO Users (Username,", 1, false),
@@ -432,7 +451,7 @@ public class TemplatingTests {
     [Fact]
     public void Example17_MultiColumnInsert() {
         var sql = "INSERT INTO Profiles (UserID, /*Details*/Bio&, Website&, AvatarURL) VALUES (@UID, /*Details*/@Bio&, @Web&, @Img)";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("INSERT INTO Profiles (UserID,", 1, false),
@@ -453,7 +472,7 @@ public class TemplatingTests {
     [Fact]
     public void Example17_MultiColumnInsert_Alternative() {
         var sql = "INSERT INTO Profiles (UserID, /*@Bio&@Web&@Img*/Bio&, Website&, AvatarURL) VALUES (@UID, ?@Bio&, ?@Web&, ?@Img)";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("INSERT INTO Profiles (UserID,", 1, false),
@@ -478,10 +497,10 @@ public class TemplatingTests {
     [Fact]
     public void Example18_DeleteAndCleanup() {
         var sql = "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND /*PurgeOldOnly*/IsArchived = 1";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND", 3, false),
+            new SegmentVerify("DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND", 4, false),
             new SegmentVerify(" IsArchived = 1", 0, false)
         };
 
@@ -491,11 +510,11 @@ public class TemplatingTests {
     [Fact]
     public void Example18_DeleteAndCleanup_Alternative() {
         var sql = "DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND (/*PurgeFromAll*/1=1 OR IsArchived = 1)";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("DELETE FROM Logs WHERE LogDate < GETDATE() - 30 AND (", 0, false),
-            new SegmentVerify("1=1 OR", 2, false),
+            new SegmentVerify("1=1 OR", 0, false),
             new SegmentVerify(" IsArchived = 1)", 0, false)
         };
 
@@ -505,11 +524,11 @@ public class TemplatingTests {
     [Fact]
     public void Example19_DynamicOrderBy_ClauseCleanup() {
         var sql = "SELECT * FROM Products WHERE IsActive = 1 /*@Sort*/ORDER BY @Sort_R ?@Dir_R";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
         new SegmentVerify("SELECT * FROM Products WHERE IsActive = 1", 0, false),
-        new SegmentVerify(" ORDER BY", 8, true),
+        new SegmentVerify(" ORDER BY", 9, false),
         new SegmentVerify(" ", 0, false),
         new SegmentVerify("@Sort_R", 0, false),
         new SegmentVerify(" ", 0, false),
@@ -527,14 +546,14 @@ public class TemplatingTests {
     [Fact]
     public void OrTest_SectionToggle_JoinDependency() {
         var sql = "SELECT p.ID, p.Name, /*VendorName*/v.VendorName FROM Products p /*VendorName|@VendorName*/INNER JOIN Vendors v ON v.ID = p.VendorID WHERE p.IsActive = 1 AND v.VendorName = ?@VendorName";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
             new SegmentVerify("SELECT p.ID, p.Name,", 1, false),
             new SegmentVerify(" v.VendorName", 0, false),
             new SegmentVerify(" FROM Products p", 0, true),
-            new SegmentVerify(" INNER JOIN Vendors v ON v.ID = p.VendorID", 0, true),
-            new SegmentVerify(" WHERE p.IsActive = 1 AND", 3, true),
+            new SegmentVerify(" INNER JOIN Vendors v ON v.ID = p.VendorID", 0, false),
+            new SegmentVerify(" WHERE p.IsActive = 1 AND", 4, true),
             new SegmentVerify(" v.VendorName = @VendorName", 0, false)
         };
 
@@ -551,31 +570,32 @@ public class TemplatingTests {
     public void ConditionInCase_Variable() {
         // If the optional @Category matches the Category column, check if Active = 1
         var sql = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category THEN 1 WHEN Category = 0 THEN ?@NoCategory_S ELSE 0 END = ?@CatFlag";
-        var factory = new QueryFactory(sql, false, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT * FROM Products WHERE", 5, false),
-            new SegmentVerify(" CASE ", 0, false),
-            new SegmentVerify("WHEN Category = @Category THEN 1 ", 0, false),
-            new SegmentVerify("WHEN Category = 0 THEN ", 0, false),
+            new SegmentVerify("SELECT * FROM Products WHERE", 6, false),
+            new SegmentVerify(" CASE WHEN", 5, false),
+            new SegmentVerify(" Category = @Category", 0, false),
+            new SegmentVerify(" THEN 1 WHEN Category = 0 THEN", 5, true),
+            new SegmentVerify(" ", 0, false),
             new SegmentVerify("@NoCategory_S", 0, false),
             new SegmentVerify(" ELSE 0 END = @CatFlag", 0, true)
         };
 
         var expectedConditions = new[] {
             new ConditionVerify("@CatFlag", " CASE WHEN Category = @Category THEN 1 WHEN Category = 0 THEN @NoCategory_S ELSE 0 END = @CatFlag", 3),
-            new ConditionVerify("@Category", "WHEN Category = @Category THEN 1 ", 1),
-            new ConditionVerify("@NoCategory", "WHEN Category = 0 THEN @NoCategory_S", 1)
+            new ConditionVerify("@Category", " Category = @Category", 1),
+            new ConditionVerify("@NoCategory", " @NoCategory_S", 1)
         };
 
         Verify(factory, expectedSegments, expectedConditions, ["@Category", "@CatFlag", "@NoCategory"]);
     }
     [Fact]
     public void Extract_Select() {
-        var sql = "SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1";
-        var factory = new QueryFactory(sql, true, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var sql = "?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1";
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
         var expectedSegments = new[] {
-            new SegmentVerify("SELECT", 0, false),
+            new SegmentVerify("SELECT", 6, false),
             new SegmentVerify(" ID,", 1, false),
             new SegmentVerify(" Username,", 1, false),
             new SegmentVerify(" Email, Test", 0, false),
@@ -583,6 +603,34 @@ public class TemplatingTests {
         };
 
         var expectedConditions = new[] {
+            new ConditionVerify("ID", " ID,", 1),
+            new ConditionVerify("Username", " Username,", 1),
+            new ConditionVerify("Email", " Email, Test", 2, true),
+            new ConditionVerify("Test", " Email, Test", 2),
+        };
+        Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Email", "Test"]);
+    }
+    [Fact]
+    public void Extract_Select_Union() {
+        var sql = "?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1 UNION ALL ?SELECT ID, Username, Email&, Test FROM Other";
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var expectedSegments = new[] {
+            new SegmentVerify("SELECT", 6, false),
+            new SegmentVerify(" ID,", 1, false),
+            new SegmentVerify(" Username,", 1, false),
+            new SegmentVerify(" Email, Test", 0, false),
+            new SegmentVerify(" FROM Users WHERE IsActive = 1 UNION ALL SELECT", 7, true),
+            new SegmentVerify(" ID,", 1, false),
+            new SegmentVerify(" Username,", 1, false),
+            new SegmentVerify(" Email, Test", 0, false),
+            new SegmentVerify(" FROM Other", 0, true),
+        };
+
+        var expectedConditions = new[] {
+            new ConditionVerify("ID", " ID,", 1),
+            new ConditionVerify("Username", " Username,", 1),
+            new ConditionVerify("Email", " Email, Test", 2, true),
+            new ConditionVerify("Test", " Email, Test", 2),
             new ConditionVerify("ID", " ID,", 1),
             new ConditionVerify("Username", " Username,", 1),
             new ConditionVerify("Email", " Email, Test", 2, true),

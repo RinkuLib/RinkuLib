@@ -8,7 +8,7 @@ public abstract class ParsingCache {
     public static readonly Lock SharedLock = new();
     public static ParsingCache? New(int nbSelects) {
         if (nbSelects <= 0)
-            return new SingleItemCache();
+            return null;
         if (nbSelects <= 32)
             return new DynamicQueryCache<Masker32, uint>();
         if (nbSelects <= 64)
@@ -35,15 +35,12 @@ internal sealed class SingleItemCache : ParsingCache, IParserCache {
         behavior = parser is null ? default : DefaultBehavior;
         cache = null;
     }
-    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc) {
-        if (parsingFunc is null && MethodFunc is Func<DbDataReader, T> f)
-            parsingFunc = f;
-    }
-    public void UpdateCache(IDbCommand cmd) { }
-    public void UpdateParser<T>(Func<DbDataReader, T> parser, CommandBehavior behavior) {
+    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parsingFunc, CommandBehavior behavior) {
+        if (MethodFunc is not null)
+            return;
         lock (SharedLock) {
             if (MethodFunc is null) {
-                MethodFunc = parser;
+                MethodFunc = parsingFunc;
                 DefaultBehavior = behavior;
             }
         }

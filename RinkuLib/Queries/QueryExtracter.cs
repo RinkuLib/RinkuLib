@@ -6,10 +6,10 @@ namespace RinkuLib.Queries;
 [Flags]
 public enum CondFlags : byte {
     None = 0,
-    IsHandlerFollowedByClosingParentesisOrSection = 0b_0000_0100,
+    //IsHandlerFollowedByClosingParentesisOrSection = 0b_0000_0100,
     NeedSectionToFinish = 0b_0000_1000,
     IsRequired = 0b_0001_0000,
-    CurrentIsSection = 0b_0010_0000,
+    //CurrentIsSection = 0b_0010_0000,
     NextIsSection = 0b_0100_0000,
     Finished = 0b_1000_0000,
 }
@@ -44,9 +44,15 @@ public struct CondInfo {
     public const char None = (char)3;
     public const char Select = (char)4;
     public const char JoinedSelect = (char)5;
-    public const char Special = (char)6;
-    public static bool IsSelect(char type) => type == Select || type == JoinedSelect;
+    public const char SecondarySelect = (char)6;
+    public const char SecondaryJoinedSelect = (char)7;
+    public const char Special = (char)8;
+    public static bool IsJoinedSelect(char type) => type == JoinedSelect || type == SecondaryJoinedSelect;
+    public static bool IsNotJoinedSelect(char type) => type == Select || type == SecondarySelect;
+    public static bool IsMainSelect(char type) => type == Select || type == JoinedSelect;
+    public static bool IsSelect(char type) => type >= Select && type <= SecondaryJoinedSelect;
     public static bool IsComment(char type) => type <= OrComment;
+    public static bool IsOther(char type) => IsComment(type) || type == SecondarySelect || type == SecondaryJoinedSelect;
     /// <summary>The identifier for the condition, the key (e.g., a variable name or a name in comment).</summary>
     public string Cond { get; private set; }
     /// <summary>
@@ -88,30 +94,40 @@ public struct CondInfo {
             ParMapOrExcesses = ParMap,
             EndIndex = Excess
         };
-    public static CondInfo NewSelect(int StartIndex, bool isFirst = false, bool isJoined = false)
-        => new() {
-            Cond = null!,
-            Type = isJoined ? CondInfo.JoinedSelect : CondInfo.Select,
-            VarIndex = -1,
-            StartIndex = StartIndex,
-            ParMapOrExcesses = 1,
-            EndIndex = isFirst ? 0 : 1
+    public static CondInfo NewSelect(int StartIndex, bool isMainSelect, bool isJoined, ulong parMap, int prevExcessExcess) {
+        var type = CondInfo.Select;
+        if (isJoined)
+            type = CondInfo.JoinedSelect;
+        if (!isMainSelect)
+            type += (char)2;
+        return new() {
+               Cond = null!,
+               Type = type,
+               VarIndex = -1,
+               StartIndex = StartIndex,
+               ParMapOrExcesses = parMap,
+               EndIndex = prevExcessExcess
         };
+    }
     /// <summary>
     /// Closes the condition's footprint and updates section-related flags in the ParMap.
     /// </summary>
-    public void Finish(int endIndex, bool nextIsSection, uint excess) {
-        ParMapOrExcesses = (((ulong)EndIndex) << 32) | excess;
+    public void Finish(int endIndex, bool nextIsSection/*, uint excess*/) {
+        ParMapOrExcesses = /*(((ulong)excess) << 32UL) | */(ulong)EndIndex;
         Flags |= CondFlags.Finished;
         if (nextIsSection)
             Flags |= CondFlags.NextIsSection;
-        if (NeedSectionToFinish)
-            Flags |= CondFlags.CurrentIsSection;
+        /*if (NeedSectionToFinish)
+            Flags |= CondFlags.CurrentIsSection;*/
         EndIndex = endIndex;
     }
     public override readonly string ToString()
         => $"{Cond}, {(Type < (char)32 ? (int)Type : Type)}, {StartIndex}, {EndIndex}";
-    public void UpdateSelectCond(string cond) {
+    public void UpdateSelectCond(string cond, int currentStart, int prevSegExcess) {
+        if (StartIndex < 0)
+            StartIndex = currentStart;
+        if (EndIndex <= 0)
+            EndIndex = prevSegExcess;
         Cond = cond;
     }
     public void UpdateCommentAsSectionComment(int StartInd) {
@@ -124,9 +140,9 @@ public struct CondInfo {
     public readonly bool IsRequired => Flags.HasFlag(CondFlags.IsRequired);
     public readonly bool NeedSectionToFinish => Flags.HasFlag(CondFlags.NeedSectionToFinish);
     public readonly bool NextSegmentIsSection => Flags.HasFlag(CondFlags.NextIsSection);
-    public readonly bool CurrentSegmentIsSection => Flags.HasFlag(CondFlags.CurrentIsSection);
-    public readonly int CurrentSegmentExcess => (int)(uint)ParMapOrExcesses;
-    public readonly int PrevSegmentExcess => (int)(uint)(ParMapOrExcesses >> 32);
+    //public readonly bool CurrentSegmentIsSection => Flags.HasFlag(CondFlags.CurrentIsSection);
+    //public readonly int CurrentSegmentExcess => (int)(uint)ParMapOrExcesses;
+    public readonly int PrevSegmentExcess => (int)(uint)ParMapOrExcesses;//(int)(uint)(ParMapOrExcesses >> 32);
 }
 /// <summary>
 /// A pointer-based scanner that identifies condition markers and maps their footprints while normalizing the query string.
@@ -162,12 +178,11 @@ public unsafe ref struct QueryExtracter {
     }
     public readonly string Binary => ParMap.ConvertBinary();
     private bool PrevBoundary;
-    private bool InSelect;
+    private bool FirstSelectCompleted;
     private bool ContainingParantesis;
-    private bool ExtractSelects;
+    private ulong SelectExtractionParMap;
     private PooledArray<CondInfo> Conditions;
     private uint LastCondSectionLength;
-    public bool HasSelects;
     /// <summary>
     /// Performs a single-pass scan of the query to identify and map condition footprints.
     /// </summary>
@@ -180,17 +195,16 @@ public unsafe ref struct QueryExtracter {
     /// found.
     /// </returns>
     /// <exception cref="Exception">Thrown on invalid syntax, such as unclosed comments, quotes, or excessive nesting depth.</exception>
-    public static PooledArray<CondInfo>.Locked Segment(string query, bool extractSelects, char variableChar, out string newQuery, out bool hasSelect) {
+    public static PooledArray<CondInfo>.Locked Segment(string query, char variableChar, out string newQuery) {
         var seg = new QueryExtracter();
-        return seg.SegmentQuery(query, extractSelects, variableChar, out newQuery, out hasSelect);
+        return seg.SegmentQuery(query, variableChar, out newQuery);
     }
     /// <summary>
     /// The primary scanning loop. It uses a single pass with raw pointers to minimize allocations.
     /// The 'Builder' serves as a normalization buffer, while 'Conditions' tracks the metadata
     /// for segments that can be toggled later.
     /// </summary>
-    private unsafe PooledArray<CondInfo>.Locked SegmentQuery(string query, bool extractSelects, char variableChar, out string newQuery, out bool selectManaged) {
-        ExtractSelects = extractSelects;
+    private unsafe PooledArray<CondInfo>.Locked SegmentQuery(string query, char variableChar, out string newQuery) {
         Length = query.Length;
         if (Length <= 1)
             throw new Exception($"invalid query \"{query}\", must contains at least 2 letters");
@@ -203,7 +217,6 @@ public unsafe ref struct QueryExtracter {
         var startIndexes = ArrayPool<int>.Shared.Rent(64);
         var excesses = ArrayPool<int>.Shared.Rent(64);
         ParMap = 1;
-        selectManaged = false;
 
         fixed (int* ps = startIndexes)
         fixed (int* pe = excesses)
@@ -216,6 +229,16 @@ public unsafe ref struct QueryExtracter {
                 Builder[BuilderInd++] = *CurrentChar;
                 if (IsBoundary(*CurrentChar)) {
                     ManageBoundary();
+                    continue;
+                }
+                if (*CurrentChar == OptionalVariableIdentifier && CurrentChar[1] != variableChar) {
+                    if (CurrentChar[1] == OptionalVariableIdentifier
+                        && CurrentChar[2] == OptionalVariableIdentifier) {
+                        BuilderInd--;
+                        UpdateConditionsEnd(BuilderInd, false, 0);
+                        UpdateCurrentStart(BuilderInd, 0);
+                        CurrentChar += 2;
+                    }
                     continue;
                 }
                 if (!PrevBoundary || CurrentQuote != 0)
@@ -238,8 +261,16 @@ public unsafe ref struct QueryExtracter {
                     UpdateCurrentStart(BuilderInd + 1, 0);
                 else if (IsEnd(CurrentChar))
                     LowerParentesis();
-                else if (TryManageSection() && !selectManaged)
-                    selectManaged = ManageStartSelect();
+                else if (IsCase(CurrentChar)) {
+                    RaiseParentesis(false);
+                    ParMap |= 1;
+                    CurrentChar++;
+                    Builder[BuilderInd++] = *CurrentChar++;
+                    Builder[BuilderInd++] = *CurrentChar++;
+                    Builder[BuilderInd++] = *CurrentChar;
+                }
+                else
+                    TryManageSection();
             }
             UpdateConditionsEnd(BuilderInd, true, 0);
         }
@@ -255,67 +286,41 @@ public unsafe ref struct QueryExtracter {
     }
 
     private void ManageJoinedSelect() {
-        if (!ExtractSelects)
+        if (SelectExtractionParMap != ParMap)
             return;
         int i = Conditions.Length - 1;
         for (; i >= 0; i--)
-            if (Conditions[i].Type == CondInfo.Select)
+            if (CondInfo.IsNotJoinedSelect(Conditions[i].Type))
                 break;
         if (i < 0)
             throw new Exception("the first join has nothing to join to");
         ref var targetCond = ref Conditions[i];
         if (targetCond.Cond is null)
-            targetCond.UpdateSelectCond(FindSelectName(BuilderInd - 1));
-        Conditions.Add(CondInfo.NewSelect(targetCond.StartIndex, false, true));
-    }
-
-    private bool ManageStartSelect() {
-        if (ParMap != 1)
-            return false;
-        if (InSelect && IsFromBack(CurrentChar)) {
-            InSelect = false;
-            return false;
-        }
-        if (!IsSelectBack(CurrentChar))
-            return false;
-        if (ExtractSelects)
-            for (int i = 0; i < Conditions.Length; i++)
-                if (Conditions[i].Type == CondInfo.Select)
-                    return false;
-        InSelect = true;
-        //to implement skip before select;
-        if (ExtractSelects)
-            Conditions.Add(CondInfo.NewSelect(BuilderInd, true));
-        return true;
+            targetCond.UpdateSelectCond(FindSelectName(BuilderInd - 1), *CurrentStart, *CurrentExcess);
+        Conditions.Add(CondInfo.NewSelect(targetCond.StartIndex, !FirstSelectCompleted, true, ParMap, 1));
     }
 
     private bool TryManageSection() {
         var secLen = (int)(LastCondSectionLength & 0xFF);
         if (secLen <= 0 && !MatchSection(CurrentChar, out secLen))
             return false;
+        var isDynamicProjection = BuilderInd > 1 && Builder[BuilderInd - 2] == OptionalVariableIdentifier && secLen == 6 && IsSelect(CurrentChar);
+        if (isDynamicProjection) {
+            BuilderInd--;
+            Builder[BuilderInd - 1] = *CurrentChar;
+        }
         var needSpace = BuilderInd > 1 && !char.IsWhiteSpace(Builder[BuilderInd - 2]);
         var endInd = BuilderInd - 2;
         if (needSpace)
             endInd++;
-        if (secLen == 4) {
-            if (IsWhen(CurrentChar)) {
-                if (needSpace)
-                    needSpace = false;
-                else
-                    endInd++;
-                secLen = 0;
-            }
-            if (IsThen(CurrentChar))
-                return false;
-            if (IsCase(CurrentChar)) {
-                RaiseParentesis(false);
-                ParMap |= 1;
-            }
-        }
-        else if ((secLen == 6 || secLen == 11) && (IsInsert(CurrentChar) || IsValues(CurrentChar)))
+        if ((secLen == 6 || secLen == 11) && (IsInsert(CurrentChar) || IsValues(CurrentChar)))
             ContainingParantesis = true;
         else if (ContainingParantesis && ParMap == 1)
             ContainingParantesis = false;
+        if (ParMap == SelectExtractionParMap) {
+            SelectExtractionParMap = 0;
+            FirstSelectCompleted = true;
+        }
         if (UpdateConditionsEnd(endInd, secLen > 0, 0) && needSpace) {
             Builder[BuilderInd - 1] = ' ';
             Builder[BuilderInd] = *CurrentChar;
@@ -327,6 +332,10 @@ public unsafe ref struct QueryExtracter {
             CurrentChar++;
             Builder[BuilderInd++] = *CurrentChar;
         }
+        if (isDynamicProjection) {
+            SelectExtractionParMap = ParMap;
+            Conditions.Add(CondInfo.NewSelect(-1, !FirstSelectCompleted, false, ParMap, 0));
+        }
         return true;
     }
 
@@ -335,13 +344,17 @@ public unsafe ref struct QueryExtracter {
         => c < 64 && (BoundaryMask >> c & 1) == 1;
     private void ManageBoundary() {
         var c = *CurrentChar;
+        if (ManageQuote(c)) {
+            PrevBoundary = true;
+            return;
+        }
+        if (CurrentQuote != 0)
+            return;
         if (TryManageComment(true)) {
             CurrentChar--;
             return;
         }
         PrevBoundary = true;
-        if (ManageQuote(c))
-            return;
         if (c == '(')
             RaiseParentesis(true);
         else if (c == ')')
@@ -354,14 +367,13 @@ public unsafe ref struct QueryExtracter {
         if (CurrentChar[-1] == JoinAndOrChar) {
             BuilderInd--;
             Builder[BuilderInd - 1] = ',';
-            if (InSelect && ParMap == 1 && ExtractSelects)
-                ManageJoinedSelect();
+            ManageJoinedSelect();
             return;
         }
         UpdateConditionsEnd(BuilderInd, false, 1);
         UpdateCurrentStart(BuilderInd, 1);
-        if (InSelect && ParMap == 1 && ExtractSelects)
-            Conditions.Add(CondInfo.NewSelect(BuilderInd));
+        if (SelectExtractionParMap == ParMap)
+            Conditions.Add(CondInfo.NewSelect(BuilderInd, !FirstSelectCompleted, false, ParMap, 1));
     }
 
     private bool TryManageVariable(char variableChar) {
@@ -395,8 +407,8 @@ public unsafe ref struct QueryExtracter {
             var c = CurrentChar;
             while (char.IsWhiteSpace(*c))
                 c++;
-            if (*c == ')' || MatchSection(c, out _))
-                Conditions.Last.Flags |= CondFlags.IsHandlerFollowedByClosingParentesisOrSection;
+            /*if (*c == ')' || MatchSection(c, out _))
+                Conditions.Last.Flags |= CondFlags.IsHandlerFollowedByClosingParentesisOrSection;*/
         }
         CurrentChar--;
         return true;
@@ -516,23 +528,17 @@ public unsafe ref struct QueryExtracter {
         }
         return i;
     }
-    private static unsafe bool IsSelectBack(char* ptr)
-        => (ptr[-5] | 0x20) == 's' && (ptr[-4] | 0x20) == 'e' && (ptr[-3] | 0x20) == 'l'
-        && (ptr[-2] | 0x20) == 'e' && (ptr[-1] | 0x20) == 'c' && (*ptr | 0x20) == 't';
-    private static unsafe bool IsFromBack(char* ptr)
-        => (ptr[-3] | 0x20) == 'f' && (ptr[-2] | 0x20) == 'r' && (ptr[-1] | 0x20) == 'o' && (*ptr | 0x20) == 'm';
     private static unsafe bool IsInsert(char* ptr)
         => (*ptr | 0x20) == 'i' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 's'
         && (ptr[3] | 0x20) == 'e' && (ptr[4] | 0x20) == 'r' && (ptr[5] | 0x20) == 't';
+    private static unsafe bool IsSelect(char* ptr)
+        => (*ptr | 0x20) == 's' && (ptr[1] | 0x20) == 'e' && (ptr[2] | 0x20) == 'l'
+        && (ptr[3] | 0x20) == 'e' && (ptr[4] | 0x20) == 'c' && (ptr[5] | 0x20) == 't';
     private static unsafe bool IsValues(char* ptr)
         => (*ptr | 0x20) == 'v' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 'l'
         && (ptr[3] | 0x20) == 'u' && (ptr[4] | 0x20) == 'e' && (ptr[5] | 0x20) == 's';
     private static unsafe bool IsCase(char* ptr)
         => (*ptr | 0x20) == 'c' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 's' && (ptr[3] | 0x20) == 'e';
-    private static unsafe bool IsWhen(char* ptr)
-        => (*ptr | 0x20) == 'w' && (ptr[1] | 0x20) == 'h' && (ptr[2] | 0x20) == 'e' && (ptr[3] | 0x20) == 'n';
-    private static unsafe bool IsThen(char* ptr)
-        => (*ptr | 0x20) == 't' && (ptr[1] | 0x20) == 'h' && (ptr[2] | 0x20) == 'e' && (ptr[3] | 0x20) == 'n';
     private static bool IsEnd(char* ptr)
         => (*ptr | 0x20) == 'e' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 'd' && IsBoundary(ptr[3]);
     public static unsafe bool IsOr(char* ptr)
@@ -571,7 +577,6 @@ public unsafe ref struct QueryExtracter {
         "order by",
         "limit",
         "offset",
-        "case",
         "when",
         "else",
         "then",
@@ -604,9 +609,9 @@ public unsafe ref struct QueryExtracter {
                 continue;
             if (cond.ParMapOrExcesses != ParMap || (cond.NeedSectionToFinish && !isSection))
                 break;
-            cond.Finish(segmentEndIndex, isSection, currentExcess);
             if (CondInfo.IsSelect(cond.Type) && cond.Cond is null)
-                cond.UpdateSelectCond(FindSelectName(isSection ? segmentEndIndex : segmentEndIndex - 1));
+                cond.UpdateSelectCond(FindSelectName(isSection ? segmentEndIndex : segmentEndIndex - 1), *CurrentStart, *CurrentExcess);
+            cond.Finish(segmentEndIndex, isSection/*, currentExcess*/);
             oneMatch = true;
         }
         if (j >= LastUnfinishedSection)

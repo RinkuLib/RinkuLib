@@ -1,8 +1,11 @@
-﻿using System.Data;
+﻿using System.Collections.ObjectModel;
+using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Reflection.PortableExecutable;
+using System.Runtime.CompilerServices;
 
 namespace RinkuLib.DbParsing;
 /// <summary>
@@ -17,8 +20,11 @@ public static class Helper {
     /// Extracts the schema from a <see cref="DbDataReader"/> and converts it into a 
     /// <see cref="ColumnInfo"/> array for the Negotiation Phase.
     /// </summary>
-    public static ColumnInfo[] GetColumns(this DbDataReader reader) {
-        var schema = reader.GetColumnSchema();
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ColumnInfo[] GetColumns(this DbDataReader reader)
+        => reader.GetColumnSchema().GetColumns();
+
+    public static ColumnInfo[] GetColumns(this ReadOnlyCollection<DbColumn> schema) {
         var columns = new ColumnInfo[schema.Count];
         for (var i = 0; i < schema.Count; i++) {
             var column = schema[i];
@@ -69,6 +75,9 @@ public readonly ref struct ColumnUsage(Span<bool> Span) {
 /// </summary>
 public static class TypeParser<T> {
     private static readonly List<DbParsingInfo<T>> ReadingInfos = [];
+
+    public unsafe static Func<DbDataReader, T> GetParser(ColumnInfo[] cols, INullColHandler? nullColHandler = null)
+        => GetParser(cols, out _, nullColHandler);
     /// <summary>
     /// Entry point for retrieving a parser. 
     /// It first searches the cache for a schema match; if none exists, it triggers 
@@ -78,23 +87,18 @@ public static class TypeParser<T> {
     /// <param name="defaultBehavior">Outputs the optimized behavior (e.g., SequentialAccess).</param>
     /// <param name="parser">The compiled function to execute.</param>
     /// <param name="nullColHandler">Support for nullability handling</param>
-    public unsafe static bool TryGetParser(ColumnInfo[] cols, out CommandBehavior defaultBehavior, [MaybeNullWhen(false)] out Func<DbDataReader, T> parser, INullColHandler? nullColHandler = null) {
+    public unsafe static Func<DbDataReader, T> GetParser(ColumnInfo[] cols, out CommandBehavior defaultBehavior, INullColHandler? nullColHandler = null) {
         for (int i = 0; i < ReadingInfos.Count; i++) {
             if (Helper.Equals(ReadingInfos[i].SelectColumns, cols)) {
-                parser = ReadingInfos[i].Reader;
                 defaultBehavior = ReadingInfos[i].DefaultBehavior;
-                return true;
+                return ReadingInfos[i].Reader;
             }
         }
-        if (!TryMakeParser(typeof(T), nullColHandler, cols, out var info)) {
-            parser = null;
-            defaultBehavior = default;
-            return false;
-        }
+        if (!TryMakeParser(typeof(T), nullColHandler, cols, out var info))
+            throw new Exception($"cannot make the parser for {typeof(T)} with the schema ({string.Join(", ", cols.Select(c => $"{c.Type.Name}{(c.IsNullable ? "?" : "")} {c.Name}"))})");
         ReadingInfos.Add(info);
-        parser = info.Reader;
         defaultBehavior = info.DefaultBehavior;
-        return true;
+        return info.Reader;
     }
     private static readonly Type[] TReaderArg = [typeof(DbDataReader)];
     internal static readonly Module Module = typeof(DbDataReader).Module;

@@ -11,10 +11,7 @@ namespace RinkuLib.Queries;
 /// Defines the contract for an executable query unit, managing the transition 
 /// from a state-snapshot to a configured database command.
 /// </summary>
-public interface IQueryCommand : IParserCache {
-#pragma warning disable CA2211
-    public static char DefaultVariableChar = '@';
-#pragma warning restore CA2211
+public interface IQueryCommand : ICache, IParserCache {
     /// <summary>
     /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
     /// </summary>
@@ -53,10 +50,7 @@ public interface IQueryCommand : IParserCache {
 /// and literal injections.</para>
 /// </remarks>
 public class QueryCommand : IQueryCommand {
-    public static QueryCommand New(string query, bool extractSelects = false, char variableChar = default) {
-        var factory = new QueryFactory(query, extractSelects, variableChar == default ? IQueryCommand.DefaultVariableChar : variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap);
-        return new QueryCommand(factory);
-    }
+    public static QueryCommand New(string query, char variableChar = default) => new(query, variableChar);
     public Mapper Mapper;
     Mapper IQueryCommand.Mapper => Mapper;
     int IQueryCommand.StartBaseHandlers => StartBaseHandlers;
@@ -67,13 +61,14 @@ public class QueryCommand : IQueryCommand {
     public readonly QueryParameters Parameters;
     /// <summary> The SQL template and segment parsing logic. </summary>
     public readonly QueryText QueryText;
-    public readonly ParsingCache? ParsingCache;
+    public ParsingCache? _parsingCache;
+    public ParsingCache? ParsingCache => _parsingCache;
     public readonly int StartBaseHandlers;
     public readonly int StartSpecialHandlers;
     public readonly int StartVariables;
     public readonly int EndSelect;
-    public QueryCommand(string query, bool extractSelects = false, char variableChar = default)
-        : this(new QueryFactory(query, extractSelects, variableChar == default ? IQueryCommand.DefaultVariableChar : variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap)) { }
+    public QueryCommand(string query, char variableChar = default)
+        : this(new QueryFactory(query, variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap)) { }
     protected QueryCommand(QueryFactory factory) {
         Mapper = factory.Mapper;
         var segments = factory.Segments;
@@ -85,14 +80,15 @@ public class QueryCommand : IQueryCommand {
         var specialHandlers = GetHandlers(queryString, segments);
         QueryText = new(queryString, segments, factory.Conditions);
         Parameters = new(StartVariables, StartSpecialHandlers, specialHandlers);
-        if (factory.HasSelect)
-            ParsingCache = ParsingCache.New(factory.NbSelects);
+        _parsingCache = ParsingCache.New(factory.NbSelects);
     }
     public IParserCache? GetCacheAndParser<T>(object?[] variables, out CommandBehavior behavior, out Func<DbDataReader, T>? parser) {
-        IParserCache? cache = null;
-        parser = null;
-        behavior = default;
-        ParsingCache?.GetCacheAndParser(variables, out parser, out behavior, out cache);
+        if (_parsingCache is null) {
+            parser = null;
+            behavior = default;
+            return this;
+        }
+        _parsingCache.GetCacheAndParser(variables, out parser, out behavior, out var cache);
         if (NeedToCache(variables))
             cache = cache is null ? this : new CacheWrapper(cache, this);
         return cache;
@@ -139,8 +135,14 @@ public class QueryCommand : IQueryCommand {
         }
         UpdateCache(new DefaultParamCache(cmd));
     }
-    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc)
-        => UpdateCache(cmd);
+    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parsingFunc, CommandBehavior behavior) {
+        UpdateCache(cmd);
+        if (_parsingCache is not null || parsingFunc is null)
+            return;
+        var cache = new SingleItemCache();
+        cache.UpdateCache(reader, cmd, parsingFunc, behavior);
+        _parsingCache = cache;
+    }
     private bool UpdateCache<T>(T infoGetter) where T : IDbParamInfoGetter {
         foreach (var item in infoGetter.EnumerateParameters()) {
             var ind = Mapper.GetIndex(item.Key) - StartVariables;
@@ -152,9 +154,6 @@ public class QueryCommand : IQueryCommand {
         Parameters.UpdateNbCached();
         return true;
     }
-
-
-    public void UpdateParser<T>(Func<DbDataReader, T> _, CommandBehavior __) { }
     /// <summary>
     /// Synchronizes the database command with the current state of the entire query context.
     /// </summary>

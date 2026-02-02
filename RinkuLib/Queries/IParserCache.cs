@@ -15,52 +15,37 @@ internal class CacheWrapper(IParserCache Cache1, IParserCache Cache2) : IParserC
     private readonly IParserCache Cache1 = Cache1;
     private readonly IParserCache Cache2 = Cache2;
 
-    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc) {
-        Cache1.UpdateCache(reader, cmd, ref parsingFunc);
-        Cache2.UpdateCache(reader, cmd, ref parsingFunc);
-    }
-
-    public void UpdateCache(IDbCommand cmd) {
-        Cache1.UpdateCache(cmd);
-        Cache2.UpdateCache(cmd);
-    }
-
-    public void UpdateParser<T>(Func<DbDataReader, T> parser, CommandBehavior behavior) {
-        Cache1.UpdateParser(parser, behavior);
-        Cache2.UpdateParser(parser, behavior);
+    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parsingFunc, CommandBehavior behavior) {
+        Cache1.UpdateCache(reader, cmd, parsingFunc, behavior);
+        Cache2.UpdateCache(reader, cmd, parsingFunc, behavior);
     }
 }
-public interface IParserCache : ICache {
+public interface IParserCache {
     /// <summary> 
     /// Synchronizes the parser with the active execution context to perform metadata 
     /// updates, caching, or logic initialization. 
     /// </summary>
-    void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, T>? parsingFunc);
-    void UpdateParser<T>(Func<DbDataReader, T> parser, CommandBehavior behavior);
+    void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parsingFunc, CommandBehavior behavior);
 }
-public interface IParserCacheParseAsync : ICache {
+public interface IParserCacheParseAsync {
     /// <summary> 
     /// Synchronizes the parser with the active execution context to perform metadata 
     /// updates, caching, or logic initialization. 
     /// </summary>
-    void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, ref Func<DbDataReader, Task<T>>? parsingFunc);
-    void UpdateParser<T>(Func<DbDataReader, Task<T>> parser, CommandBehavior behavior);
+    void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, Task<T>>? parsingFunc, CommandBehavior behavior);
 }
 
-public interface IParserCacheAsync : ICacheAsync {
+public interface IParserCacheAsync {
     /// <summary> 
     /// Synchronizes the parser with the active execution context to perform metadata 
     /// updates, caching, or logic initialization. 
     /// </summary>
-    Task<Func<DbDataReader, T>?> UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parser);
-
-    Task UpdateParser<T>(Func<DbDataReader, T> parser, CommandBehavior behavior);
+    Task UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parser, CommandBehavior behavior);
 }
-public interface IParserCacheAsyncAndParseAsync : ICacheAsync {
+public interface IParserCacheAsyncAndParseAsync {
     /// <summary> 
     /// Synchronizes the parser with the active execution context to perform metadata 
     /// updates, caching, or logic initialization. 
     /// </summary>
-    Task<Func<DbDataReader, Task<T>>?> UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, Task<T>>? parser);
-    Task UpdateParser<T>(Func<DbDataReader, Task<T>> parser, CommandBehavior behavior);
+    Task UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, Task<T>>? parser, CommandBehavior behavior);
 }

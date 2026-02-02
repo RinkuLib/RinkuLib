@@ -146,7 +146,7 @@ public static class BuilderMapper<T, TBuilder> where TBuilder : IQueryBuilder {
                 il.Emit(OpCodes.Ldarga_S, 1);
             else
                 il.Emit(OpCodes.Ldarg_1);
-            var varName = IQueryCommand.DefaultVariableChar == default || isBoolCond ? member.Name : IQueryCommand.DefaultVariableChar + member.Name;
+            var varName = QueryFactory.DefaultVariableChar == default || isBoolCond ? member.Name : QueryFactory.DefaultVariableChar + member.Name;
             il.Emit(OpCodes.Ldstr, varName);
             if (!isBoolCond)
                 il.Emit(OpCodes.Ldloc, valLocal);

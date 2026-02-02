@@ -67,6 +67,38 @@ public static class DBCommandExtensions {
             }
         }
 
+        public void CacheSchema<T>(IParserCache cache, bool tryGetParser) {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = CommandBehavior.SchemaOnly;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = cmd.ExecuteReader(behavior);
+                Func<DbDataReader, T>? parser = null;
+                if (tryGetParser)
+                    parser = TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                cache.UpdateCache(reader, cmd, parser, tryGetParser ? behavior : default);
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    reader.Dispose();
+                }
+                cmd.Parameters.Clear();
+                cmd.Dispose();
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+
         public T? QuerySingle<T>(Func<DbDataReader, T>? parser = null, IParserCache? cache = null, CommandBehavior behavior = default, bool disposeCommand = true) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
@@ -79,13 +111,8 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = cmd.ExecuteReader(behavior);
-                cache?.UpdateCache(reader, cmd, ref parser);
-                if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out parser!))
-                        throw new NotSupportedException();
-                    cache?.UpdateParser(parser, behavior 
-                        & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
-                }
+                parser ??= TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
                 if (!reader.Read())
                     return default;
                 return parser(reader);
@@ -117,12 +144,8 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = cmd.ExecuteReader(behavior);
-                cache?.UpdateCache(reader, cmd, ref parser);
-                if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out parser!))
-                        throw new NotSupportedException();
-                    cache?.UpdateParser(parser, behavior & ~CommandBehavior.CloseConnection);
-                }
+                parser ??= TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~CommandBehavior.CloseConnection);
                 while (reader.Read())
                     yield return parser(reader);
                 while (reader.NextResult()) { }
@@ -156,13 +179,8 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
-                cache?.UpdateCache(reader, cmd, ref parser);
-                if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out parser!))
-                        throw new NotSupportedException();
-                    cache?.UpdateParser(parser, behavior
-                        & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
-                }
+                parser ??= TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                     return default;
                 return parser(reader);
@@ -194,12 +212,8 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
-                cache?.UpdateCache(reader, cmd, ref parser);
-                if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out parser!))
-                        throw new NotSupportedException();
-                    cache?.UpdateParser(parser, behavior & ~CommandBehavior.CloseConnection);
-                }
+                parser ??= TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~CommandBehavior.CloseConnection);
                 while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     yield return parser(reader);
                 while (await reader.NextResultAsync(ct).ConfigureAwait(false)) { }
@@ -232,14 +246,11 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
-                cache?.UpdateCache(reader, cmd, ref parser);
                 if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out var par))
-                        throw new NotSupportedException();
-                    parser = r => Task.FromResult(par(r));
-                    cache?.UpdateParser(parser, behavior
-                        & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
+                    var par = TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                    parser ??= r => Task.FromResult(par(r));
                 }
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                     return default;
                 return await parser(reader).ConfigureAwait(false);
@@ -271,13 +282,11 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
-                cache?.UpdateCache(reader, cmd, ref parser);
                 if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out var par))
-                        throw new NotSupportedException();
-                    parser = r => Task.FromResult(par(r));
-                    cache?.UpdateParser(parser, behavior & ~CommandBehavior.CloseConnection);
+                    var par = TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                    parser ??= r => Task.FromResult(par(r));
                 }
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~CommandBehavior.CloseConnection);
                 while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     yield return await parser(reader).ConfigureAwait(false);
                 while (await reader.NextResultAsync(ct).ConfigureAwait(false)) { }
@@ -311,17 +320,9 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
-                if (cache is not null) {
-                    var p = await cache.UpdateCache(reader, cmd, parser).ConfigureAwait(false);
-                    if (p is not null)
-                        parser = p;
-                }
-                if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out parser))
-                        throw new NotSupportedException();
-                    cache?.UpdateParser(parser, behavior
-                        & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
-                }
+                parser ??= TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                if (cache is not null)
+                    await cache.UpdateCache(reader, cmd, parser, behavior & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow)).ConfigureAwait(false);
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                     return default;
                 return parser(reader);
@@ -353,16 +354,9 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
-                if (cache is not null) {
-                    var p = await cache.UpdateCache(reader, cmd, parser).ConfigureAwait(false);
-                    if (p is not null)
-                        parser = p;
-                }
-                if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out parser))
-                        throw new NotSupportedException();
-                    cache?.UpdateParser(parser, behavior & ~CommandBehavior.CloseConnection);
-                }
+                parser ??= TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                if (cache is not null)
+                    await cache.UpdateCache(reader, cmd, parser, behavior & ~CommandBehavior.CloseConnection).ConfigureAwait(false);
                 while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     yield return parser(reader);
                 while (await reader.NextResultAsync(ct).ConfigureAwait(false)) { }
@@ -395,18 +389,12 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
-                if (cache is not null) {
-                    var p = await cache.UpdateCache(reader, cmd, parser).ConfigureAwait(false);
-                    if (p is not null)
-                        parser = p;
-                }
                 if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out var par))
-                        throw new NotSupportedException();
-                    parser = r => Task.FromResult(par(r));
-                    cache?.UpdateParser(parser, behavior
-                        & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
+                    var par = TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                    parser ??= r => Task.FromResult(par(r));
                 }
+                if (cache is not null)
+                    await cache.UpdateCache(reader, cmd, parser, behavior & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow)).ConfigureAwait(false);
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                     return default;
                 return await parser(reader).ConfigureAwait(false);
@@ -438,17 +426,12 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
-                if (cache is not null) {
-                    var p = await cache.UpdateCache(reader, cmd, parser).ConfigureAwait(false);
-                    if (p is not null)
-                        parser = p;
-                }
                 if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out var par))
-                        throw new NotSupportedException();
-                    parser = r => Task.FromResult(par(r));
-                    cache?.UpdateParser(parser, behavior & ~CommandBehavior.CloseConnection);
+                    var par = TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                    parser ??= r => Task.FromResult(par(r));
                 }
+                if (cache is not null)
+                    await cache.UpdateCache(reader, cmd, parser, behavior & ~CommandBehavior.CloseConnection).ConfigureAwait(false);
                 while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     yield return await parser(reader).ConfigureAwait(false);
                 while (await reader.NextResultAsync(ct).ConfigureAwait(false)) { }
@@ -520,13 +503,8 @@ public static class DBCommandExtensions {
                 }
                 var r = cmd.ExecuteReader(behavior);
                 reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
-                cache?.UpdateCache(reader, cmd, ref parser);
-                if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out parser!))
-                        throw new NotSupportedException();
-                    cache?.UpdateParser(parser, behavior
-                        & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
-                }
+                parser ??= TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
                 if (!reader.Read())
                     return default;
                 return parser(reader);
@@ -559,12 +537,8 @@ public static class DBCommandExtensions {
                 }
                 var r = cmd.ExecuteReader(behavior);
                 reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
-                cache?.UpdateCache(reader, cmd, ref parser);
-                if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out parser!))
-                        throw new NotSupportedException();
-                    cache?.UpdateParser(parser, behavior & ~CommandBehavior.CloseConnection);
-                }
+                parser ??= TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~CommandBehavior.CloseConnection);
                 while (reader.Read())
                     yield return parser(reader);
                 while (reader.NextResult()) { }
@@ -622,14 +596,11 @@ public static class DBCommandExtensions {
                 }
                 var r = cmd.ExecuteReader(behavior);
                 reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
-                cache?.UpdateCache(reader, cmd, ref parser);
                 if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out var par))
-                        throw new NotSupportedException();
+                    var par = TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
                     parser = r => Task.FromResult(par(r));
-                    cache?.UpdateParser(parser, behavior
-                        & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
                 }
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~(CommandBehavior.CloseConnection | CommandBehavior.SingleRow));
                 if (!reader.Read())
                     return default;
                 return await parser(reader).ConfigureAwait(false);
@@ -662,13 +633,11 @@ public static class DBCommandExtensions {
                 }
                 var r = cmd.ExecuteReader(behavior);
                 reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
-                cache?.UpdateCache(reader, cmd, ref parser);
                 if (parser is null) {
-                    if (!TypeParser<T>.TryGetParser(reader.GetColumns(), out _, out var par))
-                        throw new NotSupportedException();
+                    var par = TypeParser<T>.GetParser(reader.GetColumns(), out behavior);
                     parser = r => Task.FromResult(par(r));
-                    cache?.UpdateParser(parser, behavior & ~CommandBehavior.CloseConnection);
                 }
+                cache?.UpdateCache(reader, cmd, parser, behavior & ~CommandBehavior.CloseConnection);
                 while (reader.Read())
                     yield return await parser(reader).ConfigureAwait(false);
                 while (reader.NextResult()) { }

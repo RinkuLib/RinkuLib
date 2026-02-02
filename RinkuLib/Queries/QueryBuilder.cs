@@ -122,12 +122,12 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : ICommandBuilder
             QueryCommand.SetCommand(cmd, Variables);
         return cmd;
     }
-    public DbCommand GetCommandAndCache(DbConnection cnn, DbTransaction? transaction, int? timeout, out IParserCache? cache) {
+    public DbCommand GetCommandAndCache(DbConnection cnn, DbTransaction? transaction, int? timeout, out ICache? cache) {
         var cmd = GetCommand(cnn, transaction, timeout);
         cache = QueryCommand.NeedToCache(Variables) ? QueryCommand : null;
         return cmd;
     }
-    public IDbCommand GetCommandAndCache(IDbConnection cnn, IDbTransaction? transaction, int? timeout, out IParserCache? cache) {
+    public IDbCommand GetCommandAndCache(IDbConnection cnn, IDbTransaction? transaction, int? timeout, out ICache? cache) {
         var cmd = GetCommand(cnn, transaction, timeout);
         cache = QueryCommand.NeedToCache(Variables) ? QueryCommand : null;
         return cmd;

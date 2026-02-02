@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Diagnostics.CodeAnalysis;
+using System.Net.ServerSentEvents;
 using System.Reflection;
 using RinkuLib.DbParsing;
 using Xunit;
@@ -36,8 +37,7 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         );
 
-        if (!TypeParser<SimpleUser>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to get parser");
+        var parser = TypeParser<SimpleUser>.GetParser(columns);
 
         reader.Read();
         var user1 = parser(reader);
@@ -61,8 +61,7 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         );
 
-        if (!TypeParser<(int ID, string Name)>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to get parser");
+        var parser = TypeParser<(int ID, string Name)>.GetParser(columns);
 
         reader.Read();
         var user1 = parser(reader);
@@ -85,8 +84,7 @@ public class TypeParserTests {
             [1, 2]
         );
 
-        if (!TypeParser<(int ID, int ID2)>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to get parser");
+        var parser = TypeParser<(int ID, int ID2)>.GetParser(columns);
 
         reader.Read();
         var (ID, ID2) = parser(reader);
@@ -106,8 +104,7 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         );
 
-        if (!TypeParser<int>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to get parser");
+        var parser = TypeParser<int>.GetParser(columns);
 
         reader.Read();
         var id1 = parser(reader);
@@ -133,8 +130,7 @@ public class TypeParserTests {
             [badge, "Engineering", 95000.50m, joinDate]
         );
 
-        if (!TypeParser<EmployeeRecord>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to get parser");
+        var parser = TypeParser<EmployeeRecord>.GetParser(columns);
 
         reader.Read();
         var emp = parser(reader);
@@ -159,8 +155,7 @@ public class TypeParserTests {
             [501, DBNull.Value, false, 'B']
         );
 
-        if (!TypeParser<ProductStatus>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to get parser");
+        var parser = TypeParser<ProductStatus>.GetParser(columns);
 
         reader.Read();
         var p1 = parser(reader);
@@ -190,8 +185,7 @@ public class TypeParserTests {
             [100, 555, 1.5, "Overnight", "Fragile"], 
             [200, DBNull.Value, 0.0, "Ground", DBNull.Value]);
 
-        if (!TypeParser<Shipment>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Tool failed to generate the master parser.");
+        var parser = TypeParser<Shipment>.GetParser(columns);
 
         // --- Execute Row 1 ---
         reader.Read();
@@ -224,8 +218,7 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [99, "DE123456789", "GENEDEBK"]);
 
-        if (!TypeParser<Order>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Tool failed to generate the master parser.");
+        var parser = TypeParser<Order>.GetParser(columns);
 
         reader.Read();
         var result = parser(reader);
@@ -251,8 +244,7 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [99, 14532]);
 
-        if (!TypeParser<Order>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Tool failed to generate the master parser.");
+        var parser = TypeParser<Order>.GetParser(columns);
 
         reader.Read();
         var result = parser(reader);
@@ -273,8 +265,7 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [321, "1234 5678 9012 3456", "John Smith"]);
 
-        if (!TypeParser<Order>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Tool failed to generate the master parser.");
+        var parser = TypeParser<Order>.GetParser(columns);
 
         reader.Read();
         var result = parser(reader);
@@ -299,8 +290,7 @@ public class TypeParserTests {
             [99, "DE123456789", "GENEDEBK"],
             [100, "1234 5678 9012 3456", DBNull.Value]);
 
-        if (!TypeParser<Order>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Tool failed to generate the master parser.");
+        var parser = TypeParser<Order>.GetParser(columns);
 
         reader.Read();
         var result = parser(reader);
@@ -341,8 +331,7 @@ public class TypeParserTests {
         );
 
         // Testing BoxedProduct with <decimal, string>
-        if (!TypeParser<BoxedProduct<decimal, string>>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to generate parser for Generic type graph");
+        var parser = TypeParser<BoxedProduct<decimal, string>>.GetParser(columns);
 
         // --- Row 1 ---
         reader.Read();
@@ -364,8 +353,7 @@ public class TypeParserTests {
             [500, 12.50, CurrencyCode.CAD, 42, "API"]
         );
 
-        if (!TypeParser<BoxedProduct<double, int>>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to generate parser for different generic closure");
+        var parser = TypeParser<BoxedProduct<double, int>>.GetParser(columns);
 
         reader.Read();
         var result = parser(reader);
@@ -399,8 +387,7 @@ public class TypeParserTests {
         );
 
         // Closing with <decimal, int>
-        if (!TypeParser<BoxedProduct<decimal, int>>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Failed to generate parser for BoxedProduct<decimal, int>");
+        var parser = TypeParser<BoxedProduct<decimal, int>>.GetParser(columns);
 
         // --- VALIDATE ROW 1: Normal Operation ---
         reader.Read();
@@ -441,8 +428,7 @@ public class TypeParserTests {
         // Metadata.Value is [NotNull] T. If DB gives us NULL, it must fail.
         using var reader = CreateReader(columns, [201, 15.0d, 2, "Trusted"], [202, 15.0, 1, DBNull.Value]);
 
-        if (!TypeParser<BoxedProduct<double, string>>.TryGetParser(columns, out _, out var parser))
-            throw new Exception("Parser failed to generate.");
+        var parser = TypeParser<BoxedProduct<double, string>>.GetParser(columns);
 
         reader.Read();
         var p1 = parser(reader);

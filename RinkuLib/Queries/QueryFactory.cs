@@ -35,6 +35,9 @@ public struct QueryFactory {
         ('R', RawVariableHandler.Build),
         ('N', NumberVariableHandler.Build)
     );
+#pragma warning disable CA2211
+    public static char DefaultVariableChar = '@';
+#pragma warning restore CA2211
     /// <summary>The normalized SQL query string with all markers and metadata stripped.</summary>
     public string Query;
     /// <summary>
@@ -63,7 +66,6 @@ public struct QueryFactory {
     public int NbBaseHandlers;
     public int NbRequired;
     public int NbNonVarComment;
-    public bool HasSelect;
     /// <summary>
     /// Bitmask of letters ('a'-'z') representing the <b>non-claimed base handlers</b>.
     /// Derived at construction by filtering the current state of <see cref="BaseHandlerMapper.PresenceMap"/> 
@@ -96,9 +98,11 @@ public struct QueryFactory {
     /// <item><b>Standard/Not handled Segments:</b> Segments without handler logic have their handler set to <c>null</c>.</item>
     /// </list>
     /// </remarks>
-    public QueryFactory(string query, bool extractSelects, char variableChar, uint specialHandlerPresenceMap = 0) {
+    public QueryFactory(string query, char variableChar = default, uint specialHandlerPresenceMap = 0) {
+        if (variableChar == default)
+            variableChar = DefaultVariableChar;
         this.BaseHandlerPresenceMap = BaseHandlerMapper.PresenceMap & ~specialHandlerPresenceMap;
-        using var condInfos = QueryExtracter.Segment(query, extractSelects, variableChar, out Query, out HasSelect);
+        using var condInfos = QueryExtracter.Segment(query, variableChar, out Query);
         if (condInfos.Length == 0) {
             Segments = [new(0, Query.Length, 0, false, null)];
             Mapper = Mapper.GetEmptyMapper();
@@ -109,9 +113,21 @@ public struct QueryFactory {
         Mapper = MakeMapper(condInfos, variableChar);
         Conditions = MakeConditions(condInfos);
         UpdateCondToSkip();
+        UpdateExecesses();
     }
-    private readonly Condition MakeSentinel() => new(Mapper.Count, Segments.Length, -1, 0);
 
+    private readonly void UpdateExecesses() {
+        for (int i = 0; i < Segments.Length; i++) {
+            var seg = Segments[i];
+            if (seg.Handler is not null || seg.ExcessOrInd == 0)
+                continue;
+            var endIndex = seg.Start + seg.Length - seg.ExcessOrInd;
+            if (endIndex > seg.Start && char.IsWhiteSpace(Query[endIndex - 1]))
+                Segments[i].ExcessOrInd++;
+        }
+    }
+
+    private readonly Condition MakeSentinel() => new(Mapper.Count, Segments.Length, -1, 0);
     private readonly void UpdateCondToSkip() {
         Array.Sort(Conditions);
         var len = Conditions.Length - 1;
@@ -165,16 +181,12 @@ public struct QueryFactory {
             end++;
         if (end < Segments.Length && cond.NextSegmentIsSection)
             Segments[end].IsSection = cond.NextSegmentIsSection;
-        if (Segments[segInd].Handler is null)
-            Segments[segInd].ExcessOrInd = cond.CurrentSegmentExcess;
         if (segInd - 1 >= 0 && Segments[segInd - 1].Handler is null)
             Segments[segInd - 1].ExcessOrInd = cond.PrevSegmentExcess;
-        if (cond.CurrentSegmentIsSection)
-            Segments[segInd].IsSection = true;
         if (!Mapper.TryGetValue(cond.Cond, out var condMapperInd))
             throw new Exception($"Comment conditions using variables must exist in the query: {cond.Cond}");
         var isOrIdentifier = 0;
-        if (cond.Type == CondInfo.OrComment || cond.Type == CondInfo.JoinedSelect)
+        if (cond.Type == CondInfo.OrComment || CondInfo.IsJoinedSelect(cond.Type))
             isOrIdentifier = -1;
         return new(condMapperInd, segInd, end - segInd, isOrIdentifier);
     }
@@ -209,11 +221,11 @@ public struct QueryFactory {
                 else
                     keys[specialHandlersInd++] = cond.Cond;
             }
-            else if (CondInfo.IsSelect(cond.Type))
+            else if (CondInfo.IsMainSelect(cond.Type))
                 keys[selectInd++] = cond.Cond;
             else if (cond.Type == CondInfo.None)
                 keys[normalVariableInd++] = cond.Cond;
-            else if (CondInfo.IsComment(cond.Type))
+            else if (CondInfo.IsOther(cond.Type))
                 if (cond.Cond[0] != variableChar)
                     keys[commentInd++] = cond.Cond;
         }
@@ -248,11 +260,11 @@ public struct QueryFactory {
                 if (IsBaseHandler(cond.Type))
                     NbBaseHandlers++;
             }
-            else if (CondInfo.IsSelect(cond.Type))
+            else if (CondInfo.IsMainSelect(cond.Type))
                 NbSelects++;
             else if (cond.Type == CondInfo.None)
                 NbNormalVar++;
-            else if (CondInfo.IsComment(cond.Type))
+            else if (CondInfo.IsOther(cond.Type))
                 if (cond.Cond[0] != variableChar)
                     NbNonVarComment++;
             if (cond.IsRequired) {
@@ -277,18 +289,6 @@ public struct QueryFactory {
         var res = segments[0..segInd];
         ArrayPool<QuerySegment>.Shared.Return(segments);
         segmentIndexes.Dispose();
-        segInd = 0;
-        for (int i = 0; i < condInfos.Length; i++) {
-            if (!condInfos[i].Flags.HasFlag(CondFlags.IsHandlerFollowedByClosingParentesisOrSection))
-                continue;
-            var handlerQueryIndex = condInfos[i].VarIndex;
-            for (; segInd < res.Length; segInd++) {
-                if (res[segInd].Start == handlerQueryIndex) {
-                    res[segInd + 1].IsSection = true;
-                    break;
-                }
-            }
-        }
         return res;
     }
 }
