@@ -105,8 +105,8 @@ It is preferable to keep non-conditional parts of the query together whenever po
 * **Less Optimal:** `SELECT * FROM Users WHERE Name = ?@Name AND IsActive = 1` (3 segments)
 
 The same logic applies to comma cleanup. If an optional segment is removed, the engine ensures no dangling separators remain.
-* **Template:** `UPDATE Users SET Email = @Email, Phone = ?@Phone`
-* **Result:** `UPDATE Users SET Email = @Email`
+* **Template:** `UPDATE Users SET Email = @Email, Phone = ?@Phone WHERE ID = @ID`
+* **Result:** `UPDATE Users SET Email = @Email WHERE ID = @ID`
 
 The engine also manages the presence of the clause keywords themselves. If an optional variable is not provided, the engine ensures the SQL remains valid by removing the clause if it becomes empty.
 * **Template:** `SELECT * FROM Users WHERE Name = ?@Name ORDER BY Name`
@@ -375,6 +375,8 @@ An handled variable can also be used with optional parameters.
 An `IBaseHandler` handles only the query string. It modifies the SQL by injecting values directly into the string through its `Handle` method.
 
 * **Example:** `_N` is an `IBaseHandler` because it directly injects a number into the SQL query string without affecting other parts of the execution.
+
+---
 
 #### `SpecialHandler`
 
