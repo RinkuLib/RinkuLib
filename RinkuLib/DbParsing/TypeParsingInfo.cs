@@ -126,10 +126,20 @@ public class TypeParsingInfo {
     /// discovered or manually registered for this type.
     /// </summary>
     public ReadOnlySpan<MethodCtorInfo> PossibleConstructors {
-        get => MCIs; set {
-            for (var i = 0; i < value.Length; i++)
-                if (!value[i].TargetType.IsStackEquivalent(Type))
+        get {
+            if (!IsInit)
+                Init();
+            return MCIs;
+        }
+        set {
+            for (var i = 0; i < value.Length; i++) {
+                var c = value[i];
+                if (!c.TargetType.IsStackEquivalent(Type))
                     throw new InvalidOperationException($"the method or constructor must be of type {Type} (returning type)");
+                var declare = c.MethodBase.DeclaringType!;
+                if (declare != Type && declare.IsGenericType)
+                    throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
+            }
             Interlocked.Exchange(ref MCIs, value.ToArray());
         }
     }
@@ -139,9 +149,14 @@ public class TypeParsingInfo {
     /// </summary>
     public ReadOnlySpan<MemberParser> AvailableMembers {
         get => Members; set {
-            for (var i = 0; i < value.Length; i++)
-                if (value[i].TargetType != Type)
+            for (var i = 0; i < value.Length; i++) {
+                var c = value[i];
+                if (!c.TargetType.IsStackEquivalent(Type))
                     throw new InvalidOperationException($"the method or constructor must be of type {Type}");
+                var declare = c.Member.DeclaringType!;
+                if (declare != Type && declare.IsGenericType)
+                    throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
+            }
             Interlocked.Exchange(ref Members, value.ToArray());
         }
     }
@@ -279,7 +294,7 @@ public class TypeParsingInfo {
     /// Scans the type via reflection to find all public constructors, static methods, 
     /// properties, and fields for automatic mapping.
     /// </summary>
-    private void Init() {
+    public void Init() {
         lock (WriteLock) {
             if (IsInit)
                 return;
@@ -394,8 +409,12 @@ public class TypeParsingInfo {
         => AddPossibleConstruction(new MethodCtorInfo(methodBase));
     public void AddPossibleConstruction(MethodCtorInfo mci) {
         lock (WriteLock) {
-            if (!mci.TargetType.IsStackEquivalent(Type))
+            var target = mci.TargetType;
+            if (!target.IsStackEquivalent(Type))
                 throw new Exception($"the expected type is {Type} but the provided type via the method is {mci.TargetType}");
+            var declare = mci.MethodBase.DeclaringType!;
+            if (declare != Type && declare.IsGenericType)
+                throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
             mci.InsertInto(ref MCIs);
         }
     }

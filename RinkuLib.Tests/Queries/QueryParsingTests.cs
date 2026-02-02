@@ -1,4 +1,5 @@
-﻿using RinkuLib.Queries;
+﻿using RinkuLib.DbParsing;
+using RinkuLib.Queries;
 using Xunit;
 
 namespace RinkuLib.Tests.Queries; 

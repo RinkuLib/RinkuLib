@@ -70,6 +70,10 @@ public class MethodCtorInfo {
     /// <summary>
     /// Attempts to create a new <see cref="MethodCtorInfo"/>, returning false if validation fails.
     /// </summary>
+    public static bool TryNew(MethodBase MethodBase, [MaybeNullWhen(false)] out MethodCtorInfo mci) => TryNew(MethodBase, TryMakeParameters(MethodBase), out mci);
+    /// <summary>
+    /// Attempts to create a new <see cref="MethodCtorInfo"/>, returning false if validation fails.
+    /// </summary>
     public static bool TryNew(MethodBase MethodBase, IDbTypeParserMatcher[]? Parameters, [MaybeNullWhen(false)] out MethodCtorInfo mci) {
         var ex = Validate(MethodBase, Parameters);
         if (ex is not null) {
