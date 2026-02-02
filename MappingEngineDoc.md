@@ -376,3 +376,68 @@ The engine has discovered and registered the following constructor for the `Item
 | --- | --- | --- | --- |
 | **`id`** | `T` (Generic) | `["id"]` | **`JumpIfNull`** |
 | **`description`** | `string` | `["description"]` | **`NullableColHandler`** |
+
+### **Manual Post-Creation Overrides**
+
+The **`IDbTypeParserMatcher`** interface allows for direct modification of a matcher’s behavior after its initial creation. This enables fine-grained control over how a specific slot will negotiate with the schema or behave at execution time.
+
+* **Property Swapping:** The **`NameComparer`** and **`NullColHandler`** properties are writable. You can replace the default strategies with custom implementations to change how columns are matched or how `NULL` values are processed.
+* **Direct Configuration:** The **`AddAltName`** and **`SetJumpWhenNull`** methods provide a clean, high-level way to perform common adjustments—such as injecting aliases or switching to a "Jump" strategy.
+
+> **Implementation Note:** The outcome of these modifications is entirely in the hands of the implementation. A custom matcher may ignore these calls or handle them through internal mechanisms that do not follow the standard `ParamInfo` logic.
+
+### **Bulk Configuration via TypeParsingInfo**
+
+The **`TypeParsingInfo`** instance provides methods to apply configurations across the registry based on a "default name." This ensures that specific naming or null-handling rules are applied consistently, even if the engine chooses between different construction paths or members.
+
+* **`SetJumpWhenNull(string defaultName, bool jumpWhenNull)`**: This method scans the **`PossibleConstructors`** collection. For every matcher where the parameter name matches `defaultName`, it calls that matcher's `SetJumpWhenNull` method.
+* **`AddAltName(string defaultName, string nameToAdd)`**: This method applies to both **`PossibleConstructors`** and **`AvailableMembers`**. For every matcher where the parameter name matches `defaultName`, it calls that matcher's `AddAltName` method.
+
+### **Customizing Negotiation**
+
+Every type has a negotiation process that can be entirely replaced. By setting the `Matcher` property on the `TypeParsingInfo` instance, you can define a custom strategy for how that type should resolve itself against a schema.
+
+`public IDbTypeParserInfoMatcher? Matcher { get; set; }`
+
+If this property is provided, the engine delegates all matching logic for that type to your custom implementation every time the type is encountered.
+
+---
+
+## **The Negotiation Process**
+
+When `GetParser<T>` is called, the engine first checks an internal cache for an existing function mapped to the exact current database schema. If a match is found, the cached `Func<DbDataReader, T>` is returned immediately. If not, the engine retrieves the `TypeParsingInfo` for the target type and initiates the **Negotiation Process**.
+
+---
+
+### **The Default Negotiation Logic**
+
+If no custom `Matcher` is provided, the engine follows a structured, recursive search to find the best fit for the schema:
+
+#### **1. Evaluating Entry Points**
+
+The engine loops through the `PossibleConstructors` in their priority order. For each entry point, it attempts to "match" every parameter by calling its associated **`IDbTypeParserMatcher`**.
+
+* **Recursive Matching:** A matcher may trigger deep recursion (e.g., if a parameter is itself a complex type) to successfully build its branch of the resolution tree.
+* **Column Tracking:** As columns are matched, they are marked as "used" to ensure a single database column isn't mapped to multiple parameters within the same construction path.
+* **Path Failure:** If any single parameter fails to match, the engine abandons that entry point and moves to the next one in the registry.
+
+#### **2. Member Completion**
+
+Once a valid entry point is found (all parameters matched), the engine checks if that path is authorized to **Complete with Members**:
+
+* **Standard Paths:** If authorized, the engine attempts to match as many `AvailableMembers` as possible from the remaining unmatched columns.
+* **Parameterless Fallback:** If no specific entry point with parameters matches, the engine checks for a parameterless constructor. If found, it populates the object solely using `AvailableMembers`.
+
+#### **3. Local Match (Tree Nodes)**
+
+During the recursive search, the engine determines if a specific type can be satisfied by the schema:
+
+* **Failure:** If no entry point can satisfy the schema (and no parameterless fallback available), the type fails to match. This failure bubbles up to the parent caller, who may then try an alternative construction path.
+* **Success:** A match is found. The engine creates a **Resolution Node** that encapsulates the chosen entry point, the tree branches for its parameters, and (if authorized) any matching branches for its members.
+
+#### **4. Global Result (The Final Function)**
+
+Once the process returns to the root type (from `GetParser`):
+
+* **Global Success:** A complete resolution tree has been successfully constructed from the root down to every leaf. The engine traverses this tree to compile the optimized IL function, caches it for future use, and returns it.
+* **Global Failure:** If the root target type cannot find any viable path to satisfy the schema, the engine throws an exception.
