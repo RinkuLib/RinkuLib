@@ -547,21 +547,21 @@ public class QueryParsingTests {
     public void Using_ObjectMapping() {
         var query = new QueryCommand("SELECT EmployeeId, FirstName, Salary, /*Year*/Year FROM Employees WHERE Salary >= ?@MinSalary AND Department = ?@DeptName AND Status = ?@EmployeeStatus ORDER BY Salary DESC");
         var builder = query.StartBuilder();
-        builder.Use(new TestDtoClass(null, null, null));
+        builder.UseWith(new TestDtoClass(null, null, null));
         Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees ORDER BY Salary DESC", []);
 
-        builder.Use(new TestDtoStruct(10, null, null));
+        builder.UseWith(new TestDtoStruct(10, null, null));
         Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees WHERE Salary >= @MinSalary ORDER BY Salary DESC", 
             [("@MinSalary", 10)]);
 
         builder = query.StartBuilder();
         var t = new TestDtoStruct(null, "Marketing", "Employed");
-        builder.Use(ref t);
+        builder.UseWith(ref t);
         Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees WHERE Department = @DeptName AND Status = @EmployeeStatus ORDER BY Salary DESC",
             [("@DeptName", "Marketing"), ("@EmployeeStatus", "Employed")]);
 
         var t2 = new TestDtoClass(10, "Marketing", "Employed") { Year = true };
-        builder = query.StartBuilder(ref t2);
+        builder = query.StartBuilderWith(ref t2);
         Verify(builder, "SELECT EmployeeId, FirstName, Salary, Year FROM Employees WHERE Salary >= @MinSalary AND Department = @DeptName AND Status = @EmployeeStatus ORDER BY Salary DESC",
             [("@MinSalary", 10), ("@DeptName", "Marketing"), ("@EmployeeStatus", "Employed")]);
     }

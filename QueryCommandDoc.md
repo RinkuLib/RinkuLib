@@ -66,7 +66,7 @@ userCmd.UpdateParamCache("@id", TypedDbParamCache.Get(DbType.Int32));
 
 ## The Parser Cache
 
-The Parser Cache handles the transformation of `IDataReader` rows into C# objects. It is a **lazy, reactive system** that only populates when the engine is asked to hydrate an object from a result set.
+The Parser Cache handles the transformation of `DbDataReader` rows into C# objects. It is a **lazy, reactive system** that only populates when the engine is asked to parse an object from a result set.
 
 ### Logical Bypass
 
@@ -76,8 +76,7 @@ For non-SELECT queries (like `INSERT`, `UPDATE`, or `DELETE`), the Parser Cache 
 
 When a query returns data, the `QueryCommand` captures the **first available delegate** it encounters for that schema:
 
-* **Explicitly Provided:** If you pass a manually created delegate into the execution call, the `QueryCommand` caches it immediately.
-* **Engine Generated:** If no delegate is provided, the engine calls `GetParser` to generate a specialized IL-function for the schema. This generated function is then saved into the cache.
+* **Engine Generated:** The engine calls `GetParser` to generate a specialized IL-function for the schema. This generated function is then saved into the cache.
 
 ### Fixed vs. Dynamic Projection
 

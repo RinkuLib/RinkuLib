@@ -30,8 +30,28 @@ public class CompleteTests {
         Assert.Equal("John", p.Username);
         Assert.Null(p.Email);
 
-        var builder2 = query.StartBuilderWith(("@Active", 0));
+        var builder2 = query.StartBuilder(("@Active", 0));
         var p2 = builder2.QuerySingle<Person>(cnn);
+        Assert.NotNull(p2);
+        Assert.Equal(2, p2.ID);
+        Assert.Equal("Victor", p2.Username);
+        Assert.Equal("abc@email.com", p2.Email);
+    }
+    [Fact]
+    public void Example1_StaticQuery_Reuse() {
+        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active");
+        using var cnn = GetDbCnn();
+        using var cmd = cnn.CreateCommand();
+        var builder = query.StartBuilder(cmd);
+        builder.Use("@Active", true);
+        var p = builder.QuerySingle<Person>();
+        Assert.NotNull(p);
+        Assert.Equal(1, p.ID);
+        Assert.Equal("John", p.Username);
+        Assert.Null(p.Email);
+
+        builder.Use("@Active", 0);
+        var p2 = builder.QuerySingle<Person>();
         Assert.NotNull(p2);
         Assert.Equal(2, p2.ID);
         Assert.Equal("Victor", p2.Username);
