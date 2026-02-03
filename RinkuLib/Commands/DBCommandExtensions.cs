@@ -515,3 +515,23 @@ public static class DBCommandExtensions {
             => cmd.QueryMultipleAsync<DefaultNoCache<T>, T>(default, disposeCommand, ct);
     }
 }
+/*
+ 
+---
+
+### 3. Asynchronous Mapping Alternatives (`ParseAsync`)
+
+For specialized scenarios where the mapping process itself is I/O-bound, RinkuLib provides `ParseAsync` variants. These allow you to `await` logic inside the mapper for every row processed.
+
+* **Methods**: `QuerySingleParseAsync<T>` and `QueryMultipleParseAsync<T>`.
+* **Signature**: These require a **`Func<DbDataReader, Task<T>>`** instead of the standard **`Func<DbDataReader, T>`**.
+* **Custom Mapping & Behavior:** You can bypass the automatic engine by providing a specific **`Func<DbDataReader, T>`**. This is a "plug-in" point where you define the construction logic. These overloads also allow you to specify a **`CommandBehavior`** (e.g., `SequentialAccess` or `SingleResult`) to fine-tune how the reader streams data.
+
+```csharp
+// Standard: Mapping Engine negotiates the parser automatically
+var user = builder.QuerySingle<User>(cnn);
+
+// Manual: You provide the func; Mapping Engine is bypassed
+var name = builder.QuerySingle(cnn, reader => reader.GetString(0), CommandBehavior.SingleResult);
+
+ */

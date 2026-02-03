@@ -151,16 +151,11 @@ RinkuLib provides three primary operations, available in both **Synchronous** an
 
 The query methods come in two distinct flavors depending on how you want to handle the data transformation:
 
-* **Automatic Mapping (Standard):** When you call these methods without a function parameter, RinkuLib uses its **Mapping Engine** to negotiate with the database schema. It dynamically generates a high-speed IL-parser (via `GetParser`) that matches the returned columns to your object properties.
-* **Custom Mapping & Behavior:** You can bypass the automatic engine by providing a specific **`Func<DbDataReader, T>`**. This is a "plug-in" point where you define the construction logic. These overloads also allow you to specify a **`CommandBehavior`** (e.g., `SequentialAccess` or `SingleResult`) to fine-tune how the reader streams data.
+* **Automatic Mapping:** When you call these methods, RinkuLib uses its **Mapping Engine** to negotiate with the database schema. It dynamically generates a high-speed IL-parser (via `GetParser`) that matches the returned columns to your object properties.
 
 ```csharp
 // Standard: Mapping Engine negotiates the parser automatically
 var user = builder.QuerySingle<User>(cnn);
-
-// Manual: You provide the func; Mapping Engine is bypassed
-var name = builder.QuerySingle(cnn, reader => reader.GetString(0), CommandBehavior.SingleResult);
-
 ```
 
 ---
@@ -173,6 +168,10 @@ All builder methods use a consistent signature for managing the database context
 * **`transaction`**: *(Optional)* The transaction to associate with the command.
 * **`timeout`**: *(Optional)* Overrides the default command timeout.
 * **`ct`**: *(Async only)* A `CancellationToken` for the task lifecycle.
+---
+
+### 4. `QueryBuilderCommand`
+The equivalent methods for `QueryBuilderCommand` does not take any parameters (except the `ct`), and does not reconfigure the associated `DbCommand`.
 
 ---
 
@@ -192,25 +191,8 @@ These extensions transform a standard `DbCommand` into a high-speed data mapper.
 
 ### 2. Extension Parameters
 
-Every method in the table above utilizes a consistent set of parameters. All are optional and default to `null` or a library-standard behavior.
-
-* **`parser`**:
-    * Provide a **`Func<DbDataReader, T>`** to use manual construction logic.
-    * If omitted (`null`), RinkuLib provides a negotiated IL-delegate via the internal mapping engine.
-* **`cache`**: Optional hooks triggered immediately **after** execution (post-`ExecuteReader` or `ExecuteNonQuery`).
-    * **`ICache` / `ICacheAsync`**: Receives the `DbCommand`. The `Async` version is awaited.
-    * **`IParserCache` / `IParserCacheAsync`**: Receives the `DbDataReader`, the `DbCommand`, and the final `Func` parser (provided or negotiated). The `Async` version is awaited.
-* **`behavior`**: Sets the **`CommandBehavior`** (e.g., `SequentialAccess` or `SingleRow`).
+Every method in the table above utilizes a consistent set of parameters.
 * **`disposeCommand`**: A boolean (defaults to **`true`**).
     * If **`true`**: The command is automatically disposed after execution or when the result stream is exhausted.
     * If **`false`**: The command is not disposed, allowing it to be accessed or reused after the call.
 * **`ct`**: *(Async only)* A `CancellationToken` for the task lifecycle.
-
----
-
-### 3. Asynchronous Mapping Alternatives (`ParseAsync`)
-
-For specialized scenarios where the mapping process itself is I/O-bound, RinkuLib provides `ParseAsync` variants. These allow you to `await` logic inside the mapper for every row processed.
-
-* **Methods**: `QuerySingleParseAsync<T>` and `QueryMultipleParseAsync<T>`.
-* **Signature**: These require a **`Func<DbDataReader, Task<T>>`** instead of the standard **`Func<DbDataReader, T>`**.

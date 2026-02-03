@@ -4,9 +4,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace RinkuLib.DbParsing;
 /// <summary>
