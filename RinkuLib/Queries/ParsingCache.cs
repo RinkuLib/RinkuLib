@@ -1,6 +1,4 @@
-﻿using System.Data;
-using System.Data.Common;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace RinkuLib.Queries; 
@@ -10,67 +8,77 @@ public abstract class ParsingCache {
         if (nbSelects <= 0)
             return null;
         if (nbSelects <= 32)
-            return new DynamicQueryCache<Masker32, uint>();
+            return new ParsingCache<Masker32, uint>();
         if (nbSelects <= 64)
-            return new DynamicQueryCache<Masker64, ulong>();
+            return new ParsingCache<Masker64, ulong>();
         if (nbSelects <= 128)
-            return new DynamicQueryCache<Masker128, Int128>();
+            return new ParsingCache<Masker128, Int128>();
         if (nbSelects <= 256)
-            return new DynamicQueryCache<Masker256, Int256>();
-        return new DynamicQueryCache<MaskerInfinite, ulong[]>();
+            return new ParsingCache<Masker256, Int256>();
+        return new ParsingCache<MaskerInfinite, ulong[]>();
     }
-    public abstract void GetCacheAndParser<T>(object?[] variables, out Func<DbDataReader, T>? parser, out CommandBehavior behavior, out IParserCache? cache);
-}
-internal sealed class SingleItemCache : ParsingCache, IParserCache {
-    public object? MethodFunc;
-    public CommandBehavior DefaultBehavior;
-    public override void GetCacheAndParser<T>(object?[] variables, out Func<DbDataReader, T>? parser, out CommandBehavior behavior, out IParserCache? cache) {
-        if (MethodFunc is null) {
-            behavior = default;
-            cache = this;
-            parser = null;
-            return;
-        }
-        parser = MethodFunc as Func<DbDataReader, T>;
-        behavior = parser is null ? default : DefaultBehavior;
-        cache = null;
-    }
-    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parsingFunc, CommandBehavior behavior) {
-        if (MethodFunc is not null)
-            return;
-        lock (SharedLock) {
-            if (MethodFunc is null) {
-                MethodFunc = parsingFunc;
-                DefaultBehavior = behavior;
-            }
-        }
-    }
+    public abstract bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache);
+    public abstract int GetActualGetCacheIndex<T>(object?[] variables);
+    public abstract bool UpdateCache<T>(int index, ParsingCache<T> cache);
 }
 public interface IKeyMasker<TMask> {
     public abstract static TMask ToMask(object?[] variables);
     public abstract static bool Equals(TMask k1, TMask k2);
 }
-internal sealed class DynamicQueryCache<TMasker, TMask> : ParsingCache where TMasker : IKeyMasker<TMask> {
-    private SingleItemCache[] Cache = [];
+public sealed class ParsingCache<TMasker, TMask> : ParsingCache where TMasker : IKeyMasker<TMask> {
+    private IParsingCache[] Cache = [];
     private TMask[] Keys = [];
-    public override void GetCacheAndParser<T>(object?[] variables, out Func<DbDataReader, T>? parser, out CommandBehavior behavior, out IParserCache? cache) {
+    public override bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache) {
         var mask = TMasker.ToMask(variables);
         var keys = Keys;
         for (int i = 0; i < keys.Length; i++)
             if (TMasker.Equals(keys[i], mask)) {
-                Cache[i].GetCacheAndParser<T>(variables, out parser, out behavior, out cache);
-                return;
+                if (Cache[i] is ParsingCache<T> c) {
+                    cache = c;
+                    return true;
+                }
+                cache = new(_ => throw new Exception($"There allready has an item cached for a different type Current:{Cache[i].GetType()} Target:{typeof(ParsingCache<T>)}"), default);
+                return false;
             }
+        cache = default; 
+        return false;
+    }
+    public override int GetActualGetCacheIndex<T>(object?[] variables) {
+        var mask = TMasker.ToMask(variables);
+        var keys = Keys;
         lock (SharedLock) {
-            if (Cache.Length > 0 || Cache[^1].MethodFunc is null) {
-                GetCacheAndParser(variables, out parser, out behavior, out cache);
-                return;
+            for (int i = 0; i < keys.Length; i++)
+                if (TMasker.Equals(keys[i], mask)) {
+                    if (Cache[i] is ParsingCache<T>)
+                        return i;
+                    return -1;
+                }
+            if (Cache.Length <= 0) {
+                Cache = new IParsingCache[1];
+                Cache[0] = new ParsingCache<T>();
+                return 0;
             }
-            behavior = default;
-            parser = null;
-            cache = new SingleItemCache();
-            Cache = [.. Cache, (SingleItemCache)cache];
-            Keys = [.. Keys, mask];
+            var len = Cache.Length;
+            var c = new IParsingCache[len + 1];
+            Array.Copy(Cache, c, len);
+            Cache = c;
+            Cache[len] = new ParsingCache<T>();
+            var k = new TMask[len + 1];
+            Array.Copy(Keys, k, len);
+            Keys = k;
+            Keys[len] = mask;
+            return len;
+        }
+    }
+
+    public override bool UpdateCache<T>(int index, ParsingCache<T> cache) {
+        lock (SharedLock) {
+            if (index == -1)
+                throw new Exception("The item was allready cached using a different type");
+            if (((ParsingCache<T>)Cache[index]).IsValid)
+                return false;
+            Cache[index] = cache;
+            return true;
         }
     }
 }

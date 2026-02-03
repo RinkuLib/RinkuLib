@@ -13,24 +13,24 @@ public delegate void QueryFillAction<T, TBuilder>(ref T instance, TBuilder build
 /// from the properties and fields of a source object.
 /// </summary>
 public static class QueryBuilderExtensions {
-    public static QueryBuilder StartBuilder<T>(this QueryCommand command, ref T value) {
+    public static QueryBuilder StartBuilderWith<T>(this QueryCommand command, ref T value) {
         var builder = new QueryBuilder(command);
-        builder.Use(ref value);
+        builder.UseWith(ref value);
         return builder;
     }
-    public static QueryBuilderCommand<TCmd> StartBuilder<TCmd, T>(this QueryCommand command, TCmd cmd, ref T value) where TCmd : IDbCommand {
+    public static QueryBuilderCommand<TCmd> StartBuilderWith<TCmd, T>(this QueryCommand command, TCmd cmd, ref T value) where TCmd : IDbCommand {
         var builder = new QueryBuilderCommand<TCmd>(command, cmd);
-        builder.Use(ref value);
+        builder.UseWith(ref value);
         return builder;
     }
-    public static QueryBuilder StartBuilder<T>(this QueryCommand command, T value) {
+    public static QueryBuilder StartBuilderWith<T>(this QueryCommand command, T value) {
         var builder = new QueryBuilder(command);
-        builder.Use(ref value);
+        builder.UseWith(ref value);
         return builder;
     }
-    public static QueryBuilderCommand<TCmd> StartBuilder<TCmd, T>(this QueryCommand command, TCmd cmd, T value) where TCmd : IDbCommand {
+    public static QueryBuilderCommand<TCmd> StartBuilderWith<TCmd, T>(this QueryCommand command, TCmd cmd, T value) where TCmd : IDbCommand {
         var builder = new QueryBuilderCommand<TCmd>(command, cmd);
-        builder.Use(ref value);
+        builder.UseWith(ref value);
         return builder;
     }
     /// <summary>
@@ -44,7 +44,7 @@ public static class QueryBuilderExtensions {
     /// <see cref="IQueryFillable"/>, the custom Fill logic is used instead.
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Use<TBuilder, T>(this TBuilder builder, ref T value) where TBuilder : IQueryBuilder {
+    public static void UseWith<TBuilder, T>(this TBuilder builder, ref T value) where TBuilder : IQueryBuilder {
         if (typeof(T).IsValueType)
             Unsafe.As<StructFillAction<T, TBuilder>>(BuilderMapper<T, TBuilder>.FillDelegate)(ref value, builder);
         else
@@ -58,7 +58,7 @@ public static class QueryBuilderExtensions {
     /// For structs, consider using the <c>ref</c> overload to prevent copying the value onto the stack.
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Use<TBuilder, T>(this TBuilder builder, T value) where TBuilder : IQueryBuilder {
+    public static void UseWith<TBuilder, T>(this TBuilder builder, T value) where TBuilder : IQueryBuilder {
         if (typeof(T).IsValueType)
             Unsafe.As<StructFillAction<T, TBuilder>>(BuilderMapper<T, TBuilder>.FillDelegate)(ref value, builder);
         else

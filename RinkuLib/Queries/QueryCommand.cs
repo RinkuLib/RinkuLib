@@ -11,7 +11,7 @@ namespace RinkuLib.Queries;
 /// Defines the contract for an executable query unit, managing the transition 
 /// from a state-snapshot to a configured database command.
 /// </summary>
-public interface IQueryCommand : ICache, IParserCache {
+public interface IQueryCommand : ICache {
     /// <summary>
     /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
     /// </summary>
@@ -49,7 +49,7 @@ public interface IQueryCommand : ICache, IParserCache {
 /// to partition a single array of variables into standard parameters, special handlers, 
 /// and literal injections.</para>
 /// </remarks>
-public class QueryCommand : IQueryCommand {
+public class QueryCommand : ParsingCache, IQueryCommand {
     public static QueryCommand New(string query, char variableChar = default) => new(query, variableChar);
     public Mapper Mapper;
     Mapper IQueryCommand.Mapper => Mapper;
@@ -61,8 +61,7 @@ public class QueryCommand : IQueryCommand {
     public readonly QueryParameters Parameters;
     /// <summary> The SQL template and segment parsing logic. </summary>
     public readonly QueryText QueryText;
-    public ParsingCache? _parsingCache;
-    public ParsingCache? ParsingCache => _parsingCache;
+    public object? _parsingCache;
     public readonly int StartBaseHandlers;
     public readonly int StartSpecialHandlers;
     public readonly int StartVariables;
@@ -82,16 +81,43 @@ public class QueryCommand : IQueryCommand {
         Parameters = new(StartVariables, StartSpecialHandlers, specialHandlers);
         _parsingCache = ParsingCache.New(factory.NbSelects);
     }
-    public IParserCache? GetCacheAndParser<T>(object?[] variables, out CommandBehavior behavior, out Func<DbDataReader, T>? parser) {
-        if (_parsingCache is null) {
-            parser = null;
-            behavior = default;
-            return this;
+    public override bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache) {
+        if (_parsingCache is not ParsingCache<T> c) {
+            if (_parsingCache is ParsingCache p)
+                p.TryGetCache(variables, out c);
+            else {
+                cache = default;
+                return false;
+            }
         }
-        _parsingCache.GetCacheAndParser(variables, out parser, out behavior, out var cache);
-        if (NeedToCache(variables))
-            cache = cache is null ? this : new CacheWrapper(cache, this);
-        return cache;
+        cache = c;
+        return !NeedToCache(variables);
+    }
+
+    public override int GetActualGetCacheIndex<T>(object?[] variables) {
+        if (_parsingCache is ParsingCache p)
+            return p.GetActualGetCacheIndex<T>(variables);
+        if (_parsingCache is null) {
+            _parsingCache = new ParsingCache<T>();
+            return 0;
+        }
+        if (_parsingCache is not ParsingCache<T>)
+            return -1;
+        return 0;
+    }
+    public override bool UpdateCache<T>(int index, ParsingCache<T> cache) {
+        if (_parsingCache is ParsingCache p)
+            return p.UpdateCache(index, cache);
+        if (_parsingCache is null) {
+            _parsingCache = cache;
+            return true;
+        }
+        if (_parsingCache is not ParsingCache<T>)
+            return false;
+        if (index != 0)
+            return false;
+        _parsingCache = cache;
+        return true;
     }
     public bool NeedToCache(object?[] variables)
         => Parameters.NeedToCache(variables);
@@ -134,14 +160,6 @@ public class QueryCommand : IQueryCommand {
             return;
         }
         UpdateCache(new DefaultParamCache(cmd));
-    }
-    public void UpdateCache<T>(DbDataReader reader, IDbCommand cmd, Func<DbDataReader, T>? parsingFunc, CommandBehavior behavior) {
-        UpdateCache(cmd);
-        if (_parsingCache is not null || parsingFunc is null)
-            return;
-        var cache = new SingleItemCache();
-        cache.UpdateCache(reader, cmd, parsingFunc, behavior);
-        _parsingCache = cache;
     }
     private bool UpdateCache<T>(T infoGetter) where T : IDbParamInfoGetter {
         foreach (var item in infoGetter.EnumerateParameters()) {

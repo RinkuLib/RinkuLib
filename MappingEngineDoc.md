@@ -1,6 +1,6 @@
 # The Mapping Engine
 
-The Mapping Engine is a system for defining how C# types should be interpreted. Its sole purpose is to produce an optimized `Func<DbDataReader, T>` based on a specific database schema.
+The Mapping Engine is a system for defining how C# types should be interpreted. Its sole purpose is to produce an optimized `delegate*<DbDataReader, T>` or `Func<DbDataReader, T>` based on a specific database schema.
 
 As a developer, you interact with the **Metadata Cache**—a registry of rules that the engine builds as it encounters types—which it later uses to **Negotiate** with the database to generate the final function.
 

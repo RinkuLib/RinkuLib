@@ -7,7 +7,7 @@ public static class BuilderStarter {
         => new(command);
     public static QueryBuilderCommand<T> StartBuilder<T>(this QueryCommand command, T cmd) where T : IDbCommand
         => new(command, cmd);
-    public static QueryBuilder StartBuilderWith(this QueryCommand command, params Span<(string, object)> values) { 
+    public static QueryBuilder StartBuilder(this QueryCommand command, params Span<(string, object)> values) { 
         var builder = new QueryBuilder(command);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];
@@ -15,7 +15,7 @@ public static class BuilderStarter {
         }
         return builder;
     }
-    public static QueryBuilderCommand<T> StartBuilderWith<T>(this QueryCommand command, T cmd, params Span<(string, object)> values) where T : IDbCommand {
+    public static QueryBuilderCommand<T> StartBuilder<T>(this QueryCommand command, T cmd, params Span<(string, object)> values) where T : IDbCommand {
         var builder = new QueryBuilderCommand<T>(command, cmd);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];
@@ -33,7 +33,7 @@ public static class BuilderStarter {
 /// The builder translates semantic names (like "ActiveOnly") into the specific state 
 /// tracking required by the underlying <see cref="QueryCommand"/>.
 /// </remarks>
-public readonly struct QueryBuilder(QueryCommand QueryCommand) : ICommandBuilder {
+public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <summary> The underlying command definition. </summary>
     public readonly QueryCommand QueryCommand = QueryCommand;
     /// <summary> 
@@ -100,46 +100,4 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : ICommandBuilder
     }
     public readonly string GetQueryText()
         => QueryCommand.QueryText.Parse(Variables);
-
-    public DbCommand GetCommand(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
-        var cmd = cnn.CreateCommand();
-        if (transaction is not null)
-            cmd.Transaction = transaction;
-        if (timeout.HasValue)
-            cmd.CommandTimeout = timeout.Value;
-        QueryCommand.SetCommand(cmd, Variables);
-        return cmd;
-    }
-    public IDbCommand GetCommand(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
-        var cmd = cnn.CreateCommand();
-        if (transaction is not null)
-            cmd.Transaction = transaction;
-        if (timeout.HasValue)
-            cmd.CommandTimeout = timeout.Value;
-        if (cmd is DbCommand c)
-            QueryCommand.SetCommand(c, Variables);
-        else
-            QueryCommand.SetCommand(cmd, Variables);
-        return cmd;
-    }
-    public DbCommand GetCommandAndCache(DbConnection cnn, DbTransaction? transaction, int? timeout, out ICache? cache) {
-        var cmd = GetCommand(cnn, transaction, timeout);
-        cache = QueryCommand.NeedToCache(Variables) ? QueryCommand : null;
-        return cmd;
-    }
-    public IDbCommand GetCommandAndCache(IDbConnection cnn, IDbTransaction? transaction, int? timeout, out ICache? cache) {
-        var cmd = GetCommand(cnn, transaction, timeout);
-        cache = QueryCommand.NeedToCache(Variables) ? QueryCommand : null;
-        return cmd;
-    }
-    public DbCommand GetCommandAndInfo<T>(DbConnection cnn, DbTransaction? transaction, int? timeout, out IParserCache? cache, out Func<DbDataReader, T>? parser, out CommandBehavior behavior) {
-        var cmd = GetCommand(cnn, transaction, timeout);
-        cache = QueryCommand.GetCacheAndParser(Variables, out behavior, out parser);
-        return cmd;
-    }
-    public IDbCommand GetCommandAndInfo<T>(IDbConnection cnn, IDbTransaction? transaction, int? timeout, out IParserCache? cache, out Func<DbDataReader, T>? parser, out CommandBehavior behavior) {
-        var cmd = GetCommand(cnn, transaction, timeout);
-        cache = QueryCommand.GetCacheAndParser(Variables, out behavior, out parser);
-        return cmd;
-    }
 }
