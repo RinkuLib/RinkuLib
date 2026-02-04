@@ -157,7 +157,7 @@ public static class TypeParser<T> {
             skipVisibility: true
         );
         Generator gen =
-#if USE_VERBOSE_GENERATOR
+#if DEBUG
             new(dm.GetILGenerator(), cols);
 #else
             new(dm.GetILGenerator());

@@ -161,8 +161,6 @@ public class MethodCtorInfo {
         var ps = new IDbTypeParserMatcher[parameters.Length];
         for (int i = 0; i < parameters.Length; i++) {
             var param = parameters[i];
-            if (param.ParameterType == type)
-                return null;
             var p = ParamInfo.TryNew(param);
             if (p is null)
                 return null;

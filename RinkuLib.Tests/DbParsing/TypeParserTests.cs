@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Diagnostics.CodeAnalysis;
-using System.Net.ServerSentEvents;
 using System.Reflection;
 using RinkuLib.DbParsing;
 using Xunit;
@@ -16,7 +15,7 @@ public class TypeParserTests {
         //Generator.Write = output.WriteLine;
 #endif
     }
-    private static DataTableReader CreateReader(ColumnInfo[] columns, params Span<object[]> rows) {
+    private static DataTableReader CreateReader(ColumnInfo[] columns, Span<object[]> rows) {
         DataTable table = new();
         foreach (var col in columns)
             table.Columns.Add(new DataColumn(col.Name, col.Type) { AllowDBNull = col.IsNullable });
@@ -32,10 +31,10 @@ public class TypeParserTests {
             new("Name", typeof(string), false)
         ];
 
-        using var reader = CreateReader(columns,
+        using var reader = CreateReader(columns, [
             [1, "John Doe"],
             [3, "Jane Smith"]
-        );
+        ]);
 
         var parser = TypeParser<SimpleUser>.GetParserFunc(columns);
 
@@ -56,10 +55,10 @@ public class TypeParserTests {
             new("Name", typeof(string), false)
         ];
 
-        using var reader = CreateReader(columns,
+        using var reader = CreateReader(columns, [
             [1, "John Doe"],
             [3, "Jane Smith"]
-        );
+        ]);
 
         var parser = TypeParser<(int ID, string Name)>.GetParserFunc(columns);
 
@@ -80,9 +79,9 @@ public class TypeParserTests {
             new("ID", typeof(int), false)
         ];
 
-        using var reader = CreateReader(columns,
+        using var reader = CreateReader(columns, [
             [1, 2]
-        );
+        ]);
 
         var parser = TypeParser<(int ID, int ID2)>.GetParserFunc(columns);
 
@@ -99,10 +98,10 @@ public class TypeParserTests {
             new("Name", typeof(string), false)
         ];
 
-        using var reader = CreateReader(columns,
+        using var reader = CreateReader(columns, [
             [1, "John Doe"],
             [3, "Jane Smith"]
-        );
+        ]);
 
         var parser = TypeParser<int>.GetParserFunc(columns);
 
@@ -126,9 +125,9 @@ public class TypeParserTests {
             new("JoinedAt", typeof(DateTime), false)
         ];
 
-        using var reader = CreateReader(columns, 
+        using var reader = CreateReader(columns, [
             [badge, "Engineering", 95000.50m, joinDate]
-        );
+        ]);
 
         var parser = TypeParser<EmployeeRecord>.GetParserFunc(columns);
 
@@ -150,10 +149,10 @@ public class TypeParserTests {
         ];
 
         // Row 1: Has weight, Row 2: Weight is NULL
-        using var reader = CreateReader(columns,
+        using var reader = CreateReader(columns, [
             [500, 12.5, true, 'A'],
             [501, DBNull.Value, false, 'B']
-        );
+        ]);
 
         var parser = TypeParser<ProductStatus>.GetParserFunc(columns);
 
@@ -181,9 +180,10 @@ public class TypeParserTests {
             new("RoutingNotes", typeof(string), true)
         ];
 
-        using var reader = CreateReader(columns, 
+        using var reader = CreateReader(columns, [
             [100, 555, 1.5, "Overnight", "Fragile"], 
-            [200, DBNull.Value, 0.0, "Ground", DBNull.Value]);
+            [200, DBNull.Value, 0.0, "Ground", DBNull.Value]
+        ]);
 
         var parser = TypeParser<Shipment>.GetParserFunc(columns);
 
@@ -216,7 +216,7 @@ public class TypeParserTests {
             new("PaymentBic", typeof(string), false)
         ];
 
-        using var reader = CreateReader(columns, [99, "DE123456789", "GENEDEBK"]);
+        using var reader = CreateReader(columns, [[99, "DE123456789", "GENEDEBK"]]);
 
         var parser = TypeParser<Order>.GetParserFunc(columns);
 
@@ -242,7 +242,7 @@ public class TypeParserTests {
             new("PaymentExternalID", typeof(int), false)
         ];
 
-        using var reader = CreateReader(columns, [99, 14532]);
+        using var reader = CreateReader(columns, [[99, 14532]]);
 
         var parser = TypeParser<Order>.GetParserFunc(columns);
 
@@ -263,7 +263,7 @@ public class TypeParserTests {
             new("PaymentOwner", typeof(string), false)
         ];
 
-        using var reader = CreateReader(columns, [321, "1234 5678 9012 3456", "John Smith"]);
+        using var reader = CreateReader(columns, [[321, "1234 5678 9012 3456", "John Smith"]]);
 
         var parser = TypeParser<Order>.GetParserFunc(columns);
 
@@ -286,9 +286,10 @@ public class TypeParserTests {
             new("PaymentBic", typeof(string), true)
         ];
 
-        using var reader = CreateReader(columns,
+        using var reader = CreateReader(columns, [
             [99, "DE123456789", "GENEDEBK"],
-            [100, "1234 5678 9012 3456", DBNull.Value]);
+            [100, "1234 5678 9012 3456", DBNull.Value]
+        ]);
 
         var parser = TypeParser<Order>.GetParserFunc(columns);
 
@@ -326,9 +327,9 @@ public class TypeParserTests {
 
         // Row 1: Fully populated with decimal and string
         // Row 2: Price Amount is null -> JumpIfNull should make ListingPrice null
-        using var reader = CreateReader(columns,
+        using var reader = CreateReader(columns, [
             [1, 99.99m, DBNull.Value, "Premium Grade", "Warehouse A"]
-        );
+        ]);
 
         // Testing BoxedProduct with <decimal, string>
         var parser = TypeParser<BoxedProduct<decimal, string>>.GetParserFunc(columns);
@@ -349,9 +350,9 @@ public class TypeParserTests {
             new("InfoSource", typeof(string), true)
             ];
 
-        using var reader = CreateReader(columns, 
+        using var reader = CreateReader(columns, [
             [500, 12.50, CurrencyCode.CAD, 42, "API"]
-        );
+        ]);
 
         var parser = TypeParser<BoxedProduct<double, int>>.GetParserFunc(columns);
 
@@ -380,11 +381,11 @@ public class TypeParserTests {
         // Row 1: All present (Normal Case)
         // Row 2: Price Amount is NULL (JumpIfNull Case)
         // Row 3: Info Source is NULL (Optional Property Case)
-        using var reader = CreateReader(columns,
+        using var reader = CreateReader(columns, [
             [101, 99.50m, 1, 500, "Warehouse_Alpha"],
             [102, DBNull.Value, 2, 600, "Warehouse_Beta"],
             [103, 10.00m, 3, 700, DBNull.Value]
-        );
+        ]);
 
         // Closing with <decimal, int>
         var parser = TypeParser<BoxedProduct<decimal, int>>.GetParserFunc(columns);
@@ -426,7 +427,7 @@ public class TypeParserTests {
         ];
 
         // Metadata.Value is [NotNull] T. If DB gives us NULL, it must fail.
-        using var reader = CreateReader(columns, [201, 15.0d, 2, "Trusted"], [202, 15.0, 1, DBNull.Value]);
+        using var reader = CreateReader(columns, [[201, 15.0d, 2, "Trusted"], [202, 15.0, 1, DBNull.Value]]);
 
         var parser = TypeParser<BoxedProduct<double, string>>.GetParserFunc(columns);
 
@@ -441,6 +442,41 @@ public class TypeParserTests {
         // Should throw because Metadata.Value is marked [NotNull]
         Assert.ThrowsAny<Exception>(() => parser(reader));
     }
+
+    [Fact]
+    public void Recursive_User() {
+        // Same structure, different Generic types: <double, int>
+        ColumnInfo[] columns = [
+            new("ID", typeof(int), false),
+            new("Name", typeof(string), false),
+            new("SupervisorID", typeof(int), false),
+            new("SupervisorName", typeof(string), false),
+            new("SupervisorBossID", typeof(int), false),
+            new("SupervisorBossName", typeof(string), false)
+            ];
+
+        using var reader = CreateReader(columns, [
+            [3, "Roger", 2, "Victor", 1, "Albert"]
+        ]);
+
+        var parser = TypeParser<User>.GetParserFunc(columns);
+
+        reader.Read();
+        var result = parser(reader);
+        Assert.Equal(3, result.ID);
+        Assert.Equal("Roger", result.Name);
+        var sup = result.Supervisor;
+        Assert.NotNull(sup);
+        Assert.Equal(2, sup.ID);
+        Assert.Equal("Victor", sup.Name);
+        var boss = sup.Supervisor;
+        Assert.NotNull(boss);
+        Assert.Equal(1, boss.ID);
+        Assert.Equal("Albert", boss.Name);
+    }
+}
+public record class User(int ID, string Name, [Alt("Boss")]User? Supervisor) {
+    public User(int ID, string Name) : this(ID, Name, null) { }
 }
 public class SimpleUser {
     public int Id { get; set; }

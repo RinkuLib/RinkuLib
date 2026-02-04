@@ -279,7 +279,7 @@ public unsafe ref struct QueryExtracter {
         ArrayPool<int>.Shared.Return(excesses);
         CurrentStart = null;
         CurrentExcess = null;
-        newQuery = new string(Builder.AsSpan(0, BuilderInd));
+        newQuery = new string(Builder, 0, BuilderInd);
         ArrayPool<char>.Shared.Return(Builder);
         Builder = null!;
         return Conditions.LockTransfer();
@@ -396,7 +396,7 @@ public unsafe ref struct QueryExtracter {
             type = *(CurrentChar - 1);
             varLength -= 2;
         }
-        var cond = new string(Builder.AsSpan(varIndex, varLength));
+        var cond = new string(Builder, varIndex, varLength);
         if (isRequired)
             Conditions.Add(CondInfo.NewRequired(cond, type, varIndex));
         else {
@@ -450,7 +450,7 @@ public unsafe ref struct QueryExtracter {
         if (nbCond > 0 && MatchSection(CurrentChar, out var secLen)) {
             LastCondSectionLength = (uint)nbCond << 16 | (uint)secLen;
             for (; nbCond > 0; nbCond--)
-                Conditions[^nbCond].UpdateCommentAsSectionComment(BuilderInd - 1);
+                Conditions[Conditions.Length - nbCond].UpdateCommentAsSectionComment(BuilderInd - 1);
         }
         return true;
     }
@@ -644,6 +644,6 @@ public unsafe ref struct QueryExtracter {
                 start--;
         }
         start++;
-        return new string(Builder.AsSpan(start, end - start));
+        return new string(Builder, start, end - start);
     }
 }

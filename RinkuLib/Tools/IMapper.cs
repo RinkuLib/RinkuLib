@@ -31,7 +31,11 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
     /// Gets a managed reference to the start of the key array. 
     /// Allows for high-performance pointer-style iteration while bypassing array bounds checks.
     /// </summary>
+#if NET5_0_OR_GREATER
     public ref string KeysStartPtr => ref MemoryMarshal.GetArrayDataReference(_keys);
+#else
+    public ref string KeysStartPtr => ref _keys[0];
+#endif
     /// <summary>
     /// Gets the unique keys held by this mapper as a <see cref="ReadOnlySpan{String}"/>.
     /// </summary>
@@ -160,8 +164,10 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
         Span<string> k;
         if (keys is string[] arr)
             k = arr;
+#if NET5_0_OR_GREATER
         else if (keys is List<string> list)
             k = CollectionsMarshal.AsSpan(list);
+#endif
         else if (keys is IReadOnlyList<string> ro) {
             pooledArr = ArrayPool<string>.Shared.Rent(ro.Count);
             for (int i = 0; i < ro.Count; i++)
@@ -189,7 +195,11 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
     /// Input order is preserved. If duplicate keys (case-insensitive) are present, 
     /// only the first occurrence is stored, and its position becomes the fixed index for that key.
     /// </remarks>
-    public static Mapper GetMapper(params Span<string> keys) {
+    public static Mapper GetMapper(
+#if NET8_0_OR_GREATER
+        params
+#endif
+        Span<string> keys) {
         if (keys.Length == 0)
             return EmptyMapper;
         if (keys.Length == 1)
@@ -205,9 +215,13 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
                 return GetOneKeyMapper(usedKeys[0]);
             if (usedKeys.Length == 2)
                 return GetTwoKeyMapper(usedKeys[0], usedKeys[1]);
+#if NET8_0_OR_GREATER
             return IsAllAscii(builder.UsedKeys) 
                 ? new AsciiMapper<AsciiStrategy>(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth)
                 : new AsciiMapper<UnicodeStrategy>(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth);
+#else
+            return new AsciiMapper(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth);
+#endif
         }
         var dict = new DictMapper(keys);
         var uKeys = dict.Keys;
@@ -219,6 +233,7 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
             return GetTwoKeyMapper(uKeys[0], uKeys[1]);
         return dict;
     }
+#if NET8_0_OR_GREATER
     /// <summary>
     /// Checks if all strings in the array contain only ASCII characters.
     /// </summary>
@@ -228,6 +243,7 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
                 return false;
         return true;
     }
+#endif
     public static readonly Mapper EmptyMapper = new Empty();
     /// <summary>
     /// Provides a shared schema for instances requiring zero keys.
@@ -284,7 +300,7 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
         public override int GetIndex(ReadOnlySpan<char> key)
             => key.Equals(Key1, StringComparison.OrdinalIgnoreCase) ? 0
             : key.Equals(Key2, StringComparison.OrdinalIgnoreCase) ? 0 : -1;
-    }
+    }/*
     public unsafe sealed class DictMapper : Mapper {
         private readonly Dictionary<string, int> Dict;
         private readonly Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> SpanDict;
@@ -311,5 +327,121 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
             => Dict.TryGetValue(key, out var ind) ? ind : -1;
         public override int GetIndex(ReadOnlySpan<char> key)
             => SpanDict.TryGetValue(key, out var ind) ? ind : -1;
+    }*/
+    public unsafe sealed class DictMapper : Mapper {
+        private readonly Dictionary<string, int> _stringDict;
+
+#if NET9_0_OR_GREATER
+        private readonly Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> _spanDict;
+#else
+    // For Legacy, we store the data in a way that we can manually probe
+    private readonly int[] _buckets;
+    private readonly Entry[] _entries;
+    private readonly int _mask;
+
+    private struct Entry {
+        public string Key;
+        public int Value;
+        public int Next;
+        public int Hash;
+    }
+#endif
+
+        public DictMapper(Span<string> keys) : base(Init(keys, out var dict)) {
+            _stringDict = dict;
+#if NET9_0_OR_GREATER
+            _spanDict = dict.GetAlternateLookup<ReadOnlySpan<char>>();
+#else
+        // Build a minimal internal hash table for Span lookups
+        int size = HashHelper.GetPrime(dict.Count);
+        _buckets = new int[size];
+        for (int i = 0; i < size; i++) _buckets[i] = -1;
+        _entries = new Entry[dict.Count];
+        _mask = size; // Used for modulo
+
+        int index = 0;
+        foreach (var kvp in dict) {
+            int h = GetOrdinalIgnoreCaseHash(kvp.Key.AsSpan());
+            int bucket = (h & 0x7FFFFFFF) % size;
+            _entries[index] = new Entry { 
+                Key = kvp.Key, 
+                Value = kvp.Value, 
+                Hash = h, 
+                Next = _buckets[bucket] 
+            };
+            _buckets[bucket] = index;
+            index++;
+        }
+#endif
+        }
+
+        public override int GetIndex(ReadOnlySpan<char> key) {
+#if NET9_0_OR_GREATER
+            return _spanDict.TryGetValue(key, out var ind) ? ind : -1;
+#else
+        if (_buckets == null) return -1;
+        int h = GetOrdinalIgnoreCaseHash(key);
+        int bucket = (h & 0x7FFFFFFF) % _mask;
+        for (int i = _buckets[bucket]; i >= 0; i = _entries[i].Next) {
+            if (_entries[i].Hash == h && MemoryExtensions.Equals(key, _entries[i].Key.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                return _entries[i].Value;
+        }
+        return -1;
+#endif
+        }
+
+#if !NET9_0_OR_GREATER
+    // Manual OrdinalIgnoreCase Hash for netstandard2.0
+    private static int GetOrdinalIgnoreCaseHash(ReadOnlySpan<char> span) {
+        unchecked {
+            int hash = 5381;
+            for (int i = 0; i < span.Length; i++) {
+                char c = span[i];
+                if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+                hash = ((hash << 5) + hash) ^ c;
+            }
+            return hash;
+        }
+    }
+#endif
+
+        public override int GetIndex(string key) => _stringDict.TryGetValue(key, out var ind) ? ind : -1;
+        protected override void DisposeUnmanaged() { }
+
+        private static string[] Init(Span<string> keys, out Dictionary<string, int> dict) {
+            dict = new Dictionary<string, int>(keys.Length, StringComparer.OrdinalIgnoreCase);
+            int i = 0;
+            foreach (var k in keys) {
+                if (k == null)
+                    throw new NullReferenceException();
+#if NET8_0_OR_GREATER
+                if (dict.TryAdd(k, i)) { i++; }
+#else
+                if (!dict.ContainsKey(k)) { dict.Add(k, i); i++; }
+#endif
+            }
+            var arr = new string[dict.Count];
+            foreach (var kvp in dict)
+                arr[kvp.Value] = kvp.Key;
+            return arr;
+        }
     }
 }
+#if !NET9_0_OR_GREATER
+internal static class HashHelper {
+    // A small subset of primes used by the .NET Dictionary
+    private static readonly int[] Primes = [
+        3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
+        1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103
+    ];
+
+    public static int GetPrime(int min) {
+        for (int i = 0; i < Primes.Length; i++) {
+            if (Primes[i] >= min)
+                return Primes[i];
+        }
+        // Fallback for extremely large tables (rare for ORM mappers)
+        return min | 1;
+    }
+}
+#endif

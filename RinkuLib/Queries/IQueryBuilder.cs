@@ -12,10 +12,6 @@ namespace RinkuLib.Queries;
 /// </remarks>
 public interface IQueryBuilder {
     /// <summary>
-    /// A marker used to activate a condition that does not require an associated data value.
-    /// </summary>
-    public static readonly object Used = new();
-    /// <summary>
     /// Returns the current state or value at the specified index.
     /// </summary>
     object? this[int ind] { get; }

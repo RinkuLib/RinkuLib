@@ -1,15 +1,32 @@
 ﻿using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
+
+#if !NET8_0_OR_GREATER
+public static class QuerySegmentHandler {
+    /// <summary>
+    /// The global discovery hub for metadata providers.
+    /// </summary>
+    /// <remarks>
+    /// This collection stores negotiation delegates that are evaluated via linear search. 
+    /// This design choice prioritizes versatility over strict type-mapping, allowing a 
+    /// single maker to match multiple related command types (e.g., legacy vs. modern 
+    /// drivers or inheritance) through pattern matching.
+    /// </remarks>
+    public static readonly IQuerySegmentHandler NotSet = new NotSetHandler();
+}
+#endif
 /// <summary>
 /// Defines the contract for processing variable data into a SQL-ready string format.
 /// </summary>
 public interface IQuerySegmentHandler {
+#if NET8_0_OR_GREATER
     /// <summary>
     /// A sentinel handler used during the factory phase to mark variables requiring special external resolution.
     /// Attempting to use this handler during assembly will throw a <see cref="NotImplementedException"/>.
     /// </summary>
     public static readonly IQuerySegmentHandler NotSet = new NotSetHandler();
+#endif
     /// <summary>
     /// Transforms the provided <paramref name="value"/> and appends the result to the <see cref="ValueStringBuilder"/>.
     /// </summary>

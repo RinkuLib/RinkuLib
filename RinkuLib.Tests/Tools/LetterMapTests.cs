@@ -57,7 +57,7 @@ public class LetterMapTests {
     [InlineData('z', 'Z')]
     [InlineData('M', 'm')]
     public void Keys_Are_Case_Insensitive(char key1, char key2) {
-        var map = new LetterMap<int> {
+        var map = new LetterMap<int>() {
             [key1] = 42
         };
 
@@ -72,7 +72,7 @@ public class LetterMapTests {
     [Fact]
     public void Adding_Middle_Letter_Shifts_Internal_Values_Correctly() {
         // Initial: A and Z
-        var map = new LetterMap<string>(('a', "Apple"), ('z', "Zebra")) {
+        var map = new LetterMap<string>([('a', "Apple"), ('z', "Zebra")]) {
             // Add 'M' in the middle. Rank logic must correctly shift 'Zebra' in the array.
             ['m'] = "Mango"
         };
@@ -85,7 +85,7 @@ public class LetterMapTests {
 
     [Fact]
     public void PresenceMap_Reflects_Correct_Bits() {
-        var map = new LetterMap<int>(('a', 1), ('b', 2), ('z', 26));
+        var map = new LetterMap<int>([('a', 1), ('b', 2), ('z', 26)]);
 
         // Bit 0 (a), Bit 1 (b), Bit 25 (z)
         uint expectedMask = (1u << 0) | (1u << 1) | (1u << 25);
@@ -102,14 +102,14 @@ public class LetterMapTests {
     [InlineData('é')]
     [InlineData(' ')]
     public void Invalid_Characters_Throw_ArgumentOutOfRangeException(char invalidKey) {
-        var map = new LetterMap<int>();
+        var map = new LetterMap<int>([]);
         Assert.Throws<ArgumentOutOfRangeException>(() => map[invalidKey] = 1);
         Assert.Throws<ArgumentOutOfRangeException>(() => map.ContainsKey(invalidKey));
     }
 
     [Fact]
     public void Accessing_Missing_Key_Throws_KeyNotFoundException() {
-        var map = new LetterMap<int>(('a', 1));
+        var map = new LetterMap<int>([('a', 1)]);
         Assert.Throws<KeyNotFoundException>(() => map['b']);
     }
 
@@ -119,7 +119,7 @@ public class LetterMapTests {
 
     [Fact]
     public void Remove_Correctly_Collapses_Internal_Array() {
-        var map = new LetterMap<int>(('a', 1), ('b', 2), ('c', 3));
+        var map = new LetterMap<int>([('a', 1), ('b', 2), ('c', 3)]);
 
         bool removed = map.Remove('b');
 
@@ -135,7 +135,7 @@ public class LetterMapTests {
 
     [Fact]
     public void ResetWith_Handles_Duplicates_By_Keeping_Last_Value() {
-        var map = new LetterMap<int>();
+        var map = new LetterMap<int>([]);
         var items = new ValueTuple<char, int>[] { ('a', 1), ('b', 2), ('A', 10) };
 
         map.ResetWith(items);
@@ -146,7 +146,7 @@ public class LetterMapTests {
 
     [Fact]
     public void Clear_Resets_State_Completely() {
-        var map = new LetterMap<int>(('x', 1), ('y', 2));
+        var map = new LetterMap<int>([('x', 1), ('y', 2)]);
         map.Clear();
 
         Assert.Empty(map);

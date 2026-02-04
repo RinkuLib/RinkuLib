@@ -440,7 +440,7 @@ public class MapperCreationTests {
     [Fact]
     public void Result_X_Is_Independent_Of_Source_Array_Mutation() {
         string[] input = ["Alpha", "Beta", "Gamma", "Alpha"];
-        var result = Mapper.GetMapper(input);
+        var result = Mapper.GetMapper(input.AsSpan());
 
         // Mutate the original array
         input[0] = "POISON";

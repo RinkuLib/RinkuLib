@@ -3,7 +3,7 @@ using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 
 namespace RinkuLib.DbParsing;
-#if USE_VERBOSE_GENERATOR
+#if DEBUG
 /// <summary>
 /// A wrapper for <see cref="ILGenerator"/> that provides instruction logging 
 /// and automatic local variable management.

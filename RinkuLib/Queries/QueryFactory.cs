@@ -30,11 +30,11 @@ public struct QueryFactory {
     /// The global, mutable registry of base handlers. 
     /// Users can modify this map to add or change built-in type behaviors globally.
     /// </summary>
-    public static readonly LetterMap<HandlerGetter<IQuerySegmentHandler>> BaseHandlerMapper = new(
+    public static readonly LetterMap<HandlerGetter<IQuerySegmentHandler>> BaseHandlerMapper = new([
         ('S', StringVariableHandler.Build),
         ('R', RawVariableHandler.Build),
         ('N', NumberVariableHandler.Build)
-    );
+    ]);
 #pragma warning disable CA2211
     public static char DefaultVariableChar = '@';
 #pragma warning restore CA2211
@@ -200,7 +200,13 @@ public struct QueryFactory {
         if (BaseHandlerMapper.TryGetValue(cond.Type, out var getter))
             Segments[segInd].Handler = getter(Mapper.GetSameKey(cond.Cond));
         else
-            Segments[segInd].Handler = IQuerySegmentHandler.NotSet;
+            Segments[segInd].Handler =
+#if NET8_0_OR_GREATER
+                IQuerySegmentHandler
+#else
+                QuerySegmentHandler
+#endif
+                .NotSet;
         Segments[segInd].ExcessOrInd = Mapper[cond.Cond];
         return true;
     }
@@ -286,7 +292,8 @@ public struct QueryFactory {
             segments[segInd++] = new(prevStart, ind - prevStart, 0, false, null);
             prevStart = ind;
         }
-        var res = segments[0..segInd];
+        var res = new QuerySegment[segInd];
+        Array.Copy(segments, 0, res, 0, segInd);
         ArrayPool<QuerySegment>.Shared.Return(segments);
         segmentIndexes.Dispose();
         return res;

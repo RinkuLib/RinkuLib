@@ -88,8 +88,22 @@ internal struct AsciiMapperBuilder {
             mask = 255;
         var StepsLength = mask + 1;
         this.Steps = ArrayPool<uint>.Shared.Rent(StepsLength);
-        Array.Clear(Steps);
-        Array.Sort(UsedKeys, 0, Keys.Length, LengthComparers[BitOperations.Log2((uint)StepsLength)]);
+        Array.Clear(Steps, 0, Steps.Length);
+
+        int log2;
+        uint val = (uint)StepsLength;
+#if NETCOREAPP3_0_OR_GREATER
+        log2 = BitOperations.Log2(val);
+#else
+        log2 = 0;
+        if (val >= 1 << 16) { val >>= 16; log2 |= 16; }
+        if (val >= 1 << 8)  { val >>= 8;  log2 |= 8;  }
+        if (val >= 1 << 4)  { val >>= 4;  log2 |= 4;  }
+        if (val >= 1 << 2)  { val >>= 2;  log2 |= 2;  }
+        if (val >= 1 << 1)  { log2 |= 1; }
+#endif
+
+        Array.Sort(UsedKeys, 0, Keys.Length, LengthComparers[log2]);
         if (need256) {
             Reserve(new(128, bit256.A, bit256.B), 0);
             Reserve(new(128, bit256.C, bit256.D), 128);
@@ -140,19 +154,39 @@ internal struct AsciiMapperBuilder {
             Steps[ind] = newKeyIndex;
             newKeys[newKeyIndex++] = key;
         }
-        var res = newKeys[0..(int)newKeyIndex];
+        var res = new string[newKeyIndex];
+        Array.Copy(newKeys, 0, res, 0, (int)newKeyIndex);
         ArrayPool<string>.Shared.Return(newKeys);
         return res;
     }
     private static (int charInd, int mask, int decal) Decode(uint step)
         => ((int)(step >> 24), (int)((step >> 16) & 0xFF), (ushort)step);
+#if !NETCOREAPP3_0_OR_GREATER
+// This table must be present in the class for the legacy path
+private static readonly byte[] DeBruijnLookup64 = [
+    0,  1,  48, 2,  57, 49, 28, 3,  61, 58, 50, 42, 38, 29, 17, 4,
+    62, 54, 59, 36, 51, 47, 43, 25, 41, 39, 33, 30, 24, 18, 12, 5,
+    63, 47, 55, 44, 37, 26, 34, 13, 46, 45, 35, 14, 32, 23, 11, 6,
+    60, 27, 21, 20, 15, 10, 9,  7,  31, 22, 19, 16, 8,  40, 53, 56,
+    52
+];
+#endif
     private unsafe void Reserve(BitCounter cnt, int startInd) {
         var bits = cnt.Low;
         var start = startInd;
         if (startInd + cnt.Length > MaxReserved)
             MaxReserved = startInd + cnt.Length;
         while (true) {
-            int b = BitOperations.TrailingZeroCount(bits);
+            int b;
+#if NETCOREAPP3_0_OR_GREATER
+            b = System.Numerics.BitOperations.TrailingZeroCount(bits);
+#else
+        if (bits == 0) {
+            b = 64;
+        } else {
+            b = DeBruijnLookup64[((bits & ~(bits - 1)) * 0x03F79D71B4CB0A89UL) >> 58];
+        }
+#endif
             Steps[start + b] = MapperHelper.RESERVED;
             bits &= bits - 1;
             if (bits <= 0) {
@@ -299,7 +333,16 @@ internal struct AsciiMapperBuilder {
             var localStart = start;
             ulong bits = counter.Low;
             while (true) {
-                int b = BitOperations.TrailingZeroCount(bits);
+                int b;
+#if NETCOREAPP3_0_OR_GREATER
+                b = System.Numerics.BitOperations.TrailingZeroCount(bits);
+#else
+                if (bits == 0) {
+                    b = 64;
+                } else {
+                    b = DeBruijnLookup64[((bits & ~(bits - 1)) * 0x03F79D71B4CB0A89UL) >> 58];
+                }
+#endif
                 if (Steps[localStart + b] >= MapperHelper.RESERVED)
                     goto NEXT;
                 bits &= bits - 1;

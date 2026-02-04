@@ -30,7 +30,7 @@ public class CompleteTests {
         Assert.Equal("John", p.Username);
         Assert.Null(p.Email);
 
-        var builder2 = query.StartBuilder(("@Active", 0));
+        var builder2 = query.StartBuilder([("@Active", 0)]);
         var p2 = builder2.QuerySingle<Person>(cnn);
         Assert.NotNull(p2);
         Assert.Equal(2, p2.ID);

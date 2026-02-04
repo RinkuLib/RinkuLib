@@ -1,16 +1,43 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	  <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
+	  <ImplicitUsings>enable</ImplicitUsings>
+	  <Nullable>enable</Nullable>
+	  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	  <LangVersion>latest</LangVersion>
+
 	  <PackageId>Rinku</PackageId>
 	  <Version>0.0.1-alpha</Version>
-	  <Author>adam.therrien.marois</Author>
+	  <Authors>adam.therrien.marois</Authors>
 	  <Product>Rinku</Product>
+	  <Title>Rinku</Title>
+	  <AssemblyName>Rinku</AssemblyName>
+	  <Description>A modular Mirco-ORM with SQL templating and complex object mapping</Description>
+	  
+	  <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+	  <Deterministic>true</Deterministic>
+	  <DefaultLanguage>en-US</DefaultLanguage>
+
+	  <PackageProjectUrl>https://github.com/adamtherrienmarois/RinkuLib</PackageProjectUrl>
+	  <RepositoryUrl>https://github.com/adamtherrienmarois/RinkuLib</RepositoryUrl>
+	  <RepositoryType>git</RepositoryType>
+	  <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+	  <PackageReadmeFile>readme.md</PackageReadmeFile>
+	  <PackageIcon>logo.png</PackageIcon>
+	  
+	  <DebugSymbols>true</DebugSymbols>
+	  <DebugType>embedded</DebugType>
+	  <EmbedAllSources>true</EmbedAllSources>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-	<DefineConstants>$(DefineConstants);USE_VERBOSE_GENERATOR</DefineConstants>
-  </PropertyGroup>
+	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+		<PackageReference Include="System.Memory" Version="4.5.5" />
+		<PackageReference Include="System.Buffers" Version="4.5.1" />
+		<PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+		<PackageReference Include="System.ValueTuple" Version="4.5.0" />
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="..\readme.md" Pack="true" PackagePath="\" />
+		<None Include="..\logo.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
 </Project>

@@ -55,7 +55,7 @@ The engine analyzes your SQL to create a **Structural Blueprint**, fragmenting t
 * **Conditional Markers:** Uses `?@Var` and `/*...*/` to define optional segments—from parameters to entire clauses—ensuring valid SQL syntax after pruning.
 * **Structural Handlers:** Special suffixes like `_N` (Numeric), `_X` (Collection spreading), and `_R` (Raw injection) to adjust the query's physical structure at runtime.
 
-👉 **[Read the Full Templating Syntax Documentation](TemplatingSyntaxDoc.md)**
+👉 **[Read the Full Templating Syntax Documentation](https://github.com/adamtherrienmarois/RinkuLib/blob/main/TemplatingSyntaxDoc.md)**
 
 ---
 
@@ -66,7 +66,7 @@ A **Tree of Responsibility** that reconciles the database schema with your C# ty
 * **Schema Negotiation:** Dynamically maps database columns to complex types, handling non-1-to-1 relationships and varied data shapes without manual configuration.
 * **Decomposable Process:** Every step of the mapping is a "plug-in" point, allowing you to inject custom logic into specific branches or leaf-nodes of the object graph.
 
-👉 **[Read the Full Mapping Engine Documentation](MappingEngineDoc.md)**
+👉 **[Read the Full Mapping Engine Documentation](https://github.com/adamtherrienmarois/RinkuLib/blob/main/MappingEngineDoc.md)**
 
 ---
 
@@ -89,7 +89,7 @@ The `QueryCommand` acts as a container for the results of the template parsing. 
 * **`QueryParameters`:** A collection of `DbParamInfo` objects, in order matching to `Mapper`, which store the metadata required to create `DbParameter` objects.
 * **Parser Cache:** A specialized cache that stores compiled IL-functions for mapping database results to C# types based on the returned schema.
 
-👉 **[Read the Full QueryCommand Documentation](QueryCommandDoc.md)**
+👉 **[Read the Full QueryCommand Documentation](https://github.com/adamtherrienmarois/RinkuLib/blob/main/QueryCommandDoc.md)**
 
 ---
 ## State Initialization: The Builders

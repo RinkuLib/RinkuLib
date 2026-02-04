@@ -100,7 +100,13 @@ public class TypeParsingInfo {
     /// to ensure thread-safety and proper initialization.
     /// </summary>
     private static Dictionary<Type, TypeParsingInfo> TypeInfos = [];
-    private static readonly Lock WriteLock = new();
+    private static readonly
+#if NET9_0_OR_GREATER
+        Lock
+#else
+        object
+#endif
+        WriteLock = new();
     /// <summary>
     /// The target type being handled.
     /// </summary>

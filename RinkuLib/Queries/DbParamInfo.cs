@@ -5,6 +5,20 @@ using System.Diagnostics.CodeAnalysis;
 namespace RinkuLib.Queries;
 
 public delegate bool ParamInfoGetterMaker(IDbCommand cmd, out IDbParamInfoGetter getter);
+#if !NET8_0_OR_GREATER
+public static class DbParamInfoGetter {
+    /// <summary>
+    /// The global discovery hub for metadata providers.
+    /// </summary>
+    /// <remarks>
+    /// This collection stores negotiation delegates that are evaluated via linear search. 
+    /// This design choice prioritizes versatility over strict type-mapping, allowing a 
+    /// single maker to match multiple related command types (e.g., legacy vs. modern 
+    /// drivers or inheritance) through pattern matching.
+    /// </remarks>
+    public static readonly List<ParamInfoGetterMaker> ParamGetterMakers = [];
+}
+#endif
 /// <summary>
 /// Defines a contract for accessing parameter metadata, used to transition from 
 /// inferred types to explicit database-specific definitions.
@@ -22,6 +36,7 @@ public delegate bool ParamInfoGetterMaker(IDbCommand cmd, out IDbParamInfoGetter
 /// plan fragmentation and reducing driver overhead.</para>
 /// </remarks>
 public interface IDbParamInfoGetter {
+#if NET8_0_OR_GREATER
     /// <summary>
     /// The global discovery hub for metadata providers.
     /// </summary>
@@ -32,11 +47,16 @@ public interface IDbParamInfoGetter {
     /// drivers or inheritance) through pattern matching.
     /// </remarks>
     public static readonly List<ParamInfoGetterMaker> ParamGetterMakers = [];
+#endif
     /// <summary>
     /// Attempts to resolve a <see cref="DbParamInfo"/> for a specific parameter name, 
     /// ideally leveraging provider-specific schema details.
     /// </summary>
-    public bool TryGetInfo(string paramName, [MaybeNullWhen(false)] out DbParamInfo info);
+    public bool TryGetInfo(string paramName,
+#if NET8_0_OR_GREATER
+    [MaybeNullWhen(false)]
+# endif
+    out DbParamInfo info);
     /// <summary>
     /// Enumerates all parameters in the source command to facilitate bulk cache updates.
     /// </summary>

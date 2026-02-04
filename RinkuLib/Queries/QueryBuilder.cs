@@ -1,5 +1,4 @@
 ﻿using System.Data;
-using System.Data.Common;
 
 namespace RinkuLib.Queries;
 public static class BuilderStarter {
@@ -34,6 +33,10 @@ public static class BuilderStarter {
 /// tracking required by the underlying <see cref="QueryCommand"/>.
 /// </remarks>
 public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
+    /// <summary>
+    /// A marker used to activate a condition that does not require an associated data value.
+    /// </summary>
+    public static readonly object Used = new();
     /// <summary> The underlying command definition. </summary>
     public readonly QueryCommand QueryCommand = QueryCommand;
     /// <summary> 
@@ -49,7 +52,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// </summary>
     public readonly object?[] Variables = new object?[QueryCommand.Mapper.Count];
     public readonly void Reset()
-        => Array.Clear(Variables);
+        => Array.Clear(Variables, 0, Variables.Length);
     public readonly void ResetSelects()
         => Array.Clear(Variables, 0, QueryCommand.EndSelect);
     public readonly void Remove(string condition) {
@@ -60,12 +63,12 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind >= QueryCommand.StartVariables)
             throw new ArgumentException(condition);
-        Variables[ind] = IQueryBuilder.Used;
+        Variables[ind] = Used;
     }
     public void SafelyUse(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind >= 0 && ind < QueryCommand.StartVariables)
-            Variables[ind] = IQueryBuilder.Used;
+            Variables[ind] = Used;
     }
     public readonly bool Use(string variable, object value) {
         var ind = QueryCommand.Mapper.GetIndex(variable);
@@ -76,7 +79,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
             if (value is bool b) {
                 if (!b)
                     return false;
-                Variables[ind] = IQueryBuilder.Used;
+                Variables[ind] = Used;
                 return true;
             }
             return false;

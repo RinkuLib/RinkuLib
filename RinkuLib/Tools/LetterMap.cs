@@ -27,11 +27,16 @@ public class LetterMap<T> : IDictionary<char, T> {
     /// Bit 0 corresponds to 'a', bit 25 to 'z'.
     /// </summary>
     public uint PresenceMap => _mask;
+    public LetterMap() {}
     /// <summary>
     /// Initializes the map with a collection of character-value pairs.
     /// </summary>
     /// <param name="items">The initial items to populate the map.</param>
-    public LetterMap(params ReadOnlySpan<ValueTuple<char, T>> items)
+    public LetterMap(
+#if NET8_0_OR_GREATER
+        params
+#endif
+        ReadOnlySpan<ValueTuple<char, T>> items)
         => ResetWith(items);
     /// <summary>
     /// Clears the map and populates it with the provided items.
@@ -65,8 +70,20 @@ public class LetterMap<T> : IDictionary<char, T> {
         return i;
     }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static int Rank(uint mask, int idx)
-        => BitOperations.PopCount(mask & ((1u << idx) - 1));
+    static int Rank(uint mask, int idx) {
+        // mask & ((1u << idx) - 1) zeroes out everything above the index
+        uint target = mask & ((1u << idx) - 1);
+
+#if NETCOREAPP3_0_OR_GREATER
+        return System.Numerics.BitOperations.PopCount(target);
+#else
+    // Software fallback: SWAR (SIMD Within A Register) algorithm
+    // This is the fastest way to count bits without hardware intrinsics
+    target = target - ((target >> 1) & 0x55555555);
+    target = (target & 0x33333333) + ((target >> 2) & 0x33333333);
+    return (int)((((target + (target >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24);
+#endif
+    }
     /// <summary>
     /// Gets or sets the value associated with the specified letter.
     /// </summary>
@@ -100,7 +117,24 @@ public class LetterMap<T> : IDictionary<char, T> {
     /// <summary>
     /// Gets the number of unique letters currently mapped.
     /// </summary>
-    public int Count => BitOperations.PopCount(_mask);
+    public int Count {
+        get {
+#if NETCOREAPP3_0_OR_GREATER
+            return System.Numerics.BitOperations.PopCount(_mask);
+#else
+            return SoftwarePopCount(_mask);
+#endif
+        }
+    }
+
+#if !NETCOREAPP3_0_OR_GREATER
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int SoftwarePopCount(uint i) {
+        i = i - ((i >> 1) & 0x55555555);
+        i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
+        return (int)((((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24);
+    }
+#endif
     public bool IsReadOnly => false;
     public void Add(char key, T value) {
         if (ContainsKey(key))

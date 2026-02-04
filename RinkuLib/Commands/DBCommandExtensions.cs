@@ -286,6 +286,19 @@ public static class DBCommandExtensions {
             }
         }
     }
+
+#if !NET9_0_OR_GREATER
+public static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(this IEnumerable<T> source)
+{
+    // On .NET 8+, the state machine for this is extremely lean
+    foreach (var item in source)
+    {
+        yield return item;
+        // This allows the loop to yield control if the consumer is awaiting
+        await Task.Yield(); 
+    }
+}
+#endif
     extension(IDbCommand cmd) {
         public int ExecuteQuery<T>(T cache, bool disposeCommand = true) where T : ICache {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");

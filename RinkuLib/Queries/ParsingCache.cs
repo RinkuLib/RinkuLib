@@ -1,12 +1,21 @@
-﻿using System.Runtime.CompilerServices;
+﻿#if NET8_0_OR_GREATER
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+#endif
 
-namespace RinkuLib.Queries; 
+namespace RinkuLib.Queries;
 public abstract class ParsingCache {
-    public static readonly Lock SharedLock = new();
+    public static readonly
+#if NET9_0_OR_GREATER
+        Lock
+#else
+        object
+#endif
+        SharedLock = new();
     public static ParsingCache? New(int nbSelects) {
         if (nbSelects <= 0)
             return null;
+#if NET8_0_OR_GREATER
         if (nbSelects <= 32)
             return new ParsingCache<Masker32, uint>();
         if (nbSelects <= 64)
@@ -16,11 +25,17 @@ public abstract class ParsingCache {
         if (nbSelects <= 256)
             return new ParsingCache<Masker256, Int256>();
         return new ParsingCache<MaskerInfinite, ulong[]>();
+#else
+        if (nbSelects <= 32)
+            return new ParsingCache32();
+        return new ParsingCacheInfinite();
+#endif
     }
     public abstract bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache);
     public abstract int GetActualGetCacheIndex<T>(object?[] variables);
     public abstract bool UpdateCache<T>(int index, ParsingCache<T> cache);
 }
+#if NET8_0_OR_GREATER
 public interface IKeyMasker<TMask> {
     public abstract static TMask ToMask(object?[] variables);
     public abstract static bool Equals(TMask k1, TMask k2);
@@ -155,3 +170,93 @@ public unsafe class MaskerInfinite : IKeyMasker<ulong[]> {
         return data;
     }
 }
+#else
+public sealed class ParsingCache32 : ParsingCache {
+    private IParsingCache[] Cache = [];
+    private uint[] Keys = [];
+
+    private uint ToMask(object?[] variables) {
+        uint mask = 0;
+        for (int i = 0; i < variables.Length; i++)
+            if (variables[i] != null) mask |= 1U << i;
+        return mask;
+    }
+
+    public override bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache) {
+        uint mask = ToMask(variables);
+        for (int i = 0; i < Keys.Length; i++) {
+            if (Keys[i] == mask && Cache[i] is ParsingCache<T> c) {
+                cache = c; return true;
+            }
+        }
+        cache = default; return false;
+    }
+
+    public override int GetActualGetCacheIndex<T>(object?[] variables) {
+        uint mask = ToMask(variables);
+        lock (SharedLock) {
+            for (int i = 0; i < Keys.Length; i++)
+                if (Keys[i] == mask) return (Cache[i] is ParsingCache<T>) ? i : -1;
+
+            int len = Cache.Length;
+            Array.Resize(ref Cache, len + 1);
+            Array.Resize(ref Keys, len + 1);
+            Cache[len] = new ParsingCache<T>();
+            Keys[len] = mask;
+            return len;
+        }
+    }
+
+    public override bool UpdateCache<T>(int index, ParsingCache<T> cache) {
+        lock (SharedLock) {
+            Cache[index] = cache;
+            return true;
+        }
+    }
+}
+
+// Specific implementation for Infinite (ulong[])
+public sealed class ParsingCacheInfinite : ParsingCache {
+    private IParsingCache[] Cache = [];
+    private ulong[][] Keys = new ulong[0][];
+
+    private ulong[] ToMask(object?[] variables) {
+        ulong[] data = new ulong[(variables.Length + 63) >> 6];
+        for (int i = 0; i < variables.Length; i++)
+            if (variables[i] != null) data[i >> 6] |= 1UL << (i & 63);
+        return data;
+    }
+
+    public override bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache) {
+        ulong[] mask = ToMask(variables);
+        for (int i = 0; i < Keys.Length; i++) {
+            if (Keys[i].SequenceEqual(mask) && Cache[i] is ParsingCache<T> c) {
+                cache = c; return true;
+            }
+        }
+        cache = default; return false;
+    }
+
+    public override int GetActualGetCacheIndex<T>(object?[] variables) {
+        ulong[] mask = ToMask(variables);
+        lock (SharedLock) {
+            for (int i = 0; i < Keys.Length; i++)
+                if (Keys[i].SequenceEqual(mask)) return (Cache[i] is ParsingCache<T>) ? i : -1;
+
+            int len = Cache.Length;
+            Array.Resize(ref Cache, len + 1);
+            Array.Resize(ref Keys, len + 1);
+            Cache[len] = new ParsingCache<T>();
+            Keys[len] = mask;
+            return len;
+        }
+    }
+
+    public override bool UpdateCache<T>(int index, ParsingCache<T> cache) {
+        lock (SharedLock) {
+            Cache[index] = cache;
+            return true;
+        }
+    }
+}
+#endif

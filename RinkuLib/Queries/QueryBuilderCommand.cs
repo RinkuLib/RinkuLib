@@ -64,12 +64,12 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind >= QueryCommand.StartVariables)
             throw new ArgumentException(condition);
-        Variables[ind] = IQueryBuilder.Used;
+        Variables[ind] = QueryBuilder.Used;
     }
     public void SafelyUse(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind >= 0 && ind < QueryCommand.StartVariables)
-            Variables[ind] = IQueryBuilder.Used;
+            Variables[ind] = QueryBuilder.Used;
     }
     /// <summary>
     /// Activates a variable and binds its data to the live <see cref="Command"/>.
@@ -92,7 +92,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             if (value is bool b) {
                 if (!b)
                     return false;
-                Variables[ind] = IQueryBuilder.Used;
+                Variables[ind] = QueryBuilder.Used;
                 return true;
             }
             return false;
