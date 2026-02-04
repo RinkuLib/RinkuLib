@@ -4,6 +4,7 @@ RinkuLib is a micro-ORM built on top of **ADO.NET**. It separate any SQL constru
 The library is designed as two independent, highly customizable parts
 * SQL command generation with flexible templating engine
 * Complex type parsing with negociation phase to use the most appropriate construction
+
 (It's not fucking vibe coded)
 
 ---
