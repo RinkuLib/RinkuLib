@@ -116,7 +116,7 @@ var builder = userCmd.StartBuilder(sqlCmd);
 
 foreach(var val in dataList) {
     builder.Use("@val", val);
-    builder.Execute(cnn); // Reuses the internal command object
+    builder.ExecuteQuery(cnn); // Reuses the internal command object
 }
 ```
 #### One step building
