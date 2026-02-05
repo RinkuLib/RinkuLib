@@ -9,10 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Added permissions so the Action can create the "Tests" tab in the UI
-    permissions:
-      checks: write
-      pull-requests: write
 
     steps:
     - uses: actions/checkout@v4
