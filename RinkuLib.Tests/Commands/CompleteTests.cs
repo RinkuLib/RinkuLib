@@ -16,7 +16,8 @@ public class CompleteTests {
         SQLitePCL.Batteries.Init();
     }
     public static DbConnection GetDbCnn() {
-        return new SqliteConnection("Data Source=.\\TestDB.db;");
+        string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestDB.db");
+        return new SqliteConnection($"Data Source={dbPath}");
     }
     [Fact]
     public void Example1_StaticQuery() {
