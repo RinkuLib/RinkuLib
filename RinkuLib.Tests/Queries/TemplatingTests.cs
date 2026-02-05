@@ -121,7 +121,7 @@ public class TemplatingTests {
     }
     [Fact]
     public void Example1_StaticQuery() {
-        var sql = "SELECT ID, Usernam, Email FROM Users WHERE IsActive = @Active";
+        var sql = "SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
         // No markers mean the entire query is one "Always" segment.
