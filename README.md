@@ -1,4 +1,6 @@
 # RinkuLib: A Modular Micro-ORM
+[![Rinku](https://img.shields.io/nuget/vpre/Rinku)](https://www.nuget.org/packages/Rinku/)
+
 RinkuLib is a micro-ORM built on top of **ADO.NET**. It separate any SQL construction from the c# structure and provide a declarative way to build them. The engine also has complex type mapping compability with multiple customization options.
 
 The library is designed as two independent, highly customizable parts
