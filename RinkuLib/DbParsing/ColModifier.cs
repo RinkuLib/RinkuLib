@@ -5,6 +5,7 @@
 /// </summary>
 public readonly struct ColModifier(params INameComparer[] Comparers) {
     private readonly INameComparer[] _comparers = Comparers;
+    /// <summary>Entry point without any modifications</summary>
     public ColModifier() : this([]) { }
     /// <summary>
     /// Creates a new <see cref="ColModifier"/> by appending a single <see cref="INameComparer"/> 

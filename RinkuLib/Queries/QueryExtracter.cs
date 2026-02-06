@@ -4,7 +4,7 @@ using RinkuLib.Tools;
 namespace RinkuLib.Queries;
 
 [Flags]
-public enum CondFlags : byte {
+internal enum CondFlags : byte {
     None = 0,
     //IsHandlerFollowedByClosingParentesisOrSection = 0b_0000_0100,
     NeedSectionToFinish = 0b_0000_1000,
@@ -36,7 +36,7 @@ public enum CondFlags : byte {
 /// </item>
 /// </list>
 /// </remarks>
-public struct CondInfo {
+internal struct CondInfo {
     public const char AndComment = (char)1;
     public const char AndCommentChar = '&';
     public const char OrComment = (char)2;
@@ -160,6 +160,7 @@ public unsafe ref struct QueryExtracter {
     public const char OptionalVariableIdentifier = '?';
     /// <summary>Identifier for joining two (or more) footprint together (default '&amp;'). e.g., (SELECT A&amp;, B) or (WHERE A &gt; @A &amp;AND B &lt; @B)</summary>
     public const char JoinAndOrChar = '&';
+    /// <summary>Identifier to indicate that a comment should not be a condition, but actualy a comment</summary>
     public const char CommentAsCommentChar = '~';
     private int Length;
     private char* CurrentChar;
@@ -176,7 +177,6 @@ public unsafe ref struct QueryExtracter {
         *CurrentStart = newStart;
         *CurrentExcess = newExcess;
     }
-    public readonly string Binary => ParMap.ConvertBinary();
     private bool PrevBoundary;
     private bool FirstSelectCompleted;
     private bool ContainingParantesis;
@@ -187,7 +187,6 @@ public unsafe ref struct QueryExtracter {
     /// Performs a single-pass scan of the query to identify and map condition footprints.
     /// </summary>
     /// <param name="query">The raw SQL input to be parsed.</param>
-    /// <param name="extractSelects">If true, individual columns in the SELECT section are captured as <see cref="CondInfo"/> entries.</param>
     /// <param name="variableChar">The character prefix used to identify variables (e.g., '@' or ':').</param>
     /// <param name="newQuery">The resulting normalized SQL string, cleaned of condition markers and formatted for usage.</param>
     /// <returns>
@@ -195,7 +194,7 @@ public unsafe ref struct QueryExtracter {
     /// found.
     /// </returns>
     /// <exception cref="Exception">Thrown on invalid syntax, such as unclosed comments, quotes, or excessive nesting depth.</exception>
-    public static PooledArray<CondInfo>.Locked Segment(string query, char variableChar, out string newQuery) {
+    internal static PooledArray<CondInfo>.Locked Segment(string query, char variableChar, out string newQuery) {
         var seg = new QueryExtracter();
         return seg.SegmentQuery(query, variableChar, out newQuery);
     }
@@ -541,11 +540,11 @@ public unsafe ref struct QueryExtracter {
         => (*ptr | 0x20) == 'c' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 's' && (ptr[3] | 0x20) == 'e';
     private static bool IsEnd(char* ptr)
         => (*ptr | 0x20) == 'e' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 'd' && IsBoundary(ptr[3]);
-    public static unsafe bool IsOr(char* ptr)
+    private static unsafe bool IsOr(char* ptr)
         => (*ptr | 0x20) == 'o' && (ptr[1] | 0x20) == 'r' && IsBoundary(ptr[2]);
-    public static unsafe bool IsAnd(char* ptr)
+    private static unsafe bool IsAnd(char* ptr)
         => (*ptr | 0x20) == 'a' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 'd' && IsBoundary(ptr[3]);
-    public static unsafe bool IsOn(char* ptr)
+    private static unsafe bool IsOn(char* ptr)
         => (*ptr | 0x20) == 'o' && (ptr[1] | 0x20) == 'n' && IsBoundary(ptr[2]);
     private static readonly string[] SQLSections = [
         "with",

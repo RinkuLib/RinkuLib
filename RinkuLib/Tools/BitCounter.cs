@@ -2,7 +2,7 @@
 
 namespace RinkuLib.Tools;
 
-public struct BitCounter(byte Length, ulong Low, ulong High = 0) {
+internal struct BitCounter(byte Length, ulong Low, ulong High = 0) {
     public int Length = Length;
     public ulong Low = Low;
     public ulong High = High;
@@ -38,7 +38,7 @@ public struct BitCounter(byte Length, ulong Low, ulong High = 0) {
         return cnt;
     }
 }
-public struct BitCounter256 {
+internal struct BitCounter256 {
     public ulong A;
     public ulong B;
     public ulong C;

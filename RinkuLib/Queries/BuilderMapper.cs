@@ -4,45 +4,51 @@ using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 
 namespace RinkuLib.Queries;
-
+/// <summary>
+/// Attribute to identify that the member correspond to a boolean condition in a SQL template and not to a variable
+/// </summary>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class ForBoolCondAttribute : Attribute;
-public delegate void QueryFillAction<T, TBuilder>(ref T instance, TBuilder builder);
 /// <summary>
-/// Provides high-performance extension methods to populate an <see cref="IQueryBuilder"/> 
+/// Provides extension methods to populate a <see cref="IQueryBuilder"/> 
 /// from the properties and fields of a source object.
 /// </summary>
 public static class QueryBuilderExtensions {
+    /// <summary>
+    /// Start a <see cref="QueryBuilder"/> and uses all the non-null members of <typeparamref name="T"/>.
+    /// </summary>
     public static QueryBuilder StartBuilderWith<T>(this QueryCommand command, ref T value) {
         var builder = new QueryBuilder(command);
         builder.UseWith(ref value);
         return builder;
     }
+    /// <summary>
+    /// Start a <see cref="QueryBuilderCommand{TCmd}"/> and uses all the non-null members of <typeparamref name="T"/>.
+    /// </summary>
     public static QueryBuilderCommand<TCmd> StartBuilderWith<TCmd, T>(this QueryCommand command, TCmd cmd, ref T value) where TCmd : IDbCommand {
         var builder = new QueryBuilderCommand<TCmd>(command, cmd);
         builder.UseWith(ref value);
         return builder;
     }
+    /// <summary>
+    /// Start a <see cref="QueryBuilder"/> and uses all the non-null members of <typeparamref name="T"/>.
+    /// </summary>
     public static QueryBuilder StartBuilderWith<T>(this QueryCommand command, T value) {
         var builder = new QueryBuilder(command);
         builder.UseWith(ref value);
         return builder;
     }
+    /// <summary>
+    /// Start a <see cref="QueryBuilderCommand{TCmd}"/> and uses all the non-null members of <typeparamref name="T"/>.
+    /// </summary>
     public static QueryBuilderCommand<TCmd> StartBuilderWith<TCmd, T>(this QueryCommand command, TCmd cmd, T value) where TCmd : IDbCommand {
         var builder = new QueryBuilderCommand<TCmd>(command, cmd);
         builder.UseWith(ref value);
         return builder;
     }
     /// <summary>
-    /// Activates variables in the builder using the members of a source struct by reference, 
-    /// avoiding unnecessary memory copies.
+    /// Uses all the non-null members of <typeparamref name="T"/> into the builder.
     /// </summary>
-    /// <param name="builder">The query builder to populate.</param>
-    /// <param name="value">The source struct to read from.</param>
-    /// <remarks>
-    /// Uses a cached IL-generated delegate. If <typeparamref name="T"/> implements 
-    /// <see cref="IQueryFillable"/>, the custom Fill logic is used instead.
-    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void UseWith<TBuilder, T>(this TBuilder builder, ref T value) where TBuilder : IQueryBuilder {
         if (typeof(T).IsValueType)
@@ -52,10 +58,10 @@ public static class QueryBuilderExtensions {
     }
 
     /// <summary>
-    /// Activates variables in the builder using the members of a source object or struct.
+    /// Uses all the non-null members of <typeparamref name="T"/> into the builder.
     /// </summary>
     /// <remarks>
-    /// For structs, consider using the <c>ref</c> overload to prevent copying the value onto the stack.
+    /// For large structs, consider using the <c><see langword="ref"/></c> overload to prevent copying the value onto the stack.
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void UseWith<TBuilder, T>(this TBuilder builder, T value) where TBuilder : IQueryBuilder {

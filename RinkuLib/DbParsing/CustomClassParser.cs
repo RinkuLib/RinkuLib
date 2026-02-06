@@ -15,9 +15,12 @@ public class CustomClassParser(Type Type, string ParamName, INullColHandler Null
     private readonly List<DbItemParser> Readers = Parameters;
     private readonly List<(MemberInfo, DbItemParser)> Members = Members;
     private static readonly List<(MemberInfo, DbItemParser)> EmptyMembers = [];
+    /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedNullJumpSetPoint(Type);
+    /// <summary>Creation without member assignations</summary>
     public CustomClassParser(Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters)
         : this(Type, ParamName, NullColHandler, MethodBase, Parameters, EmptyMembers) { }
+    /// <inheritdoc/>
     public override bool IsSequencial(ref int previousIndex) {
         for (int i = 0; i < Readers.Count; i++)
             if (!Readers[i].IsSequencial(ref previousIndex))
@@ -27,6 +30,7 @@ public class CustomClassParser(Type Type, string ParamName, INullColHandler Null
                 return false;
         return true;
     }
+    /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint) {
         Label? jump = null;
         var localSetPoint = nullSetPoint;

@@ -4,23 +4,29 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace RinkuLib.Tools;
+/// <summary>
+/// A stack-only, expandable string builder that uses a <see cref="Span{T}"/> for initial storage 
+/// and falls back to <see cref="ArrayPool{Char}"/> for larger workloads.
+/// </summary>
 public ref partial struct ValueStringBuilder {
     private char[]? _arrayToReturnToPool;
     private Span<char> _chars;
     private int _pos;
-
+    /// <summary>Initializes the builder using a stack-allocated or pre-allocated buffer.</summary>
+    /// <param name="initialBuffer">The initial memory to use for string building.</param>
     public ValueStringBuilder(Span<char> initialBuffer) {
         _arrayToReturnToPool = null;
         _chars = initialBuffer;
         _pos = 0;
     }
-
+    /// <summary>Initializes the builder by renting an initial buffer from the shared pool.</summary>
+    /// <param name="initialCapacity">The minimum starting capacity.</param>
     public ValueStringBuilder(int initialCapacity) {
         _arrayToReturnToPool = ArrayPool<char>.Shared.Rent(initialCapacity);
         _chars = _arrayToReturnToPool;
         _pos = 0;
     }
-
+    /// <summary>Gets or sets the current number of characters in the builder.</summary>
     public int Length {
         readonly get => _pos;
         set {
@@ -29,9 +35,12 @@ public ref partial struct ValueStringBuilder {
             _pos = value;
         }
     }
-
+    /// <summary>Gets the total number of characters the current buffer can hold without resizing.</summary>
     public readonly int Capacity => _chars.Length;
-
+    /// <summary>
+    /// Ensures the buffer has enough space to accommodate the specified capacity.
+    /// </summary>
+    /// <param name="capacity">The total minimum capacity required.</param>
     public void EnsureCapacity(int capacity) {
         // This is not expected to be called this with negative capacity
         Debug.Assert(capacity >= 0);
@@ -62,7 +71,10 @@ public ref partial struct ValueStringBuilder {
         }
         return ref MemoryMarshal.GetReference(_chars);
     }
-
+    /// <summary>
+    /// Gets a reference to the character at the specified index within the current usage.
+    /// </summary>
+    /// <param name="index">The zero-based index of the character.</param>
     public ref char this[int index] {
         get {
             Debug.Assert(index < _pos);
@@ -70,7 +82,7 @@ public ref partial struct ValueStringBuilder {
             return ref _chars[index];
         }
     }
-
+    /// <summary>Returns the content as a string and releases pooled resources.</summary>
     public string ToStringAndDispose() {
         string s = _chars[.._pos].ToString();
         Dispose();
@@ -92,10 +104,22 @@ public ref partial struct ValueStringBuilder {
         return _chars[.._pos];
     }
 
+    /// <summary>
+    /// Returns a span around the contents of the builder.
+    /// </summary>
     public readonly ReadOnlySpan<char> AsSpan() => _chars[.._pos];
-    public readonly ReadOnlySpan<char> AsSpan(int start) => _chars[start.._pos];
-    public readonly ReadOnlySpan<char> AsSpan(int start, int length) => _chars.Slice(start, length);
 
+    /// <summary>
+    /// Returns a span around the contents of the builder.
+    /// </summary>
+    public readonly ReadOnlySpan<char> AsSpan(int start) => _chars[start.._pos];
+
+    /// <summary>
+    /// Returns a span around the contents of the builder.
+    /// </summary>
+    public readonly ReadOnlySpan<char> AsSpan(int start, int length) => _chars.Slice(start, length);
+    /// <summary>Copies the content to a destination and releases pooled resources.</summary>
+    /// <returns>True if the destination was large enough; otherwise, false.</returns>
     public bool TryCopyTo(Span<char> destination, out int charsWritten) {
         if (_chars[.._pos].TryCopyTo(destination)) {
             charsWritten = _pos;
@@ -108,7 +132,12 @@ public ref partial struct ValueStringBuilder {
             return false;
         }
     }
-
+    /// <summary>
+    /// Inserts a repeated character into the builder at the specified index.
+    /// </summary>
+    /// <param name="index">The zero-based index at which to insert.</param>
+    /// <param name="value">The character to insert.</param>
+    /// <param name="count">The number of times to insert the character.</param>
     public void Insert(int index, char value, int count) {
         if (_pos > _chars.Length - count) {
             Grow(count);
@@ -119,7 +148,7 @@ public ref partial struct ValueStringBuilder {
         _chars.Slice(index, count).Fill(value);
         _pos += count;
     }
-
+    /// <summary>Inserts a string at the specified index, shifting existing content to the right.</summary>
     public void Insert(int index, string? s) {
         if (s == null) {
             return;
@@ -140,7 +169,7 @@ public ref partial struct ValueStringBuilder {
             .CopyTo(_chars[index..]);
         _pos += count;
     }
-
+    /// <summary>Appends a single character to the builder, resizing if necessary.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Append(char c) {
         int pos = _pos;
@@ -152,7 +181,7 @@ public ref partial struct ValueStringBuilder {
             GrowAndAppend(c);
         }
     }
-
+    /// <summary>Appends a string. If the string is null, the builder remains unchanged.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Append(string? s) {
         if (s == null) {
@@ -183,7 +212,11 @@ public ref partial struct ValueStringBuilder {
             .CopyTo(_chars[pos..]);
         _pos += s.Length;
     }
-
+    /// <summary>
+    /// Appends a character repeated a specified number of times.
+    /// </summary>
+    /// <param name="c">The character to append.</param>
+    /// <param name="count">The number of times to append the character.</param>
     public void Append(char c, int count) {
         if (_pos > _chars.Length - count) {
             Grow(count);
@@ -195,7 +228,7 @@ public ref partial struct ValueStringBuilder {
         }
         _pos += count;
     }
-
+    /// <summary>Appends a specified number of characters from a pointer.</summary>
     public unsafe void Append(char* value, int length) {
         int pos = _pos;
         if (pos > _chars.Length - length) {
@@ -208,7 +241,10 @@ public ref partial struct ValueStringBuilder {
         }
         _pos += length;
     }
-
+    /// <summary>
+    /// Appends the contents of a read-only span of characters.
+    /// </summary>
+    /// <param name="value">The span of characters to append.</param>
     public void Append(ReadOnlySpan<char> value) {
         int pos = _pos;
         if (pos > _chars.Length - value.Length) {
@@ -218,7 +254,7 @@ public ref partial struct ValueStringBuilder {
         value.CopyTo(_chars[_pos..]);
         _pos += value.Length;
     }
-
+    /// <summary>Advances the builder and returns a writable span of the specified length.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<char> AppendSpan(int length) {
         int origPos = _pos;
@@ -260,7 +296,7 @@ public ref partial struct ValueStringBuilder {
             ArrayPool<char>.Shared.Return(toReturn);
         }
     }
-
+    /// <summary>Returns any rented buffers to the <see cref="ArrayPool{Char}"/>. The instance becomes unusable.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Dispose() {
         char[]? toReturn = _arrayToReturnToPool;
@@ -269,6 +305,7 @@ public ref partial struct ValueStringBuilder {
             ArrayPool<char>.Shared.Return(toReturn);
         }
     }
+    /// <summary>Appends the string representation of an integer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Append(int i) {
         if (i < 0) {
@@ -295,6 +332,11 @@ public ref partial struct ValueStringBuilder {
         }
         _pos += digits;
     }
+    /// <summary>
+    /// Calculates the number of decimal digits required to represent a non-negative integer.
+    /// </summary>
+    /// <param name="v">The non-negative integer to measure.</param>
+    /// <returns>The count of digits (1-10).</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int DigitCount(int v) {
         if (v < 10)

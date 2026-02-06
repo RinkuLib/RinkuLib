@@ -26,22 +26,24 @@ public class MapperCreationTests {
         // Assert Type Identity
         switch (type) {
             case TypeEmpty:
-                Assert.IsType<Mapper.Empty>(result);
+                Assert.Equal(Mapper.EmptyMapper, result);
                 break;
             case TypeOne:
-                Assert.IsType<Mapper.One>(result);
+                Assert.Equal(1, result.Keys.Length);
                 break;
             case TypeTwo:
-                Assert.IsType<Mapper.Two>(result);
+                Assert.Equal(2, result.Keys.Length);
                 break;
             case TypeDict:
-                Assert.IsType<Mapper.DictMapper>(result);
+                Assert.True(result.Keys.Length > 2);
+                Assert.IsNotType<OptiMapper<AsciiStrategy>>(result);
+                Assert.IsNotType<OptiMapper<UnicodeStrategy>>(result);
                 break;
             case TypeAscii:
-                Assert.IsType<AsciiMapper<AsciiStrategy>>(result);
+                Assert.IsType<OptiMapper<AsciiStrategy>>(result);
                 break;
             case TypeUnicode:
-                Assert.IsType<AsciiMapper<UnicodeStrategy>>(result);
+                Assert.IsType<OptiMapper<UnicodeStrategy>>(result);
                 break;
         }
 

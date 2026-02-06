@@ -3,12 +3,15 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace RinkuLib.DbParsing;
-
+/// <summary>Direcly match to the first unused column with the matching type</summary>
 public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
+    /// <summary>Singleton</summary>
     public static readonly BaseTypeMatcher Instance = new();
     private BaseTypeMatcher() {}
+    /// <inheritdoc/>
     public bool CanUseType(Type TargetType)
         => TargetType.IsBaseType() || TargetType.IsEnum;
+    /// <inheritdoc/>
     public DbItemParser? TryGetParser(Type closedTargetType, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
         int i = 0;
         for (; i < columns.Length; i++) {
@@ -398,7 +401,7 @@ public class TypeParsingInfo {
     /// Configures the null-value response behavior for parameters matching <paramref name="defaultName"/>.
     /// </summary>
     /// <param name="defaultName">The parameter name in C#.</param>
-    /// <param name="invalidOnNull">Wether or not the parameter should jump when null</param>
+    /// <param name="invalidOnNull">Wether or not the parameter should be invalid when null</param>
     public void SetInvalidOnNull(string defaultName, bool invalidOnNull) {
         if (!IsInit)
             Init();
@@ -411,8 +414,14 @@ public class TypeParsingInfo {
             }
         }
     }
+    /// <summary>
+    /// Mannualy add a possible construction path that will be prioritized as much as possible
+    /// </summary>
     public void AddPossibleConstruction(MethodBase methodBase)
         => AddPossibleConstruction(new MethodCtorInfo(methodBase));
+    /// <summary>
+    /// Mannualy add a possible construction path that will be prioritized as much as possible
+    /// </summary>
     public void AddPossibleConstruction(MethodCtorInfo mci) {
         lock (WriteLock) {
             var target = mci.TargetType;

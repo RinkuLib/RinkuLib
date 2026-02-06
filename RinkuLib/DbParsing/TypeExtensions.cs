@@ -9,6 +9,7 @@ namespace RinkuLib.DbParsing;
 /// </summary>
 public static class TypeExtensions {
     #region Debug
+    /// <inheritdoc/>
     public static readonly MethodInfo WriteLine = typeof(Console).GetMethod("WriteLine", [typeof(object)])!;
     /// <summary>
     /// Emits IL to print the current value at the top of the stack to the Console.
@@ -44,37 +45,38 @@ public static class TypeExtensions {
     }
     #endregion
     #region DbReaderVars
-    public static readonly Type[] IntParam = [typeof(int)];
-    public static readonly Type ReaderType = typeof(DbDataReader);
-    public static readonly MethodInfo IsNull = ReaderType.GetMethod(nameof(DbDataReader.IsDBNull), IntParam)!;
-
-    public static readonly MethodInfo _obj = ReaderType.GetMethod(nameof(DbDataReader.GetValue), IntParam)!;
-    public static readonly MethodInfo _str = ReaderType.GetMethod(nameof(DbDataReader.GetString), IntParam)!;
-    public static readonly MethodInfo _i8 = ReaderType.GetMethod(nameof(DbDataReader.GetByte), IntParam)!;
-    public static readonly MethodInfo _i16 = ReaderType.GetMethod(nameof(DbDataReader.GetInt16), IntParam)!;
-    public static readonly MethodInfo _i32 = ReaderType.GetMethod(nameof(DbDataReader.GetInt32), IntParam)!;
-    public static readonly MethodInfo _i64 = ReaderType.GetMethod(nameof(DbDataReader.GetInt64), IntParam)!;
-    public static readonly MethodInfo _char = ReaderType.GetMethod(nameof(DbDataReader.GetChar), IntParam)!;
-    public static readonly MethodInfo _bool = ReaderType.GetMethod(nameof(DbDataReader.GetBoolean), IntParam)!;
-    public static readonly MethodInfo _dt = ReaderType.GetMethod(nameof(DbDataReader.GetDateTime), IntParam)!;
-    public static readonly MethodInfo _dbl = ReaderType.GetMethod(nameof(DbDataReader.GetDouble), IntParam)!;
-    public static readonly MethodInfo _flt = ReaderType.GetMethod(nameof(DbDataReader.GetFloat), IntParam)!;
-    public static readonly MethodInfo _dec = ReaderType.GetMethod(nameof(DbDataReader.GetDecimal), IntParam)!;
-    public static readonly MethodInfo _guid = ReaderType.GetMethod(nameof(DbDataReader.GetGuid), IntParam)!;
-    public static readonly MethodInfo _getMeth = ReaderType.GetMethod(nameof(DbDataReader.GetFieldValue), IntParam)!;
-
-    public static readonly ConstructorInfo _Ni8Ctor = typeof(byte?).GetConstructor([typeof(byte)])!;
-    public static readonly ConstructorInfo _Ni16Ctor = typeof(short?).GetConstructor([typeof(short)])!;
-    public static readonly ConstructorInfo _Ni32Ctor = typeof(int?).GetConstructor([typeof(int)])!;
-    public static readonly ConstructorInfo _Ni64Ctor = typeof(long?).GetConstructor([typeof(long)])!;
-    public static readonly ConstructorInfo _NcharCtor = typeof(char?).GetConstructor([typeof(char)])!;
-    public static readonly ConstructorInfo _NboolCtor = typeof(bool?).GetConstructor([typeof(bool)])!;
-    public static readonly ConstructorInfo _NdtCtor = typeof(DateTime?).GetConstructor([typeof(DateTime)])!;
-    public static readonly ConstructorInfo _NdblCtor = typeof(double?).GetConstructor([typeof(double)])!;
-    public static readonly ConstructorInfo _NfltCtor = typeof(float?).GetConstructor([typeof(float)])!;
-    public static readonly ConstructorInfo _NdecCtor = typeof(decimal?).GetConstructor([typeof(decimal)])!;
-    public static readonly ConstructorInfo _NguidCtor = typeof(Guid?).GetConstructor([typeof(Guid)])!;
+    internal static readonly Type[] IntParam = [typeof(int)];
+    internal static readonly Type ReaderType = typeof(DbDataReader);
+    internal static readonly MethodInfo IsNull = ReaderType.GetMethod(nameof(DbDataReader.IsDBNull), IntParam)!;
+    
+    internal static readonly MethodInfo _obj = ReaderType.GetMethod(nameof(DbDataReader.GetValue), IntParam)!;
+    internal static readonly MethodInfo _str = ReaderType.GetMethod(nameof(DbDataReader.GetString), IntParam)!;
+    internal static readonly MethodInfo _i8 = ReaderType.GetMethod(nameof(DbDataReader.GetByte), IntParam)!;
+    internal static readonly MethodInfo _i16 = ReaderType.GetMethod(nameof(DbDataReader.GetInt16), IntParam)!;
+    internal static readonly MethodInfo _i32 = ReaderType.GetMethod(nameof(DbDataReader.GetInt32), IntParam)!;
+    internal static readonly MethodInfo _i64 = ReaderType.GetMethod(nameof(DbDataReader.GetInt64), IntParam)!;
+    internal static readonly MethodInfo _char = ReaderType.GetMethod(nameof(DbDataReader.GetChar), IntParam)!;
+    internal static readonly MethodInfo _bool = ReaderType.GetMethod(nameof(DbDataReader.GetBoolean), IntParam)!;
+    internal static readonly MethodInfo _dt = ReaderType.GetMethod(nameof(DbDataReader.GetDateTime), IntParam)!;
+    internal static readonly MethodInfo _dbl = ReaderType.GetMethod(nameof(DbDataReader.GetDouble), IntParam)!;
+    internal static readonly MethodInfo _flt = ReaderType.GetMethod(nameof(DbDataReader.GetFloat), IntParam)!;
+    internal static readonly MethodInfo _dec = ReaderType.GetMethod(nameof(DbDataReader.GetDecimal), IntParam)!;
+    internal static readonly MethodInfo _guid = ReaderType.GetMethod(nameof(DbDataReader.GetGuid), IntParam)!;
+    internal static readonly MethodInfo _getMeth = ReaderType.GetMethod(nameof(DbDataReader.GetFieldValue), IntParam)!;
+    
+    internal static readonly ConstructorInfo _Ni8Ctor = typeof(byte?).GetConstructor([typeof(byte)])!;
+    internal static readonly ConstructorInfo _Ni16Ctor = typeof(short?).GetConstructor([typeof(short)])!;
+    internal static readonly ConstructorInfo _Ni32Ctor = typeof(int?).GetConstructor([typeof(int)])!;
+    internal static readonly ConstructorInfo _Ni64Ctor = typeof(long?).GetConstructor([typeof(long)])!;
+    internal static readonly ConstructorInfo _NcharCtor = typeof(char?).GetConstructor([typeof(char)])!;
+    internal static readonly ConstructorInfo _NboolCtor = typeof(bool?).GetConstructor([typeof(bool)])!;
+    internal static readonly ConstructorInfo _NdtCtor = typeof(DateTime?).GetConstructor([typeof(DateTime)])!;
+    internal static readonly ConstructorInfo _NdblCtor = typeof(double?).GetConstructor([typeof(double)])!;
+    internal static readonly ConstructorInfo _NfltCtor = typeof(float?).GetConstructor([typeof(float)])!;
+    internal static readonly ConstructorInfo _NdecCtor = typeof(decimal?).GetConstructor([typeof(decimal)])!;
+    internal static readonly ConstructorInfo _NguidCtor = typeof(Guid?).GetConstructor([typeof(Guid)])!;
     #endregion
+    /// <summary>Get a human readable type name with generic</summary>
     public static string ShortName(this Type? t) {
         if (t is null)
             return "void";
@@ -86,17 +88,20 @@ public static class TypeExtensions {
         string name = t.Name.Split('`')[0];
         return $"{name}<{args}>";
     }
-
+    /// <summary>
+    /// Check if the type has a related method in <see cref="DbDataReader"/>.
+    /// </summary>
     public static bool IsBaseType(this Type type) {
         return type == typeof(int) || type == typeof(string) || type == typeof(DateTime)
             || type == typeof(bool) || type == typeof(long) || type == typeof(decimal)
             || type == typeof(Guid) || type == typeof(object) || type == typeof(float)
             || type == typeof(double) || type == typeof(char) || type == typeof(byte) || type == typeof(short);
     }
+    /// <summary>
+    /// Check if the type can hold a <see langword="null"/> value
+    /// </summary>
     public static bool IsNullable(this Type type)
         => !type.IsValueType || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>));
-    public static object? GetDefault(this Type type)
-        => !type.IsValueType ? null : Activator.CreateInstance(type);
     private readonly static Dictionary<Type, MethodInfo> NotNullGetter = [];
     /// <summary>
     /// Get the <see cref="DbDataReader"/> method for a given Type.
@@ -238,8 +243,8 @@ public static class TypeExtensions {
     /// <summary>
     /// Replaces generic placeholders (T, TKey) with actual types from the parent closed type.
     /// </summary>
-    /// <param name="type">The member type that might be open (e.g., List<TKey>)</param>
-    /// <param name="closedParent">The closed provider (e.g., KeyValuePair<int, string>)</param>
+    /// <param name="type">The member type that might be open (e.g., <see cref="List{T}"/>)</param>
+    /// <param name="closedParent">The closed provider (e.g., <see cref="KeyValuePair{Int32, String}"/>)</param>
     public static Type CloseType(this Type type, Type closedParent) {
         if (!type.ContainsGenericParameters)
             return type;

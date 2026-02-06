@@ -9,7 +9,7 @@ namespace RinkuLib.Queries;
 /// </summary>
 /// <remarks>
 /// This struct manages the "active" state of a query. Unlike a standard builder, 
-/// every call to <see cref="Use"/> or <see cref="Remove"/> immediately updates 
+/// every call to <see cref="Use(string, object)"/> or <see cref="Remove"/> immediately updates 
 /// the underlying <see cref="Command"/> (e.g., adding, updating, or removing DB parameters).
 /// </remarks>
 public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, TCommand Command) : IQueryBuilder where TCommand : IDbCommand {
@@ -21,6 +21,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     public readonly object?[] Variables = new object?[QueryCommand.Mapper.Count];
     /// <summary> The live database command being synchronized. </summary>
     public readonly TCommand Command = Command;
+    /// <inheritdoc/>
     public readonly void Reset() {
         var varInfos = QueryCommand.Parameters._variablesInfo;
         ref object? pVar = ref Unsafe.Add(ref MemoryMarshal.GetReference(Variables), QueryCommand.StartVariables);
@@ -42,8 +43,10 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             }
         }
     }
+    /// <inheritdoc/>
     public readonly void ResetSelects()
         => Array.Clear(Variables, 0, QueryCommand.EndSelect);
+    /// <inheritdoc/>
     public readonly void Remove(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind < QueryCommand.StartVariables) {
@@ -60,12 +63,14 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             QueryCommand.Parameters._specialHandlers[ind - QueryCommand.StartSpecialHandlers].Remove(Command, val);
         val = null;
     }
+    /// <inheritdoc/>
     public readonly void Use(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind >= QueryCommand.StartVariables)
             throw new ArgumentException(condition);
         Variables[ind] = QueryBuilder.Used;
     }
+    /// <inheritdoc/>
     public void SafelyUse(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind >= 0 && ind < QueryCommand.StartVariables)
@@ -118,12 +123,15 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         val = value;
         return true;
     }
+    /// <inheritdoc/>
     public readonly object? this[string condition] {
         get => Variables[QueryCommand.Mapper.GetIndex(condition)];
     }
+    /// <inheritdoc/>
     public readonly object? this[int ind] {
         get => Variables[ind];
     }
+    /// <inheritdoc/>
     public readonly int GetRelativeIndex(string key) {
         var ind = QueryCommand.Mapper.GetIndex(key);
         var nbBefore = 0;
@@ -132,6 +140,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
                 nbBefore++;
         return nbBefore;
     }
+    /// <inheritdoc/>
     public readonly string GetQueryText()
         => QueryCommand.QueryText.Parse(Variables);
 }

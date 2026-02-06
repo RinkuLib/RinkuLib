@@ -14,29 +14,6 @@ public struct ColumnInfo(string Name, Type Type, bool IsNullable) {
     /// Indicates if the schema identifies this column as potentially containing null values.
     /// </summary>
     public bool IsNullable = IsNullable;
-    /*
-    private byte ByteOpti;
-    private const byte MaskIsNullable = 0b01;
-    private const byte MaskIsUsed = 0b10;
-    public bool IsNullable {
-        readonly get => (ByteOpti & MaskIsNullable) != 0;
-        set {
-            if (value)
-                ByteOpti |= MaskIsNullable;
-            else
-                ByteOpti &= unchecked((byte)~MaskIsNullable);
-        }
-    }
-
-    public bool IsUsed {
-        readonly get => (ByteOpti & MaskIsUsed) != 0;
-        set {
-            if (value)
-                ByteOpti |= MaskIsUsed;
-            else
-                ByteOpti &= unchecked((byte)~MaskIsUsed);
-        }
-    }*/
     /// <summary>
     /// Performs a comparison based on type, name (case-insensitive), and nullability.
     /// </summary>
@@ -45,8 +22,11 @@ public struct ColumnInfo(string Name, Type Type, bool IsNullable) {
         && column.Type == Type
         && string.Equals(column.Name, Name, StringComparison.OrdinalIgnoreCase);
 }
+/// <summary>Identify a parameter that should not be null, but the row provided a null value. Can be direcly a null column or a sub-class that lead to a null value</summary>
 public class NullValueAssignmentException(Type paramType, string paramName) : Exception($"Constraint Violation: Parameter '{paramName}' of type '{paramType.Name}' is marked as non-nullable, but the source provided a null value.") {
+    /// <summary>The name of the parameter that should not be null</summary>
     public readonly string ParameterName = paramName;
+    /// <summary>The type of the parameter that should not be null</summary>
     public readonly Type ParameterType = paramType;
 }
 /// <summary>
@@ -70,8 +50,8 @@ public abstract class DbItemParser {
     /// <param name="generator">The IL generator wrapper.</param>
     /// <param name="nullSetPoint">The recovery point when value is null.</param>
     public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint);
-    public static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(string)])!;
-    public static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;
+    internal static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(string)])!;
+    internal static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;
 
     /// <summary>
     /// Emits a throw instruction for an <see cref="NullValueAssignmentException"/> when 

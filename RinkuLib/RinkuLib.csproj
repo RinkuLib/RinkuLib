@@ -1,14 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-	  <TargetFramework>net10.0</TargetFramework>
+	  <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
 	  <ImplicitUsings>enable</ImplicitUsings>
 	  <Nullable>enable</Nullable>
 	  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	  <LangVersion>latest</LangVersion>
 
 	  <PackageId>Rinku</PackageId>
-	  <Version>0.0.2-alpha</Version>
+	  <Version>0.1.0</Version>
 	  <Authors>adam.therrien.marois</Authors>
 	  <Product>Rinku</Product>
 	  <Title>Rinku</Title>
@@ -18,12 +18,13 @@
 	  <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 	  <Deterministic>true</Deterministic>
 	  <DefaultLanguage>en-US</DefaultLanguage>
+	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
 	  <PackageProjectUrl>https://github.com/adamtherrienmarois/RinkuLib</PackageProjectUrl>
 	  <RepositoryUrl>https://github.com/adamtherrienmarois/RinkuLib</RepositoryUrl>
 	  <RepositoryType>git</RepositoryType>
 	  <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-	  <PackageReadmeFile>readme.md</PackageReadmeFile>
+	  <PackageReadmeFile>readmeNuGet.md</PackageReadmeFile>
 	  <PackageIcon>logo.png</PackageIcon>
 	  
 	  <DebugSymbols>true</DebugSymbols>
@@ -37,7 +38,7 @@
 		<PackageReference Include="System.ValueTuple" Version="4.5.0" />
 	</ItemGroup>
 	<ItemGroup>
-		<None Include="..\readme.md" Pack="true" PackagePath="\" />
+		<None Include="..\readmeNuGet.md" Pack="true" PackagePath="\" />
 		<None Include="..\logo.png" Pack="true" PackagePath="\" />
 	</ItemGroup>
 </Project>
