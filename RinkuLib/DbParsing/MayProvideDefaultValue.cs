@@ -5,14 +5,14 @@ namespace RinkuLib.DbParsing;
 public abstract class MayProvideDefaultValue(INullColHandler nullColHandler) : INullColHandler {
     public abstract DbItemParser? TryGetItemParser(Type type);
     public INullColHandler NullColHandler { get => field; set => field = Interlocked.Exchange(ref field, value); } = nullColHandler;
-    public Label? HandleNull(Type closedType, Generator generator, NullSetPoint nullSetPoint)
-        => NullColHandler.HandleNull(closedType, generator, nullSetPoint);
+    public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint)
+        => NullColHandler.HandleNull(closedType, paramName, generator, nullSetPoint);
     public bool IsBr_S(Type closedType)
         => NullColHandler.IsBr_S(closedType);
-    public bool NeedJumpSetPoint(Type closedType)
-        => NullColHandler.NeedJumpSetPoint(closedType);
-    public INullColHandler SetJumpWhenNull(Type type, bool jumpWhenNull) {
-        NullColHandler = NullColHandler.SetJumpWhenNull(type, jumpWhenNull);
+    public bool NeedNullJumpSetPoint(Type closedType)
+        => NullColHandler.NeedNullJumpSetPoint(closedType);
+    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) {
+        NullColHandler = NullColHandler.SetInvalidOnNull(type, invalidOnNull);
         return this;
     }
 }

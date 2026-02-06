@@ -7,16 +7,17 @@ namespace RinkuLib.DbParsing;
 /// A composite parser responsible for instantiating complex types and populating their members.
 /// It coordinates the evaluation stack to satisfy constructor parameters and setter methods.
 /// </summary>
-public class CustomClassParser(Type Type, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters, List<(MemberInfo, DbItemParser)> Members) : DbItemParser {
+public class CustomClassParser(Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters, List<(MemberInfo, DbItemParser)> Members) : DbItemParser {
     private readonly Type Type = Type;
+    private readonly string ParamName = ParamName;
     private readonly INullColHandler NullColHandler = NullColHandler;
     private readonly MemberInfo MethodBase = MethodBase;
     private readonly List<DbItemParser> Readers = Parameters;
     private readonly List<(MemberInfo, DbItemParser)> Members = Members;
     private static readonly List<(MemberInfo, DbItemParser)> EmptyMembers = [];
-    public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedJumpSetPoint(Type);
-    public CustomClassParser(Type Type, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters)
-        : this(Type, NullColHandler, MethodBase, Parameters, EmptyMembers) { }
+    public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedNullJumpSetPoint(Type);
+    public CustomClassParser(Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters)
+        : this(Type, ParamName, NullColHandler, MethodBase, Parameters, EmptyMembers) { }
     public override bool IsSequencial(ref int previousIndex) {
         for (int i = 0; i < Readers.Count; i++)
             if (!Readers[i].IsSequencial(ref previousIndex))
@@ -50,8 +51,7 @@ public class CustomClassParser(Type Type, INullColHandler NullColHandler, Member
         generator.Emit(op, notNull);
         if (jump.HasValue)
             generator.MarkLabel(jump.Value);
-        generator.TargetName = Type.ToString();
-        Label? endLabel = NullColHandler.HandleNull(Type, generator, nullSetPoint);
+        Label? endLabel = NullColHandler.HandleNull(Type, ParamName, generator, nullSetPoint);
         if (endLabel.HasValue)
             generator.MarkLabel(endLabel.Value);
         generator.MarkLabel(notNull);

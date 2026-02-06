@@ -5,14 +5,15 @@ namespace RinkuLib.DbParsing;
 /// A terminal parser that emits IL to read a single column from a data reader.
 /// Handles null checks, type conversions, and nullable wrapper instantiation.
 /// </summary>
-public class BasicParser(Type Type, INullColHandler NullColHandler, int Index) : DbItemParser {
+public class BasicParser(Type Type, string ParamName, INullColHandler NullColHandler, int Index) : DbItemParser {
     private readonly Type Type = Type;
+    private readonly string ParamName = ParamName;
     private readonly INullColHandler NullColHandler = NullColHandler;
     private readonly int Index = Index;
     /// <summary>
     /// Determines if the specific column/handler combination requires a jump target for null values.
     /// </summary>
-    public override bool NeedNullSetPoint(ColumnInfo[] cols) => cols[Index].IsNullable && NullColHandler.NeedJumpSetPoint(Type);
+    public override bool NeedNullSetPoint(ColumnInfo[] cols) => cols[Index].IsNullable && NullColHandler.NeedNullJumpSetPoint(Type);
     public override bool IsSequencial(ref int previousIndex) {
         if (previousIndex >= Index)
             return false;
@@ -41,8 +42,7 @@ public class BasicParser(Type Type, INullColHandler NullColHandler, int Index) :
         if (!NullColHandler.IsBr_S(Type) || nullSetPoint.NbOfPopToMake + 5 > 127)
             op = OpCodes.Brfalse;
         generator.Emit(op, notNull);
-        generator.TargetName = col.Name;
-        Label? endLabel = NullColHandler.HandleNull(Type, generator, nullSetPoint);
+        Label? endLabel = NullColHandler.HandleNull(Type, ParamName, generator, nullSetPoint);
         generator.MarkLabel(notNull);
         generator.Emit(OpCodes.Ldarg_0);
         generator.Emit(OpCodes.Ldc_I4, Index);

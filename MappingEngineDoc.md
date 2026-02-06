@@ -1,8 +1,8 @@
 # The Mapping Engine
 
-The Mapping Engine is a system for defining how C# types should be interpreted. Its sole purpose is to produce an optimized `delegate*<DbDataReader, T>` or `Func<DbDataReader, T>` based on a specific database schema.
+The Mapping Engine is a system for defining how C# types should be interpreted. Its sole purpose is to produce an optimized `Func<DbDataReader, T>` based on a specific database schema.
 
-As a developer, you interact with the **Metadata Cache**—a registry of rules that the engine builds as it encounters types—which it later uses to **Negotiate** with the database to generate the final function.
+The interaction is with the **Metadata Cache**, a registry of rules that the engine builds as it encounters types which is used to **Negotiate** with the database to generate the final function.
 
 ## The Goal: `GetParser`
 
@@ -331,7 +331,7 @@ The engine assigns a handler based on the type's nature, which can be overridden
 
 * **`NullableColHandler`**: The default for reference types and `Nullable<T>`. It allows the `NULL` value to be passed through to the object.
 * **`NotNullColHandler`**: The default for non-nullable structs. It is also used when the **`[NotNull]`** attribute is applied to a reference type or `Nullable<T>`, ensuring an exception is thrown if a `NULL` is encountered.
-* **`[JumpIfNull]`**: This instruction tells the compiled function to immediately exit the current construction path. The "jump" moves execution to a predetermined jump-point, which usually bubbles up to the first nullable parent in the object graph. This allows the engine to return a `null` for a higher-level object rather than throwing an exception or returning a partially-filled instance.
+* **`[InvalidOnNull]`**: This instruction tells the compiled function to immediately exit the current construction path. It indicate that when that parameter is `null` all the item should be null, from that point the caller will handle if it accept nullable or not or leave the responsability to its caller.
 * **Custom Implementations**:
 * **`INullColHandler`**: Defines the logic for checking nulls and deciding the jump or exception behavior at execution time.
 * **`INullColHandlerMaker`**: A factory used during metadata discovery to produce the specific `INullColHandler` for a parameter or member.
@@ -350,7 +350,7 @@ public class Container<T> {
 
 public class Item<T> {
     public Item(
-        [JumpIfNull] T id, 
+        [InvalidOnNull] T id, 
         string description
     ) { ... }
 }
@@ -382,7 +382,7 @@ The engine has discovered and registered the following constructor for the `Item
 The **`IDbTypeParserMatcher`** interface allows for direct modification of a matcher’s behavior after its initial creation. This enables fine-grained control over how a specific slot will negotiate with the schema or behave at execution time.
 
 * **Property Swapping:** The **`NameComparer`** and **`NullColHandler`** properties are writable. You can replace the default strategies with custom implementations to change how columns are matched or how `NULL` values are processed.
-* **Direct Configuration:** The **`AddAltName`** and **`SetJumpWhenNull`** methods provide a clean, high-level way to perform common adjustments—such as injecting aliases or switching to a "Jump" strategy.
+* **Direct Configuration:** The **`AddAltName`** and **`SetInvalidOnNull`** methods provide a clean, high-level way to perform common adjustments—such as injecting aliases or switching to a "Jump" strategy.
 
 > **Implementation Note:** The outcome of these modifications is entirely in the hands of the implementation. A custom matcher may ignore these calls or handle them through internal mechanisms that do not follow the standard `ParamInfo` logic.
 
@@ -390,7 +390,7 @@ The **`IDbTypeParserMatcher`** interface allows for direct modification of a mat
 
 The **`TypeParsingInfo`** instance provides methods to apply configurations across the registry based on a "default name." This ensures that specific naming or null-handling rules are applied consistently, even if the engine chooses between different construction paths or members.
 
-* **`SetJumpWhenNull(string defaultName, bool jumpWhenNull)`**: This method scans the **`PossibleConstructors`** collection. For every matcher where the parameter name matches `defaultName`, it calls that matcher's `SetJumpWhenNull` method.
+* **`SetInvalidOnNull(string defaultName, bool invalidOnNull)`**: This method scans the **`PossibleConstructors`** collection. For every matcher where the parameter name matches `defaultName`, it calls that matcher's `SetInvalidOnNull` method.
 * **`AddAltName(string defaultName, string nameToAdd)`**: This method applies to both **`PossibleConstructors`** and **`AvailableMembers`**. For every matcher where the parameter name matches `defaultName`, it calls that matcher's `AddAltName` method.
 
 ### **Customizing Negotiation**

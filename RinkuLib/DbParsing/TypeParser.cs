@@ -90,6 +90,10 @@ public static class TypeParser<T> {
 
     public unsafe static Func<DbDataReader, T> GetParserFunc(ColumnInfo[] cols, INullColHandler? nullColHandler = null)
         => GetParserFunc(cols, out _, nullColHandler);
+    public unsafe static Func<DbDataReader, T> GetParserFunc(ColumnInfo[] cols, bool isNullable)
+        => GetParserFunc(cols, out _, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
+    public unsafe static Func<DbDataReader, T> GetParserFunc(ColumnInfo[] cols, bool isNullable, out CommandBehavior defaultBehavior)
+        => GetParserFunc(cols, out defaultBehavior, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
     public unsafe static Func<DbDataReader, T> GetParserFunc(ColumnInfo[] cols, out CommandBehavior defaultBehavior, INullColHandler? nullColHandler = null) {
         for (int i = 0; i < ReadingInfos.Count; i++) {
             if (Helper.Equals(ReadingInfos[i].SelectColumns, cols)) {
@@ -146,7 +150,7 @@ public static class TypeParser<T> {
         nullColHandler ??= isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance;
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
         var rd = TypeParsingInfo.ForceGet(closedType)
-            .TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], nullColHandler, cols, new(), isNullable, ref colUsage);
+            .TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], "root", nullColHandler, cols, new(), isNullable, ref colUsage);
         if (rd is null) {
             parser = default;
             return false;

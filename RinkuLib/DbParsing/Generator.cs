@@ -20,7 +20,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
 #pragma warning disable CA2211
     public static Action<string> Write = Console.WriteLine;
 #pragma warning restore CA2211
-    public string? TargetName;
     public readonly ILGenerator Il = generator;
     public readonly ColumnInfo[] Columns = cols;
     /// <summary> 
@@ -240,8 +239,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
 }
 #else
 public class Generator(ILGenerator generator) : ILGenerator {
-    public string? TargetName;
-    public string? LastColRead;
     public readonly ILGenerator Il = generator;
     /// <summary> 
     /// Tracks declared locals to allow for slot reuse and cleaner generated code. 
