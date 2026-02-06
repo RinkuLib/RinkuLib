@@ -18,7 +18,7 @@ namespace RinkuLib.Queries;
 /// <list type="number">
 /// <item>
 /// <description>
-/// <b>Phase 1: Command Synchronization.</b> Methods such as <see cref="Use"/>, <see cref="SaveUse"/>, 
+/// <b>Phase 1: Command Synchronization.</b> Methods such as <see cref="Use(IDbCommand, ref object)"/>, <see cref="SaveUse"/>, 
 /// or <see cref="Update"/> are invoked to synchronize the <see cref="IDbCommand"/> state. 
 /// The architecture <b>specifically allows for destructive value transformation</b> during this phase. 
 /// For example, an implementation may replace a raw <c>IEnumerable</c> with an <c>int</c> count 
@@ -127,6 +127,9 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
     /// Cached metadata for generating <see cref="IDataParameter"/> instances efficiently. 
     /// </summary>
     public DbParamInfo CachedParam = InferedDbParamCache.Instance;
+    /// <summary>
+    /// Used to create a <see cref="HandlerGetter{SpecialHandler}"/> delegate.
+    /// </summary>
     public static MultiVariableHandler Build(string Name)
         => new(Name);
     /// <summary>
@@ -180,6 +183,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
         }
         return false;
     }
+    /// <inheritdoc/>
     public override bool UpdateCache<T>(T infoGetter) {
         if (!infoGetter.TryGetInfo(ParameterName, out var info))
             return false;
@@ -187,6 +191,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
         IsCached = CachedParam.IsCached;
         return true;
     }
+    /// <inheritdoc/>
     public override bool Remove(IDbCommand cmd, object oldValue) {
         if (oldValue is not int nb) {
             if (oldValue is not object[] arr)
@@ -300,6 +305,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
         }
         return true;
     }
+    /// <inheritdoc/>
     public override bool Use(DbCommand cmd, ref object value) {
         if (value is not System.Collections.IEnumerable e) return false;
         int i = 1;

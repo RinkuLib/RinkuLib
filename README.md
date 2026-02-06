@@ -20,9 +20,9 @@ QueryCommand query = new QueryCommand(sql);
 // 2. STATE DEFINITION: The transient builder (State Data)
 // Create a builder for a specific database trip
 QueryBuilder builder = query.StartBuilder();
-builder.Use("@MinAge", 18);      // Will add everything related to the variable
-builder.Use("@Grp", "Admin");    // Always added to the string and throw if not used
-                                 // @Category not used so wont use anything related to that variable
+builder.Use("@MinAge", 18);    // Will add everything related to the variable
+builder.Use("@Grp", "Admin");  // Always added to the string and throw if not used
+                               // @Category is not used so nothing related to it will be use
 
 // 3. EXECUTION: DB call (SQL Generation + Type Parsing Negotiation)
 using DbConnection cnn = GetConnection();

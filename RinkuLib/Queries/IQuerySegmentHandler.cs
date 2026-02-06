@@ -3,6 +3,7 @@
 namespace RinkuLib.Queries;
 
 #if !NET8_0_OR_GREATER
+/// <summary>Static class to access <see cref="NotSet"/>.</summary>
 public static class QuerySegmentHandler {
     /// <summary>
     /// The global discovery hub for metadata providers.

@@ -3,15 +3,22 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
 
-namespace RinkuLib.Queries; 
+namespace RinkuLib.Queries;
+
+/// <summary>
+/// The execution contract responsible for assembling the final query string.
+/// </summary>
 public interface IQueryText {
+    /// <summary>Processes the variables to genereate the SQL query string</summary>
     public unsafe string Parse(object?[] variables);
 }
+/// <summary>Thrown when a handled variable needs to be used in the final SQL query, but the value was not provided</summary>
 public class RequiredHandlerValueException(int Index) : Exception($"The variable at index {Index} should be set") {
+    /// <summary>Index of the missing handled variable</summary>
     public int Index = Index;
 }
 /// <summary>
-/// The high-performance execution engine responsible for assembling the final query string.
+/// The execution engine responsible for assembling the final query string.
 /// </summary>
 /// <remarks>
 /// This engine utilizes a non-recursive, pointer-based traversal of <see cref="Condition"/> 
@@ -24,17 +31,18 @@ public sealed class QueryText : IQueryText {
     public readonly QuerySegment[] Segments;
     /// <summary> The jump-table metadata defining the logical branching. </summary>
     public readonly Condition[] Conditions;
-    public readonly int VarsLen;
-    public int AverageLengthChunk;
-    public int NbExecuted;
-    public const int MaxExecution = 1024;
-    public readonly bool ContainsHandlers;
+    /// <summary>Specifies the expected length of the variables array on <see cref="Parse"/></summary>
+    public readonly int RequiredVariablesLength;
+    private int AverageLengthChunk;
+    private int NbExecuted;
+    private const int MaxExecution = 1024;
+    private readonly bool ContainsHandlers;
     internal QueryText(string QueryString, QuerySegment[] Segments, Condition[] Conditions) {
         this.QueryString = QueryString;
         this.AverageLengthChunk = QueryString.Length;
         this.Segments = Segments;
         this.Conditions = Conditions;
-        this.VarsLen = Conditions[^1].CondIndex;
+        this.RequiredVariablesLength = Conditions[^1].CondIndex;
         ContainsHandlers = Segments.Any(s => s.Handler is not null);
     }
     /// <summary>
@@ -53,7 +61,7 @@ public sealed class QueryText : IQueryText {
     /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
     /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
     public unsafe string Parse(object?[] variables) {
-        Debug.Assert(variables.Length == VarsLen);
+        Debug.Assert(variables.Length == RequiredVariablesLength);
         ref object? pVarBase = ref MemoryMarshal.GetArrayDataReference(variables);
 
         ValueStringBuilder sb = AverageLengthChunk <= 512

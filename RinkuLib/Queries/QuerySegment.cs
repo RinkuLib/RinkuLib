@@ -39,6 +39,7 @@ public record struct QuerySegment(int Start, int Length, int ExcessOrInd, bool I
 /// If this condition is met (True), the engine can short-circuit and skip the remaining members of the OR-group.</para>
 /// </param>
 public record struct Condition(int CondIndex, int SegmentInd, int Length, int NbConditionSkip) : IComparable<Condition> {
+    /// <summary>The logic for sorting</summary>
     public readonly int CompareTo(Condition other) {
         int c = SegmentInd.CompareTo(other.SegmentInd);
         if (c != 0)

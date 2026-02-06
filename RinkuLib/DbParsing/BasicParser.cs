@@ -14,12 +14,14 @@ public class BasicParser(Type Type, string ParamName, INullColHandler NullColHan
     /// Determines if the specific column/handler combination requires a jump target for null values.
     /// </summary>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => cols[Index].IsNullable && NullColHandler.NeedNullJumpSetPoint(Type);
+    /// <inheritdoc/>
     public override bool IsSequencial(ref int previousIndex) {
         if (previousIndex >= Index)
             return false;
         previousIndex = Index;
         return true;
     }
+    /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint) {
         var col = cols[Index];
         var under = Nullable.GetUnderlyingType(Type);

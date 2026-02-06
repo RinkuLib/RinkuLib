@@ -4,8 +4,12 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace RinkuLib.Queries;
 
+/// <summary>
+/// Delegate that tries to create a provider for parameter metadata using a specific implementation of <see cref="IDbCommand"/>.
+/// </summary>
 public delegate bool ParamInfoGetterMaker(IDbCommand cmd, out IDbParamInfoGetter getter);
 #if !NET8_0_OR_GREATER
+/// <summary>Static class to access <see cref="ParamGetterMakers"/>.</summary>
 public static class DbParamInfoGetter {
     /// <summary>
     /// The global discovery hub for metadata providers.
@@ -66,6 +70,7 @@ public interface IDbParamInfoGetter {
     /// </summary>
     public DbParamInfo MakeInfoAt(int i);
 }
+/// <summary>The interface that manage all the <see cref="IDbDataParameter"/> within a query</summary>
 public interface IDbParamCache {
     /// <summary> 
     /// Returns true if a stable metadata strategy (inferred or explicit) 
@@ -88,6 +93,9 @@ public interface IDbParamCache {
     /// </summary>
     public void UpdateNbCached();
 }
+/// <summary>
+/// The base class that manage a <see cref="IDbDataParameter"/> within a query
+/// </summary>
 public abstract class DbParamInfo(bool IsCached) {
     /// <summary> 
     /// Indicates if this instance represents a finalized, reusable metadata strategy.
@@ -112,6 +120,7 @@ public abstract class DbParamInfo(bool IsCached) {
     public abstract void Remove(IDbCommand cmd, object currentValue);
     /// <summary> Removes a parameter by name from the command collection. </summary>
     public abstract bool Remove(string paramName, IDbCommand cmd);
+    /// <summary> Removes a parameter by name from the command collection. </summary>
     public static bool RemoveSingle(string paramName, IDbCommand cmd) {
         var parameters = cmd.Parameters;
         for (int i = parameters.Count - 1; i >= 0; i--) {
@@ -122,8 +131,11 @@ public abstract class DbParamInfo(bool IsCached) {
         }
         return false;
     }
+    /// <summary> Binds a value to the command for a single execution. </summary>
     public abstract bool Use(string paramName, DbCommand cmd, object value);
+    /// <summary> Removes the specific parameter reference from the command. </summary>
     public abstract bool Remove(string paramName, DbCommand cmd);
+    /// <summary> Removes a parameter by name from the command collection. </summary>
     public static bool RemoveSingle(string paramName, DbCommand cmd) {
         var parameters = cmd.Parameters;
         for (int i = parameters.Count - 1; i >= 0; i--) {

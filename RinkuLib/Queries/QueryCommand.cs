@@ -11,7 +11,7 @@ namespace RinkuLib.Queries;
 /// Defines the contract for an executable query unit, managing the transition 
 /// from a state-snapshot to a configured database command.
 /// </summary>
-public interface IQueryCommand : ICache {
+public interface IQueryCommand {
     /// <summary>
     /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
     /// </summary>
@@ -36,7 +36,6 @@ public interface IQueryCommand : ICache {
     public int StartVariables { get; }
     /// <summary> The index marking the end of the selectable column definitions (and the total count of select segments). </summary>
     public int EndSelect { get; }
-    public bool NeedToCache(object?[] variables);
 }
 /// <summary>
 /// The central orchestration engine that integrates SQL text generation (<see cref="Queries.QueryText"/>) 
@@ -49,8 +48,8 @@ public interface IQueryCommand : ICache {
 /// to partition a single array of variables into standard parameters, special handlers, 
 /// and literal injections.</para>
 /// </remarks>
-public class QueryCommand : ParsingCache, IQueryCommand {
-    public static QueryCommand New(string query, char variableChar = default) => new(query, variableChar);
+public class QueryCommand : ParsingCache, IQueryCommand, ICache {
+    /// <inheritdoc/>
     public Mapper Mapper;
     Mapper IQueryCommand.Mapper => Mapper;
     int IQueryCommand.StartBaseHandlers => StartBaseHandlers;
@@ -61,13 +60,19 @@ public class QueryCommand : ParsingCache, IQueryCommand {
     public readonly QueryParameters Parameters;
     /// <summary> The SQL template and segment parsing logic. </summary>
     public readonly QueryText QueryText;
-    public object? _parsingCache;
+    private object? _parsingCache;
+    /// <inheritdoc/>
     public readonly int StartBaseHandlers;
+    /// <inheritdoc/>
     public readonly int StartSpecialHandlers;
+    /// <inheritdoc/>
     public readonly int StartVariables;
+    /// <inheritdoc/>
     public readonly int EndSelect;
+    /// <summary>Initialization of a query command from a SQL query template</summary>
     public QueryCommand(string query, char variableChar = default)
         : this(new QueryFactory(query, variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap)) { }
+    /// <summary>The direct call the the constructor</summary>
     protected QueryCommand(QueryFactory factory) {
         Mapper = factory.Mapper;
         var segments = factory.Segments;
@@ -78,11 +83,12 @@ public class QueryCommand : ParsingCache, IQueryCommand {
         EndSelect = factory.NbSelects;
         var specialHandlers = GetHandlers(queryString, segments);
         QueryText = new(queryString, segments, factory.Conditions);
-        Parameters = new(StartVariables, StartSpecialHandlers, specialHandlers);
+        Parameters = new(StartSpecialHandlers - StartVariables, specialHandlers);
         _parsingCache = ParsingCache.New(factory.NbSelects);
     }
-    public override bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache) {
-        if (_parsingCache is not ParsingCache<T> c) {
+    /// <inheritdoc/>
+    public override bool TryGetCache<T>(object?[] variables, out SchemaParser<T> cache) {
+        if (_parsingCache is not SchemaParser<T> c) {
             if (_parsingCache is ParsingCache p)
                 p.TryGetCache(variables, out c);
             else {
@@ -94,31 +100,37 @@ public class QueryCommand : ParsingCache, IQueryCommand {
         return !NeedToCache(variables);
     }
 
-    public override int GetActualGetCacheIndex<T>(object?[] variables) {
+    /// <inheritdoc/>
+    public override int GetActualCacheIndex<T>(object?[] variables) {
         if (_parsingCache is ParsingCache p)
-            return p.GetActualGetCacheIndex<T>(variables);
+            return p.GetActualCacheIndex<T>(variables);
         if (_parsingCache is null) {
-            _parsingCache = new ParsingCache<T>();
+            _parsingCache = new SchemaParser<T>();
             return 0;
         }
-        if (_parsingCache is not ParsingCache<T>)
+        if (_parsingCache is not SchemaParser<T>)
             return -1;
         return 0;
     }
-    public override bool UpdateCache<T>(int index, ParsingCache<T> cache) {
+    /// <inheritdoc/>
+    public override bool UpdateCache<T>(int index, SchemaParser<T> cache) {
         if (_parsingCache is ParsingCache p)
             return p.UpdateCache(index, cache);
         if (_parsingCache is null) {
             _parsingCache = cache;
             return true;
         }
-        if (_parsingCache is not ParsingCache<T>)
+        if (_parsingCache is not SchemaParser<T>)
             return false;
         if (index != 0)
             return false;
         _parsingCache = cache;
         return true;
     }
+    /// <summary>
+    /// A fast way to identify if there are parameters that are used for the first time in the given state.
+    /// </summary>
+    /// <returns><see langword="false"/> no parameters are used for the first time</returns>
     public bool NeedToCache(object?[] variables)
         => Parameters.NeedToCache(variables);
     private SpecialHandler[] GetHandlers(string queryString, QuerySegment[] segments) {
@@ -172,6 +184,9 @@ public class QueryCommand : ParsingCache, IQueryCommand {
         Parameters.UpdateNbCached();
         return true;
     }
+    /// <summary>
+    /// Provide a manual way to set a cache for a specific parameter
+    /// </summary>
     public bool UpdateParamCache(string paramName, DbParamInfo paramInfo) {
         var ind = Mapper.GetIndex(paramName) - StartVariables;
         if (ind < 0)
@@ -224,6 +239,7 @@ public class QueryCommand : ParsingCache, IQueryCommand {
 
         return true;
     }
+    /// <inheritdoc/>
     public bool SetCommand(DbCommand cmd, object?[] variables) {
         Debug.Assert(variables.Length == Mapper.Count);
         var varInfos = Parameters._variablesInfo;

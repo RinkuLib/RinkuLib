@@ -40,6 +40,7 @@ public interface IDbTypeParserMatcher {
     /// <param name="declaringTypeArguments">Generic arguments from the parent type (if any).</param>
     /// <param name="columns">The available schema to match against.</param>
     /// <param name="colModifier">Transformation logic for column names/types.</param>
+    /// <param name="colUsage">Identify which columns has allready been used.</param>
     /// <returns>A parser node if the item successfully matches a column; otherwise, null.</returns>
     public DbItemParser? TryGetParser(Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
 }
@@ -52,6 +53,7 @@ public interface IDbTypeParserInfoMatcher {
     /// If successful, returns a parser node that handles the entire object construction.
     /// </summary>
     public DbItemParser? TryGetParser(Type closedTargetType, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage);
+    /// <summary>Identify if the instance can actualy handle the <see cref="Type"/> of <paramref name="TargetType"/></summary>
     public bool CanUseType(Type TargetType);
 }
 /// <summary>

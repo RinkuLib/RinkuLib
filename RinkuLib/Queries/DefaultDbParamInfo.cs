@@ -9,7 +9,9 @@ namespace RinkuLib.Queries;
 /// to populate the query's parameter cache.
 /// </summary>
 public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
+    /// <summary>The command containing the parameters</summary>
     public IDbCommand Command = cmd;
+    /// <inheritdoc/>
     public readonly IEnumerable<KeyValuePair<string, int>> EnumerateParameters() {
         var parameters = Command.Parameters;
         var count = parameters.Count;
@@ -17,6 +19,7 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
             if (parameters[i] is IDbDataParameter p)
                 yield return new(p.ParameterName, i);
     }
+    /// <inheritdoc/>
     public readonly DbParamInfo MakeInfoAt(int i) {
         var p = Command.Parameters[i] as IDbDataParameter
             ?? throw new Exception($"there is no valid parameter at index {i}");
@@ -66,6 +69,7 @@ public class TypedDbParamCache : DbParamInfo {
     }
     /// <summary> Returns a cached instance for the specified <see cref="DbType"/>. </summary>
     public static TypedDbParamCache Get(DbType type) => CachedItems[(int)type];
+    /// <summary>The <see cref="DbType"/> that will be used to create the parameter.</summary>
     public readonly DbType Type;
     private TypedDbParamCache(DbType type) : base(true) { 
         this.Type = type;
@@ -77,16 +81,20 @@ public class TypedDbParamCache : DbParamInfo {
             CachedItems[i] = new((DbType)i);
         //should skip 24
     }
+    /// <inheritdoc/>
     public override bool Update(IDbCommand cmd, ref object currentValue, object newValue) {
         if (currentValue is not IDbDataParameter p)
             return false;
         p.Value = newValue;
         return true;
     }
+    /// <inheritdoc/>
     public override void Remove(IDbCommand cmd, object? currentValue) 
         => cmd.Parameters.Remove(currentValue);
+    /// <inheritdoc/>
     public override bool Remove(string paramName, IDbCommand cmd)
         => RemoveSingle(paramName, cmd);
+    /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
@@ -95,6 +103,7 @@ public class TypedDbParamCache : DbParamInfo {
         cmd.Parameters.Add(p);
         return true;
     }
+    /// <inheritdoc/>
     public override bool SaveUse(string paramName, IDbCommand cmd, ref object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
@@ -104,8 +113,10 @@ public class TypedDbParamCache : DbParamInfo {
         value = p;
         return true;
     }
+    /// <inheritdoc/>
     public override bool Remove(string paramName, DbCommand cmd)
         => RemoveSingle(paramName, cmd);
+    /// <inheritdoc/>
     public override bool Use(string paramName, DbCommand cmd, object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
@@ -131,7 +142,9 @@ public class SizedDbParamCache : DbParamInfo {
             throw new ArgumentException($"Type {type} does not support a custom size parameter.");
         return GetOrAdd(ref arr, type, size);
     }
+    /// <summary>The <see cref="DbType"/> that will be used to create the parameter.</summary>
     public readonly DbType Type;
+    /// <summary>The size that will be used to create the parameter.</summary>
     public readonly int Size;
     private SizedDbParamCache(DbType type, int size) : base(true) {
         this.Type = type;
@@ -153,6 +166,8 @@ public class SizedDbParamCache : DbParamInfo {
         if (type == DbType.StringFixedLength) return ref _stringFixedLengthCache;
         return ref Unsafe.NullRef<SizedDbParamCache[]>();
     }
+    /// <summary>Try to retrieve the singleton instance corresponding to the parameters or creates it</summary>
+    /// <returns><see langword="false"/> when the type is not a <see cref="DbType"/> that contains a size.</returns>
     public static bool TryGet(DbType type, int size, [MaybeNullWhen(false)] out SizedDbParamCache cache) {
         ref var arr = ref GetCacheArray(type);
         cache = null;
@@ -186,16 +201,20 @@ public class SizedDbParamCache : DbParamInfo {
         cache[low] = newItem;
         return newItem;
     }
+    /// <inheritdoc/>
     public override bool Update(IDbCommand cmd, ref object currentValue, object newValue) {
         if (currentValue is not IDbDataParameter p)
             return false;
         p.Value = newValue;
         return true;
     }
+    /// <inheritdoc/>
     public override void Remove(IDbCommand cmd, object? currentValue) 
         => cmd.Parameters.Remove(currentValue);
+    /// <inheritdoc/>
     public override bool Remove(string paramName, IDbCommand cmd)
         => RemoveSingle(paramName, cmd);
+    /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
@@ -205,6 +224,7 @@ public class SizedDbParamCache : DbParamInfo {
         cmd.Parameters.Add(p);
         return true;
     }
+    /// <inheritdoc/>
     public override bool SaveUse(string paramName, IDbCommand cmd, ref object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
@@ -215,8 +235,10 @@ public class SizedDbParamCache : DbParamInfo {
         value = p;
         return true;
     }
+    /// <inheritdoc/>
     public override bool Remove(string paramName, DbCommand cmd)
         => RemoveSingle(paramName, cmd);
+    /// <inheritdoc/>
     public override bool Use(string paramName, DbCommand cmd, object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
@@ -232,18 +254,23 @@ public class SizedDbParamCache : DbParamInfo {
 /// resolved or cached. Relies on driver-level type inference.
 /// </summary>
 public class InferedDbParamCache : DbParamInfo {
+    /// <summary>Singleton instance of the infered cache</summary>
     public static readonly InferedDbParamCache Instance = new();
     private InferedDbParamCache() : base(false) { }
+    /// <inheritdoc/>
     public override bool Update(IDbCommand cmd, ref object currentValue, object newValue) {
         if (currentValue is not IDbDataParameter p)
             return false;
         p.Value = newValue;
         return true;
     }
+    /// <inheritdoc/>
     public override void Remove(IDbCommand cmd, object currentValue) 
         => cmd.Parameters.Remove(currentValue);
+    /// <inheritdoc/>
     public override bool Remove(string paramName, IDbCommand cmd)
         => RemoveSingle(paramName, cmd);
+    /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
@@ -251,6 +278,7 @@ public class InferedDbParamCache : DbParamInfo {
         cmd.Parameters.Add(p);
         return true;
     }
+    /// <inheritdoc/>
     public override bool SaveUse(string paramName, IDbCommand cmd, ref object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
@@ -259,8 +287,10 @@ public class InferedDbParamCache : DbParamInfo {
         value = p;
         return true;
     }
+    /// <inheritdoc/>
     public override bool Remove(string paramName, DbCommand cmd)
         => RemoveSingle(paramName, cmd);
+    /// <inheritdoc/>
     public override bool Use(string paramName, DbCommand cmd, object value) {
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;

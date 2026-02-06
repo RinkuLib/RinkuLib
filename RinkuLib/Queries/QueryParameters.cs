@@ -16,13 +16,16 @@ public sealed class QueryParameters : IDbParamCache {
     /// <summary> The total count of all parameters, including special handlers. </summary>
     public int Total;
     internal DbParamInfo[] _variablesInfo;
+    /// <summary>Direct acces to the cache of the parameters</summary>
     public ReadOnlySpan<DbParamInfo> VariablesInfo => _variablesInfo;
     internal SpecialHandler[] _specialHandlers;
+    /// <summary>Direct acces to the cache of the special handlers</summary>
     public ReadOnlySpan<SpecialHandler> SpecialHandlers => _specialHandlers;
     internal int NbNonCached;
     internal int[] _nonCachedIndexes;
-    public QueryParameters(int StartVariables, int StartSpecialHandlers, SpecialHandler[] specialHandlers) {
-        NbVariables = StartSpecialHandlers - StartVariables;
+    /// <summary>Create a new instance of <see cref="QueryParameters"/></summary>
+    public QueryParameters(int NbNormalVariables, SpecialHandler[] specialHandlers) {
+        NbVariables = NbNormalVariables;
         _variablesInfo = new DbParamInfo[NbVariables];
         for (int i = 0; i < NbVariables; i++)
             _variablesInfo[i] = InferedDbParamCache.Instance;
@@ -33,10 +36,12 @@ public sealed class QueryParameters : IDbParamCache {
         for (int i = 0; i < Total; i++)
             _nonCachedIndexes[i] = i;
     }
+    /// <inheritdoc/>
     public bool IsCached(int ind) 
         => ind < 0 || ind >= Total || (ind >= NbVariables
             ? _specialHandlers[ind - NbVariables].IsCached
             : _variablesInfo[ind].IsCached);
+    /// <inheritdoc/>
     public bool UpdateCache(int ind, DbParamInfo info) {
         if (ind < 0 || ind >= NbVariables)
             return false;
@@ -60,6 +65,7 @@ public sealed class QueryParameters : IDbParamCache {
         }
         return true;
     }
+    /// <inheritdoc/>
     public bool UpdateSpecialHandlers<T>(T infoGetter) where T : IDbParamInfoGetter {
         for (int i = 0; i < _specialHandlers.Length; i++) {
             var h = _specialHandlers[i];
@@ -69,6 +75,7 @@ public sealed class QueryParameters : IDbParamCache {
         }
         return true;
     }
+    /// <inheritdoc/>
     public void UpdateNbCached() {
         var total = Total;
         Span<int> nonCachedIndexes = total > 256 ? new int[total] : stackalloc int[total];

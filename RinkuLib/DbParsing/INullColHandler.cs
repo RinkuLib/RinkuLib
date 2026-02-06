@@ -38,53 +38,77 @@ public interface INullColHandler {
     /// </summary>
     public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull);
 }
+/// <summary>Emit a default value when null</summary>
 public class NullableTypeHandle : INullColHandler {
+    /// <summary>Singleton</summary>
     public static readonly NullableTypeHandle Instance = new();
     private NullableTypeHandle() { }
+    /// <inheritdoc/>
     public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         var endLabel = generator.DefineLabel();
         DbItemParser.EmitDefaultValue(closedType, generator);
         generator.Emit(OpCodes.Br_S, endLabel);
         return endLabel;
     }
+    /// <inheritdoc/>
     public bool IsBr_S(Type closedType) => true;
+    /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => false;
+    /// <inheritdoc/>
     public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) 
-        => invalidOnNull ? NullJumpAndNullableHandle.Instance : this;
+        => invalidOnNull ? InvalidOnNullAndNullableHandle.Instance : this;
 }
-public class NullJumpAndNullableHandle : INullColHandler {
-    public static NullJumpAndNullableHandle Instance { get; } = new();
-    private NullJumpAndNullableHandle() { }
+/// <summary>Jump to the previous setpoint when null</summary>
+public class InvalidOnNullAndNullableHandle : INullColHandler {
+    /// <summary>Singleton</summary>
+    public static InvalidOnNullAndNullableHandle Instance { get; } = new();
+    private InvalidOnNullAndNullableHandle() { }
+    /// <inheritdoc/>
     public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         nullSetPoint.MakeNullJump(generator);
         return null;
     }
+    /// <inheritdoc/>
     public bool IsBr_S(Type closedType) => true;
+    /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => true;
+    /// <inheritdoc/>
     public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
         => invalidOnNull ? this : NullableTypeHandle.Instance;
 }
+/// <summary>Emit a throw exception when null</summary>
 public class NotNullHandle : INullColHandler {
+    /// <summary>Singleton</summary>
     public static readonly NotNullHandle Instance = new();
-    private NotNullHandle() {}
+    private NotNullHandle() { }
+    /// <inheritdoc/>
     public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         DbItemParser.EmitThrowNullAssignment(closedType, paramName, generator);
         return null;
     }
+    /// <inheritdoc/>
     public bool IsBr_S(Type closedType) => true;
+    /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => false;
+    /// <inheritdoc/>
     public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
-        => invalidOnNull ? NullJumpAndNotNullHandle.Instance : this;
+        => invalidOnNull ? InvalidOnNullAndNotNullHandle.Instance : this;
 }
-public class NullJumpAndNotNullHandle : INullColHandler {
-    public static NullJumpAndNotNullHandle Instance { get; } = new();
-    private NullJumpAndNotNullHandle() { }
+/// <summary>Jump to the previous setpoint when null</summary>
+public class InvalidOnNullAndNotNullHandle : INullColHandler {
+    /// <summary>Singleton</summary>
+    public static InvalidOnNullAndNotNullHandle Instance { get; } = new();
+    private InvalidOnNullAndNotNullHandle() { }
+    /// <inheritdoc/>
     public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         nullSetPoint.MakeNullJump(generator);
         return null;
     }
+    /// <inheritdoc/>
     public bool IsBr_S(Type closedType) => true;
+    /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => true;
+    /// <inheritdoc/>
     public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
         => invalidOnNull ? this : NotNullHandle.Instance;
 }

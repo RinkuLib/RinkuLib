@@ -64,11 +64,35 @@ public interface IQueryBuilder {
     /// </remarks>
     bool Use(string variable, object value);
 }
-public readonly unsafe struct ParsingCache<T>(/*delegate**/Func<DbDataReader, T> Parser, CommandBehavior Behavior) : IParsingCache<T> {
-    public bool IsValid => parser != null;
+/// <summary>
+/// A <see cref="ISchemaParser{T}"/> allready initialized
+/// </summary>
+public readonly unsafe struct SchemaParser<T>(/*delegate**/Func<DbDataReader, T> Parser, CommandBehavior Behavior) : ISchemaParser<T> {
+    /// <inheritdoc/>
+    public bool IsInit => parser != null;
     //public readonly delegate*<DbDataReader, T> parser = Parser;
+    /// <summary>The actual function that do the parsing</summary>
     public readonly Func<DbDataReader, T> parser = Parser;
+    /// <inheritdoc/>
     public CommandBehavior Behavior { get; } = Behavior;
+    /// <inheritdoc/>
     public readonly void Init(DbDataReader reader, IDbCommand cmd) { }
+    /// <inheritdoc/>
     public T Parse(DbDataReader reader) => parser(reader);
+}
+/// <summary>
+/// A <see cref="ISchemaParser{T}"/> allready initialized
+/// </summary>
+public readonly unsafe struct SchemaParserAsync<T>(/*delegate**/Func<DbDataReader, Task<T>> Parser, CommandBehavior Behavior) : ISchemaParserAsync<T> {
+    /// <inheritdoc/>
+    public bool IsInit => parser != null;
+    //public readonly delegate*<DbDataReader, T> parser = Parser;
+    /// <summary>The actual function that do the parsing</summary>
+    public readonly Func<DbDataReader, Task<T>> parser = Parser;
+    /// <inheritdoc/>
+    public CommandBehavior Behavior { get; } = Behavior;
+    /// <inheritdoc/>
+    public readonly Task Init(DbDataReader reader, IDbCommand cmd) => Task.CompletedTask;
+    /// <inheritdoc/>
+    public Task<T> Parse(DbDataReader reader) => parser(reader);
 }

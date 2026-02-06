@@ -120,12 +120,18 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
     /// <param name="key">The case-insensitive key to locate.</param>
     /// <returns>The zero-based index of the key if it exists; otherwise, -1.</returns>
     public int this[ReadOnlySpan<char> key] => GetIndex(key);
+    /// <inheritdoc/>
     public bool ContainsKey(string key) => GetIndex(key) >= 0;
+    /// <inheritdoc/>
     public bool ContainsKey(ReadOnlySpan<char> key) => GetIndex(key) >= 0;
+    /// <inheritdoc/>
     public bool TryGetValue(string key, out int value) => (value = GetIndex(key)) >= 0;
+    /// <inheritdoc/>
     public bool TryGetValue(ReadOnlySpan<char> key, out int value) => (value = GetIndex(key)) >= 0;
     IEnumerable<string> IReadOnlyDictionary<string, int>.Keys => _keys;
+    /// <inheritdoc/>
     public IEnumerable<int> Values => Enumerable.Range(0, Count);
+    /// <inheritdoc/>
     public IEnumerator<KeyValuePair<string, int>> GetEnumerator() {
         var keys = _keys;
         for (int i = 0; i < keys.Length; i++)
@@ -143,10 +149,10 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
         }
     }
     /// <summary>
-    /// When overridden in a derived class, performs specialized cleanup of unmanaged memory 
-    /// or pooled resources used by the specific lookup strategy.
+    /// Performs specialized cleanup of unmanaged memory or pooled resources used by the specific lookup strategy.
     /// </summary>
     protected abstract void DisposeUnmanaged();
+    /// <inheritdoc/>
     ~Mapper() => Dispose();
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
@@ -217,8 +223,8 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
                 return GetTwoKeyMapper(usedKeys[0], usedKeys[1]);
 #if NET8_0_OR_GREATER
             return IsAllAscii(builder.UsedKeys) 
-                ? new AsciiMapper<AsciiStrategy>(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth)
-                : new AsciiMapper<UnicodeStrategy>(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth);
+                ? new OptiMapper<AsciiStrategy>(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth)
+                : new OptiMapper<UnicodeStrategy>(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth);
 #else
             return new AsciiMapper(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth);
 #endif
@@ -244,6 +250,9 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
         return true;
     }
 #endif
+    /// <summary>
+    /// Instance of a <see cref="Mapper"/> without any keys.
+    /// </summary>
     public static readonly Mapper EmptyMapper = new Empty();
     /// <summary>
     /// Provides a shared schema for instances requiring zero keys.
@@ -277,12 +286,12 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
             return GetOneKeyMapper(key1);
         return new Two(key1, key2);
     }
-    public sealed class Empty() : Mapper([]) {
+    internal sealed class Empty() : Mapper([]) {
         protected override void DisposeUnmanaged() { }
         public override int GetIndex(string _) => -1;
         public override int GetIndex(ReadOnlySpan<char> _) => -1;
     }
-    public sealed class One(string Key) : Mapper([Key]) {
+    internal sealed class One(string Key) : Mapper([Key]) {
         public readonly string Key = Key;
         protected override void DisposeUnmanaged() { }
         public override int GetIndex(string key)
@@ -290,7 +299,7 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
         public override int GetIndex(ReadOnlySpan<char> key)
             => key.Equals(Key, StringComparison.OrdinalIgnoreCase) ? 0 : -1;
     }
-    public sealed class Two(string Key1, string Key2) : Mapper([Key1, Key2]) {
+    internal sealed class Two(string Key1, string Key2) : Mapper([Key1, Key2]) {
         public readonly string Key1 = Key1;
         public readonly string Key2 = Key2;
         protected override void DisposeUnmanaged() { }
@@ -300,35 +309,8 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
         public override int GetIndex(ReadOnlySpan<char> key)
             => key.Equals(Key1, StringComparison.OrdinalIgnoreCase) ? 0
             : key.Equals(Key2, StringComparison.OrdinalIgnoreCase) ? 0 : -1;
-    }/*
-    public unsafe sealed class DictMapper : Mapper {
-        private readonly Dictionary<string, int> Dict;
-        private readonly Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> SpanDict;
-        public DictMapper(Span<string> keys) : base(Init(keys, out var dict)) {
-            Dict = dict;
-            SpanDict = dict.GetAlternateLookup<ReadOnlySpan<char>>();
-        }
-        private static string[] Init(Span<string> keys, out Dictionary<string, int> dict) {
-            int i = 0;
-            dict = new Dictionary<string, int>(keys.Length, StringComparer.OrdinalIgnoreCase);
-            foreach (var key in keys) {
-                if (key is null)
-                    throw new NullReferenceException("A key in the set was null");
-                if (dict.TryAdd(key, i))
-                    i++;
-            }
-            var keysArr = new string[i];
-            foreach (var kvp in dict)
-                keysArr[kvp.Value] = kvp.Key;
-            return keysArr;
-        }
-        protected override void DisposeUnmanaged() { }
-        public override int GetIndex(string key)
-            => Dict.TryGetValue(key, out var ind) ? ind : -1;
-        public override int GetIndex(ReadOnlySpan<char> key)
-            => SpanDict.TryGetValue(key, out var ind) ? ind : -1;
-    }*/
-    public unsafe sealed class DictMapper : Mapper {
+    }
+    internal unsafe sealed class DictMapper : Mapper {
         private readonly Dictionary<string, int> _stringDict;
 
 #if NET9_0_OR_GREATER

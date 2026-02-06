@@ -4,7 +4,13 @@ using System.Runtime.InteropServices;
 #endif
 
 namespace RinkuLib.Queries;
+/// <summary>
+/// Class that holds one or more <see cref="ISchemaParser"/>
+/// </summary>
 public abstract class ParsingCache {
+    /// <summary>
+    /// A lock shared to ensure thread safety across multiple <see cref="ISchemaParser"/> instances.
+    /// </summary>
     public static readonly
 #if NET9_0_OR_GREATER
         Lock
@@ -12,6 +18,9 @@ public abstract class ParsingCache {
         object
 #endif
         SharedLock = new();
+    /// <summary>
+    /// Determines the most appropriate cache depending on the number of conditional select columns in the query
+    /// </summary>
     public static ParsingCache? New(int nbSelects) {
         if (nbSelects <= 0)
             return null;
@@ -31,53 +40,63 @@ public abstract class ParsingCache {
         return new ParsingCacheInfinite();
 #endif
     }
-    public abstract bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache);
-    public abstract int GetActualGetCacheIndex<T>(object?[] variables);
-    public abstract bool UpdateCache<T>(int index, ParsingCache<T> cache);
+    /// <summary>
+    /// The initial check if there is allready a <see cref="ISchemaParser"/> stored that can match <typeparamref name="T"/> 
+    /// without <see cref="ISchemaParser{T}.Init(System.Data.Common.DbDataReader, System.Data.IDbCommand)"/>
+    /// </summary>
+    public abstract bool TryGetCache<T>(object?[] variables, out SchemaParser<T> cache);
+    /// <summary>
+    /// Used to retrieve the identifier to use with <see cref="UpdateCache{T}"/> to update the appropriate cache item.
+    /// </summary>
+    public abstract int GetActualCacheIndex<T>(object?[] variables);
+    /// <summary>
+    /// Update the cache at the specified identifier
+    /// </summary>
+    public abstract bool UpdateCache<T>(int ind, SchemaParser<T> cache);
 }
 #if NET8_0_OR_GREATER
-public interface IKeyMasker<TMask> {
+internal interface IKeyMasker<TMask> {
     public abstract static TMask ToMask(object?[] variables);
     public abstract static bool Equals(TMask k1, TMask k2);
 }
-public sealed class ParsingCache<TMasker, TMask> : ParsingCache where TMasker : IKeyMasker<TMask> {
-    private IParsingCache[] Cache = [];
+internal sealed class ParsingCache<TMasker, TMask> : ParsingCache where TMasker : IKeyMasker<TMask> {
+    private ISchemaParser[] Cache = [];
     private TMask[] Keys = [];
-    public override bool TryGetCache<T>(object?[] variables, out ParsingCache<T> cache) {
+    public override bool TryGetCache<T>(object?[] variables, out SchemaParser<T> cache) {
         var mask = TMasker.ToMask(variables);
         var keys = Keys;
         for (int i = 0; i < keys.Length; i++)
             if (TMasker.Equals(keys[i], mask)) {
-                if (Cache[i] is ParsingCache<T> c) {
+                if (Cache[i] is SchemaParser<T> c) {
                     cache = c;
                     return true;
                 }
-                cache = new(_ => throw new Exception($"There allready has an item cached for a different type Current:{Cache[i].GetType()} Target:{typeof(ParsingCache<T>)}"), default);
+                cache = new(_ => throw new Exception($"There allready has an item cached for a different type Current:{Cache[i].GetType()} Target:{typeof(SchemaParser<T>)}"), default);
                 return false;
             }
         cache = default; 
         return false;
     }
-    public override int GetActualGetCacheIndex<T>(object?[] variables) {
+    public override int GetActualCacheIndex<T>(object?[] variables) {
         var mask = TMasker.ToMask(variables);
         var keys = Keys;
         lock (SharedLock) {
             for (int i = 0; i < keys.Length; i++)
                 if (TMasker.Equals(keys[i], mask)) {
-                    if (Cache[i] is ParsingCache<T>)
+                    if (Cache[i] is SchemaParser<T>)
                         return i;
                     return -1;
                 }
             if (Cache.Length <= 0) {
-                Cache = new IParsingCache[1];
-                Cache[0] = new ParsingCache<T>();
+                Cache = new ISchemaParser[1];
+                Cache[0] = new SchemaParser<T>();
                 return 0;
             }
             var len = Cache.Length;
-            var c = new IParsingCache[len + 1];
+            var c = new ISchemaParser[len + 1];
             Array.Copy(Cache, c, len);
             Cache = c;
-            Cache[len] = new ParsingCache<T>();
+            Cache[len] = new SchemaParser<T>();
             var k = new TMask[len + 1];
             Array.Copy(Keys, k, len);
             Keys = k;
@@ -86,18 +105,18 @@ public sealed class ParsingCache<TMasker, TMask> : ParsingCache where TMasker : 
         }
     }
 
-    public override bool UpdateCache<T>(int index, ParsingCache<T> cache) {
+    public override bool UpdateCache<T>(int ind, SchemaParser<T> cache) {
         lock (SharedLock) {
-            if (index == -1)
+            if (ind == -1)
                 throw new Exception("The item was allready cached using a different type");
-            if (((ParsingCache<T>)Cache[index]).IsValid)
+            if (((SchemaParser<T>)Cache[ind]).IsInit)
                 return false;
-            Cache[index] = cache;
+            Cache[ind] = cache;
             return true;
         }
     }
 }
-public class Masker32 : IKeyMasker<uint> {
+internal class Masker32 : IKeyMasker<uint> {
     public static uint ToMask(object?[] variables) {
         uint mask = 0U;
         ref object? pVar = ref MemoryMarshal.GetArrayDataReference(variables);
@@ -108,7 +127,7 @@ public class Masker32 : IKeyMasker<uint> {
     }
     public static bool Equals(uint k1, uint k2) => k1 == k2;
 }
-public class Masker64 : IKeyMasker<ulong> {
+internal class Masker64 : IKeyMasker<ulong> {
     public static ulong ToMask(object?[] variables) {
         ulong mask = 0UL;
         ref object? pVar = ref MemoryMarshal.GetArrayDataReference(variables);
@@ -119,7 +138,7 @@ public class Masker64 : IKeyMasker<ulong> {
     }
     public static bool Equals(ulong k1, ulong k2) => k1 == k2;
 }
-public class Masker128 : IKeyMasker<Int128> {
+internal class Masker128 : IKeyMasker<Int128> {
     private static readonly Int128 One = (Int128)1;
     public static Int128 ToMask(object?[] variables) {
         Int128 mask = Int128.Zero;
@@ -131,11 +150,11 @@ public class Masker128 : IKeyMasker<Int128> {
     }
     public static bool Equals(Int128 k1, Int128 k2) => k1 == k2;
 }
-public readonly struct Int256(Int128 low, Int128 high) {
+internal readonly struct Int256(Int128 low, Int128 high) {
     public readonly Int128 Low = low;
     public readonly Int128 High = high;
 }
-public class Masker256 : IKeyMasker<Int256> {
+internal class Masker256 : IKeyMasker<Int256> {
     private static readonly Int128 One = (Int128)1;
     public static Int256 ToMask(object?[] variables) {
         Int128 mask = Int128.Zero;
@@ -154,7 +173,7 @@ public class Masker256 : IKeyMasker<Int256> {
     public static bool Equals(Int256 k1, Int256 k2)
         => k1.Low == k2.Low && k1.High == k2.High;
 }
-public unsafe class MaskerInfinite : IKeyMasker<ulong[]> {
+internal unsafe class MaskerInfinite : IKeyMasker<ulong[]> {
     public static bool Equals(ulong[] k1, ulong[] k2)
         => k1.AsSpan().SequenceEqual(k2.AsSpan());
     public static ulong[] ToMask(object?[] variables) {
@@ -171,7 +190,7 @@ public unsafe class MaskerInfinite : IKeyMasker<ulong[]> {
     }
 }
 #else
-public sealed class ParsingCache32 : ParsingCache {
+internal sealed class ParsingCache32 : ParsingCache {
     private IParsingCache[] Cache = [];
     private uint[] Keys = [];
 
@@ -216,7 +235,7 @@ public sealed class ParsingCache32 : ParsingCache {
 }
 
 // Specific implementation for Infinite (ulong[])
-public sealed class ParsingCacheInfinite : ParsingCache {
+internal sealed class ParsingCacheInfinite : ParsingCache {
     private IParsingCache[] Cache = [];
     private ulong[][] Keys = new ulong[0][];
 

@@ -16,11 +16,14 @@ namespace RinkuLib.DbParsing;
 /// providing a readable trace of the dynamic code being generated.</item>
 /// </list>
 /// </remarks>
-public class Generator(ILGenerator generator, ColumnInfo[] cols) {
+public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
 #pragma warning disable CA2211
+    /// <summary></summary>
     public static Action<string> Write = Console.WriteLine;
 #pragma warning restore CA2211
+    /// <summary>The underlying <see cref="ILGenerator"/></summary>
     public readonly ILGenerator Il = generator;
+    /// <summary>The currently using schema to write actual column names</summary>
     public readonly ColumnInfo[] Columns = cols;
     /// <summary> 
     /// Tracks declared locals to allow for slot reuse and cleaner generated code. 
@@ -34,6 +37,9 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
     // ----------------------------------------
     // LOCALS
     // ----------------------------------------
+    /// <summary>
+    /// An wrapper to reuse locals instead of creating a new one each time
+    /// </summary>
     public LocalBuilder GetLocal(Type type) {
         if (LocalCache.TryGetValue(type, out var local)) {
             Write($"[IL] ReuseLocal type={type.ShortName()} index={local.LocalIndex}");
@@ -46,8 +52,8 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
         Write($"[IL] DeclareLocal type={type.ShortName()} index={local.LocalIndex}");
         return local;
     }
-
-    public LocalBuilder DeclareLocal(Type localType, bool pinned) {
+    /// <inheritdoc/>
+    public override LocalBuilder DeclareLocal(Type localType, bool pinned) {
         var loc = Il.DeclareLocal(localType, pinned);
         Write($"[IL] DeclareLocal type={localType.ShortName()} pinned={pinned} index={loc.LocalIndex}");
         return loc;
@@ -57,7 +63,8 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
     // ----------------------------------------
     // LABELS
     // ----------------------------------------
-    public Label DefineLabel() {
+    /// <inheritdoc/>
+    public override Label DefineLabel() {
         var label = Il.DefineLabel();
         var name = $"L{labelCounter++:000}";
         LabelNames[label] = name;
@@ -66,7 +73,8 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
         return label;
     }
 
-    public void MarkLabel(Label loc) {
+    /// <inheritdoc/>
+    public override void MarkLabel(Label loc) {
         var name = LabelNames.TryGetValue(loc, out var n) ? n : "(unknown)";
         Write($"[IL] MarkLabel {name}");
         Il.MarkLabel(loc);
@@ -76,29 +84,35 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
     // ----------------------------------------
     // BASIC EMITS
     // ----------------------------------------
-    public int ILOffset => Il.ILOffset;
+    /// <inheritdoc/>
+    public override int ILOffset => Il.ILOffset;
 
-    public void Emit(OpCode opcode) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode) {
         Write($"[IL] Emit {opcode}");
         Il.Emit(opcode);
     }
 
-    public void Emit(OpCode opcode, byte arg) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, byte arg) {
         Write($"[IL] Emit {opcode} byte={arg}");
         Il.Emit(opcode, arg);
     }
 
-    public void Emit(OpCode opcode, double arg) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, double arg) {
         Write($"[IL] Emit {opcode} double={arg}");
         Il.Emit(opcode, arg);
     }
 
-    public void Emit(OpCode opcode, short arg) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, short arg) {
         Write($"[IL] Emit {opcode} short={arg}");
         Il.Emit(opcode, arg);
     }
 
-    public void Emit(OpCode opcode, int arg) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, int arg) {
         if (opcode == OpCodes.Ldc_I4 && (uint)arg < Columns.Length)
             Write($"[IL] Emit {opcode} int={arg} probable index for {Columns[arg].Name}");
         else
@@ -106,22 +120,26 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
         Il.Emit(opcode, arg);
     }
 
-    public void Emit(OpCode opcode, long arg) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, long arg) {
         Write($"[IL] Emit {opcode} long={arg}");
         Il.Emit(opcode, arg);
     }
 
-    public void Emit(OpCode opcode, float arg) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, float arg) {
         Write($"[IL] Emit {opcode} float={arg}");
         Il.Emit(opcode, arg);
     }
 
-    public void Emit(OpCode opcode, string str) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, string str) {
         Write($"[IL] Emit {opcode} string=\"{str}\"");
         Il.Emit(opcode, str);
     }
 
-    public void Emit(OpCode opcode, Type cls) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, Type cls) {
         Write($"[IL] Emit {opcode} type={cls.ShortName()}");
         Il.Emit(opcode, cls);
     }
@@ -130,33 +148,39 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
     // ----------------------------------------
     // COMPLEX EMITS
     // ----------------------------------------
-    public void Emit(OpCode opcode, Label label) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, Label label) {
         var name = LabelNames.TryGetValue(label, out var n) ? n : "(unknown)";
         Write($"[IL] Emit {opcode} -> {name}");
         Il.Emit(opcode, label);
     }
 
-    public void Emit(OpCode opcode, Label[] labels) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, Label[] labels) {
         Write($"[IL] Emit {opcode} labels[{labels.Length}]");
         Il.Emit(opcode, labels);
     }
 
-    public void Emit(OpCode opcode, LocalBuilder local) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, LocalBuilder local) {
         Write($"[IL] Emit {opcode} localIndex={local.LocalIndex} type={local.LocalType.ShortName()}");
         Il.Emit(opcode, local);
     }
 
-    public void Emit(OpCode opcode, ConstructorInfo con) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, ConstructorInfo con) {
         Write($"[IL] Emit {opcode} ctor {con.DeclaringType.ShortName()}..ctor({ShortParams(con)})");
         Il.Emit(opcode, con);
     }
 
-    public void Emit(OpCode opcode, MethodInfo meth) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, MethodInfo meth) {
         Write($"[IL] Emit {opcode} {meth.ReturnType.ShortName()} {meth.DeclaringType.ShortName()}.{meth.Name}({ShortParams(meth)})");
         Il.Emit(opcode, meth);
     }
 
-    public void Emit(OpCode opcode, FieldInfo field) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, FieldInfo field) {
         Write($"[IL] Emit {opcode} {field.FieldType.ShortName()} {field.DeclaringType.ShortName()}.{field.Name}");
         Il.Emit(opcode, field);
     }
@@ -164,7 +188,8 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
         return string.Join(", ", method.GetParameters().Select(p => p.ParameterType.ShortName()));
     }
 
-    public void Emit(OpCode opcode, SignatureHelper signature) {
+    /// <inheritdoc/>
+    public override void Emit(OpCode opcode, SignatureHelper signature) {
         Write($"[IL] Emit {opcode} signature");
         Il.Emit(opcode, signature);
     }
@@ -173,17 +198,20 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
     // ----------------------------------------
     // CALL EMITS
     // ----------------------------------------
-    public void EmitCall(OpCode opcode, MethodInfo methodInfo, Type[]? optionalParameterTypes) {
+    /// <inheritdoc/>
+    public override void EmitCall(OpCode opcode, MethodInfo methodInfo, Type[]? optionalParameterTypes) {
         Write($"[IL] EmitCall {opcode} method={methodInfo.DeclaringType.ShortName()}.{methodInfo.Name}({ShortParams(methodInfo)})");
         Il.EmitCall(opcode, methodInfo, optionalParameterTypes);
     }
 
-    public void EmitCalli(OpCode opcode, CallingConventions callingConvention, Type? returnType, Type[]? parameterTypes, Type[]? optionalParameterTypes) {
+    /// <inheritdoc/>
+    public override void EmitCalli(OpCode opcode, CallingConventions callingConvention, Type? returnType, Type[]? parameterTypes, Type[]? optionalParameterTypes) {
         Write($"[IL] EmitCalli {opcode} conv={callingConvention}");
         Il.EmitCalli(opcode, callingConvention, returnType, parameterTypes, optionalParameterTypes);
     }
 
-    public void EmitCalli(OpCode opcode, CallingConvention unmanagedCallConv, Type? returnType, Type[]? parameterTypes) {
+    /// <inheritdoc/>
+    public override void EmitCalli(OpCode opcode, CallingConvention unmanagedCallConv, Type? returnType, Type[]? parameterTypes) {
         Write($"[IL] EmitCalli {opcode} unmanaged={unmanagedCallConv}");
         Il.EmitCalli(opcode, unmanagedCallConv, returnType, parameterTypes);
     }
@@ -192,53 +220,66 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) {
     // ----------------------------------------
     // EXCEPTIONS + SCOPE
     // ----------------------------------------
-    public Label BeginExceptionBlock() {
+    /// <inheritdoc/>
+    public override Label BeginExceptionBlock() {
         Write("[IL] BeginExceptionBlock");
         return Il.BeginExceptionBlock();
     }
 
-    public void EndExceptionBlock() {
+    /// <inheritdoc/>
+    public override void EndExceptionBlock() {
         Write("[IL] EndExceptionBlock");
         Il.EndExceptionBlock();
     }
 
-    public void BeginCatchBlock(Type? exceptionType) {
+    /// <inheritdoc/>
+    public override void BeginCatchBlock(Type? exceptionType) {
         Write($"[IL] BeginCatchBlock type={exceptionType.ShortName()}");
         Il.BeginCatchBlock(exceptionType);
     }
 
-    public void BeginExceptFilterBlock() {
+    /// <inheritdoc/>
+    public override void BeginExceptFilterBlock() {
         Write("[IL] BeginExceptFilterBlock");
         Il.BeginExceptFilterBlock();
     }
 
-    public void BeginFaultBlock() {
+    /// <inheritdoc/>
+    public override void BeginFaultBlock() {
         Write("[IL] BeginFaultBlock");
         Il.BeginFaultBlock();
     }
 
-    public void BeginFinallyBlock() {
+    /// <inheritdoc/>
+    public override void BeginFinallyBlock() {
         Write("[IL] BeginFinallyBlock");
         Il.BeginFinallyBlock();
     }
 
-    public void BeginScope() {
+    /// <inheritdoc/>
+    public override void BeginScope() {
         Write("[IL] BeginScope");
         Il.BeginScope();
     }
 
-    public void EndScope() {
+    /// <inheritdoc/>
+    public override void EndScope() {
         Write("[IL] EndScope");
         Il.EndScope();
     }
 
-    public void UsingNamespace(string usingNamespace) {
+    /// <inheritdoc/>
+    public override void UsingNamespace(string usingNamespace) {
         Write($"[IL] UsingNamespace {usingNamespace}");
         Il.UsingNamespace(usingNamespace);
     }
 }
 #else
+/// <summary>
+/// A wrapper for <see cref="ILGenerator"/> that provides automatic local variable management.
+/// </summary>
 public class Generator(ILGenerator generator) : ILGenerator {
+    /// <summary>The underlying <see cref="ILGenerator"/></summary>
     public readonly ILGenerator Il = generator;
     /// <summary> 
     /// Tracks declared locals to allow for slot reuse and cleaner generated code. 
@@ -255,38 +296,70 @@ public class Generator(ILGenerator generator) : ILGenerator {
         LocalCache[type] = local;
         return local;
     }
+    /// <inheritdoc/>
     public override int ILOffset => Il.ILOffset;
+    /// <inheritdoc/>
     public override void BeginCatchBlock(Type? exceptionType) => Il.BeginCatchBlock(exceptionType);
+    /// <inheritdoc/>
     public override void BeginExceptFilterBlock() => Il.BeginExceptFilterBlock();
+    /// <inheritdoc/>
     public override Label BeginExceptionBlock() => Il.BeginExceptionBlock();
+    /// <inheritdoc/>
     public override void BeginFaultBlock() => Il.BeginFaultBlock();
+    /// <inheritdoc/>
     public override void BeginFinallyBlock() => Il.BeginFinallyBlock();
+    /// <inheritdoc/>
     public override void BeginScope() => Il.BeginScope();
+    /// <inheritdoc/>
     public override LocalBuilder DeclareLocal(Type localType, bool pinned) => Il.DeclareLocal(localType, pinned);
+    /// <inheritdoc/>
     public override Label DefineLabel() => Il.DefineLabel();
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode) => Il.Emit(opcode);
 
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, byte arg) => Il.Emit(opcode, arg);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, double arg) => Il.Emit(opcode, arg);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, short arg) => Il.Emit(opcode, arg);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, int arg) => Il.Emit(opcode, arg);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, long arg) => Il.Emit(opcode, arg);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, ConstructorInfo con) => Il.Emit(opcode, con);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, Label label) => Il.Emit(opcode, label);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, Label[] labels) => Il.Emit(opcode, labels);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, LocalBuilder local) => Il.Emit(opcode, local);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, SignatureHelper signature) => Il.Emit(opcode, signature);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, FieldInfo field) => Il.Emit(opcode, field);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, MethodInfo meth) => Il.Emit(opcode, meth);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, float arg) => Il.Emit(opcode, arg);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, string str) => Il.Emit(opcode, str);
+    /// <inheritdoc/>
     public override void Emit(OpCode opcode, Type cls) => Il.Emit(opcode, cls);
+    /// <inheritdoc/>
     public override void EmitCall(OpCode opcode, MethodInfo methodInfo, Type[]? optionalParameterTypes) => Il.EmitCall(opcode, methodInfo, optionalParameterTypes);
+    /// <inheritdoc/>
     public override void EmitCalli(OpCode opcode, CallingConventions callingConvention, Type? returnType, Type[]? parameterTypes, Type[]? optionalParameterTypes) => Il.EmitCalli(opcode, callingConvention, returnType, parameterTypes, optionalParameterTypes);
+    /// <inheritdoc/>
     public override void EmitCalli(OpCode opcode, CallingConvention unmanagedCallConv, Type? returnType, Type[]? parameterTypes) => Il.EmitCalli(opcode, unmanagedCallConv, returnType, parameterTypes);
+    /// <inheritdoc/>
     public override void EndExceptionBlock() => Il.EndExceptionBlock();
+    /// <inheritdoc/>
     public override void EndScope() => Il.EndScope();
+    /// <inheritdoc/>
     public override void MarkLabel(Label loc) => Il.MarkLabel(loc);
+    /// <inheritdoc/>
     public override void UsingNamespace(string usingNamespace) => Il.UsingNamespace(usingNamespace);
 }
 #endif

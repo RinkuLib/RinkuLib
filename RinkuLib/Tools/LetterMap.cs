@@ -27,6 +27,7 @@ public class LetterMap<T> : IDictionary<char, T> {
     /// Bit 0 corresponds to 'a', bit 25 to 'z'.
     /// </summary>
     public uint PresenceMap => _mask;
+    /// <summary>Initialize a new instance of the <see cref="LetterMap{T}"/> class</summary>
     public LetterMap() {}
     /// <summary>
     /// Initializes the map with a collection of character-value pairs.
@@ -98,7 +99,7 @@ public class LetterMap<T> : IDictionary<char, T> {
         }
         set => Set(key, value);
     }
-
+    /// <inheritdoc/>
     public ICollection<char> Keys => GetKeysArray();
 
     private char[] GetKeysArray() {
@@ -113,6 +114,7 @@ public class LetterMap<T> : IDictionary<char, T> {
         return keys;
     }
 
+    /// <inheritdoc/>
     public ICollection<T> Values => _values;
     /// <summary>
     /// Gets the number of unique letters currently mapped.
@@ -135,16 +137,21 @@ public class LetterMap<T> : IDictionary<char, T> {
         return (int)((((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24);
     }
 #endif
+    /// <inheritdoc/>
     public bool IsReadOnly => false;
+    /// <summary>
+    /// Add or set a specific letter with its value in the map (case-insensitive).
+    /// </summary>
     public void Add(char key, T value) {
         if (ContainsKey(key))
             throw new ArgumentException("Key already exists");
         Set(key, value);
     }
+    /// <inheritdoc/>
     public void Add(KeyValuePair<char, T> item)
         => Add(item.Key, item.Value);
     /// <summary>
-    /// Fast check to see if a specific letter is present in the map.
+    /// Check to see if a specific letter is present in the map (case-insensitive).
     /// </summary>
     public bool ContainsKey(char key)
         => (_mask & (1u << Idx(key))) != 0;
@@ -190,20 +197,24 @@ public class LetterMap<T> : IDictionary<char, T> {
         return true;
     }
 
+    /// <inheritdoc/>
     public bool Remove(KeyValuePair<char, T> item)
         => TryGetValue(item.Key, out var v)
            && EqualityComparer<T>.Default.Equals(v, item.Value)
            && Remove(item.Key);
 
+    /// <inheritdoc/>
     public void Clear() {
         _mask = 0;
         _values = [];
     }
 
+    /// <inheritdoc/>
     public bool Contains(KeyValuePair<char, T> item)
         => TryGetValue(item.Key, out var v)
            && EqualityComparer<T>.Default.Equals(v, item.Value);
 
+    /// <inheritdoc/>
     public void CopyTo(KeyValuePair<char, T>[] array, int arrayIndex) {
         if (_values.Length == 0)
             return;
@@ -216,6 +227,7 @@ public class LetterMap<T> : IDictionary<char, T> {
         }
     }
 
+    /// <inheritdoc/>
     public IEnumerator<KeyValuePair<char, T>> GetEnumerator() {
         if (_values.Length == 0)
             yield break;

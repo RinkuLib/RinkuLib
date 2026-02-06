@@ -36,6 +36,7 @@ public struct QueryFactory {
         ('N', NumberVariableHandler.Build)
     ]);
 #pragma warning disable CA2211
+    /// <summary>Identifier to indicate a SQL variable</summary>
     public static char DefaultVariableChar = '@';
 #pragma warning restore CA2211
     /// <summary>The normalized SQL query string with all markers and metadata stripped.</summary>
@@ -60,15 +61,33 @@ public struct QueryFactory {
     /// string keys to the factory's internal integer indices.
     /// </summary>
     public Mapper Mapper;
+    /// <summary>The amount of conditional select columns</summary>
+    /// <remarks>Will always be 0 unless dynamic projection is enabled</remarks>
     public int NbSelects;
+    /// <summary>
+    /// The amount of distinct not handled variables (required and optional)
+    /// </summary>
     public int NbNormalVar;
+    /// <summary>
+    /// The amount of distinct handled variables (base and special)
+    /// </summary>
     public int NbHandlers;
+    /// <summary>
+    /// The amount of distinct variables that are handled by a base handler
+    /// </summary>
     public int NbBaseHandlers;
+    /// <summary>
+    /// The amount of distinct variables that are required (normal or handled)
+    /// </summary>
     public int NbRequired;
+    /// <summary>
+    /// The amount of distinct conditions that are both not from the first dynamic projection and not a variable
+    /// </summary>
     public int NbNonVarComment;
+
     /// <summary>
     /// Bitmask of letters ('a'-'z') representing the <b>non-claimed base handlers</b>.
-    /// Derived at construction by filtering the current state of <see cref="BaseHandlerMapper.PresenceMap"/> 
+    /// Derived at construction by filtering the current state of the <see cref="BaseHandlerMapper"/> letter usage
     /// against the claimed special handlers.
     /// </summary>
     public uint BaseHandlerPresenceMap;
@@ -81,7 +100,6 @@ public struct QueryFactory {
     /// Initializes the template blueprints and establishes the <see cref="Mapper"/> index contract.
     /// </summary>
     /// <param name="query">The raw SQL input to be normalized and segmented.</param>
-    /// <param name="extractSelects">Whether to treat individual SELECT columns as toggleable logic.</param>
     /// <param name="variableChar">The prefix for variables (e.g., '@', ':').</param>
     /// <param name="specialHandlerPresenceMap">
     /// A bitmask of letters ('A'-'Z') claimed by external specialized logic. 
