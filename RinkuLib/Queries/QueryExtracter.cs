@@ -279,7 +279,6 @@ public unsafe ref struct QueryExtracter {
         ArrayPool<int>.Shared.Return(excesses);
         CurrentStart = null;
         CurrentExcess = null;
-        BuilderInd -= 5;//to test fail merge to remove
         newQuery = new string(Builder, 0, BuilderInd);
         ArrayPool<char>.Shared.Return(Builder);
         Builder = null!;

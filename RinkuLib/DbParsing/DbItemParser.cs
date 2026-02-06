@@ -45,6 +45,10 @@ public struct ColumnInfo(string Name, Type Type, bool IsNullable) {
         && column.Type == Type
         && string.Equals(column.Name, Name, StringComparison.OrdinalIgnoreCase);
 }
+public class NullValueAssignmentException(Type paramType, string paramName) : Exception($"Constraint Violation: Parameter '{paramName}' of type '{paramType.Name}' is marked as non-nullable, but the source provided a null value.") {
+    public readonly string ParameterName = paramName;
+    public readonly Type ParameterType = paramType;
+}
 /// <summary>
 /// The abstract base for all emission nodes. Defines how a specific part of the 
 /// object graph generates its IL instructions.
@@ -66,23 +70,18 @@ public abstract class DbItemParser {
     /// <param name="generator">The IL generator wrapper.</param>
     /// <param name="nullSetPoint">The recovery point when value is null.</param>
     public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint);
-    public static readonly ConstructorInfo InvalidOpException = typeof(InvalidOperationException).GetConstructor([typeof(string)])!;
+    public static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(string)])!;
+    public static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;
+
     /// <summary>
-    /// Emits a throw instruction for an <see cref="InvalidOperationException"/> when 
+    /// Emits a throw instruction for an <see cref="NullValueAssignmentException"/> when 
     /// a non-nullable target receives a null value from the schema.
     /// </summary>
-    public static void ThrowColIsNullException(string colName, Generator generator) {
-        generator.Emit(OpCodes.Ldstr, $"{colName} is null but the target return is not nullable");
-        generator.Emit(OpCodes.Newobj, InvalidOpException);
-        generator.Emit(OpCodes.Throw);
-    }
-    /// <summary>
-    /// Emits a throw instruction for an <see cref="InvalidOperationException"/> when 
-    /// a non-nullable target receives a null value from the schema.
-    /// </summary>
-    public static void ThrowColIsNullException(Type colType, Generator generator) {
-        generator.Emit(OpCodes.Ldstr, $"{colType} is null but the target return is not nullable");
-        generator.Emit(OpCodes.Newobj, InvalidOpException);
+    public static void EmitThrowNullAssignment(Type paramType, string paramName, Generator generator) {
+        generator.Emit(OpCodes.Ldtoken, paramType);
+        generator.Emit(OpCodes.Call, GetTypeHandle);
+        generator.Emit(OpCodes.Ldstr, paramName);
+        generator.Emit(OpCodes.Newobj, NullAssignmentCtor);
         generator.Emit(OpCodes.Throw);
     }
     /// <summary>

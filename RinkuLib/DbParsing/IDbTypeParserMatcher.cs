@@ -33,7 +33,7 @@ public interface IDbTypeParserMatcher {
     /// Configures the matching logic to trigger a logic jump/skip if the 
     /// corresponding schema value is null.
     /// </summary>
-    public void SetJumpWhenNull(bool jumpWhenNull);
+    public void SetInvalidOnNull(bool invalidOnNull);
     /// <summary>
     /// The core negotiation method for the item.
     /// </summary>
@@ -51,7 +51,7 @@ public interface IDbTypeParserInfoMatcher {
     /// Negotiates the schema for the target type. 
     /// If successful, returns a parser node that handles the entire object construction.
     /// </summary>
-    public DbItemParser? TryGetParser(Type closedTargetType, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage);
+    public DbItemParser? TryGetParser(Type closedTargetType, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage);
     public bool CanUseType(Type TargetType);
 }
 /// <summary>

@@ -34,7 +34,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>
     /// Updates the <see cref="NullColHandler"/> to handle a recovery jump if a null is encountered.
     /// </summary>
-    public void SetJumpWhenNull(bool jumpWhenNull) => NullColHandler = NullColHandler.SetJumpWhenNull(Type, jumpWhenNull);
+    public void SetInvalidOnNull(bool invalidOnNull) => NullColHandler = NullColHandler.SetInvalidOnNull(Type, invalidOnNull);
     Type IDbTypeParserMatcher.TargetType => Type;
     /// <summary>
     /// Adds an alternative name to the existing <see cref="NameComparer"/>.
@@ -71,7 +71,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         var defaultProvider = NullColHandler as MayProvideDefaultValue;
         var actualNull = defaultProvider?.NullColHandler ?? NullColHandler;
         if (TypeParsingInfo.TryGetInfo(closedType, out var typeInfo) && typeInfo.Matcher != BaseTypeMatcher.Instance) {
-            var node = typeInfo.TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], actualNull, columns, colModifier.Add(NameComparer), t is not null, ref colUsage);
+            var node = typeInfo.TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], NameComparer.GetDefaultName(), actualNull, columns, colModifier.Add(NameComparer), t is not null, ref colUsage);
             if (node is not null)
                 return node;
             if (t is not null)
@@ -91,7 +91,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         if (i >= columns.Length)
             return defaultProvider?.TryGetItemParser(closedType);
         colUsage.Use(i);
-        return new BasicParser(closedType, actualNull, i);
+        return new BasicParser(closedType, NameComparer.GetDefaultName(), actualNull, i);
     }
     /// <summary>
     /// Creates a matcher for a constructor or method parameter if the type is usable.
@@ -137,13 +137,13 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <list type="bullet">
     /// <item>If any attribute implements <see cref="IDbReadingMatcherMaker"/>, it takes control and creates the matcher.</item>
     /// <item><see cref="AltAttribute"/> instances are collected to build optimized <see cref="INameComparer"/> versions.</item>
-    /// <item>Null-handling is determined by <see cref="NotNullAttribute"/>, <see cref="JumpIfNullAttribute"/>, or custom <see cref="INullColHandlerMaker"/>.</item>
+    /// <item>Null-handling is determined by <see cref="NotNullAttribute"/>, <see cref="InvalidOnNullAttribute"/>, or custom <see cref="INullColHandlerMaker"/>.</item>
     /// </list>
     /// </remarks>
     public static IDbTypeParserMatcher Create(Type type, string? name, object[] attributes, object? param = null) {
         int altCount = 0;
         INullColHandler? nullColHandler = null;
-        bool hasNullJump = false;
+        bool isInvalidOnNull = false;
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
             if (attr is AltAttribute)
@@ -152,15 +152,15 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 return mm.MakeMatcher(type, name, attributes, param);
             if (attr is INullColHandler nch)
                 nullColHandler = nch;
-            if (attr is JumpIfNullAttribute)
-                hasNullJump = true;
+            if (attr is InvalidOnNullAttribute)
+                isInvalidOnNull = true;
             if (attr is INullColHandlerMaker nchm)
                 nullColHandler = nchm.MakeColHandler(type, name, attributes, param);
             if (attr is NotNullAttribute)
                 nullColHandler = NotNullHandle.Instance;
         }
         nullColHandler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
-        nullColHandler = nullColHandler.SetJumpWhenNull(type, hasNullJump);
+        nullColHandler = nullColHandler.SetInvalidOnNull(type, isInvalidOnNull);
         if (param is ParameterInfo p && IsTypeDefault(p))
             nullColHandler = new DefaultValueProvider(nullColHandler);
         string[] altNames = [];

@@ -336,7 +336,7 @@ public class TypeParserTests {
 
         // --- Row 1 ---
         reader.Read();
-        Assert.Throws<InvalidOperationException>(() => parser(reader));
+        Assert.Throws<NullValueAssignmentException>(() => parser(reader));
     }
 
     [Fact]
@@ -474,6 +474,79 @@ public class TypeParserTests {
         Assert.Equal(1, boss.ID);
         Assert.Equal("Albert", boss.Name);
     }
+    [Fact]
+    public void Multi_Level_Jump() {
+        // Same structure, different Generic types: <double, int>
+        ColumnInfo[] columns = [
+            new("id", typeof(int), false),
+            new("MiddleID", typeof(int), false),
+            new("MIddleBottomID", typeof(int), true),
+            new("MIddleBottomName", typeof(string), false),
+            ];
+
+        using var reader = CreateReader(columns, [
+            [500, 400, 300, "Name"],
+            [500, 400, DBNull.Value, "Name"]
+        ]);
+
+        var parser = TypeParser<TestTop>.GetParserFunc(columns);
+
+        reader.Read();
+        var top = parser(reader);
+
+        Assert.Equal(500, top.ID);
+        Assert.Equal(400, top.Middle.ID);
+        Assert.Equal(300, top.Middle.Bottom.ID);
+        Assert.Equal("Name", top.Middle.Bottom.Name);
+
+        reader.Read();
+        Assert.Throws<NullValueAssignmentException>(() => parser(reader));
+    }
+    [Fact]
+    public void Multi_Level_Jump_Alt2() {
+        // Same structure, different Generic types: <double, int>
+        ColumnInfo[] columns = [
+            new("id", typeof(int), false),
+            new("MiddleID", typeof(int), false),
+            new("MIddleBottomID", typeof(int), true),
+            new("MIddleBottomName", typeof(string), false),
+            ];
+
+        using var reader = CreateReader(columns, [
+            [500, 400, DBNull.Value, "Name"]
+        ]);
+
+        var parser = TypeParser<TestTop2>.GetParserFunc(columns);
+
+        reader.Read();
+        var top = parser(reader);
+
+        Assert.Equal(500, top.ID);
+        Assert.Equal(400, top.Middle.ID);
+        Assert.Null(top.Middle.Bottom);
+    }
+    [Fact]
+    public void Multi_Level_Jump_Alt3() {
+        // Same structure, different Generic types: <double, int>
+        ColumnInfo[] columns = [
+            new("id", typeof(int), false),
+            new("MiddleID", typeof(int), false),
+            new("MIddleBottomID", typeof(int), true),
+            new("MIddleBottomName", typeof(string), false),
+            ];
+
+        using var reader = CreateReader(columns, [
+            [500, 400, DBNull.Value, "Name"]
+        ]);
+
+        var parser = TypeParser<TestTop3>.GetParserFunc(columns);
+
+        reader.Read();
+        var top = parser(reader);
+
+        Assert.Equal(500, top.ID);
+        Assert.Null(top.Middle);
+    }
 }
 public record class User(int ID, string Name, [Alt("Boss")]User? Supervisor = null);
 public class SimpleUser {
@@ -495,7 +568,7 @@ public class ProductStatus {
     public char WarehouseZone { get; set; }
 }
 public record struct Package(
-    [JumpIfNull] int TrackingId,
+    [InvalidOnNull] int TrackingId,
     double Weight
 ) : IDbReadable;
 
@@ -540,18 +613,25 @@ public enum CurrencyCode {
     EUR = 2,
     GBP = 3
 }
-public record struct Price<T>([JumpIfNull] T Amount, CurrencyCode Currency) : IDbReadable
+public record struct Price<T>([InvalidOnNull] T Amount, CurrencyCode Currency) : IDbReadable
     where T : struct;
 
 [method: CanCompleteWithMembers]
-public class Metadata<T, TSource>([NotNull] T Value) : IDbReadable {
+public class Metadata<T, TSource>([NotNull] T Value) : IDbReadable where T : notnull {
     public T Value { get; } = Value;
     public TSource? Source { get; set; }
 }
 
 // Complex root using Generics
-public class BoxedProduct<TAmount, TMeta>(int productId, Price<TAmount>? listingPrice, Metadata<TMeta, string> info) where TAmount : struct {
+public class BoxedProduct<TAmount, TMeta>(int productId, Price<TAmount>? listingPrice, Metadata<TMeta, string> info) where TAmount : struct where TMeta : notnull {
     public int ProductId { get; } = productId;
     public Price<TAmount>? ListingPrice { get; } = listingPrice;
     public Metadata<TMeta, string> Info { get; } = info;
 }
+public record class TestTop(int ID, TestMiddle Middle) : IDbReadable;
+public record class TestMiddle(int ID, TestBottom Bottom) : IDbReadable;
+public record class TestTop2(int ID, TestMiddle2 Middle) : IDbReadable;
+public record class TestMiddle2(int ID, TestBottom? Bottom) : IDbReadable;
+public record class TestTop3(int ID, TestMiddle3 Middle) : IDbReadable;
+public record class TestMiddle3(int ID, [InvalidOnNull] TestBottom Bottom) : IDbReadable;
+public record struct TestBottom([InvalidOnNull]int ID, string Name) : IDbReadable;

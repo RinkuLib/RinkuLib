@@ -9,7 +9,7 @@ public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
     private BaseTypeMatcher() {}
     public bool CanUseType(Type TargetType)
         => TargetType.IsBaseType() || TargetType.IsEnum;
-    public DbItemParser? TryGetParser(Type closedTargetType, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
+    public DbItemParser? TryGetParser(Type closedTargetType, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
         int i = 0;
         for (; i < columns.Length; i++) {
             if (colUsage.IsUsed(i))
@@ -23,7 +23,7 @@ public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
         colUsage.Use(i);
         if (isNullable && closedTargetType.IsValueType)
             closedTargetType = typeof(Nullable<>).MakeGenericType(closedTargetType);
-        return new BasicParser(closedTargetType, nullColHandler, i);
+        return new BasicParser(closedTargetType, paramName, nullColHandler, i);
     }
 }
 /// <summary>
@@ -398,8 +398,8 @@ public class TypeParsingInfo {
     /// Configures the null-value response behavior for parameters matching <paramref name="defaultName"/>.
     /// </summary>
     /// <param name="defaultName">The parameter name in C#.</param>
-    /// <param name="jumpWhenNull">Wether or not the parameter should jump when null</param>
-    public void SetJumpWhenNull(string defaultName, bool jumpWhenNull) {
+    /// <param name="invalidOnNull">Wether or not the parameter should jump when null</param>
+    public void SetInvalidOnNull(string defaultName, bool invalidOnNull) {
         if (!IsInit)
             Init();
         for (int i = 0; i < MCIs.Length; i++) {
@@ -407,7 +407,7 @@ public class TypeParsingInfo {
             for (int j = 0; j < parameters.Length; j++) {
                 var p = parameters[j];
                 if (string.Equals(p.GetName(), defaultName, StringComparison.OrdinalIgnoreCase))
-                    p.SetJumpWhenNull(jumpWhenNull);
+                    p.SetInvalidOnNull(invalidOnNull);
             }
         }
     }
@@ -435,12 +435,12 @@ public class TypeParsingInfo {
     /// <returns>
     /// A configured <see cref="DbItemParser"/> if the schema satisfies a construction path; otherwise, null.
     /// </returns>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
+    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
         if (!IsInit)
             Init();
         var closedType = Type.CloseType(declaringTypeArguments);
         if (_matcher is not null)
-            return _matcher.TryGetParser(closedType, nullColHandler, columns, colModifier, isNullable, ref colUsage);
+            return _matcher.TryGetParser(closedType, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage);
         var actualType = isNullable && closedType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedType) : closedType;
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
         colUsage.InitCheckpoint(checkpoint);
@@ -472,7 +472,7 @@ public class TypeParsingInfo {
             canCompleteWithMembers = true;
         }
         if (!canCompleteWithMembers)
-            return new CustomClassParser(actualType, nullColHandler, method, readers);
+            return new CustomClassParser(actualType, paramName, nullColHandler, method, readers);
         List<(MemberInfo, DbItemParser)> memberReaders = [];
         var members = Members;
         for (int i = 0; i < members.Length; i++) {
@@ -482,6 +482,6 @@ public class TypeParsingInfo {
         }
         if (memberReaders.Count == 0 && readers.Count == 0)
             return null;
-        return new CustomClassParser(actualType, nullColHandler, method, readers, memberReaders);
+        return new CustomClassParser(actualType, paramName, nullColHandler, method, readers, memberReaders);
     }
 }
