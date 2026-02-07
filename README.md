@@ -34,11 +34,11 @@ IEnumerable<User> users = builder.QueryMultiple<User>(cnn);
 // Resulting SQL: SELECT ID, Name FROM Users WHERE Group = @Grp AND Age > @MinAge
 ```
 
-### The reasons it exist: Separation of concern, Customization and flexibility
+## The reasons it exist: Separation of concern, Customization and flexibility
 
 When dynamicaly building SQL, individual SQL segment must be able to make a valid SQL. You never see the whole picture until processing. By defining a template first, you can have your c# logic focussing on checking validity and then simply need to "inform" the builder of what you use. That way you can have total separation of concern and no matter where an item affect the SQL result, you can keep exactly the same logic ensuring SQL validity and letting you make oprimized SQL commands without any compromizes.
 When mapping to a type, you rearely need a flat object as the logic item, has a deep, fully customizable, negociation phase that lets you map the flat row result of the DB, to the multi level nesting of the c# type.
-In truts, originaly it was meant as an extensions to `Dapper`, but the blueprint engine had to create the whole `DbCommand` to be efficient, so I made the mapping part.
+In truth, originaly it was meant as an extensions to `Dapper`, but the blueprint engine had to create the whole `DbCommand` to be efficient, so I made the mapping part.
 
 
 ### The 3-Step Process
