@@ -101,4 +101,16 @@ public sealed class QueryParameters : IDbParamCache {
                 return true;
         return false;
     }
+    /// <summary>
+    /// Evaluates the provided variables to determine if any non-cached parameter 
+    /// currently possesses data that requires metadata resolution.
+    /// </summary>
+    public bool NeedToCache(Span<bool> usageMap) {
+        if (NbNonCached == 0)
+            return false;
+        for (int i = 0; i < _nonCachedIndexes.Length; i++)
+            if (usageMap[_nonCachedIndexes[i]])
+                return true;
+        return false;
+    }
 }

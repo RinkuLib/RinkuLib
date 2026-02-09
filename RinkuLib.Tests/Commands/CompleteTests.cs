@@ -21,7 +21,7 @@ public class CompleteTests {
     }
     [Fact]
     public void Example1_StaticQuery() {
-        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active");
+        var query = new QueryCommand("SELECT ID, Name, Email FROM Users WHERE IsActive = @Active");
         var builder = query.StartBuilder();
         builder.Use("@Active", true);
         using var cnn = GetDbCnn();
@@ -40,7 +40,7 @@ public class CompleteTests {
     }
     [Fact]
     public void Example1_StaticQuery_Reuse() {
-        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active");
+        var query = new QueryCommand("SELECT ID, Name, Email FROM Users WHERE IsActive = @Active");
         using var cnn = GetDbCnn();
         using var cmd = cnn.CreateCommand();
         var builder = query.StartBuilder(cmd);
@@ -60,7 +60,7 @@ public class CompleteTests {
     }
     [Fact]
     public async Task Example1_StaticQuery_Async() {
-        var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active");
+        var query = new QueryCommand("SELECT ID, Name, Email FROM Users WHERE IsActive = @Active");
         var builder = query.StartBuilder();
         builder.Use("@Active", true);
         using var cnn = GetDbCnn();
@@ -72,7 +72,7 @@ public class CompleteTests {
     }
     [Fact]
     public async Task Example1_StaticQuery_Object() {
-        var query = new QueryCommand("SELECT ID, Username, Email AS Emaill FROM Users WHERE IsActive = @Active");
+        var query = new QueryCommand("SELECT ID, Name, Email AS Emaill FROM Users WHERE IsActive = @Active");
         var builder = query.StartBuilder();
         builder.Use("@Active", true);
         using var cnn = GetDbCnn();
@@ -80,8 +80,18 @@ public class CompleteTests {
         Assert.Equal(1, p.ID);
         Assert.Equal("John", p.Username);
         Assert.Null(email);
-    }
+    }/*
+    [Fact]
+    public async Task Use_Complete_Obj() {
+        var query = new QueryCommand("SELECT ID, Name, Email AS Emaill FROM Users WHERE IsActive = @Active");
+        using var cnn = GetDbCnn();
+        var (p, email) = query.QuerySingle<(Person, object)>(cnn, new PersonParam(true));
+        Assert.Equal(1, p.ID);
+        Assert.Equal("John", p.Username);
+        Assert.Null(email);
+    }*/
 }
-public record Person(int ID, string Username, string? Email) : IDbReadable {
-    public Person(int ID, string Username) :this(ID, Username, null) { }
+public record PersonParam(bool Active);
+public record Person(int ID, [Alt("Name")]string Username, string? Email) : IDbReadable {
+    public Person(int ID, [Alt("Name")]string Username) :this(ID, Username, null) { }
 }

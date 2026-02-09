@@ -1,10 +1,55 @@
-﻿using System.Data;
+﻿using System.Collections;
+using System.Data;
+using System.Data.Common;
+using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
 /// <summary>
 /// Provides extension methods to start and/or populate a <see cref="IQueryBuilder"/> 
 /// </summary>
 public static class BuilderStarter {
+    /// <summary>
+    /// Convert a non collection <see cref="IEnumerable{T}"/> into a countable version
+    /// </summary>
+    public static bool UseEnumerable<TBuilder, T>(this TBuilder builder, string variable, IEnumerable<T> value)
+        where TBuilder : IQueryBuilder {
+        if (value.TryGetNonEnumeratedCount(out var nb) || EnumerableCountProvider.TryGetNonEnumeratedCount(value, out nb)) {
+            if (nb <= 0)
+                return false;
+            return builder.Use(variable, value);
+        }
+        var e = value.GetEnumerator();
+        if (e.MoveNext())
+            return builder.Use(variable, new PeekableWrapper(e.Current, e));
+        (e as IDisposable)?.Dispose();
+        return false;
+    }
+    /// <summary>
+    /// Convert a non collection <see cref="IEnumerable{T}"/> into a countable version
+    /// </summary>
+    public static bool Use<TBuilder>(this TBuilder builder, string variable, IEnumerable value)
+    where TBuilder : IQueryBuilder {
+        if (value is IEnumerable<object> enu && enu.TryGetNonEnumeratedCount(out var nb)) {
+            if (nb <= 0)
+                return false;
+            return builder.Use(variable, value);
+        }
+        if (value is ICollection col) {
+            if (col.Count == 0)
+                return false;
+            return builder.Use(variable, col);
+        }
+        if (value.TryGetNonEnumeratedCount(out nb)) {
+            if (nb <= 0)
+                return false;
+            return builder.Use(variable, value);
+        }
+        var e = value.GetEnumerator();
+        if (e.MoveNext())
+            return builder.Use(variable, new PeekableWrapper(e.Current, e));
+        (e as IDisposable)?.Dispose();
+        return false;
+    }
     /// <summary>
     /// Start a <see cref="QueryBuilder"/>.
     /// </summary>
@@ -13,7 +58,12 @@ public static class BuilderStarter {
     /// <summary>
     /// Start a <see cref="QueryBuilderCommand{T}"/>.
     /// </summary>
-    public static QueryBuilderCommand<T> StartBuilder<T>(this QueryCommand command, T cmd) where T : IDbCommand
+    public static QueryBuilderCommand<DbCommand> StartBuilder(this QueryCommand command, DbCommand cmd)
+        => new(command, cmd);
+    /// <summary>
+    /// Start a <see cref="QueryBuilderCommand{T}"/>.
+    /// </summary>
+    public static QueryBuilderCommand<IDbCommand> StartBuilder(this QueryCommand command, IDbCommand cmd)
         => new(command, cmd);
     /// <summary>
     /// Start a <see cref="QueryBuilder"/> and set usage with the <paramref name="values"/>
@@ -29,8 +79,19 @@ public static class BuilderStarter {
     /// <summary>
     /// Start a <see cref="QueryBuilderCommand{T}"/> and set usage with the <paramref name="values"/>
     /// </summary>
-    public static QueryBuilderCommand<T> StartBuilder<T>(this QueryCommand command, T cmd, params Span<(string, object)> values) where T : IDbCommand {
-        var builder = new QueryBuilderCommand<T>(command, cmd);
+    public static QueryBuilderCommand<DbCommand> StartBuilder(this QueryCommand command, DbCommand cmd, params Span<(string, object)> values) {
+        var builder = new QueryBuilderCommand<DbCommand>(command, cmd);
+        for (int i = 0; i < values.Length; i++) {
+            var (key, value) = values[i];
+            builder.Use(key, value);
+        }
+        return builder;
+    }
+    /// <summary>
+    /// Start a <see cref="QueryBuilderCommand{T}"/> and set usage with the <paramref name="values"/>
+    /// </summary>
+    public static QueryBuilderCommand<IDbCommand> StartBuilder(this QueryCommand command, IDbCommand cmd, params Span<(string, object)> values) {
+        var builder = new QueryBuilderCommand<IDbCommand>(command, cmd);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];
             builder.Use(key, value);
@@ -128,4 +189,31 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <inheritdoc/>
     public readonly string GetQueryText()
         => QueryCommand.QueryText.Parse(Variables);
+}
+internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {
+    private object? _first = first;
+    private IEnumerator? _enumerator = enumerator;
+
+    public IEnumerator<object> GetEnumerator() {
+        if (_enumerator == null)
+            yield break;
+
+        yield return _first!;
+        _first = null;
+
+        while (_enumerator.MoveNext())
+            yield return _enumerator.Current;
+        Dispose();
+    }
+    public void Dispose() {
+        if (_enumerator is not null) {
+            (_enumerator as IDisposable)?.Dispose();
+            _enumerator = null;
+            _first = null;
+        }
+        GC.SuppressFinalize(this);
+    }
+    ~PeekableWrapper() => Dispose();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }

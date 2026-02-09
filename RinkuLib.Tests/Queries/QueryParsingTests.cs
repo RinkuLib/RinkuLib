@@ -206,7 +206,7 @@ public class QueryParsingTests {
         var query = new QueryCommand("SELECT * FROM Tasks WHERE CategoryID IN (?@Cats_X)");
         var builder = query.StartBuilder();
         var amount = 150;
-        builder.Use("@Cats", Enumerable.Range(1, amount));
+        builder.UseEnumerable("@Cats", Enumerable.Range(1, amount));
         var expectedParams = Enumerable.Range(1, amount).Select(i => ("@Cats_" + i, (object)i)).ToArray();
         Verify(builder, $"SELECT * FROM Tasks WHERE CategoryID IN ({string.Join(", ", expectedParams.Select(t => t.Item1))})", expectedParams);
     }
