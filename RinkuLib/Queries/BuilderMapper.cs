@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using System.Data.Common;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
@@ -25,8 +26,16 @@ public static class QueryBuilderExtensions {
     /// <summary>
     /// Start a <see cref="QueryBuilderCommand{TCmd}"/> and uses all the non-null members of <typeparamref name="T"/>.
     /// </summary>
-    public static QueryBuilderCommand<TCmd> StartBuilderWith<TCmd, T>(this QueryCommand command, TCmd cmd, ref T value) where TCmd : IDbCommand {
-        var builder = new QueryBuilderCommand<TCmd>(command, cmd);
+    public static QueryBuilderCommand<DbCommand> StartBuilderWith<T>(this QueryCommand command, DbCommand cmd, ref T value) {
+        var builder = new QueryBuilderCommand<DbCommand>(command, cmd);
+        builder.UseWith(ref value);
+        return builder;
+    }
+    /// <summary>
+    /// Start a <see cref="QueryBuilderCommand{TCmd}"/> and uses all the non-null members of <typeparamref name="T"/>.
+    /// </summary>
+    public static QueryBuilderCommand<IDbCommand> StartBuilderWith<T>(this QueryCommand command, IDbCommand cmd, ref T value) {
+        var builder = new QueryBuilderCommand<IDbCommand>(command, cmd);
         builder.UseWith(ref value);
         return builder;
     }
@@ -41,8 +50,16 @@ public static class QueryBuilderExtensions {
     /// <summary>
     /// Start a <see cref="QueryBuilderCommand{TCmd}"/> and uses all the non-null members of <typeparamref name="T"/>.
     /// </summary>
-    public static QueryBuilderCommand<TCmd> StartBuilderWith<TCmd, T>(this QueryCommand command, TCmd cmd, T value) where TCmd : IDbCommand {
-        var builder = new QueryBuilderCommand<TCmd>(command, cmd);
+    public static QueryBuilderCommand<DbCommand> StartBuilderWith<T>(this QueryCommand command, DbCommand cmd, T value) {
+        var builder = new QueryBuilderCommand<DbCommand>(command, cmd);
+        builder.UseWith(ref value);
+        return builder;
+    }
+    /// <summary>
+    /// Start a <see cref="QueryBuilderCommand{TCmd}"/> and uses all the non-null members of <typeparamref name="T"/>.
+    /// </summary>
+    public static QueryBuilderCommand<IDbCommand> StartBuilderWith< T>(this QueryCommand command, IDbCommand cmd, T value) {
+        var builder = new QueryBuilderCommand<IDbCommand>(command, cmd);
         builder.UseWith(ref value);
         return builder;
     }

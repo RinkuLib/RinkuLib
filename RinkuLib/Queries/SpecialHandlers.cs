@@ -18,7 +18,7 @@ namespace RinkuLib.Queries;
 /// <list type="number">
 /// <item>
 /// <description>
-/// <b>Phase 1: Command Synchronization.</b> Methods such as <see cref="Use(IDbCommand, ref object)"/>, <see cref="SaveUse"/>, 
+/// <b>Phase 1: Command Synchronization.</b> Methods such as <see cref="Use(IDbCommand, object)"/>, <see cref="SaveUse"/>, 
 /// or <see cref="Update"/> are invoked to synchronize the <see cref="IDbCommand"/> state. 
 /// The architecture <b>specifically allows for destructive value transformation</b> during this phase. 
 /// For example, an implementation may replace a raw <c>IEnumerable</c> with an <c>int</c> count 
@@ -76,12 +76,9 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// required for string assembly.
     /// </remarks>
     /// <param name="cmd">The command to receive the parameters.</param>
-    /// <param name="value">
-    /// [In/Out] The raw value to bind. Replaced with the <b>minimal transformed state</b> 
-    /// (e.g., an <c>int</c> count) required solely for the <see cref="Handle"/> phase.
-    /// </param>
+    /// <param name="value">The raw value to bind.</param>
     /// <returns><c>true</c> if the parameters were successfully bound.</returns>
-    public abstract bool Use(IDbCommand cmd, ref object value);
+    public abstract bool Use(IDbCommand cmd, object value);
     /// <summary>
     /// Removes parameters associated with this handler from the <see cref="IDbCommand"/>.
     /// </summary>
@@ -89,8 +86,8 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// <param name="value">The transformed state value used to identify the parameters to remove.</param>
     /// <returns><c>true</c> if the removal was successful.</returns>
     public abstract bool Remove(IDbCommand cmd, object value);
-    /// <summary> Performs the same logic as <see cref="Use(IDbCommand, ref object)"/> but specialized for <see cref="DbCommand"/> to reduce interface dispatch overhead. </summary>
-    public abstract bool Use(DbCommand cmd, ref object value);
+    /// <summary> Performs the same logic as <see cref="Use(IDbCommand, object)"/> but specialized for <see cref="DbCommand"/> to reduce interface dispatch overhead. </summary>
+    public abstract bool Use(DbCommand cmd, object value);
 
     /// <summary> Performs the same logic as <see cref="Remove(IDbCommand, object)"/> but specialized for <see cref="DbCommand"/> to reduce interface dispatch overhead. </summary>
     public abstract bool Remove(DbCommand cmd, object value);
@@ -260,7 +257,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
     /// Binds the collection for a single pass and replaces <paramref name="value"/> 
     /// with an <c>int</c> representing the count of bound items.
     /// </summary>
-    public override bool Use(IDbCommand cmd, ref object value) {
+    public override bool Use(IDbCommand cmd, object value) {
         if (value is not System.Collections.IEnumerable e) return false;
         int i = 1;
         int nbDigits = 1;
@@ -274,8 +271,6 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             cached.Use(BuildName(ParameterName, i, nbDigits), cmd, item);
             i++;
         }
-        i--;
-        value = i == 0 ? null! : i;
         return true;
     }
     /// <summary>
@@ -306,7 +301,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
         return true;
     }
     /// <inheritdoc/>
-    public override bool Use(DbCommand cmd, ref object value) {
+    public override bool Use(DbCommand cmd, object value) {
         if (value is not System.Collections.IEnumerable e) return false;
         int i = 1;
         int nbDigits = 1;
@@ -320,8 +315,6 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             cached.Use(BuildName(ParameterName, i, nbDigits), cmd, item);
             i++;
         }
-        i--;
-        value = i == 0 ? null! : i;
         return true;
     }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -347,10 +340,22 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
     /// produced during the synchronization phase.
     /// </summary>
     public override void Handle(ref ValueStringBuilder sb, object value) {
-        if (value is not int nb) {
-            if (value is not object[] arr)
-                throw new ArgumentException("value should either be object array or a number");
-            nb = arr.Length;
+        if (value is not IEnumerable<object> enumerable || !enumerable.TryGetNonEnumeratedCount(out var nb)) {
+            if (value is System.Collections.ICollection collection)
+                nb = collection.Count;
+            else if (value is System.Collections.IEnumerable e && e.TryGetNonEnumeratedCount(out nb)) { }
+            else if (value is int c)
+                nb = c;
+            else
+                throw new ArgumentException("The value must provide a count");
+        }
+        if (nb == 0) {
+            var lastInd = sb.Length - 1;
+            var lastChar = sb[lastInd];
+            while (lastChar == ',' || char.IsWhiteSpace(lastChar))
+                lastChar = sb[--lastInd];
+            sb.Length = lastInd + 1;
+            return;
         }
         var nameSpan = ParameterName.AsSpan();
         int nameLen = nameSpan.Length;
