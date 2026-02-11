@@ -26,4 +26,4 @@ jobs:
         run: dotnet build RinkuLib.slnx --configuration Release --no-restore
 
       - name: Run unit tests
-        run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --no-build --verbosity normal
+        run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --no-build --verbosity normal --framework net10.0
