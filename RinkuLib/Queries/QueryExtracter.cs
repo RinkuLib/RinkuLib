@@ -6,10 +6,8 @@ namespace RinkuLib.Queries;
 [Flags]
 internal enum CondFlags : byte {
     None = 0,
-    //IsHandlerFollowedByClosingParentesisOrSection = 0b_0000_0100,
     NeedSectionToFinish = 0b_0000_1000,
     IsRequired = 0b_0001_0000,
-    //CurrentIsSection = 0b_0010_0000,
     NextIsSection = 0b_0100_0000,
     Finished = 0b_1000_0000,
 }
@@ -42,17 +40,8 @@ internal struct CondInfo {
     public const char OrComment = (char)2;
     public const char OrCommentChar = '|';
     public const char None = (char)3;
-    public const char Select = (char)4;
-    public const char JoinedSelect = (char)5;
-    public const char SecondarySelect = (char)6;
-    public const char SecondaryJoinedSelect = (char)7;
     public const char Special = (char)8;
-    public static bool IsJoinedSelect(char type) => type == JoinedSelect || type == SecondaryJoinedSelect;
-    public static bool IsNotJoinedSelect(char type) => type == Select || type == SecondarySelect;
-    public static bool IsMainSelect(char type) => type == Select || type == JoinedSelect;
-    public static bool IsSelect(char type) => type >= Select && type <= SecondaryJoinedSelect;
     public static bool IsComment(char type) => type <= OrComment;
-    public static bool IsOther(char type) => IsComment(type) || type == SecondarySelect || type == SecondaryJoinedSelect;
     /// <summary>The identifier for the condition, the key (e.g., a variable name or a name in comment).</summary>
     public string Cond { get; private set; }
     /// <summary>
@@ -66,7 +55,6 @@ internal struct CondInfo {
     /// Used to determine how the segment should be processed in the next phase.
     /// </summary>
     public char Type { get; private set; }
-    //public ulong ParMap { get; private set; }
     /// <summary>
     /// A bitmask tracking nesting depth (Parens/CASE) and SQL section context.
     /// Or excesses of current and previous segment
@@ -94,31 +82,23 @@ internal struct CondInfo {
             ParMapOrExcesses = ParMap,
             EndIndex = Excess
         };
-    public static CondInfo NewSelect(int StartIndex, bool isMainSelect, bool isJoined, ulong parMap, int prevExcessExcess) {
-        var type = CondInfo.Select;
-        if (isJoined)
-            type = CondInfo.JoinedSelect;
-        if (!isMainSelect)
-            type += (char)2;
-        return new() {
+    public static CondInfo NewSelect(int StartIndex, ulong parMap, int prevExcessExcess) 
+        =>new() {
                Cond = null!,
-               Type = type,
+               Type = CondInfo.AndComment,
                VarIndex = -1,
                StartIndex = StartIndex,
                ParMapOrExcesses = parMap,
                EndIndex = prevExcessExcess
         };
-    }
     /// <summary>
     /// Closes the condition's footprint and updates section-related flags in the ParMap.
     /// </summary>
-    public void Finish(int endIndex, bool nextIsSection/*, uint excess*/) {
-        ParMapOrExcesses = /*(((ulong)excess) << 32UL) | */(ulong)EndIndex;
+    public void Finish(int endIndex, bool nextIsSection) {
+        ParMapOrExcesses = (ulong)EndIndex;
         Flags |= CondFlags.Finished;
         if (nextIsSection)
             Flags |= CondFlags.NextIsSection;
-        /*if (NeedSectionToFinish)
-            Flags |= CondFlags.CurrentIsSection;*/
         EndIndex = endIndex;
     }
     public override readonly string ToString()
@@ -140,9 +120,7 @@ internal struct CondInfo {
     public readonly bool IsRequired => Flags.HasFlag(CondFlags.IsRequired);
     public readonly bool NeedSectionToFinish => Flags.HasFlag(CondFlags.NeedSectionToFinish);
     public readonly bool NextSegmentIsSection => Flags.HasFlag(CondFlags.NextIsSection);
-    //public readonly bool CurrentSegmentIsSection => Flags.HasFlag(CondFlags.CurrentIsSection);
-    //public readonly int CurrentSegmentExcess => (int)(uint)ParMapOrExcesses;
-    public readonly int PrevSegmentExcess => (int)(uint)ParMapOrExcesses;//(int)(uint)(ParMapOrExcesses >> 32);
+    public readonly int PrevSegmentExcess => (int)(uint)ParMapOrExcesses;
 }
 /// <summary>
 /// A pointer-based scanner that identifies condition markers and maps their footprints while normalizing the query string.
@@ -178,7 +156,6 @@ public unsafe ref struct QueryExtracter {
         *CurrentExcess = newExcess;
     }
     private bool PrevBoundary;
-    private bool FirstSelectCompleted;
     private bool ContainingParantesis;
     private ulong SelectExtractionParMap;
     private PooledArray<CondInfo> Conditions;
@@ -284,21 +261,6 @@ public unsafe ref struct QueryExtracter {
         return Conditions.LockTransfer();
     }
 
-    private void ManageJoinedSelect() {
-        if (SelectExtractionParMap != ParMap)
-            return;
-        int i = Conditions.Length - 1;
-        for (; i >= 0; i--)
-            if (CondInfo.IsNotJoinedSelect(Conditions[i].Type))
-                break;
-        if (i < 0)
-            throw new Exception("the first join has nothing to join to");
-        ref var targetCond = ref Conditions[i];
-        if (targetCond.Cond is null)
-            targetCond.UpdateSelectCond(FindSelectName(BuilderInd - 1), *CurrentStart, *CurrentExcess);
-        Conditions.Add(CondInfo.NewSelect(targetCond.StartIndex, !FirstSelectCompleted, true, ParMap, 1));
-    }
-
     private bool TryManageSection() {
         var secLen = (int)(LastCondSectionLength & 0xFF);
         if (secLen <= 0 && !MatchSection(CurrentChar, out secLen))
@@ -316,10 +278,8 @@ public unsafe ref struct QueryExtracter {
             ContainingParantesis = true;
         else if (ContainingParantesis && ParMap == 1)
             ContainingParantesis = false;
-        if (ParMap == SelectExtractionParMap) {
+        if (ParMap == SelectExtractionParMap)
             SelectExtractionParMap = 0;
-            FirstSelectCompleted = true;
-        }
         if (UpdateConditionsEnd(endInd, secLen > 0, 0) && needSpace) {
             Builder[BuilderInd - 1] = ' ';
             Builder[BuilderInd] = *CurrentChar;
@@ -333,7 +293,7 @@ public unsafe ref struct QueryExtracter {
         }
         if (isDynamicProjection) {
             SelectExtractionParMap = ParMap;
-            Conditions.Add(CondInfo.NewSelect(-1, !FirstSelectCompleted, false, ParMap, 0));
+            Conditions.Add(CondInfo.NewSelect(-1, ParMap, 0));
         }
         return true;
     }
@@ -366,13 +326,12 @@ public unsafe ref struct QueryExtracter {
         if (CurrentChar[-1] == JoinAndOrChar) {
             BuilderInd--;
             Builder[BuilderInd - 1] = ',';
-            ManageJoinedSelect();
             return;
         }
         UpdateConditionsEnd(BuilderInd, false, 1);
         UpdateCurrentStart(BuilderInd, 1);
         if (SelectExtractionParMap == ParMap)
-            Conditions.Add(CondInfo.NewSelect(BuilderInd, !FirstSelectCompleted, false, ParMap, 1));
+            Conditions.Add(CondInfo.NewSelect(BuilderInd, ParMap, 1));
     }
 
     private bool TryManageVariable(char variableChar) {
@@ -406,8 +365,6 @@ public unsafe ref struct QueryExtracter {
             var c = CurrentChar;
             while (char.IsWhiteSpace(*c))
                 c++;
-            /*if (*c == ')' || MatchSection(c, out _))
-                Conditions.Last.Flags |= CondFlags.IsHandlerFollowedByClosingParentesisOrSection;*/
         }
         CurrentChar--;
         return true;
@@ -449,7 +406,7 @@ public unsafe ref struct QueryExtracter {
         if (nbCond > 0 && MatchSection(CurrentChar, out var secLen)) {
             LastCondSectionLength = (uint)nbCond << 16 | (uint)secLen;
             for (; nbCond > 0; nbCond--)
-                Conditions[Conditions.Length - nbCond].UpdateCommentAsSectionComment(BuilderInd - 1);
+                Conditions[^nbCond].UpdateCommentAsSectionComment(BuilderInd - 1);
         }
         return true;
     }
@@ -608,9 +565,9 @@ public unsafe ref struct QueryExtracter {
                 continue;
             if (cond.ParMapOrExcesses != ParMap || (cond.NeedSectionToFinish && !isSection))
                 break;
-            if (CondInfo.IsSelect(cond.Type) && cond.Cond is null)
+            if (cond.Cond is null)
                 cond.UpdateSelectCond(FindSelectName(isSection ? segmentEndIndex : segmentEndIndex - 1), *CurrentStart, *CurrentExcess);
-            cond.Finish(segmentEndIndex, isSection/*, currentExcess*/);
+            cond.Finish(segmentEndIndex, isSection);
             oneMatch = true;
         }
         if (j >= LastUnfinishedSection)

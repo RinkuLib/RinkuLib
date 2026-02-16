@@ -27,7 +27,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     /// <inheritdoc/>
     public readonly void Reset() {
         var varInfos = QueryCommand.Parameters._variablesInfo;
-        ref object? pVar = ref Unsafe.Add(ref MemoryMarshal.GetReference(Variables), QueryCommand.StartVariables);
+        ref object? pVar = ref MemoryMarshal.GetReference(Variables);
         for (int i = 0; i < varInfos.Length; i++) {
             ref var currentVar = ref Unsafe.Add(ref pVar, i);
             if (currentVar is not null) {
@@ -36,9 +36,8 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             }
         }
         var handlers = QueryCommand.Parameters._specialHandlers;
-        var nbSpecialHandlers = QueryCommand.Parameters.Total - varInfos.Length;
-        ref object? pSpecialVar = ref Unsafe.Add(ref pVar, varInfos.Length);
-        for (int i = 0; i < nbSpecialHandlers; i++) {
+        ref object? pSpecialVar = ref Unsafe.Add(ref MemoryMarshal.GetReference(Variables), varInfos.Length);
+        for (int i = 0; i < handlers.Length; i++) {
             ref var currentVar = ref Unsafe.Add(ref pSpecialVar, i);
             if (currentVar is not null) {
                 handlers[i].Update(Command, ref currentVar, null);
@@ -47,21 +46,19 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         }
     }
     /// <inheritdoc/>
-    public readonly void ResetSelects()
-        => Array.Clear(Variables, 0, QueryCommand.EndSelect);
-    /// <inheritdoc/>
     public readonly void Remove(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
-        if (ind < QueryCommand.StartVariables) {
-            if (ind > 0)
-                Variables[ind] = null;
+        if (ind < 0)
+            return;
+        if (ind >= QueryCommand.StartBaseHandlers) {
+            Variables[ind] = null;
             return;
         }
         ref var val = ref Variables[ind];
         if (val is null)
             return;
         if (ind < QueryCommand.StartSpecialHandlers) {
-            QueryCommand.Parameters._variablesInfo[ind - QueryCommand.StartVariables].Remove(Command, val);
+            QueryCommand.Parameters._variablesInfo[ind].Remove(Command, val);
             val = null;
         }
         else if (ind < QueryCommand.StartBaseHandlers)
@@ -70,7 +67,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     /// <inheritdoc/>
     public readonly void Use(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
-        if (ind >= QueryCommand.StartVariables)
+        if (ind < QueryCommand.StartBoolCond)
             throw new ArgumentException(condition);
         Variables[ind] = QueryBuilder.Used;
     }
@@ -80,7 +77,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     /// <inheritdoc/>
     public void UnUse(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
-        if (ind >= QueryCommand.StartVariables)
+        if (ind < QueryCommand.StartBoolCond)
             throw new ArgumentException(condition);
         Variables[ind] = null;
     }
@@ -103,15 +100,14 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         => Use(QueryCommand.Mapper.GetIndex(variable), value);
     /// <inheritdoc/>
     public readonly bool Use(int variableIndex, object? value) {
-        var i = variableIndex - QueryCommand.StartVariables;
-        if (i < 0)
+        if (variableIndex < 0 || variableIndex >= QueryCommand.StartBoolCond)
             return false;
         if (value is null) {
             ref var vall = ref Variables[variableIndex];
             if (vall is null)
                 return true;
             if (variableIndex < QueryCommand.StartSpecialHandlers) {
-                QueryCommand.Parameters._variablesInfo[variableIndex - QueryCommand.StartVariables].Remove(Command, vall);
+                QueryCommand.Parameters._variablesInfo[variableIndex].Remove(Command, vall);
                 vall = null;
             }
             else if (variableIndex < QueryCommand.StartBaseHandlers)
@@ -123,7 +119,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             bool res;
             if (variableIndex < QueryCommand.StartSpecialHandlers) {
                 var key = QueryCommand.Mapper.GetKey(variableIndex);
-                res = QueryCommand.Parameters._variablesInfo[i].SaveUse(key, Command, ref value);
+                res = QueryCommand.Parameters._variablesInfo[variableIndex].SaveUse(key, Command, ref value);
             }
             else if (variableIndex < QueryCommand.StartBaseHandlers)
                 res = QueryCommand.Parameters._specialHandlers[variableIndex - QueryCommand.StartSpecialHandlers].SaveUse(Command, ref value);
@@ -134,7 +130,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             return res;
         }
         if (variableIndex < QueryCommand.StartSpecialHandlers)
-            return QueryCommand.Parameters._variablesInfo[i].Update(Command, ref val, value);
+            return QueryCommand.Parameters._variablesInfo[variableIndex].Update(Command, ref val, value);
         if (variableIndex < QueryCommand.StartBaseHandlers)
             return QueryCommand.Parameters._specialHandlers[variableIndex - QueryCommand.StartSpecialHandlers].Update(Command, ref val, value);
         val = value;
@@ -195,13 +191,12 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     }
     private void UpdateCommand(TypeAccessor accessor) {
         var mapper = QueryCommand.Mapper;
-        var startVariables = QueryCommand.StartVariables;
-        ref string pKeys = ref Unsafe.Add(ref mapper.KeysStartPtr, startVariables);
+        var endVariables = QueryCommand.StartBoolCond;
         var total = mapper.Count;
         int i = 0;
-        for (; i < startVariables; i++)
-            Variables[i] = accessor.IsUsed(i) ? QueryBuilder.Used : null;
-        for (; i < total; i++)
+        for (; i < endVariables; i++)
             Use(i, accessor.IsUsed(i) ? accessor.GetValue(i) : null);
+        for (; i < total; i++)
+            Variables[i] = accessor.IsUsed(i) ? QueryBuilder.Used : null;
     }
 }

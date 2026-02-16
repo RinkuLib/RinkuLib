@@ -61,17 +61,14 @@ public struct QueryFactory {
     /// string keys to the factory's internal integer indices.
     /// </summary>
     public Mapper Mapper;
-    /// <summary>The amount of conditional select columns</summary>
-    /// <remarks>Will always be 0 unless dynamic projection is enabled</remarks>
-    public int NbSelects;
     /// <summary>
     /// The amount of distinct not handled variables (required and optional)
     /// </summary>
     public int NbNormalVar;
     /// <summary>
-    /// The amount of distinct handled variables (base and special)
+    /// The amount of distinct variables that are handled by a special handler
     /// </summary>
-    public int NbHandlers;
+    public int NbSpecialHandlers;
     /// <summary>
     /// The amount of distinct variables that are handled by a base handler
     /// </summary>
@@ -81,7 +78,7 @@ public struct QueryFactory {
     /// </summary>
     public int NbRequired;
     /// <summary>
-    /// The amount of distinct conditions that are both not from the first dynamic projection and not a variable
+    /// The amount of distinct conditions that are both not from dynamic projections and not a variable
     /// </summary>
     public int NbNonVarComment;
 
@@ -204,7 +201,7 @@ public struct QueryFactory {
         if (!Mapper.TryGetValue(cond.Cond, out var condMapperInd))
             throw new Exception($"Comment conditions using variables must exist in the query: {cond.Cond}");
         var isOrIdentifier = 0;
-        if (cond.Type == CondInfo.OrComment || CondInfo.IsJoinedSelect(cond.Type))
+        if (cond.Type == CondInfo.OrComment)
             isOrIdentifier = -1;
         return new(condMapperInd, segInd, end - segInd, isOrIdentifier);
     }
@@ -230,12 +227,11 @@ public struct QueryFactory {
     }
 
     private Mapper MakeMapper(PooledArray<CondInfo>.Locked condInfos, char variableChar) {
-        var selectInd = 0;
-        var commentInd = NbSelects;
-        var normalVariableInd = commentInd + NbNonVarComment;
+        var normalVariableInd = 0;
         var specialHandlersInd = normalVariableInd + NbNormalVar;
-        var nbKeys = specialHandlersInd + NbHandlers;
-        var baseHandlerInd = nbKeys - NbBaseHandlers;
+        var baseHandlerInd = specialHandlersInd + NbSpecialHandlers;
+        var commentInd = baseHandlerInd + NbBaseHandlers;
+        var nbKeys = commentInd + NbNonVarComment;
         var keys = ArrayPool<string>.Shared.Rent(nbKeys);
         for (int i = 0; i < condInfos.Length; i++) {
             var cond = condInfos[i];
@@ -245,29 +241,27 @@ public struct QueryFactory {
                 else
                     keys[specialHandlersInd++] = cond.Cond;
             }
-            else if (CondInfo.IsMainSelect(cond.Type))
-                keys[selectInd++] = cond.Cond;
             else if (cond.Type == CondInfo.None)
                 keys[normalVariableInd++] = cond.Cond;
-            else if (CondInfo.IsOther(cond.Type))
+            else if (CondInfo.IsComment(cond.Type))
                 if (cond.Cond[0] != variableChar)
                     keys[commentInd++] = cond.Cond;
         }
         var mapper = Mapper.GetMapper(keys.AsSpan(0, nbKeys));
-        if (NbSelects > 0 && mapper[keys[NbSelects - 1]] != NbSelects - 1)
-            throw new Exception("all selects must be named differently");
         var count = mapper.Count;
-        NbBaseHandlers = specialHandlersInd >= nbKeys ? 0 : count - mapper.GetIndex(keys[specialHandlersInd]);
-        NbHandlers = normalVariableInd >= nbKeys ? 0 : count - mapper.GetIndex(keys[normalVariableInd]);
-        NbNormalVar = commentInd >= nbKeys ? 0 : count - mapper.GetIndex(keys[commentInd]) - NbHandlers;
-        NbNonVarComment = count - NbHandlers - NbNormalVar - NbSelects;
+        var startNotVar = baseHandlerInd >= nbKeys ? count : mapper.GetIndex(keys[baseHandlerInd]);
+        var startBase = specialHandlersInd >= nbKeys ? count : mapper.GetIndex(keys[specialHandlersInd]);
+        var startSpecial = normalVariableInd >= nbKeys ? count : mapper.GetIndex(keys[normalVariableInd]);
+        NbNonVarComment = count - startNotVar;
+        NbBaseHandlers = startNotVar - startBase;
+        NbSpecialHandlers = startBase - startSpecial;
+        NbNormalVar = startSpecial;
         ArrayPool<string>.Shared.Return(keys);
         return mapper;
     }
     private QuerySegment[] MakeSegments(PooledArray<CondInfo>.Locked condInfos, char variableChar) {
-        NbHandlers = 0;
+        NbSpecialHandlers = 0;
         NbBaseHandlers = 0;
-        NbSelects = 0;
         NbNormalVar = 0;
         NbRequired = 0;
         NbNonVarComment = 0;
@@ -280,15 +274,14 @@ public struct QueryFactory {
             if (cond.Type >= CondInfo.Special) {
                 segmentIndexes.Add(cond.VarIndex);
                 segmentIndexes.Add(cond.VarIndex + cond.Cond.Length + 2);
-                NbHandlers++;
                 if (IsBaseHandler(cond.Type))
                     NbBaseHandlers++;
+                else
+                    NbSpecialHandlers++;
             }
-            else if (CondInfo.IsMainSelect(cond.Type))
-                NbSelects++;
             else if (cond.Type == CondInfo.None)
                 NbNormalVar++;
-            else if (CondInfo.IsOther(cond.Type))
+            else if (CondInfo.IsComment(cond.Type))
                 if (cond.Cond[0] != variableChar)
                     NbNonVarComment++;
             if (cond.IsRequired) {

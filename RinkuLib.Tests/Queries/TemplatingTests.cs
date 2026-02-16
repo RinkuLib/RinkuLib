@@ -83,7 +83,7 @@ public class TemplatingTests {
             new ConditionVerify("cte", " parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = 1)", 1)
         };
 
-        Verify(factory, expectedSegments, expectedConditions, ["cte", "@Active"]);
+        Verify(factory, expectedSegments, expectedConditions, ["@Active", "cte"]);
     }
     [Fact]
     public void Ignored_Comment() {
@@ -117,7 +117,7 @@ public class TemplatingTests {
             new ConditionVerify("ID", " /* optimizer hint */ ID,", 1)
         };
 
-        Verify(factory, expectedSegments, expectedConditions, ["ID", "@Active"]);
+        Verify(factory, expectedSegments, expectedConditions, ["@Active", "ID"]);
     }
     [Fact]
     public void Example1_StaticQuery() {
@@ -151,7 +151,7 @@ public class TemplatingTests {
             new ConditionVerify("ID", " ID,", 1)
         };
 
-        Verify(factory, expectedSegments, expectedConditions, ["ID", "@Active"]);
+        Verify(factory, expectedSegments, expectedConditions, ["@Active", "ID"]);
     }
     [Fact]
     public void Using_Empty_Join_Conds() {
@@ -466,7 +466,7 @@ public class TemplatingTests {
             new ConditionVerify("Details", " @Bio, @Web, @Img", 1)
         };
 
-        Verify(factory, expectedSegments, expectedConditions, ["Details", "@UID", "@Bio", "@Web", "@Img"]);
+        Verify(factory, expectedSegments, expectedConditions, ["@UID", "@Bio", "@Web", "@Img", "Details"]);
     }
 
     [Fact]
@@ -564,7 +564,7 @@ public class TemplatingTests {
             new ConditionVerify("@VendorName", " v.VendorName = @VendorName", 1)
         };
 
-        Verify(factory, expectedSegments, expectedConditions, ["VendorName", "@VendorName"]);
+        Verify(factory, expectedSegments, expectedConditions, ["@VendorName", "VendorName"]);
     }
     [Fact]
     public void ConditionInCase_Variable() {
@@ -605,10 +605,9 @@ public class TemplatingTests {
         var expectedConditions = new[] {
             new ConditionVerify("ID", " ID,", 1),
             new ConditionVerify("Username", " Username,", 1),
-            new ConditionVerify("Email", " Email, Test", 2, true),
-            new ConditionVerify("Test", " Email, Test", 2),
+            new ConditionVerify("Test", " Email, Test", 1),
         };
-        Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Email", "Test"]);
+        Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Test"]);
     }
     [Fact]
     public void Extract_Select_Union() {
@@ -629,13 +628,11 @@ public class TemplatingTests {
         var expectedConditions = new[] {
             new ConditionVerify("ID", " ID,", 1),
             new ConditionVerify("Username", " Username,", 1),
-            new ConditionVerify("Email", " Email, Test", 2, true),
-            new ConditionVerify("Test", " Email, Test", 2),
+            new ConditionVerify("Test", " Email, Test", 1),
             new ConditionVerify("ID", " ID,", 1),
             new ConditionVerify("Username", " Username,", 1),
-            new ConditionVerify("Email", " Email, Test", 2, true),
-            new ConditionVerify("Test", " Email, Test", 2),
+            new ConditionVerify("Test", " Email, Test", 1),
         };
-        Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Email", "Test"]);
+        Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Test"]);
     }
 }

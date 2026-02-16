@@ -39,10 +39,6 @@ public interface IQueryBuilder {
     /// </summary>
     void Reset();
     /// <summary>
-    /// Deactivates all items associated with the SELECT columns.
-    /// </summary>
-    void ResetSelects();
-    /// <summary>
     /// Activates a condition that only functions as a toggle (such as a column or a conditional marker).
     /// </summary>
     /// <param name="condition">The name of the condition to activate.</param>

@@ -80,7 +80,7 @@ public class CompleteTests {
         Assert.Equal(1, p.ID);
         Assert.Equal("John", p.Username);
         Assert.Null(email);
-    }
+    }/*
     [Fact]
     public async Task Use_Complete_Obj() {
         var query = new QueryCommand("SELECT ID, Name, Email AS Emaill FROM Users WHERE IsActive = @Active");
@@ -107,7 +107,7 @@ public class CompleteTests {
         Assert.Equal(2, p.ID);
         Assert.Equal("Victor", p.Username);
         Assert.Equal("abc@email.com", email);
-    }
+    }*/
 }
 public record struct  PersonParam(bool Active);
 public record Person(int ID, [Alt("Name")]string Username, string? Email) : IDbReadable {

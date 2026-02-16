@@ -1,4 +1,6 @@
-﻿namespace RinkuLib.DbParsing;
+﻿using RinkuLib.Tools;
+
+namespace RinkuLib.DbParsing;
 /// <summary>
 /// A marker interface. Types implementing this are automatically 
 /// discovered and registered by <see cref="TypeParsingInfo"/>.

@@ -1,27 +1,8 @@
 ﻿using System.Reflection;
 using System.Reflection.Emit;
+using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
-/// <summary>
-/// Represents the schema and state of a single column received by the engine.
-/// </summary>
-public struct ColumnInfo(string Name, Type Type, bool IsNullable) {
-    /// <summary>The name of the column as it appears in the result set.</summary>
-    public string Name = Name;
-    /// <summary>The C# type corresponding to the column data.</summary>
-    public Type Type = Type;
-    /// <summary>
-    /// Indicates if the schema identifies this column as potentially containing null values.
-    /// </summary>
-    public bool IsNullable = IsNullable;
-    /// <summary>
-    /// Performs a comparison based on type, name (case-insensitive), and nullability.
-    /// </summary>
-    public readonly bool Equals(ColumnInfo column) 
-        => column.IsNullable == IsNullable
-        && column.Type == Type
-        && string.Equals(column.Name, Name, StringComparison.OrdinalIgnoreCase);
-}
 /// <summary>Identify a parameter that should not be null, but the row provided a null value. Can be direcly a null column or a sub-class that lead to a null value</summary>
 public class NullValueAssignmentException(Type paramType, string paramName) : Exception($"Constraint Violation: Parameter '{paramName}' of type '{paramType.Name}' is marked as non-nullable, but the source provided a null value.") {
     /// <summary>The name of the parameter that should not be null</summary>

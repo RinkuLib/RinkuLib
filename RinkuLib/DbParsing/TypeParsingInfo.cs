@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
 /// <summary>Direcly match to the first unused column with the matching type</summary>

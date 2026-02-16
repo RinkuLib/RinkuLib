@@ -91,7 +91,7 @@ public interface IDbParamCache {
     /// <summary>
     /// Synchronizes the internal tracking of cached vs. non-cached parameters.
     /// </summary>
-    public void UpdateNbCached();
+    public void UpdateCachedIndexes();
 }
 /// <summary>
 /// The base class that manage a <see cref="IDbDataParameter"/> within a query

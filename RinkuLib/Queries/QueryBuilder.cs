@@ -77,21 +77,18 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <summary> 
     /// The state-snapshot that drives SQL generation.
     /// <list type="bullet">
-    /// <item><b>Binary Items (Selects/Conditions):</b> 
-    /// Indices 0 to <see cref="QueryCommand.StartVariables"/> - 1. 
-    /// These signify presence only and carry no data.</item>
     /// <item><b>Data Items (Variables/Handlers):</b> 
-    /// Indices <see cref="QueryCommand.StartVariables"/> to Count - 1. 
+    /// Indices 0 to <see cref="QueryCommand.StartBoolCond"/> - 1. 
     /// These require a value to be functional.</item>
+    /// <item><b>Binary Items (Comment conditions):</b> 
+    /// Indices <see cref="QueryCommand.StartBoolCond"/> to Count - 1. 
+    /// These signify presence only and carry no data.</item>
     /// </list>
     /// </summary>
     public readonly object?[] Variables = new object?[QueryCommand.Mapper.Count];
     /// <inheritdoc/>
     public readonly void Reset()
         => Array.Clear(Variables, 0, Variables.Length);
-    /// <inheritdoc/>
-    public readonly void ResetSelects()
-        => Array.Clear(Variables, 0, QueryCommand.EndSelect);
     /// <inheritdoc/>
     public readonly void Remove(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
@@ -100,7 +97,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <inheritdoc/>
     public readonly void Use(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
-        if (ind >= QueryCommand.StartVariables)
+        if (ind < QueryCommand.StartBoolCond)
             throw new ArgumentException(condition);
         Variables[ind] = Used;
     }
@@ -111,7 +108,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <inheritdoc/>
     public void UnUse(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
-        if (ind >= QueryCommand.StartVariables)
+        if (ind < QueryCommand.StartBoolCond)
             throw new ArgumentException(condition);
         Variables[ind] = null;
     }
@@ -126,8 +123,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     public bool Use(int variableIndex, object? value) {
         if (value is IEnumerable && value is not string && !HasAny(ref Unsafe.As<object, IEnumerable>(ref value)))
             return false;
-        var i = variableIndex - QueryCommand.StartVariables;
-        if (i < 0)
+        if (variableIndex < 0 || variableIndex >= QueryCommand.StartBoolCond)
             return false;
         Variables[variableIndex] = value;
         return true;
@@ -211,14 +207,13 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     }
     private void UpdateCommand(TypeAccessor accessor) {
         var mapper = QueryCommand.Mapper;
-        var startVariables = QueryCommand.StartVariables;
-        ref string pKeys = ref Unsafe.Add(ref mapper.KeysStartPtr, startVariables);
+        var endVariables = QueryCommand.StartBoolCond;
         var total = mapper.Count;
         int i = 0;
-        for (; i < startVariables; i++)
-            Variables[i] = accessor.IsUsed(i) ? Used : null;
-        for (; i < total; i++)
+        for (; i < endVariables; i++)
             Use(i, accessor.IsUsed(i) ? accessor.GetValue(i) : null);
+        for (; i < total; i++)
+            Variables[i] = accessor.IsUsed(i) ? Used : null;
     }
 }
 internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {

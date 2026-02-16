@@ -62,7 +62,7 @@ public static class TypeAccessor<T> {
     /// <summary>
     /// Get the compiled accesor
     /// </summary>
-    public static (MemberUsageDelegate Usage, MemberValueDelegate Value) GetOrGenerate(int startVariable, Mapper mapper) {
+    public static (MemberUsageDelegate Usage, MemberValueDelegate Value) GetOrGenerate(Mapper mapper) {
         var currentVariants = Variants;
         foreach (var (Keys, Usage, Value) in currentVariants)
             if (ReferenceEquals(Keys, mapper))
@@ -72,16 +72,16 @@ public static class TypeAccessor<T> {
             foreach (var (Keys, Usage, Value) in Variants)
                 if (ReferenceEquals(Keys, mapper))
                     return (Usage, Value);
-
-            var usage = GenerateDelegate<MemberUsageDelegate>(startVariable, mapper, true);
-            var value = GenerateDelegate<MemberValueDelegate>(startVariable, mapper, false);
+            var firstKey = mapper.Count > 0 ? mapper.Keys[0] : default;
+            var varChar = string.IsNullOrEmpty(firstKey) ? default : firstKey[0];
+            var usage = GenerateDelegate<MemberUsageDelegate>(varChar, mapper, true);
+            var value = GenerateDelegate<MemberValueDelegate>(varChar, mapper, false);
 
             Variants = [.. Variants, (mapper, usage, value)];
             return (usage, value);
         }
     }
-    private static TDelegate GenerateDelegate<TDelegate>(int startVariable, Mapper mapper, bool forUsage) where TDelegate : Delegate {
-        var varChar = mapper.Count > startVariable ? mapper.Keys[startVariable][0] : '\0';
+    private static TDelegate GenerateDelegate<TDelegate>(char varChar, Mapper mapper, bool forUsage) where TDelegate : Delegate {
         Type type = typeof(T);
         DynamicMethod dm = new($"{type.Name}_{(forUsage ? "U" : "V")}", forUsage ? typeof(bool) : typeof(object), [typeof(void*), typeof(int)], type.Module, true);
         var il = dm.GetILGenerator();

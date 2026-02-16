@@ -2,7 +2,7 @@
 using System.Collections.ObjectModel;
 using System.Data;
 using System.Data.Common;
-using RinkuLib.DbParsing;
+using RinkuLib.Tools;
 using Xunit.Internal;
 
 namespace RinkuLib.Tests;

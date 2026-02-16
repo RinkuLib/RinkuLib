@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
+using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
 /// <summary>
@@ -18,51 +19,9 @@ public unsafe readonly struct DbParsingInfo<T>(DynamicMethod dm, ColumnInfo[] co
     public readonly Func<DbDataReader, T> ReaderFunc = dm.CreateDelegate<Func<DbDataReader, T>>();
 
     /// <summary>The specific schema this parser is built for.</summary>
-    public readonly ColumnInfo[] SelectColumns = cols;
+    public readonly ColumnInfo[] Schema = cols;
     /// <summary>The most optimal <see cref="CommandBehavior"/> for this specific parser.</summary>
     public readonly CommandBehavior DefaultBehavior = behavior;
-}
-/// <summary>Provides extensions for <see cref="ColumnInfo"/></summary>
-public static class Helper {
-    /// <summary>
-    /// Extracts the schema from a <see cref="DbDataReader"/> and converts it into a 
-    /// <see cref="ColumnInfo"/> array for the Negotiation Phase.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ColumnInfo[] GetColumns(this DbDataReader reader)
-        => reader.GetColumnSchema().GetColumns();
-
-    /// <summary>
-    /// Converts a <see cref="ReadOnlyCollection{DbColumn}"/> it into a 
-    /// <see cref="ColumnInfo"/> array for the Negotiation Phase.
-    /// </summary>
-    public static ColumnInfo[] GetColumns(this ReadOnlyCollection<DbColumn> schema) {
-        var columns = new ColumnInfo[schema.Count];
-        for (var i = 0; i < schema.Count; i++) {
-            var column = schema[i];
-            string name = column.ColumnName ?? string.Empty;
-            if (column.IsAliased == false && column.IsExpression == true)
-                name = string.Empty;
-            columns[i] = new ColumnInfo {
-                Name = name,
-                Type = column.DataType ?? typeof(object),
-                IsNullable = column.AllowDBNull ?? true
-            };
-        }
-        return columns;
-    }
-    /// <summary>
-    /// Compares two schema arrays for structural equality. 
-    /// This is used to determine if a cached parser can be reused for a new request.
-    /// </summary>
-    public static bool Equals(this ColumnInfo[] cols1, ColumnInfo[] cols2) {
-        if (cols1.Length != cols2.Length)
-            return false;
-        for (var i = 0; i < cols1.Length; i++)
-            if (!cols1[i].Equals(cols2[i]))
-                return false;
-        return true;
-    }
 }
 /// <summary>A simple struct used track the usage of the columns</summary>
 public readonly ref struct ColumnUsage(Span<bool> Span) {
@@ -109,8 +68,8 @@ public static class TypeParser<T> {
     /// </summary>
     /// <param name="cols">The schema received from the data source.</param>
     /// <param name="nullColHandler">Specified nullability handling</param>
-    public unsafe static Func<DbDataReader, T> GetParserFunc(ColumnInfo[] cols, INullColHandler? nullColHandler = null)
-        => GetParserFunc(cols, out _, nullColHandler);
+    public unsafe static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, INullColHandler? nullColHandler = null)
+        => GetParserFunc(ref cols, out _, nullColHandler);
     /// <summary>
     /// Entry point for retrieving a parser. 
     /// It first searches the cache for a schema match; if none exists, it triggers 
@@ -118,8 +77,8 @@ public static class TypeParser<T> {
     /// </summary>
     /// <param name="cols">The schema received from the data source.</param>
     /// <param name="isNullable">Identify wether to throw or not when the root item is null</param>
-    public unsafe static Func<DbDataReader, T> GetParserFunc(ColumnInfo[] cols, bool isNullable)
-        => GetParserFunc(cols, out _, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
+    public unsafe static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, bool isNullable)
+        => GetParserFunc(ref cols, out _, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
     /// <summary>
     /// Entry point for retrieving a parser. 
     /// It first searches the cache for a schema match; if none exists, it triggers 
@@ -128,8 +87,8 @@ public static class TypeParser<T> {
     /// <param name="cols">The schema received from the data source.</param>
     /// <param name="isNullable">Identify wether to throw or not when the root item is null</param>
     /// <param name="defaultBehavior">Outputs the optimized behavior (e.g., SequentialAccess).</param>
-    public unsafe static Func<DbDataReader, T> GetParserFunc(ColumnInfo[] cols, bool isNullable, out CommandBehavior defaultBehavior)
-        => GetParserFunc(cols, out defaultBehavior, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
+    public unsafe static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, bool isNullable, out CommandBehavior defaultBehavior)
+        => GetParserFunc(ref cols, out defaultBehavior, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
     /// <summary>
     /// Entry point for retrieving a parser. 
     /// It first searches the cache for a schema match; if none exists, it triggers 
@@ -138,11 +97,13 @@ public static class TypeParser<T> {
     /// <param name="cols">The schema received from the data source.</param>
     /// <param name="defaultBehavior">Outputs the optimized behavior (e.g., SequentialAccess).</param>
     /// <param name="nullColHandler">Specified nullability handling</param>
-    public unsafe static Func<DbDataReader, T> GetParserFunc(ColumnInfo[] cols, out CommandBehavior defaultBehavior, INullColHandler? nullColHandler = null) {
+    public unsafe static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, out CommandBehavior defaultBehavior, INullColHandler? nullColHandler = null) {
         for (int i = 0; i < ReadingInfos.Count; i++) {
-            if (Helper.Equals(ReadingInfos[i].SelectColumns, cols)) {
-                defaultBehavior = ReadingInfos[i].DefaultBehavior;
-                return ReadingInfos[i].ReaderFunc;
+            if (cols.Equal(ReadingInfos[i].Schema)) {
+                var rdInfo = ReadingInfos[i];
+                cols = rdInfo.Schema;
+                defaultBehavior = rdInfo.DefaultBehavior;
+                return rdInfo.ReaderFunc;
             }
         }
         if (!TryMakeParser(typeof(T), nullColHandler, cols, out var info))

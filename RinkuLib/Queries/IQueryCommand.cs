@@ -71,8 +71,6 @@ public interface IQueryCommand {
     public int StartBaseHandlers { get; }
     /// <summary> The index where complex parameter handlers begin. </summary>
     public int StartSpecialHandlers { get; }
-    /// <summary> The index where standard database parameters begin. </summary>
-    public int StartVariables { get; }
-    /// <summary> The index marking the end of the selectable column definitions (and the total count of select segments). </summary>
-    public int EndSelect { get; }
+    /// <summary> The index where boolean toggle conditions begin. </summary>
+    public int StartBoolCond { get; }
 }

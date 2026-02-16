@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using RinkuLib.Commands;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
+using RinkuLib.Tools;
 
 namespace RinkuLib.Commands;
 /// <summary>
@@ -16,8 +17,10 @@ public unsafe struct DefaultNoCache<T> : ISchemaParser<T> {
     /// <inheritdoc/>
     public readonly bool IsInit => false;
     /// <inheritdoc/>
-    public void Init(DbDataReader reader, IDbCommand cmd)
-        => parser = TypeParser<T>.GetParserFunc(reader.GetColumns());
+    public void Init(DbDataReader reader, IDbCommand cmd) {
+        var schema = reader.GetColumns();
+        parser = TypeParser<T>.GetParserFunc(ref schema);
+    }
     /// <inheritdoc/>
     public readonly T Parse(DbDataReader reader) => parser(reader);
 }

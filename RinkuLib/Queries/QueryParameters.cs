@@ -11,10 +11,6 @@
 /// current execution's variables.
 /// </remarks>
 public sealed class QueryParameters : IDbParamCache {
-    /// <summary> The count of standard database parameters. </summary>
-    public int NbVariables;
-    /// <summary> The total count of all parameters, including special handlers. </summary>
-    public int Total;
     internal DbParamInfo[] _variablesInfo;
     /// <summary>Direct acces to the cache of the parameters</summary>
     public ReadOnlySpan<DbParamInfo> VariablesInfo => _variablesInfo;
@@ -25,25 +21,23 @@ public sealed class QueryParameters : IDbParamCache {
     internal int[] _nonCachedIndexes;
     /// <summary>Create a new instance of <see cref="QueryParameters"/></summary>
     public QueryParameters(int NbNormalVariables, SpecialHandler[] specialHandlers) {
-        NbVariables = NbNormalVariables;
-        _variablesInfo = new DbParamInfo[NbVariables];
-        for (int i = 0; i < NbVariables; i++)
+        _variablesInfo = new DbParamInfo[NbNormalVariables];
+        for (int i = 0; i < NbNormalVariables; i++)
             _variablesInfo[i] = InferedDbParamCache.Instance;
         _specialHandlers = specialHandlers;
-        Total = NbVariables + specialHandlers.Length;
-        _nonCachedIndexes = new int[Total];
-        NbNonCached = Total;
-        for (int i = 0; i < Total; i++)
+        var total = NbNormalVariables + specialHandlers.Length;
+        _nonCachedIndexes = new int[total];
+        NbNonCached = total;
+        for (int i = 0; i < total; i++)
             _nonCachedIndexes[i] = i;
     }
     /// <inheritdoc/>
-    public bool IsCached(int ind) 
-        => ind < 0 || ind >= Total || (ind >= NbVariables
-            ? _specialHandlers[ind - NbVariables].IsCached
-            : _variablesInfo[ind].IsCached);
+    public bool IsCached(int ind) => ind >= _variablesInfo.Length
+            ? _specialHandlers[ind - _variablesInfo.Length].IsCached
+            : _variablesInfo[ind].IsCached;
     /// <inheritdoc/>
     public bool UpdateCache(int ind, DbParamInfo info) {
-        if (ind < 0 || ind >= NbVariables)
+        if (ind < 0 || ind >= _variablesInfo.Length)
             return false;
         _variablesInfo[ind] = info;
         if (!info.IsCached) {
@@ -76,16 +70,16 @@ public sealed class QueryParameters : IDbParamCache {
         return true;
     }
     /// <inheritdoc/>
-    public void UpdateNbCached() {
-        var total = Total;
+    public void UpdateCachedIndexes() {
+        var total = _variablesInfo.Length + _specialHandlers.Length;
         Span<int> nonCachedIndexes = total > 256 ? new int[total] : stackalloc int[total];
         total = 0;
-        for (int i = 0; i < NbVariables; i++)
+        for (int i = 0; i < _variablesInfo.Length; i++)
             if (!_variablesInfo[i].IsCached)
                 nonCachedIndexes[total++] = i;
         for (int i = 0; i < _specialHandlers.Length; i++)
             if (!_specialHandlers[i].IsCached)
-                nonCachedIndexes[total++] = i + NbVariables;
+                nonCachedIndexes[total++] = i + _variablesInfo.Length;
         _nonCachedIndexes = nonCachedIndexes[..total].ToArray();
         NbNonCached = total;
     }

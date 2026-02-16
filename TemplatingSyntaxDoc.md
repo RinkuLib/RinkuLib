@@ -228,12 +228,10 @@ Prefixing a `SELECT` keyword with `?` enables **dynamic projection**.
 When enabled, the projected columns of that `SELECT` are extracted into individual conditional segments, using the column name as the key.
 Dynamic projection only affects the column list of the `SELECT` where `?` is used.
 
-The columns created by the **first** dynamic projection are considered as "select" conditions
-
 * **Template:** `?SELECT ID, Name FROM Users`
 * **Equivalent to:** `SELECT /*ID*/ID, /*Name*/Name FROM Users`
 
-Each column can then be independently included or removed based on its condition.
+Each column can then be independently included or removed based on its condition (column name of alias).
 
 * **Template:** `?SELECT ID, Name FROM Users`
 * **Result (`Name` is provided):** `SELECT Name FROM Users`
@@ -249,8 +247,7 @@ When column names match, their conditions are **shared**, allowing the projectio
 * **Template:** `?SELECT ID, Name FROM Users UNION ALL ?SELECT ID, Name FROM ArchivedUsers`
 * **Result (`Name` is provided):** `SELECT Name FROM Users UNION ALL SELECT Name FROM ArchivedUsers`
 
-If column names do not match, only the first `?SELECT` defines the dynamic projection.
-Columns from subsequent `?SELECT` statements with non-matching names are treated as normal conditional segments.
+If column names do not match, the conditions will also be different, watch out for invalid SQL.
 
 * **Template:** `?SELECT ID, Name FROM Users UNION ALL ?SELECT UserId, FullName FROM ArchivedUsers`
 * **Result (`Name` is provided):** `SELECT Name FROM Users UNION ALL SELECT FROM ArchivedUsers`
@@ -272,13 +269,20 @@ To prevent this, insert a `???` marker to isolate the modifier from the projecte
 * **Template:** `?SELECT DISTINCT ??? ID, Name FROM Users`
 * **Result:** `SELECT DISTINCT Name FROM Users`
 
+The `???` marker can also be use to control the select modifier.
+
+* **Template:** `SELECT /*OnlyDistinct*/DISTINCT ??? ID, Name FROM Users`
+* **Result:** `SELECT ID, Name FROM Users`
+
 When dynamic projection is used, each column creates a condition. Joining columns causes their **conditions to share the same footprint**.
 
-In the case of a joined footprint created inside a dynamic projection, the conditions are evaluated as an implicit **OR**, instead of the usual implicit **AND**.
+In the case of a joined footprint created inside a dynamic projection, the <b>last</b> column name is used as the condition key.
 
 * **Template:** `?SELECT ID, FirstName&, LastName FROM Users`
 
-* **Result (only `FirstName` is used):** `SELECT FirstName, LastName FROM Users`
+* **Result (`LastName` is used):** `SELECT FirstName, LastName FROM Users`
+
+`FirstName` would not be a condition in the blueprint since its joined with `LastName`
 
 ---
 ## Handlers (`_Letter`)
@@ -389,10 +393,9 @@ This mapping is used internally to efficiently resolve which conditions are used
 
 Keys are registered in a deterministic order during compilation:
 
-1. **Dynamic projection (SELECT) conditions**
-2. **Comment-based conditions without variables** (`/*...*/`)
-3. **Variables** (required and optional)
-4. **Special handler variables** (required and optional)
-5. **Base handler variables** (required and optional)
+1. **Variables** (required and optional)
+2. **Special handler variables** (required and optional)
+3. **Base handler variables** (required and optional)
+4. **Comment-based conditions without variables** (`/*...*/`)
 
 >Markers of the form `/*@Var*/` do not register a key since the referenced `@Var` is already registered as a variable.

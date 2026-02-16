@@ -91,6 +91,7 @@ The `QueryCommand` stores the following key elements:
 * **`QueryText`:** It contains the logic for building the query string, where conditions refer directly to indices corresponding with `Mapper`.
 * **`QueryParameters`:** A collection of `DbParamInfo` objects which store the metadata required to create `DbParameter` objects.
 * **Parser Cache:** A specialized cache that stores compiled IL-functions for mapping database results to C# types based on the schema used.
+* **Type Accessor Cache:** A specialized cache that stores compiled IL-functions for parameter object to generate the `DbCommand`.
 
 **[Read the Full QueryCommand Documentation](https://github.com/adamtherrienmarois/RinkuLib/blob/main/QueryCommandDoc.md)**
 
@@ -124,10 +125,9 @@ foreach(var val in dataList) {
 }
 ```
 #### One step building
-> In the futur there will be a blueprint tied to an object as parameter letting you directly call the QueryX with the parameter object and the blueprint
+> In the futur there will be to use an object as parameter letting you directly call the QueryX with the parameter object and the blueprint
 > (proof of concept, UserFilters will controll the usage of the variables and will inform the template to make the correct SQL)
 > ```csharp
-> QueryCommand<UserFilters> userCmd = new QueryCommand<UserFilters>("SELECT * FROM Users WHERE ID = ?@id AND Age > ?@minAge");
 > var user = userCmd.QuerySingle<User>(userFilters, cnn);
 > ```
 But for now, you can use a type to auto populate a builder
