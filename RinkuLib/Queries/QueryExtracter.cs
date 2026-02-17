@@ -140,6 +140,8 @@ public unsafe ref struct QueryExtracter {
     public const char JoinAndOrChar = '&';
     /// <summary>Identifier to indicate that a comment should not be a condition, but actualy a comment</summary>
     public const char CommentAsCommentChar = '~';
+    /// <summary>Identifier to indicate that a variable is a handled variable</summary>
+    public static char HandlerChar = '_';
     private int Length;
     private char* CurrentChar;
     private char* LastChar;
@@ -180,7 +182,7 @@ public unsafe ref struct QueryExtracter {
     /// The 'Builder' serves as a normalization buffer, while 'Conditions' tracks the metadata
     /// for segments that can be toggled later.
     /// </summary>
-    private unsafe PooledArray<CondInfo>.Locked SegmentQuery(string query, char variableChar, out string newQuery) {
+    private PooledArray<CondInfo>.Locked SegmentQuery(string query, char variableChar, out string newQuery) {
         Length = query.Length;
         if (Length <= 1)
             throw new Exception($"invalid query \"{query}\", must contains at least 2 letters");
@@ -350,7 +352,7 @@ public unsafe ref struct QueryExtracter {
         }
         var type = CondInfo.None;
         var varLength = BuilderInd - varIndex;
-        if (*(CurrentChar - 2) == '_') {
+        if (*(CurrentChar - 2) == HandlerChar) {
             type = *(CurrentChar - 1);
             varLength -= 2;
         }

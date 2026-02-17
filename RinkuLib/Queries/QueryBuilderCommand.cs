@@ -158,36 +158,45 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         => QueryCommand.QueryText.Parse(Variables);
 
 
-
     /// <inheritdoc/>
     public unsafe void UseWith(object parameterObj) {
-        var type = parameterObj.GetType();
+        Type type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
-        fixed (void* pinningPtr = &Unsafe.As<RawData>(parameterObj).Data) {
-            UpdateCommand(QueryCommand.GetAccessor(pinningPtr, handle, type));
+        if (type.IsValueType) {
+            fixed (void* objPtr = &Unsafe.As<object, byte>(ref parameterObj)) {
+                void* dataPtr = (*(byte**)objPtr) + IntPtr.Size;
+                UpdateCommand(QueryCommand.GetAccessor(dataPtr, handle, type));
+            }
+            return;
+        }
+        fixed (void* ptr = &Unsafe.As<object, byte>(ref parameterObj)) {
+            void* instancePtr = *(void**)ptr;
+            UpdateCommand(QueryCommand.GetAccessor(instancePtr, handle, type));
         }
     }
     /// <inheritdoc/>
     public unsafe void UseWith<T>(T parameterObj) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
+
         if (typeof(T).IsValueType) {
             UpdateCommand(QueryCommand.GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)));
             return;
         }
-        fixed (void* ptr = &Unsafe.As<T, RawData>(ref parameterObj).Data) {
-            UpdateCommand(QueryCommand.GetAccessor(ptr, handle, typeof(T)));
+        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
+            UpdateCommand(QueryCommand.GetAccessor(*(void**)ptr, handle, typeof(T)));
         }
     }
     /// <inheritdoc/>
     public unsafe void UseWith<T>(ref T parameterObj) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
         if (typeof(T).IsValueType) {
-            UpdateCommand(QueryCommand.GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)));
+            fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj))
+                UpdateCommand(QueryCommand.GetAccessor(ptr, handle, typeof(T)));
             return;
         }
-        var loc = parameterObj;
-        fixed (void* ptr = &Unsafe.As<T, RawData>(ref parameterObj).Data)
-            UpdateCommand(QueryCommand.GetAccessor(ptr, handle, typeof(T)));
+        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
+            UpdateCommand(QueryCommand.GetAccessor(*(void**)ptr, handle, typeof(T)));
+        }
     }
     private void UpdateCommand(TypeAccessor accessor) {
         var mapper = QueryCommand.Mapper;

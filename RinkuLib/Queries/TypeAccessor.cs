@@ -17,7 +17,7 @@ public sealed class ForBoolCondAttribute : Attribute;
 /// IL compiled access of an item
 /// </summary>
 public readonly unsafe ref struct TypeAccessor(void* item, MemberUsageDelegate usage, MemberValueDelegate value) {
-    // Store as IntPtr to match the delegate signature perfectly
+    // Store as void* to match the delegate signature perfectly
     private readonly void* _item = item;
     private readonly MemberUsageDelegate _getUsage = usage;
     private readonly MemberValueDelegate _getValue = value;

@@ -1,7 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -9,6 +8,11 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct RawObject {
+    public IntPtr MethodTable;
+    public byte Data;
+}
 [StructLayout(LayoutKind.Sequential)]
 internal class RawData { public byte Data; }
 /// <summary>
@@ -430,8 +434,15 @@ public class QueryCommand : IQueryCommand, ICache {
     public unsafe bool SetCommand(IDbCommand cmd, object parameterObj, Span<bool> usageMap) {
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
-        fixed (void* pinningPtr = &Unsafe.As<RawData>(parameterObj).Data) {
-            return SetCommand(cmd, GetAccessor(pinningPtr, handle, type), usageMap);
+        if (type.IsValueType) {
+            fixed (void* objPtr = &Unsafe.As<object, byte>(ref parameterObj)) {
+                void* dataPtr = (*(byte**)objPtr) + IntPtr.Size;
+                return SetCommand(cmd, GetAccessor(dataPtr, handle, type), usageMap);
+            }
+        }
+        fixed (void* ptr = &Unsafe.As<object, byte>(ref parameterObj)) {
+            void* instancePtr = *(void**)ptr;
+            return SetCommand(cmd, GetAccessor(instancePtr, handle, type), usageMap);
         }
     }
 
@@ -440,8 +451,15 @@ public class QueryCommand : IQueryCommand, ICache {
     public unsafe bool SetCommand(DbCommand cmd, object parameterObj, Span<bool> usageMap) {
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
-        fixed (void* pinningPtr = &Unsafe.As<RawData>(parameterObj).Data) {
-            return SetCommand(cmd, GetAccessor(pinningPtr, handle, type), usageMap);
+        if (type.IsValueType) {
+            fixed (void* objPtr = &Unsafe.As<object, byte>(ref parameterObj)) {
+                void* dataPtr = (*(byte**)objPtr) + IntPtr.Size;
+                return SetCommand(cmd, GetAccessor(dataPtr, handle, type), usageMap);
+            }
+        }
+        fixed (void* ptr = &Unsafe.As<object, byte>(ref parameterObj)) {
+            void* instancePtr = *(void**)ptr;
+            return SetCommand(cmd, GetAccessor(instancePtr, handle, type), usageMap);
         }
     }
     /// <inheritdoc/>
@@ -450,8 +468,8 @@ public class QueryCommand : IQueryCommand, ICache {
         IntPtr handle = typeof(T).TypeHandle.Value;
         if (typeof(T).IsValueType)
             return SetCommand(cmd, GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)), usageMap);
-        fixed (void* ptr = &Unsafe.As<T, RawData>(ref parameterObj).Data) {
-            return SetCommand(cmd, GetAccessor(ptr, handle, typeof(T)), usageMap);
+        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
+            return SetCommand(cmd, GetAccessor(*(void**)ptr, handle, typeof(T)), usageMap);
         }
     }
 
@@ -461,8 +479,8 @@ public class QueryCommand : IQueryCommand, ICache {
         IntPtr handle = typeof(T).TypeHandle.Value;
         if (typeof(T).IsValueType)
             return SetCommand(cmd, GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)), usageMap);
-        fixed (void* ptr = &Unsafe.As<T, RawData>(ref parameterObj).Data) {
-            return SetCommand(cmd, GetAccessor(ptr, handle, typeof(T)), usageMap);
+        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
+            return SetCommand(cmd, GetAccessor(*(void**)ptr, handle, typeof(T)), usageMap);
         }
     }
 
@@ -470,22 +488,24 @@ public class QueryCommand : IQueryCommand, ICache {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public unsafe bool SetCommand<T>(IDbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        if (typeof(T).IsValueType)
-            return SetCommand(cmd, GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)), usageMap);
-        var loc = parameterObj;
-        fixed (void* ptr = &Unsafe.As<T, RawData>(ref loc).Data) {
-            return SetCommand(cmd, GetAccessor(ptr, handle, typeof(T)), usageMap);
+        if (typeof(T).IsValueType) {
+            fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj))
+                return SetCommand(cmd, GetAccessor(ptr, handle, typeof(T)), usageMap);
+        }
+        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
+            return SetCommand(cmd, GetAccessor(*(void**)ptr, handle, typeof(T)), usageMap);
         }
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public unsafe bool SetCommand<T>(DbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        if (typeof(T).IsValueType)
-            return SetCommand(cmd, GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)), usageMap);
-        var loc = parameterObj;
-        fixed (void* ptr = &Unsafe.As<T, RawData>(ref parameterObj).Data) {
-            return SetCommand(cmd, GetAccessor(ptr, handle, typeof(T)), usageMap);
+        if (typeof(T).IsValueType) {
+            fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj))
+                return SetCommand(cmd, GetAccessor(ptr, handle, typeof(T)), usageMap);
+        }
+        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
+            return SetCommand(cmd, GetAccessor(*(void**)ptr, handle, typeof(T)), usageMap);
         }
     }
     /// <summary>
