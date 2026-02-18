@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
+/*
 /// <summary>
 /// Identifies a member as a boolean condition for SQL templates rather than a variable.
 /// </summary>
@@ -150,4 +151,4 @@ public static class TypeAccessor<T> {
         name.AsSpan().CopyTo(nameSpan[1..]);
         return mapper.GetIndex(nameSpan);
     }
-}
+}*/

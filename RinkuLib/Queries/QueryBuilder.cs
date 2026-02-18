@@ -175,46 +175,45 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
         return false;
     }
     /// <inheritdoc/>
-    public unsafe void UseWith(object parameterObj) {
+    public void UseWith(object parameterObj) {
         Type type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
-        if (type.IsValueType) {
-            fixed (void* objPtr = &Unsafe.As<object, byte>(ref parameterObj)) {
-                void* dataPtr = (*(byte**)objPtr) + IntPtr.Size;
-                UpdateCommand(QueryCommand.GetAccessor(dataPtr, handle, type));
-            }
-            return;
-        }
-        fixed (void* ptr = &Unsafe.As<object, byte>(ref parameterObj)) {
-            void* instancePtr = *(void**)ptr;
-            UpdateCommand(QueryCommand.GetAccessor(instancePtr, handle, type));
-        }
+        var cache = QueryCommand.GetAccessorCache(handle, type);
+        UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
     }
     /// <inheritdoc/>
-    public unsafe void UseWith<T>(T parameterObj) where T : notnull {
+    public void UseWith<T>(T parameterObj) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-
-        if (typeof(T).IsValueType) {
-            UpdateCommand(QueryCommand.GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)));
+        var cache = QueryCommand.GetAccessorCache(handle, typeof(T));
+        if (!typeof(T).IsValueType) {
+            UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
             return;
         }
-        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
-            UpdateCommand(QueryCommand.GetAccessor(*(void**)ptr, handle, typeof(T)));
-        }
+        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
+        UpdateCommand(new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue));
     }
     /// <inheritdoc/>
-    public unsafe void UseWith<T>(ref T parameterObj) where T : notnull {
+    public void UseWith<T>(ref T parameterObj) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        if (typeof(T).IsValueType) {
-            fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj))
-                UpdateCommand(QueryCommand.GetAccessor(ptr, handle, typeof(T)));
+        var cache = QueryCommand.GetAccessorCache(handle, typeof(T));
+        if (!typeof(T).IsValueType) {
+            UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
             return;
         }
-        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
-            UpdateCommand(QueryCommand.GetAccessor(*(void**)ptr, handle, typeof(T)));
-        }
+        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
+        UpdateCommand(new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue));
     }
     private void UpdateCommand(TypeAccessor accessor) {
+        var mapper = QueryCommand.Mapper;
+        var endVariables = QueryCommand.StartBoolCond;
+        var total = mapper.Count;
+        int i = 0;
+        for (; i < endVariables; i++)
+            Use(i, accessor.IsUsed(i) ? accessor.GetValue(i) : null);
+        for (; i < total; i++)
+            Variables[i] = accessor.IsUsed(i) ? Used : null;
+    }
+    private void UpdateCommand<T>(TypeAccessor<T> accessor) {
         var mapper = QueryCommand.Mapper;
         var endVariables = QueryCommand.StartBoolCond;
         var total = mapper.Count;

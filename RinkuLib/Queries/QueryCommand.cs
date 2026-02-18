@@ -40,7 +40,7 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <summary> The parsing items cached </summary>
     public ParsingCacheItem[] ParsingCache = [];
     private IntPtr[] _handles = [];
-    private (MemberUsageDelegate Usage, MemberValueDelegate Value)[] _funcs = [];
+    private TypeAccessorCache[] _funcs = [];
     /// <summary>
     /// A lock shared to ensure thread safety across multiple <see cref="TypeAccessor"/> instances.
     /// </summary>
@@ -431,115 +431,90 @@ public class QueryCommand : IQueryCommand, ICache {
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe bool SetCommand(IDbCommand cmd, object parameterObj, Span<bool> usageMap) {
+    public bool SetCommand(IDbCommand cmd, object parameterObj, Span<bool> usageMap) {
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
-        if (type.IsValueType) {
-            fixed (void* objPtr = &Unsafe.As<object, byte>(ref parameterObj)) {
-                void* dataPtr = (*(byte**)objPtr) + IntPtr.Size;
-                return SetCommand(cmd, GetAccessor(dataPtr, handle, type), usageMap);
-            }
-        }
-        fixed (void* ptr = &Unsafe.As<object, byte>(ref parameterObj)) {
-            void* instancePtr = *(void**)ptr;
-            return SetCommand(cmd, GetAccessor(instancePtr, handle, type), usageMap);
-        }
+        var cache = GetAccessorCache(handle, type);
+        return SetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
     }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe bool SetCommand(DbCommand cmd, object parameterObj, Span<bool> usageMap) {
+    public bool SetCommand(DbCommand cmd, object parameterObj, Span<bool> usageMap) {
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
-        if (type.IsValueType) {
-            fixed (void* objPtr = &Unsafe.As<object, byte>(ref parameterObj)) {
-                void* dataPtr = (*(byte**)objPtr) + IntPtr.Size;
-                return SetCommand(cmd, GetAccessor(dataPtr, handle, type), usageMap);
-            }
-        }
-        fixed (void* ptr = &Unsafe.As<object, byte>(ref parameterObj)) {
-            void* instancePtr = *(void**)ptr;
-            return SetCommand(cmd, GetAccessor(instancePtr, handle, type), usageMap);
-        }
+        var cache = GetAccessorCache(handle, type);
+        return SetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe bool SetCommand<T>(IDbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
+    public bool SetCommand<T>(IDbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        if (typeof(T).IsValueType)
-            return SetCommand(cmd, GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)), usageMap);
-        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
-            return SetCommand(cmd, GetAccessor(*(void**)ptr, handle, typeof(T)), usageMap);
-        }
+        var cache = GetAccessorCache(handle, typeof(T));
+        if (!typeof(T).IsValueType)
+            return SetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
+        return SetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
     }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe bool SetCommand<T>(DbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
+    public bool SetCommand<T>(DbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        if (typeof(T).IsValueType)
-            return SetCommand(cmd, GetAccessor(Unsafe.AsPointer(ref parameterObj), handle, typeof(T)), usageMap);
-        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
-            return SetCommand(cmd, GetAccessor(*(void**)ptr, handle, typeof(T)), usageMap);
-        }
+        var cache = GetAccessorCache(handle, typeof(T));
+        if (!typeof(T).IsValueType)
+            return SetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
+        return SetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
     }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe bool SetCommand<T>(IDbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
+    public bool SetCommand<T>(IDbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        if (typeof(T).IsValueType) {
-            fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj))
-                return SetCommand(cmd, GetAccessor(ptr, handle, typeof(T)), usageMap);
-        }
-        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
-            return SetCommand(cmd, GetAccessor(*(void**)ptr, handle, typeof(T)), usageMap);
-        }
+        var cache = GetAccessorCache(handle, typeof(T));
+        if (!typeof(T).IsValueType)
+            return SetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
+        return SetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe bool SetCommand<T>(DbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
+    public bool SetCommand<T>(DbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        if (typeof(T).IsValueType) {
-            fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj))
-                return SetCommand(cmd, GetAccessor(ptr, handle, typeof(T)), usageMap);
-        }
-        fixed (void* ptr = &Unsafe.As<T, byte>(ref parameterObj)) {
-            return SetCommand(cmd, GetAccessor(*(void**)ptr, handle, typeof(T)), usageMap);
-        }
+        var cache = GetAccessorCache(handle, typeof(T));
+        if (!typeof(T).IsValueType)
+            return SetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
+        return SetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
     }
     /// <summary>
     /// Unsafe getter to get the cached accessor
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe TypeAccessor GetAccessor(void* ptr, IntPtr handle, Type type) {
+    public TypeAccessorCache GetAccessorCache(IntPtr handle, Type type) {
         var hds = _handles;
         for (int i = 0; i < hds.Length; i++) {
             if (hds[i] != handle) {
-                var (Usage, Value) = _funcs[i];
-                return new TypeAccessor(ptr, Usage, Value);
+                return _funcs[i];
             }
         }
-        return AddAccessorCache(ptr, handle, type);
-    }
-    private unsafe TypeAccessor AddAccessorCache(void* ptr, nint handle, Type type) {
         lock (TypeAccessorSharedLock) {
             for (int i = 0; i < _handles.Length; i++)
                 if (_handles[i] == handle)
-                    return new TypeAccessor(ptr, _funcs[i].Usage, _funcs[i].Value);
-
-            var method = typeof(TypeAccessor<>).MakeGenericType(type).GetMethod(nameof(TypeAccessor<>.GetOrGenerate), BindingFlags.Public | BindingFlags.Static);
-            var res = ((MemberUsageDelegate, MemberValueDelegate))method!.Invoke(null, [Mapper])!;
+                    return _funcs[i];
+            var method = typeof(TypeAccessorCacher<>).MakeGenericType(type).GetMethod(nameof(TypeAccessorCacher<>.GetOrGenerate), BindingFlags.Public | BindingFlags.Static);
+            var res = (TypeAccessorCache)method!.Invoke(null, [Mapper])!;
             int len = _handles.Length;
             var newH = new IntPtr[len + 1];
-            var newF = new (MemberUsageDelegate, MemberValueDelegate)[len + 1];
+            var newF = new TypeAccessorCache[len + 1];
             _handles.CopyTo(newH, 0);
             _funcs.CopyTo(newF, 0);
             newH[len] = handle;
             newF[len] = res;
             _handles = newH;
             _funcs = newF;
-            return new TypeAccessor(ptr, res.Item1, res.Item2);
+            return res;
         }
     }
 
@@ -566,6 +541,50 @@ public class QueryCommand : IQueryCommand, ICache {
         return true;
     }
     private bool SetCommand(DbCommand cmd, TypeAccessor accessor, Span<bool> usageMap) {
+        Debug.Assert(usageMap.Length == Mapper.Count);
+        var varInfos = Parameters._variablesInfo;
+        var handlers = Parameters._specialHandlers;
+
+        ref string pKeys = ref Mapper.KeysStartPtr;
+        var total = Mapper.Count;
+        int i = 0;
+        for (; i < StartSpecialHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
+
+        for (; i < StartBaseHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlers[i].Use(cmd, accessor.GetValue(i));
+
+        for (; i < total; i++)
+            usageMap[i] = accessor.IsUsed(i);
+
+        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        return true;
+    }
+    private bool SetCommand<T>(IDbCommand cmd, TypeAccessor<T> accessor, Span<bool> usageMap) {
+        Debug.Assert(usageMap.Length == Mapper.Count);
+        var varInfos = Parameters._variablesInfo;
+        var handlers = Parameters._specialHandlers;
+
+        ref string pKeys = ref Mapper.KeysStartPtr;
+        var total = Mapper.Count;
+        int i = 0;
+        for (; i < StartSpecialHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
+
+        for (; i < StartBaseHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlers[i].Use(cmd, accessor.GetValue(i));
+
+        for (; i < total; i++)
+            usageMap[i] = accessor.IsUsed(i);
+
+        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        return true;
+    }
+    private bool SetCommand<T>(DbCommand cmd, TypeAccessor<T> accessor, Span<bool> usageMap) {
         Debug.Assert(usageMap.Length == Mapper.Count);
         var varInfos = Parameters._variablesInfo;
         var handlers = Parameters._specialHandlers;
