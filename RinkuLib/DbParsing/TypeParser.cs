@@ -1,10 +1,8 @@
-﻿using System.Collections.ObjectModel;
-using System.Data;
+﻿using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Runtime.CompilerServices;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
@@ -14,9 +12,10 @@ namespace RinkuLib.DbParsing;
 /// <param name="dm">The <see cref="DynamicMethod"/> that maps a row to <typeparamref name="T"/>.</param>
 /// <param name="cols">The specific schema this parser is built for.</param>
 /// <param name="behavior">The most optimal <see cref="CommandBehavior"/> for this specific parser.</param>
-public unsafe readonly struct DbParsingInfo<T>(DynamicMethod dm, ColumnInfo[] cols, CommandBehavior behavior) {
+/// <param name="target">The target to use for the dynamic method</param>
+public readonly struct DbParsingInfo<T>(DynamicMethod dm, ColumnInfo[] cols, CommandBehavior behavior, object? target) {
     /// <summary>The actual function that parse the row</summary>
-    public readonly Func<DbDataReader, T> ReaderFunc = dm.CreateDelegate<Func<DbDataReader, T>>();
+    public readonly Func<DbDataReader, T> ReaderFunc = dm.CreateDelegate<Func<DbDataReader, T>>(target);
 
     /// <summary>The specific schema this parser is built for.</summary>
     public readonly ColumnInfo[] Schema = cols;
@@ -24,27 +23,31 @@ public unsafe readonly struct DbParsingInfo<T>(DynamicMethod dm, ColumnInfo[] co
     public readonly CommandBehavior DefaultBehavior = behavior;
 }
 /// <summary>A simple struct used track the usage of the columns</summary>
-public readonly ref struct ColumnUsage(Span<bool> Span) {
+public ref struct ColumnUsage(Span<bool> Span) {
     private readonly Span<bool> Span = Span;
+    /// <summary>The index of the last column that was used</summary>
+    public int LastIndexUsed { get; private set; } = -1;
     /// <summary>The amount of columns</summary>
     public readonly int Length => Span.Length;
     /// <summary>
     /// Save a snapshot of the current usage into a checkpoint <see cref="Span{Boolean}"/>
     /// </summary>
-    public readonly void InitCheckpoint(Span<bool> checkpoint) {
+    public readonly void InitCheckpoint(Span<bool> checkpoint, out int lastUsed) {
         if (checkpoint.Length != Span.Length)
             throw new Exception($"must be the same length expected:{Span.Length} actual:{checkpoint.Length}");
         for (var i = 0; i < Span.Length; i++)
             checkpoint[i] = Span[i];
+        lastUsed = LastIndexUsed;
     }
     /// <summary>
     /// Reset the column usage to the checkpoint state
     /// </summary>
-    public readonly void Rollback(Span<bool> checkpoint) {
+    public void Rollback(scoped Span<bool> checkpoint, int lastUsed) {
         if (checkpoint.Length != Span.Length)
             throw new Exception($"must be the same length expected:{Span.Length} actual:{checkpoint.Length}");
         for (var i = 0; i < Span.Length; i++)
             Span[i] = checkpoint[i];
+        LastIndexUsed = lastUsed;
     }
     /// <summary>
     /// Check if a column has been marked as used
@@ -53,7 +56,10 @@ public readonly ref struct ColumnUsage(Span<bool> Span) {
     /// <summary>
     /// Mark a column as used
     /// </summary>
-    public readonly void Use(int ind) => Span[ind] = true;
+    public void Use(int ind) {
+        Span[ind] = true;
+        LastIndexUsed = ind;
+    }
 }
 /// <summary>
 /// Manages the generation and caching of specialized parsers for <typeparamref name="T"/>.
@@ -112,7 +118,7 @@ public static class TypeParser<T> {
         defaultBehavior = info.DefaultBehavior;
         return info.ReaderFunc;
     }
-    private static readonly Type[] TReaderArg = [typeof(DbDataReader)];
+    private static readonly Type[] TReaderArg = [typeof(object), typeof(DbDataReader)];
     internal static readonly Module Module = typeof(DbDataReader).Module;
     /// <summary>
     /// The compilation core. Orchestrates the transition from metadata to IL.
@@ -147,14 +153,14 @@ public static class TypeParser<T> {
 #else
             new(dm.GetILGenerator());
 #endif
-        rd.Emit(cols, gen, rd.NeedNullSetPoint(cols) ? new(gen.DefineLabel(), 0) : default);
+        rd.Emit(cols, gen, rd.NeedNullSetPoint(cols) ? new(gen.DefineLabel(), 0) : default, out var targetObj);
         gen.Emit(OpCodes.Ret);
         dm.DefineParameter(1, ParameterAttributes.In, "reader");
         var prevIndex = -1;
         var defaultBehavior = cols.Length == 1 ? CommandBehavior.SingleResult : CommandBehavior.Default;
         if (rd.IsSequencial(ref prevIndex))
             defaultBehavior |= CommandBehavior.SequentialAccess;
-        parser = new(dm, cols, defaultBehavior);
+        parser = new(dm, cols, defaultBehavior, targetObj);
         return true;
     }
 }

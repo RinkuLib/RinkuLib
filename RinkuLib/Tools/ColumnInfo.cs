@@ -89,4 +89,32 @@ public static class Helper {
                 return false;
         return true;
     }
+    /// <summary>
+    /// Makes a mapper from the columns names while preventing duplication by adding #i for each duplicating instances
+    /// </summary>
+    public static Mapper MakeMapper(this ColumnInfo[] cols) {
+        var mapper = Mapper.GetMapper(cols.Select(c => c.Name));
+        if (mapper.Count == cols.Length)
+            return mapper;
+        var deduplicatedNames = new string[cols.Length];
+        var seen = new Dictionary<string, int>(cols.Length, StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < cols.Length; i++) {
+            string originalName = cols[i].Name;
+            if (seen.TryGetValue(originalName, out int suffix)) {
+                string newName;
+                do {
+                    newName = $"{originalName}#{suffix++}";
+                } while (seen.ContainsKey(newName));
+
+                deduplicatedNames[i] = newName;
+                seen[originalName] = suffix;
+                seen[newName] = 2;
+            }
+            else {
+                deduplicatedNames[i] = originalName;
+                seen[originalName] = 2;
+            }
+        }
+        return Mapper.GetMapper(deduplicatedNames);
+    }
 }

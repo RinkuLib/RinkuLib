@@ -18,7 +18,7 @@ namespace RinkuLib.Tools;
 /// comparisons with O(1) reference equality checks in performance-critical loops.
 /// </para>
 /// </remarks>
-public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, IDisposable {
+public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, IDisposable {
     /// <summary>
     /// A sentinel array used to indicate the mapper has been disposed in a thread-safe manner.
     /// </summary>
@@ -27,6 +27,7 @@ public abstract unsafe class Mapper(string[] Keys) : IReadOnlyDictionary<string,
     /// The internal storage of unique, deduplicated keys.
     /// </summary>
     protected string[] _keys = Keys;
+    internal string[] GetKeysArray() => _keys;
     /// <summary>
     /// Gets a managed reference to the start of the key array. 
     /// Allows for high-performance pointer-style iteration while bypassing array bounds checks.

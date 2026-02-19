@@ -27,6 +27,123 @@ By storing the `parser` alongside the `behavior`, you can bypass the need for th
 
 ---
 
+### **Dynamic Mapping with ValueTuple**
+
+The engine can map directly to a `ValueTuple`. In this mode, the **first level is name-agnostic**: the engine ignores the tuple's parameter names (`Item1`, `Item2`, etc.).
+
+For complex types, this means the engine doesn't look for a prefix. Normally, a property `Name` on a parameter named `User` would look for `UserName`. In a tuple, since `Item1` is ignored, the engine looks directly for `Name`.
+
+#### **Basic Types**
+
+Mapping is strictly sequential based on the SQL column order.
+
+```csharp
+// Index 0 -> int
+// Index 1 -> string
+var (id, name) = await builder.QuerySingleAsync<(int, string)>(cnn, ct);
+```
+
+#### **Mixed Types**
+
+A basic type consumes the next available column, then the complex type begins its search.
+
+```csharp
+// Index 0 -> int
+// Index 1+ -> Location Negociate as is Query<Location> directly but now the first col is allready used
+var (id, employee) = await builder.QuerySingleAsync<(int, Location)>(cnn, ct);
+```
+
+#### **Complex Types**
+
+The engine ignores the tuple's "Item" name and matches the object's internal property/parameter names directly against the columns.
+
+```csharp
+public record struct Person(int ID, string Name);
+// Matches 'ID' and 'Name' directly (no 'Item1' prefix used)
+// Then matches the next available 'ID' and 'Name' for the second person
+var (p1, p2) = await builder.QuerySingleAsync<(Person, Person)>(cnn, ct);
+```
+
+#### **Unexpected Consumption**
+
+With a standard parameterized constructor, the engine matches parameters sequentially, which is safe. However, because there is no "name fence" (like a prefix) protecting the columns, certain configurations can lead to unexpected scavenging. Configurations that allows for non-sequential, may be problematic in cases where multiple Items may map to the same name.
+> In the case of a parameterless ctor, after initialization, it scavenge all the row to assign individualy all the possible members 
+
+**Schema:** `| ID | Name | ID | Name | Email |`
+
+```csharp
+public struct Person { int ID; string Name; string Email}
+// 0. Person 1 does not have any parameterized ctors and uses a parameterless ctor (scavenges members individually)
+// 1. Person 1 new() then maps ID(0) and Name(1) but also finds Email(4).
+// 2. Person 2 new() then maps ID(2) and Name(3).
+// Result: Person 2 has no Email because Person 1 already consumed it.
+var (p1, p2) = await builder.QuerySingleAsync<(Person, Person)>(cnn, ct);
+```
+
+#### **Unexpected sequence**
+
+Simple types always look at the column immediately following the **last used index**. If a complex type's configuration causes it to finish at an index further ahead than expected, the cursor jumps.
+
+**Schema:** `| ID | Name | RoleId | Email |`
+
+```csharp
+// 1. Person maps ID(0) and Name(1) but also finds Email(3).
+// 2. The cursor is now at Index 3.
+// 3. The following 'int' looks at Index 4 (Next-in-Line).
+// Result: Fails to match the schema since 'int' could not be mapped"
+var (person, roleId) = await builder.QuerySingleAsync<(Person, int)>(cnn, ct);
+```
+---
+### **Dynamic Mapping with DynaObject**
+
+You can call `QueryX` using `DynaObject` as the type. This returns a dictionary-like object that provides access to columns via their names or indices.
+
+
+Access columns using the indexer (which returns `object?`) or the `Get<T>` method for a direct, typed result. `DynaObject` supports lookups via string keys, `ReadOnlySpan<char>`, or integer indices.
+
+```csharp
+// Schema: | ID | Name | Email |
+var row = await builder.QuerySingleAsync<DynaObject>(cnn, ct);
+
+// Using string keys
+int id = row.Get<int>("ID");
+string name = row.Get<string>("Name");
+
+// Using ReadOnlySpan<char> (useful for high-performance parsing)
+var email = row.Get<string?>(spanKey);
+
+// Using integer index
+object? firstColumn = row[0];
+```
+
+#### **Handling Duplicate Names**
+
+If the result set contains duplicate column names, the engine ensures every key is unique by appending a suffix to every subsequent appearance.
+
+**Schema:** `| ID | Name | ID | Name |`
+
+```csharp
+var row = await builder.QuerySingleAsync<DynaObject>(cnn, ct);
+
+// First occurrence
+int id1 = row.Get<int>("ID");
+
+// Subsequent occurrences append #2, #3, etc.
+int id2 = row.Get<int>("ID#2");
+string name2 = row.Get<string>("Name#2");
+```
+
+#### **Modifying Values**
+
+Although it serves as a representation of a row, `DynaObject` allows you to update its values using `Set<T>`.
+
+```csharp
+// Update by key or index
+row.Set("Name", "New Name");
+row.Set(0, 99);
+```
+---
+
 ### **Type Registration**
 
 A type must be registered for the engine to know how to handle it. This happens in one of four ways:
@@ -303,12 +420,12 @@ Since the type may not be final, the `ParamInfo` doesn't store a fixed set of ma
 
 * **Basic Types:** If it resolves to something like an `int`, `string`, or `Enum`, it looks for a single column in the schema that matches the name and is implicitly convertible.
 * **Complex Types:** If it resolves to a complex type (like `T` becoming a specific class or `Result<T>` becoming `Result<User>`), it delegates the work. It asks the `TypeParsingInfo` for that specific type to handle the matching.
-That’s the most accurate way to frame it. The logic doesn't change based on depth; it is a consistent, recursive process where every `ParamInfo` simply applies the **Column Modifier** it received, regardless of whether that modifier is currently empty or already contains three layers of prefixes.
+Thatï¿½s the most accurate way to frame it. The logic doesn't change based on depth; it is a consistent, recursive process where every `ParamInfo` simply applies the **Column Modifier** it received, regardless of whether that modifier is currently empty or already contains three layers of prefixes.
 ---
 
 ## **ParamInfo: The Names**
 
-The **`INameComparer`** manages a list of candidate names (the parameter/member name plus any **`[Alt(string altName)]`** names). This list is used to negotiate with the schema, but it never acts in isolation—it always operates through a **Column Modifier**. The Column Modifier is essentially a cumulative prefix that is passed down the construction tree. At the root level, this modifier is empty. As the engine moves deeper into nested types, the modifier grows.
+The **`INameComparer`** manages a list of candidate names (the parameter/member name plus any **`[Alt(string altName)]`** names). This list is used to negotiate with the schema, but it never acts in isolationï¿½it always operates through a **Column Modifier**. The Column Modifier is essentially a cumulative prefix that is passed down the construction tree. At the root level, this modifier is empty. As the engine moves deeper into nested types, the modifier grows.
 
 * **Simple Types:** The engine looks for a column by combining the current **Column Modifier** with its own **Candidate Names**. It iterates through its candidates and tries to find a match for `[Modifier] + [Candidate]`. The first one that is both name-matched and type-compatible wins.
 * **Complex Types (Delegation):** The `ParamInfo` doesn't match a column itself. Instead, it "updates" the Column Modifier. It appends its own name(s) to the existing modifier and passes this new, cumulative version down to the `TypeParsingInfo` registry.
@@ -379,10 +496,10 @@ The engine has discovered and registered the following constructor for the `Item
 
 ### **Manual Post-Creation Overrides**
 
-The **`IDbTypeParserMatcher`** interface allows for direct modification of a matcher’s behavior after its initial creation. This enables fine-grained control over how a specific slot will negotiate with the schema or behave at execution time.
+The **`IDbTypeParserMatcher`** interface allows for direct modification of a matcherï¿½s behavior after its initial creation. This enables fine-grained control over how a specific slot will negotiate with the schema or behave at execution time.
 
 * **Property Swapping:** The **`NameComparer`** and **`NullColHandler`** properties are writable. You can replace the default strategies with custom implementations to change how columns are matched or how `NULL` values are processed.
-* **Direct Configuration:** The **`AddAltName`** and **`SetInvalidOnNull`** methods provide a clean, high-level way to perform common adjustments—such as injecting aliases or switching to a "Jump" strategy.
+* **Direct Configuration:** The **`AddAltName`** and **`SetInvalidOnNull`** methods provide a clean, high-level way to perform common adjustmentsï¿½such as injecting aliases or switching to a "Jump" strategy.
 
 > **Implementation Note:** The outcome of these modifications is entirely in the hands of the implementation. A custom matcher may ignore these calls or handle them through internal mechanisms that do not follow the standard `ParamInfo` logic.
 

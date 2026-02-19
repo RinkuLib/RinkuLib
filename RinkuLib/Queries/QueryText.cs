@@ -61,7 +61,12 @@ public sealed class QueryText : IQueryText {
     /// <param name="accessor">The accessor to get the values</param>
     /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
     /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
-    public unsafe string Parse(Span<bool> usageMap, TypeAccessor accessor) {
+#if NET9_0_OR_GREATER
+    public unsafe string Parse<T>(Span<bool> usageMap, T accessor) where T : ITypeAccessor, allows ref struct
+#else
+    public unsafe string Parse(Span<bool> usageMap, TypeAccessor accessor)
+#endif
+        {
         Debug.Assert(usageMap.Length == RequiredVariablesLength);
 
         ValueStringBuilder sb = AverageLengthChunk <= 512
@@ -149,6 +154,7 @@ public sealed class QueryText : IQueryText {
         UpdateAvg(sb.Length);
         return sb.ToStringAndDispose();
     }
+#if !NET9_0_OR_GREATER
     /// <summary>
     /// Processes the input state array to synthesize the final query string based on segment logic.
     /// </summary>
@@ -253,6 +259,7 @@ public sealed class QueryText : IQueryText {
         UpdateAvg(sb.Length);
         return sb.ToStringAndDispose();
     }
+#endif
     /// <summary>
     /// Processes the input state array to synthesize the final query string based on segment logic.
     /// </summary>

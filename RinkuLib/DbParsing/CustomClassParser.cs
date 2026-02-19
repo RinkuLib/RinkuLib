@@ -32,16 +32,17 @@ public class CustomClassParser(Type Type, string ParamName, INullColHandler Null
         return true;
     }
     /// <inheritdoc/>
-    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint) {
+    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
         Label? jump = null;
         var localSetPoint = nullSetPoint;
+        targetObject = null;
         for (int i = 0; i < Readers.Count; i++) {
             var reader = Readers[i];
             if (!localSetPoint.HasValue && reader.NeedNullSetPoint(cols)) {
                 jump = generator.DefineLabel();
                 localSetPoint = new(jump.Value, 0);
             }
-            Readers[i].Emit(cols, generator, localSetPoint.WithItemOnStack(i));
+            Readers[i].Emit(cols, generator, localSetPoint.WithItemOnStack(i), out targetObject);
         }
         EmitMemberDispatch(generator, MethodBase);
         var under = Nullable.GetUnderlyingType(Type);
@@ -69,7 +70,7 @@ public class CustomClassParser(Type Type, string ParamName, INullColHandler Null
             var (member, reader) = Members[i];
             Label? l = reader.NeedNullSetPoint(cols) ? generator.DefineLabel() : null;
             generator.Emit(opCode, instanceLocal);            
-            reader.Emit(cols, generator, l.HasValue ? new(l.Value, 1) : default);
+            reader.Emit(cols, generator, l.HasValue ? new(l.Value, 1) : default, out _);
             EmitMemberDispatch(generator, member);
             if (l.HasValue)
                 generator.MarkLabel(l.Value);

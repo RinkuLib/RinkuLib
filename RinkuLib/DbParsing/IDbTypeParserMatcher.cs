@@ -16,6 +16,16 @@ public interface IDbTypeParserMatcher {
     /// </summary>
     public Type TargetType { get; }
     /// <summary>
+    /// When true it means that a column in a schema may be used more than once
+    /// </summary>
+    public bool CanReuseCol { get; set; }
+    /// <summary>
+    /// Default : true for members, false for parameters
+    /// When true it means that it will look trouought all the schema
+    /// When false it means that it will only try to match with the column folowing the las col used
+    /// </summary>
+    public bool CanLookAnywhere { get; set; }
+    /// <summary>
     /// The strategy used to handle null values from the schema for this specific item.
     /// </summary>
     public INullColHandler NullColHandler { get; set; }
@@ -54,7 +64,7 @@ public interface IDbTypeParserInfoMatcher {
     /// Negotiates the schema for the target type. 
     /// If successful, returns a parser node that handles the entire object construction.
     /// </summary>
-    public DbItemParser? TryGetParser(Type closedTargetType, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage);
+    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType);
     /// <summary>Identify if the instance can actualy handle the <see cref="Type"/> of <paramref name="TargetType"/></summary>
     public bool CanUseType(Type TargetType);
 }
