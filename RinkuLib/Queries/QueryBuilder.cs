@@ -203,7 +203,12 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
         var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
         UpdateCommand(new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue));
     }
-    private void UpdateCommand(TypeAccessor accessor) {
+#if NET9_0_OR_GREATER
+    private void UpdateCommand<T>(T accessor) where T : ITypeAccessor, allows ref struct
+#else
+    private void UpdateCommand(TypeAccessor accessor)
+#endif
+    {
         var mapper = QueryCommand.Mapper;
         var endVariables = QueryCommand.StartBoolCond;
         var total = mapper.Count;
@@ -213,6 +218,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
         for (; i < total; i++)
             Variables[i] = accessor.IsUsed(i) ? Used : null;
     }
+#if !NET9_0_OR_GREATER
     private void UpdateCommand<T>(TypeAccessor<T> accessor) {
         var mapper = QueryCommand.Mapper;
         var endVariables = QueryCommand.StartBoolCond;
@@ -223,6 +229,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
         for (; i < total; i++)
             Variables[i] = accessor.IsUsed(i) ? Used : null;
     }
+#endif
 }
 internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {
     private object? _first = first;

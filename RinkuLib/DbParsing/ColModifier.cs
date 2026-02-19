@@ -4,6 +4,8 @@
 /// Used to resolve nested column names (e.g., "ParentChildTarget") during recursive object mapping.
 /// </summary>
 public readonly struct ColModifier(params INameComparer[] Comparers) {
+    /// <summary>Indicate if there is a modification on the name as a condition</summary>
+    public bool DoesModify => _comparers.Length > 0;
     private readonly INameComparer[] _comparers = Comparers;
     /// <summary>Entry point without any modifications</summary>
     public ColModifier() : this([]) { }

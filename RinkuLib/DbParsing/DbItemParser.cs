@@ -30,7 +30,8 @@ public abstract class DbItemParser {
     /// <param name="cols">Metadata for all available columns.</param>
     /// <param name="generator">The IL generator wrapper.</param>
     /// <param name="nullSetPoint">The recovery point when value is null.</param>
-    public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint);
+    /// <param name="targetObject">The arg_0 if needed</param>
+    public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject);
     internal static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(string)])!;
     internal static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;
 

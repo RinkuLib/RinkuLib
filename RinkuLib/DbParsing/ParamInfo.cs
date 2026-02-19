@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using RinkuLib.Tools;
 
@@ -19,7 +20,7 @@ namespace RinkuLib.DbParsing;
 /// using <see cref="Interlocked"/> operations, allowing for dynamic updates to naming 
 /// and null-handling rules during the registration phase.
 /// </remarks>
-public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer NameComparer) : IDbTypeParserMatcher {
+public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, bool CanLookAnywhere, bool CanReuseCol) : IDbTypeParserMatcher {
     /// <summary>
     /// The current strategy for handling database NULL values.
     /// </summary>
@@ -28,6 +29,16 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// The logic used to match column names against this member's identifiers.
     /// </summary>
     public INameComparer NameComparer { get => field; set => Interlocked.Exchange(ref field, value); } = NameComparer;
+    /// <inheritdoc/>
+    public bool CanReuseCol {
+        get => Volatile.Read(ref field);
+        set => Volatile.Write(ref field, value);
+    } = CanReuseCol;
+    /// <inheritdoc/>
+    public bool CanLookAnywhere {
+        get => Volatile.Read(ref field);
+        set => Volatile.Write(ref field, value);
+    } = CanLookAnywhere;
     /// <summary>
     /// The C# type of the parameter or member. (Can be generic)
     /// </summary>
@@ -37,6 +48,8 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// </summary>
     public void SetInvalidOnNull(bool invalidOnNull) => NullColHandler = NullColHandler.SetInvalidOnNull(Type, invalidOnNull);
     Type IDbTypeParserMatcher.TargetType => Type;
+
+
     /// <summary>
     /// Adds an alternative name to the existing <see cref="NameComparer"/>.
     /// </summary>
@@ -80,12 +93,26 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
             return defaultProvider?.TryGetItemParser(closedType);
         }
         int i = 0;
-        for (; i < columns.Length; i++) {
-            if (colUsage.IsUsed(i))
-                continue;
-            var column = columns[i];
-            if (column.Type.CanConvert(closedType) && colModifier.Match(column.Name, NameComparer))
-                break;
+        if (CanLookAnywhere) {
+            for (; i < columns.Length; i++) {
+                if (!CanReuseCol && colUsage.IsUsed(i))
+                    continue;
+                var column = columns[i];
+                if (column.Type.CanConvert(closedType) && colModifier.Match(column.Name, NameComparer))
+                    break;
+            }
+        }
+        else {
+            i = colUsage.LastIndexUsed + 1;
+            if (i < columns.Length) {
+                if (!CanReuseCol && colUsage.IsUsed(i))
+                    i = columns.Length;
+                else {
+                    var column = columns[i];
+                    if (!column.Type.CanConvert(closedType) || !colModifier.Match(column.Name, NameComparer))
+                        i = columns.Length;
+                }
+            }
         }
         if (t is not null)
             closedType = typeof(Nullable<>).MakeGenericType(closedType);
@@ -145,6 +172,11 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         int altCount = 0;
         INullColHandler? nullColHandler = null;
         bool isInvalidOnNull = false;
+        bool canReuseCol = false;
+        bool canLookAnywhere = true;
+
+        if (param is ParameterInfo pp)
+            canLookAnywhere = pp.Position == 0;
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
             if (attr is AltAttribute)
@@ -159,6 +191,12 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 nullColHandler = nchm.MakeColHandler(type, name, attributes, param);
             if (attr is NotNullAttribute)
                 nullColHandler = NotNullHandle.Instance;
+            if (attr is CanLookAnywhereAttribute)
+                canLookAnywhere = true;
+            if (attr is CanNotLookAnywhereAttribute)
+                canLookAnywhere = false;
+            if (attr is MayReuseColAttribute)
+                canReuseCol = true;
         }
         nullColHandler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
         nullColHandler = nullColHandler.SetInvalidOnNull(type, isInvalidOnNull);
@@ -185,7 +223,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
             comparer = new NameComparerTwo(name, altNames[0]);
         else
             comparer = new NameComparerMany(name, altNames);
-        return new ParamInfo(type, nullColHandler, comparer);
+        return new ParamInfo(type, nullColHandler, comparer, canLookAnywhere, canReuseCol);
     }
     private static bool IsTypeDefault(ParameterInfo p) {
         if (!p.HasDefaultValue)

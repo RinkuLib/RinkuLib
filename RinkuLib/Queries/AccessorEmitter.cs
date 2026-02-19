@@ -11,7 +11,7 @@ public abstract class AccessorEmitter {
     /// Handles the difference between ref structs (void*) and class references.
     /// </summary>
     public static void EmitMemberLoad(ILGenerator il, Type targetType, MemberInfo member) {
-        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldarg_1);
         if (member is FieldInfo f)
             il.Emit(OpCodes.Ldfld, f);
         else {

@@ -14,35 +14,40 @@ namespace RinkuLib.Queries;
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class ForBoolCondAttribute : Attribute;
 /// <summary>
-/// IL compiled access of an item
+/// access of an item members
 /// </summary>
-public readonly ref struct TypeAccessor(object item, Func<object, int, bool> usage, Func<object, int, object> value) {
-    private readonly object _item = item;
-    private readonly Func<object, int, bool> _getUsage = usage;
-    private readonly Func<object, int, object> _getValue = value;
+public interface ITypeAccessor {
     /// <summary>
     /// Check if the value is used
     /// </summary>
-    public bool IsUsed(int index) => _getUsage(_item, index);
+    public bool IsUsed(int index);
     /// <summary>
     /// Get the used value
     /// </summary>
+    public object GetValue(int index);
+}
+/// <summary>
+/// IL compiled access of an item
+/// </summary>
+public readonly ref struct TypeAccessor(object item, Func<object, int, bool> usage, Func<object, int, object> value) : ITypeAccessor {
+    private readonly object _item = item;
+    private readonly Func<object, int, bool> _getUsage = usage;
+    private readonly Func<object, int, object> _getValue = value;
+    /// <inheritdoc/>
+    public bool IsUsed(int index) => _getUsage(_item, index);
+    /// <inheritdoc/>
     public object GetValue(int index) => _getValue(_item, index);
 }
 /// <summary>
 /// IL compiled access of an item
 /// </summary>
-public readonly ref struct TypeAccessor<T>(ref T item, MemberUsageDelegate<T> usage, MemberValueDelegate<T> value) {
+public readonly ref struct TypeAccessor<T>(ref T item, MemberUsageDelegate<T> usage, MemberValueDelegate<T> value) : ITypeAccessor {
     private readonly ref T _item = ref item;
     private readonly MemberUsageDelegate<T> _getUsage = usage;
     private readonly MemberValueDelegate<T> _getValue = value;
-    /// <summary>
-    /// Check if the value is used
-    /// </summary>
+    /// <inheritdoc/>
     public bool IsUsed(int index) => _getUsage(ref _item, index);
-    /// <summary>
-    /// Get the used value
-    /// </summary>
+    /// <inheritdoc/>
     public object GetValue(int index) => _getValue(ref _item, index);
 }
 /// <summary>
@@ -60,8 +65,8 @@ public class TypeAccessorCache {
     }
     /// <inheritdoc/>
     public TypeAccessorCache(DynamicMethod usageMethod, DynamicMethod valueMethod) {
-        this.GetUsage = usageMethod.CreateDelegate<Func<object, int, bool>>();
-        this.GetValue = valueMethod.CreateDelegate<Func<object, int, object>>();
+        this.GetUsage = usageMethod.CreateDelegate<Func<object, int, bool>>(null);
+        this.GetValue = valueMethod.CreateDelegate<Func<object, int, object>>(null);
     }
 }
 /// <summary>
@@ -82,23 +87,24 @@ public class StructTypeAccessorCache<T> : TypeAccessorCache {
     public MemberValueDelegate<T> GenericGetValue;
     /// <inheritdoc/>
     public StructTypeAccessorCache(DynamicMethod usageMethod, DynamicMethod valueMethod) {
-        this.GenericGetUsage = usageMethod.CreateDelegate<MemberUsageDelegate<T>>();
-        this.GenericGetValue = valueMethod.CreateDelegate<MemberValueDelegate<T>>();
+        this.GenericGetUsage = usageMethod.CreateDelegate<MemberUsageDelegate<T>>(null);
+        this.GenericGetValue = valueMethod.CreateDelegate<MemberValueDelegate<T>>(null);
         this.GetUsage = CreateBoxedWrapper<bool>(usageMethod);
         this.GetValue = CreateBoxedWrapper<object>(valueMethod);
     }
 
     private static Func<object, int, TReturn> CreateBoxedWrapper<TReturn>(DynamicMethod internalMethod) {
         var wrapper = new DynamicMethod($"BoxedWrapper_{internalMethod.Name}", typeof(TReturn), 
-            [typeof(object), typeof(int)], typeof(T).Module, skipVisibility: true);
+            [typeof(object), typeof(object), typeof(int)], typeof(T).Module, skipVisibility: true);
         ILGenerator il = wrapper.GetILGenerator();
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Unbox, typeof(T));
+        il.Emit(OpCodes.Ldnull);
         il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Unbox, typeof(T));
+        il.Emit(OpCodes.Ldarg_2);
         il.Emit(OpCodes.Call, internalMethod);
         il.Emit(OpCodes.Ret);
 
-        return wrapper.CreateDelegate<Func<object, int, TReturn>>();
+        return wrapper.CreateDelegate<Func<object, int, TReturn>>(null);
     }
 } 
 /// <summary>
@@ -142,7 +148,7 @@ public static class TypeAccessorCacher<T> {
     private static DynamicMethod GenerateDelegate(char varChar, Mapper mapper, bool forUsage) {
         Type type = typeof(T);
         Type arg0 = type.IsValueType ? type.MakeByRefType() : typeof(object);
-        DynamicMethod dm = new($"{type.Name}_{(forUsage ? "U" : "V")}", forUsage ? typeof(bool) : typeof(object), [arg0, typeof(int)], type.Module, true);
+        DynamicMethod dm = new($"{type.Name}_{(forUsage ? "U" : "V")}", forUsage ? typeof(bool) : typeof(object), [typeof(object), arg0, typeof(int)], type.Module, true);
         var il = dm.GetILGenerator();
 
         int switchCount = mapper.Count;
@@ -183,7 +189,7 @@ public static class TypeAccessorCacher<T> {
             switchTable[index] = il.DefineLabel();
         }
 
-        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Ldarg_2);
         il.Emit(OpCodes.Switch, switchTable);
 
         il.MarkLabel(defaultLabel);

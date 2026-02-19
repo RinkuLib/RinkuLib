@@ -23,13 +23,14 @@ public class BasicParser(Type Type, string ParamName, INullColHandler NullColHan
         return true;
     }
     /// <inheritdoc/>
-    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint) {
+    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
+        targetObject = null;
         var col = cols[Index];
         var under = Nullable.GetUnderlyingType(Type);
         var meth = col.Type.GetDbMethod();
         var t = under ?? Type;
         if (!col.IsNullable) {
-            generator.Emit(OpCodes.Ldarg_0);
+            generator.Emit(OpCodes.Ldarg_1);
             generator.Emit(OpCodes.Ldc_I4, Index);
             generator.Emit(OpCodes.Callvirt, meth);
             EmitConversion(col.Type, t, generator);
@@ -38,7 +39,7 @@ public class BasicParser(Type Type, string ParamName, INullColHandler NullColHan
             return;
         }
         Label notNull = generator.DefineLabel();
-        generator.Emit(OpCodes.Ldarg_0);
+        generator.Emit(OpCodes.Ldarg_1);
         generator.Emit(OpCodes.Ldc_I4, Index);
         generator.Emit(OpCodes.Callvirt, TypeExtensions.IsNull);
         var op = OpCodes.Brfalse_S;
@@ -47,7 +48,7 @@ public class BasicParser(Type Type, string ParamName, INullColHandler NullColHan
         generator.Emit(op, notNull);
         Label? endLabel = NullColHandler.HandleNull(Type, ParamName, generator, nullSetPoint);
         generator.MarkLabel(notNull);
-        generator.Emit(OpCodes.Ldarg_0);
+        generator.Emit(OpCodes.Ldarg_1);
         generator.Emit(OpCodes.Ldc_I4, Index);
         generator.Emit(OpCodes.Callvirt, meth);
         EmitConversion(col.Type, t, generator);

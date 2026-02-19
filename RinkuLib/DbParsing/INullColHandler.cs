@@ -8,6 +8,21 @@ namespace RinkuLib.DbParsing;
 [AttributeUsage(AttributeTargets.Parameter)]
 public sealed class InvalidOnNullAttribute : Attribute;
 /// <summary>
+/// Specifies that an the member may look anywhere in the schema to find matching col not only the column folowing the one previously used.
+/// </summary>
+[AttributeUsage(AttributeTargets.Parameter)]
+public sealed class CanLookAnywhereAttribute : Attribute;
+/// <summary>
+/// Specifies that an the member may <b>not</b> look anywhere in the schema to find matching col and must only use the one folowing the one previously used.
+/// </summary>
+[AttributeUsage(AttributeTargets.Parameter)]
+public sealed class CanNotLookAnywhereAttribute : Attribute;
+/// <summary>
+/// Specifies that an an allready used column may be used to match
+/// </summary>
+[AttributeUsage(AttributeTargets.Parameter)]
+public sealed class MayReuseColAttribute : Attribute;
+/// <summary>
 /// Defines a factory for creating <see cref="INullColHandler"/> instances based on reflection metadata.
 /// </summary>
 public interface INullColHandlerMaker {

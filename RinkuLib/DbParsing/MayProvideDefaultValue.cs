@@ -32,10 +32,13 @@ public abstract class MayProvideDefaultValue(INullColHandler nullColHandler) : I
 public class DefaultEmiter(Type targetType) : DbItemParser {
     private readonly Type targetType = targetType;
     /// <inheritdoc/>
-    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint)
-        => EmitDefaultValue(targetType, generator);
+    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
+        targetObject = null;
+        EmitDefaultValue(targetType, generator);
+    }
     /// <inheritdoc/>
     public override bool IsSequencial(ref int previousIndex) => true;
+
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => false;
 }

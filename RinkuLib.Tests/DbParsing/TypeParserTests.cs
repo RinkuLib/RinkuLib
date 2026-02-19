@@ -93,6 +93,56 @@ public class TypeParserTests {
 
     }
     [Fact]
+    public void Using_ValueTuple_Same_Complex() {
+        ColumnInfo[] columns = [
+            new("Id", typeof(int), false),
+            new("Name", typeof(string), false),
+            new("ID", typeof(int), false),
+            new("name", typeof(string), false),
+            new("Other", typeof(string), true),
+        ];
+
+        using var reader = CreateReader(columns, [
+            [1, "Test1", 2, "Test2", "Stop2"]
+        ]);
+
+        var parser = TypeParser<(TestStop, TestStop)>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var (stop1, stop2) = parser(reader);
+        Assert.Equal(1, stop1.ID);
+        Assert.Equal("Test1", stop1.Name);
+        Assert.Null(stop1.Other);
+        Assert.Equal(2, stop2.ID);
+        Assert.Equal("Test2", stop2.Name);
+        Assert.Equal("Stop2", stop2.Other);
+    }
+    [Fact]
+    public void Using_ValueTuple_Same_Complex_Look() {
+        ColumnInfo[] columns = [
+            new("Id", typeof(int), false),
+            new("Name", typeof(string), false),
+            new("ID", typeof(int), false),
+            new("name", typeof(string), false),
+            new("Other", typeof(string), true),
+        ];
+
+        using var reader = CreateReader(columns, [
+            [1, "Test1", 2, "Test2", "Stop1"]
+        ]);
+
+        var parser = TypeParser<(TestStop2, TestStop)>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var (stop1, stop2) = parser(reader);
+        Assert.Equal(1, stop1.ID);
+        Assert.Equal("Test1", stop1.Name);
+        Assert.Equal("Stop1", stop1.Other);
+        Assert.Equal(2, stop2.ID);
+        Assert.Equal("Test2", stop2.Name);
+        Assert.Null(stop2.Other);
+    }
+    [Fact]
     public void Scalar() {
         ColumnInfo[] columns = [
             new("Id", typeof(int), false),
@@ -136,6 +186,7 @@ public class TypeParserTests {
         var emp = parser(reader);
 
         Assert.Equal(badge, emp.BadgeId);
+        Assert.Equal("Engineering", emp.Department);
         Assert.Equal(95000.50m, emp.Salary);
         Assert.Equal(joinDate, emp.JoinedAt);
     }
@@ -548,7 +599,65 @@ public class TypeParserTests {
         Assert.Equal(500, top.ID);
         Assert.Null(top.Middle);
     }
+    [Fact]
+    public void DynaObject() {
+        var badge = Guid.NewGuid();
+        var joinDate = new DateTime(2023, 05, 10);
+        ColumnInfo[] columns = [
+            new("BadgeId", typeof(Guid), false),
+            new("Department", typeof(string), false),
+            new("Salary", typeof(decimal), true),
+            new("JoinedAt", typeof(DateTime), true)
+        ];
+
+        using var reader = CreateReader(columns, [
+            [badge, "Engineering", 95000.50m, joinDate],
+            [badge, "Engineeringg", DBNull.Value, DBNull.Value]
+        ]);
+
+        var parser = TypeParser<DynaObject>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var emp = parser(reader);
+
+        Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
+        Assert.Equal("Engineering", emp.Get<string>("Department"));
+        Assert.Equal(95000.50m, emp.Get<decimal>("Salary"));
+        Assert.Equal(joinDate, emp.Get<DateTime>("JoinedAt"));
+        reader.Read();
+        emp = parser(reader);
+
+        Assert.Equal(badge, emp["BadgeId"]);
+        Assert.Equal("Engineeringg", emp.Get<object>("Department"));
+        Assert.Null(emp["Salary"]);
+        Assert.Null(emp.Get<DateTime?>("JoinedAt"));
+    }
+    [Fact]
+    public void DynaObject_Dup() {
+        var badge = Guid.NewGuid();
+        ColumnInfo[] columns = [
+            new("BadgeId", typeof(Guid), false),
+            new("BadgeID", typeof(Guid), true)
+        ];
+
+        using var reader = CreateReader(columns, [
+            [badge, DBNull.Value]
+        ]);
+
+        var parser = TypeParser<DynaObject>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var emp = parser(reader);
+
+        Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
+        Assert.Null(emp.Get<Guid?>("BadgeID#2"));
+        object badge2 = Guid.NewGuid();
+        emp.Set("BadgeID", badge2);
+        Assert.Equal(badge2, emp[0]);
+    }
 }
+public record class TestStop(int ID, string Name, string? Other = null);
+public record class TestStop2(int ID, string Name, [CanLookAnywhere]string? Other = null);
 public record class User(int ID, string Name, [Alt("Boss")]User? Supervisor = null);
 public class SimpleUser {
     public int Id { get; set; }

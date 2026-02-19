@@ -8,26 +8,86 @@ namespace RinkuLib.DbParsing;
 public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
     /// <summary>Singleton</summary>
     public static readonly BaseTypeMatcher Instance = new();
-    private BaseTypeMatcher() {}
+    private BaseTypeMatcher() { }
     /// <inheritdoc/>
     public bool CanUseType(Type TargetType)
         => TargetType.IsBaseType() || TargetType.IsEnum;
     /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type closedTargetType, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
+    public DbItemParser? TryGetParser(Type[] _, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
+
         int i = 0;
-        for (; i < columns.Length; i++) {
-            if (colUsage.IsUsed(i))
-                continue;
-            var column = columns[i];
-            if (column.Type.CanConvert(closedTargetType) && colModifier.Match(column.Name, NoNameComparer.Instance))
-                break;
+        if (colModifier.DoesModify) {
+            for (; i < columns.Length; i++) {
+                if (colUsage.IsUsed(i))
+                    continue;
+                var column = columns[i];
+                if (column.Type.CanConvert(closedTargetType) && colModifier.Match(column.Name, NoNameComparer.Instance))
+                    break;
+            }
+            if (i >= columns.Length)
+                return null;
         }
-        if (i >= columns.Length)
-            return null;
+        else {
+            i = colUsage.LastIndexUsed + 1;
+            if (i >= columns.Length)
+                return null;
+            if (colUsage.IsUsed(i))
+                return null;
+            var column = columns[i];
+            if (!column.Type.CanConvert(closedTargetType) || !colModifier.Match(column.Name, NoNameComparer.Instance))
+                return null;
+        }
         colUsage.Use(i);
         if (isNullable && closedTargetType.IsValueType)
             closedTargetType = typeof(Nullable<>).MakeGenericType(closedTargetType);
         return new BasicParser(closedTargetType, paramName, nullColHandler, i);
+    }
+}
+/// <summary>Handling for tuple that force usage of ite argument types</summary>
+public class TupleTypeMatcher : IDbTypeParserInfoMatcher {
+    /// <summary>Singleton</summary>
+    public static readonly TupleTypeMatcher Instance = new();
+    private TupleTypeMatcher() { }
+    /// <inheritdoc/>
+    public bool CanUseType(Type TargetType) {
+        if (!TargetType.IsGenericType)
+            return false;
+        TargetType = TargetType.GetGenericTypeDefinition();
+        return TargetType == typeof(ValueTuple<>)
+        || TargetType == typeof(ValueTuple<,>)
+        || TargetType == typeof(ValueTuple<,,>)
+        || TargetType == typeof(ValueTuple<,,,>)
+        || TargetType == typeof(ValueTuple<,,,,>)
+        || TargetType == typeof(ValueTuple<,,,,,>)
+        || TargetType == typeof(ValueTuple<,,,,,,>)
+        || TargetType == typeof(ValueTuple<,,,,,,,>);
+    }
+    /// <inheritdoc/>
+    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
+        Span<bool> checkpoint = stackalloc bool[colUsage.Length];
+        colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
+        var readers = new DbItemParser[declaringTypeArguments.Length];
+        for (int i = 0; i < readers.Length; i++) {
+            var type = declaringTypeArguments[i];
+            var maybeNull = !type.IsValueType;
+            Type[] args = [];
+            if (type.IsGenericType) {
+                if (type.IsValueType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+                    maybeNull = true;
+                args = type.GetGenericArguments();
+            }
+            var typeInfo = TypeParsingInfo.ForceGet(type);
+            var r = typeInfo.TryGetParser(args, $"Item{i + 1}", maybeNull ? NullableTypeHandle.Instance : NotNullHandle.Instance, columns, colModifier, maybeNull, ref colUsage);
+            if (r is null) {
+                colUsage.Rollback(checkpoint, lastIndUsed);
+                return null;
+            }
+            readers[i] = r;
+        }
+        var method = closedTargetType.GetConstructor(declaringTypeArguments) ?? throw new Exception($"unable to load the ctor for {closedTargetType}");
+        return new CustomClassParser(
+            isNullable && closedTargetType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedTargetType) : closedTargetType,
+            paramName, nullColHandler, method, [..readers]);
     }
 }
 /// <summary>
@@ -61,33 +121,14 @@ public class TypeParsingInfo {
         AddValueTuple(typeof(ValueTuple<,,,,,>));
         AddValueTuple(typeof(ValueTuple<,,,,,,>));
         AddValueTuple(typeof(ValueTuple<,,,,,,,>));
+        var ti = GetOrAdd<DynaObject>();
+        ti.Matcher = DynaObjectTypeMatcher.Instance;
+        ti.IsInit = true;
     }
     private static void AddValueTuple(Type tupleType) {
-        ConstructorInfo[] ctors = tupleType.GetConstructors();
-        Type[] genericArgs = tupleType.GetGenericArguments();
-        int argCount = genericArgs.Length;
-        ConstructorInfo ctor = null!;
-        ParameterInfo[] parameters = null!;
-        for (int i = 0; i < ctors.Length; i++) {
-            ctor = ctors[i];
-            parameters = ctor.GetParameters();
-
-            if (parameters.Length != argCount)
-                continue;
-            bool isMatch = true;
-            for (int j = 0; j < argCount; j++) {
-                if (parameters[j].ParameterType != genericArgs[j]) {
-                    isMatch = false;
-                    break;
-                }
-            }
-            if (isMatch)
-                break;
-        }
-        var methodCtorInfo = new MethodCtorInfo(ctor);
-        for (int i = 0; i < parameters.Length; i++)
-            methodCtorInfo.Parameters[i].NameComparer = NoNameComparer.Instance;
-        GetOrAdd(tupleType).AddPossibleConstruction(methodCtorInfo);
+        var ti = GetOrAdd(tupleType);
+        ti.Matcher = TupleTypeMatcher.Instance;
+        ti.IsInit = true;
     }
     private TypeParsingInfo(Type Type, IDbTypeParserInfoMatcher? Matcher) {
         this.Type = Nullable.GetUnderlyingType(Type) ?? Type;
@@ -126,7 +167,7 @@ public class TypeParsingInfo {
                 Init();
             return _matcher;
         } set {
-            if (value is not null && value.CanUseType(Type))
+            if (value is null || !value.CanUseType(Type))
                 throw new InvalidOperationException($"the Matcher must be of type {Type}");
             Interlocked.Exchange(ref _matcher, value);
         }
@@ -450,10 +491,14 @@ public class TypeParsingInfo {
             Init();
         var closedType = Type.CloseType(declaringTypeArguments);
         if (_matcher is not null)
-            return _matcher.TryGetParser(closedType, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage);
+            return _matcher.TryGetParser(declaringTypeArguments, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage, closedType);
+        return DefaultTryGetParser(declaringTypeArguments, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage, closedType);
+    }
+
+    private CustomClassParser? DefaultTryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedType) {
         var actualType = isNullable && closedType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedType) : closedType;
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
-        colUsage.InitCheckpoint(checkpoint);
+        colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
         var mcis = MCIs;
         List<DbItemParser> readers = [];
         MemberInfo? method = null;
@@ -472,7 +517,7 @@ public class TypeParsingInfo {
                 canCompleteWithMembers = mci.CanCompleteWithMembers;
                 break;
             }
-            colUsage.Rollback(checkpoint);
+            colUsage.Rollback(checkpoint, lastIndUsed);
             readers.Clear();
         }
         if (method is null) {
