@@ -130,7 +130,7 @@ int id1 = row.Get<int>("ID");
 
 // Subsequent occurrences append #2, #3, etc.
 int id2 = row.Get<int>("ID#2");
-string name2 = row.Get<string>("Name#2");
+object name2 = row["Name#2"];
 ```
 
 #### **Modifying Values**
