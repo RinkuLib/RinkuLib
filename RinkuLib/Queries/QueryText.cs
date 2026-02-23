@@ -62,11 +62,10 @@ public sealed class QueryText : IQueryText {
     /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
     /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
 #if NET9_0_OR_GREATER
-    public unsafe string Parse<T>(Span<bool> usageMap, T accessor) where T : ITypeAccessor, allows ref struct
+    public unsafe string Parse<T>(Span<bool> usageMap, T accessor) where T : ITypeAccessor, allows ref struct { 
 #else
-    public unsafe string Parse(Span<bool> usageMap, TypeAccessor accessor)
+    public unsafe string Parse(Span<bool> usageMap, NoTypeAccessor accessor) {
 #endif
-        {
         Debug.Assert(usageMap.Length == RequiredVariablesLength);
 
         ValueStringBuilder sb = AverageLengthChunk <= 512
@@ -155,6 +154,110 @@ public sealed class QueryText : IQueryText {
         return sb.ToStringAndDispose();
     }
 #if !NET9_0_OR_GREATER
+    /// <summary>
+    /// Processes the input state array to synthesize the final query string based on segment logic.
+    /// </summary>
+    /// <remarks>
+    /// The execution follows a high-performance linear path:
+    /// <list type="bullet">
+    /// <item>Evaluates the <paramref name="usageMap"/> against the jump-table to determine segment visibility.</item>
+    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
+    /// <item>Bypasses string allocation and returns <see cref="QueryString"/> if the logic resolves to the full original template.</item>
+    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
+    /// </list>
+    /// </remarks>
+    /// <param name="usageMap">The state array containing logical indicators</param>
+    /// <param name="accessor">The accessor to get the values</param>
+    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
+    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    public unsafe string Parse(Span<bool> usageMap, TypeAccessor accessor) {
+        Debug.Assert(usageMap.Length == RequiredVariablesLength);
+
+        ValueStringBuilder sb = AverageLengthChunk <= 512
+                ? new ValueStringBuilder(stackalloc char[512])
+                : new ValueStringBuilder(AverageLengthChunk);
+        var start = 0;
+        var length = 0;
+        var prevExcess = 0;
+
+        fixed (char* ptr = QueryString)
+        fixed (Condition* conditions = Conditions) {
+            var cond = conditions;
+            int i = 0;
+            while (true) {
+                if ((*cond).SegmentInd == i) {
+                    if ((*cond).Length < 0)
+                        break;
+
+                Restart:
+                    if (!usageMap[(*cond).CondIndex]) {
+                        if (length > 0) {
+                            sb.Append(ptr + start, length);
+                            length = 0;
+                        }
+                        var skip = (*cond).NbConditionSkip;
+                        if (skip < 0) {
+                            var orCount = (*(cond + 1)).NbConditionSkip;
+                            int j = 1;
+                            for (; j <= orCount; j++)
+                                if (usageMap[(*(cond + j)).CondIndex])
+                                    break;
+                            if (j <= orCount) {
+                                cond += orCount + 1;
+                                continue;
+                            }
+                            skip = -skip;
+                        }
+                        i += (*cond).Length;
+                        cond += skip;
+                        continue;
+                    }
+                    else {
+                        cond++;
+                        if ((*cond).SegmentInd == i)
+                            goto Restart;
+                    }
+                }
+
+                var seg = Segments[i];
+                if (seg.Handler is not null) {
+                    if (length > 0) {
+                        sb.Append(ptr + start, length);
+                        length = 0;
+                    }
+                    prevExcess = 0;
+                    start = seg.Start + seg.Length;
+
+                    var val = accessor.GetValue(seg.ExcessOrInd)
+                        ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
+
+                    seg.Handler.Handle(ref sb, val);
+                    i++;
+                    continue;
+                }
+
+                if (length == 0) {
+                    if (seg.IsSection)
+                        sb.Length -= prevExcess;
+                    start = seg.Start;
+                }
+                length += seg.Length;
+                prevExcess = seg.ExcessOrInd;
+                i++;
+            }
+
+            if (length == QueryString.Length && !ContainsHandlers) {
+                sb.Dispose();
+                return QueryString;
+            }
+            if (length > 0)
+                sb.Append(ptr + start, length);
+            else
+                sb.Length -= prevExcess;
+        }
+        UpdateAvg(sb.Length);
+        return sb.ToStringAndDispose();
+    }
     /// <summary>
     /// Processes the input state array to synthesize the final query string based on segment logic.
     /// </summary>

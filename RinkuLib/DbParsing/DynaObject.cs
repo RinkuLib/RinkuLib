@@ -23,7 +23,15 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     /// <summary>
     /// Get the value at the corresponding index
     /// </summary>
-    public abstract T Get<T>(int index);
+    public abstract bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val);
+    /// <summary>
+    /// Get the value with the corresponding index
+    /// </summary>
+    public T Get<T>(int index) {
+        if (!TryGet<T>(index, out var val))
+            throw new Exception($"Unable to get value at index {index} of type {typeof(T)}");
+        return val;
+    }
     /// <summary>
     /// Get the value with the corresponding key
     /// </summary>
@@ -31,7 +39,9 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         var ind = Mapper.GetIndex(key);
         if (ind < 0)
             throw new KeyNotFoundException(key);
-        return Get<T>(ind);
+        if (!TryGet<T>(ind, out var val))
+            throw new Exception($"Unable to get value for {key} of type {typeof(T)}");
+        return val;
     }
     /// <summary>
     /// Get the value with the corresponding key
@@ -40,30 +50,32 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         var ind = Mapper.GetIndex(key);
         if (ind < 0)
             throw new KeyNotFoundException(key.ToString());
-        return Get<T>(ind);
+        if (!TryGet<T>(ind, out var val))
+            throw new Exception($"Unable to get value for {key} of type {typeof(T)}");
+        return val;
     }
 
     /// <summary>
     /// Set the value at the corresponding index
     /// </summary>
-    public abstract void Set<T>(int index, T value);
+    public abstract bool Set<T>(int index, T value);
     /// <summary>
     /// Get the value with the corresponding key
     /// </summary>
-    public void Set<T>(string key, T value) {
+    public bool Set<T>(string key, T value) {
         var ind = Mapper.GetIndex(key);
         if (ind < 0)
-            throw new KeyNotFoundException(key);
-        Set(ind, value);
+            return false;
+        return Set(ind, value);
     }
     /// <summary>
     /// Get the value with the corresponding key
     /// </summary>
-    public void Set<T>(ReadOnlySpan<char> key, T value) {
+    public bool Set<T>(ReadOnlySpan<char> key, T value) {
         var ind = Mapper.GetIndex(key);
         if (ind < 0)
-            throw new KeyNotFoundException(key.ToString());
-        Set(ind, value);
+            return false;
+        return Set(ind, value);
     }
 
     /// <inheritdoc/>
@@ -73,7 +85,9 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         get {
             if (ind < 0 || ind >= Mapper.Count)
                 throw new IndexOutOfRangeException();
-            return Get<object?>(ind);
+            if (!TryGet<object?>(ind, out var val))
+                throw new Exception($"Unable to get value at index {ind} of type {typeof(object)}");
+            return val;
         }
         set {
             if (ind < 0 || ind >= Mapper.Count)
@@ -87,7 +101,9 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             var ind = Mapper.GetIndex(key);
             if (ind < 0)
                 throw new KeyNotFoundException(key);
-            return Get<object?>(ind);
+            if (!TryGet<object?>(ind, out var val))
+                throw new Exception($"Unable to get value for {key} of type {typeof(object)}");
+            return val;
         }
         set {
             var ind = Mapper.GetIndex(key);
@@ -102,7 +118,9 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             var ind = Mapper.GetIndex(key);
             if (ind < 0)
                 throw new KeyNotFoundException(key.ToString());
-            return Get<object?>(ind);
+            if (!TryGet<object?>(ind, out var val))
+                throw new Exception($"Unable to get value for {key} of type {typeof(object)}");
+            return val;
         }
         set {
             var ind = Mapper.GetIndex(key);
@@ -126,7 +144,9 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     public IEnumerable<object?> Values { get {
         var count = Mapper.Count;
         for (int i = 0; i < count; i++) {
-            yield return Get<object?>(i);
+            if (!TryGet<object?>(i, out var val))
+                throw new Exception($"Unable to get value for {i} of type {typeof(object)}");
+            yield return val;
         }
     } }
 
@@ -144,8 +164,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             value = default;
             return false;
         }
-        value = Get<object?>(ind);
-        return true;
+        return TryGet(ind, out value);
     }
     /// <inheritdoc/>
     public bool TryGetValue<T>(string key, [MaybeNullWhen(false)] out T value) {
@@ -154,8 +173,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             value = default;
             return false;
         }
-        value = Get<T>(ind);
-        return true;
+        return TryGet(ind, out value);
     }
     /// <inheritdoc/>
     public bool TryGetValue<T>(ReadOnlySpan<char> key, [MaybeNullWhen(false)] out T value) {
@@ -164,8 +182,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             value = default;
             return false;
         }
-        value = Get<T>(ind);
-        return true;
+        return TryGet(ind, out value);
     }
     /// <inheritdoc/>
     public bool TryGetValue(string key, [MaybeNullWhen(false)] out object? value) {
@@ -174,8 +191,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             value = default;
             return false;
         }
-        value = Get<object?>(ind);
-        return true;
+        return TryGet(ind, out value);
     }
     /// <inheritdoc/>
     IEnumerator<KeyValuePair<string, int>> IEnumerable<KeyValuePair<string, int>>.GetEnumerator() => Mapper.GetEnumerator();
@@ -184,589 +200,372 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     /// <inheritdoc/>
     public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() {
         var keys = Mapper.GetKeysArray();
-        for (int i = 0; i < keys.Length; i++)
-            yield return new(keys[i], Get<object?>(i));
+        for (int i = 0; i < keys.Length; i++) {
+            if (!TryGet<object?>(i, out var val))
+                throw new Exception($"Unable to get value for {i} of type {typeof(object)}");
+            yield return new(keys[i], val);
+        }
     }
-    /// <summary>A reusable to safely return the value</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected static TTo GetValue<TFrom, TTo>(TFrom value) {
-        if (typeof(TFrom) == typeof(TTo))
-            return Unsafe.As<TFrom, TTo>(ref value);
-
-        if (typeof(TFrom) == typeof(sbyte)) {
-            sbyte v = Unsafe.As<TFrom, sbyte>(ref value);
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
+    /// <summary></summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    protected static bool TrySet<T, TField>(T value, ref TField? field) {
+        if (value is TField v) {
+            field = v;
+            return true;
         }
-        else if (typeof(TFrom) == typeof(byte)) {
-            byte v = Unsafe.As<TFrom, byte>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(short)) {
-            short v = Unsafe.As<TFrom, short>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(ushort)) {
-            ushort v = Unsafe.As<TFrom, ushort>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(int)) {
-            int v = Unsafe.As<TFrom, int>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(uint)) {
-            uint v = Unsafe.As<TFrom, uint>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(long)) {
-            long v = Unsafe.As<TFrom, long>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(ulong)) {
-            ulong v = Unsafe.As<TFrom, ulong>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(float)) {
-            float v = Unsafe.As<TFrom, float>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(double)) {
-            double v = Unsafe.As<TFrom, double>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(decimal))
-                return (TTo)(object)(decimal)v;
-        }
-        else if (typeof(TFrom) == typeof(decimal)) {
-            decimal v = Unsafe.As<TFrom, decimal>(ref value);
-            if (typeof(TTo) == typeof(sbyte))
-                return (TTo)(object)(sbyte)v;
-            if (typeof(TTo) == typeof(byte))
-                return (TTo)(object)(byte)v;
-            if (typeof(TTo) == typeof(short))
-                return (TTo)(object)(short)v;
-            if (typeof(TTo) == typeof(ushort))
-                return (TTo)(object)(ushort)v;
-            if (typeof(TTo) == typeof(int))
-                return (TTo)(object)(int)v;
-            if (typeof(TTo) == typeof(uint))
-                return (TTo)(object)(uint)v;
-            if (typeof(TTo) == typeof(long))
-                return (TTo)(object)(long)v;
-            if (typeof(TTo) == typeof(ulong))
-                return (TTo)(object)(ulong)v;
-            if (typeof(TTo) == typeof(float))
-                return (TTo)(object)(float)v;
-            if (typeof(TTo) == typeof(double))
-                return (TTo)(object)(double)v;
-        }
-        return (TTo)(object)value!;
-    }
-
-    /// <summary>A reusable to safely set the value</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected static void SetValue<TField, T>(ref TField field, T value) {
-        if (typeof(T) == typeof(TField)) {
-            field = Unsafe.As<T, TField>(ref value);
-            return;
-        }
-        if (value is TField converted) {
-            field = converted;
-            return;
-        }
-        field = GetValue<T, TField>(value);
+        return Caster.TryCast(value, out field);
     }
 }
 internal class DynaObject<T0>(T0 val0, Mapper mapper) : DynaObject(mapper, 1) {
-    private T0 val0 = val0;
-    public override T Get<T>(int index) {
-        if (index != 0)
-            throw new IndexOutOfRangeException();
-        return GetValue<T0, T>(val0);
+    private T0? val0 = val0;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) {
+        if (index != 0) {
+            val = default;
+            return false;
+        }
+        return Caster.TryCast(val0, out val);
     }
 
-    public override void Set<T>(int index, T value) {
-        if (index != 0)
-            throw new IndexOutOfRangeException();
-        SetValue(ref val0, value);
-    }
+    public override bool Set<T>(int index, T value)
+        => index == 0 && TrySet(value, ref val0);
+
 }
 internal class DynaObject<T0, T1>(T0 val0, T1 val1, Mapper mapper) : DynaObject(mapper, 2) {
-    private T0 val0 = val0;
-    private T1 val1 = val1;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0),
-        1 => GetValue<T1, T>(val1),
+    private T0? val0 = val0;
+    private T1? val1 = val1;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val),
+        1 => Caster.TryCast(val1, out val),
         _ => throw new IndexOutOfRangeException()
     };
 
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0:
-                SetValue(ref val0, value);
-                break;
-            case 1:
-                SetValue(ref val1, value);
-                break;
-            default:
-                throw new IndexOutOfRangeException();
-        }
-    }
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 internal class DynaObject<T0, T1, T2>(T0 val0, T1 val1, T2 val2, Mapper mapper) : DynaObject(mapper, 3) {
-    private T0 val0 = val0;
-    private T1 val1 = val1;
-    private T2 val2 = val2;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0),
-        1 => GetValue<T1, T>(val1),
-        2 => GetValue<T2, T>(val2),
+    private T0? val0 = val0;
+    private T1? val1 = val1;
+    private T2? val2 = val2;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val),
+        1 => Caster.TryCast(val1, out val),
+        2 => Caster.TryCast(val2, out val),
         _ => throw new IndexOutOfRangeException()
     };
 
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break;
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break;
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
+/// <summary></summary>
 internal class DynaObject<T0, T1, T2, T3>(T0 val0, T1 val1, T2 val2, T3 val3, Mapper mapper) : DynaObject(mapper, 4) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
+    private T0? val0 = val0; 
+    private T1? val1 = val1; 
+    private T2? val2 = val2; 
+    private T3? val3 = val3;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, Mapper mapper) : DynaObject(mapper, 5) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3; private T4 val4 = val4;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
-        4 => GetValue<T4, T>(val4), 
+    private T0? val0 = val0; 
+    private T1? val1 = val1; 
+    private T2? val2 = val2; 
+    private T3? val3 = val3; 
+    private T4? val4 = val4;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
+        4 => Caster.TryCast(val4, out val), 
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            case 4: SetValue(ref val4, value); break; 
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        4 => TrySet(value, ref val4),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, Mapper mapper) : DynaObject(mapper, 6) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3; private T4 val4 = val4; private T5 val5 = val5;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
-        4 => GetValue<T4, T>(val4), 
-        5 => GetValue<T5, T>(val5), 
+    private T0? val0 = val0;
+    private T1? val1 = val1;
+    private T2? val2 = val2;
+    private T3? val3 = val3;
+    private T4? val4 = val4;
+    private T5? val5 = val5;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
+        4 => Caster.TryCast(val4, out val), 
+        5 => Caster.TryCast(val5, out val), 
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            case 4: SetValue(ref val4, value); break; 
-            case 5: SetValue(ref val5, value); break;
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        4 => TrySet(value, ref val4),
+        5 => TrySet(value, ref val5),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, Mapper mapper) : DynaObject(mapper, 7) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3; private T4 val4 = val4; private T5 val5 = val5; private T6 val6 = val6;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
-        4 => GetValue<T4, T>(val4), 
-        5 => GetValue<T5, T>(val5), 
-        6 => GetValue<T6, T>(val6), 
+    private T0? val0 = val0;
+    private T1? val1 = val1;
+    private T2? val2 = val2;
+    private T3? val3 = val3;
+    private T4? val4 = val4;
+    private T5? val5 = val5;
+    private T6? val6 = val6;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
+        4 => Caster.TryCast(val4, out val), 
+        5 => Caster.TryCast(val5, out val), 
+        6 => Caster.TryCast(val6, out val), 
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            case 4: SetValue(ref val4, value); break; 
-            case 5: SetValue(ref val5, value); break;
-            case 6: SetValue(ref val6, value); break; 
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        4 => TrySet(value, ref val4),
+        5 => TrySet(value, ref val5),
+        6 => TrySet(value, ref val6),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, Mapper mapper) : DynaObject(mapper, 8) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3; private T4 val4 = val4; private T5 val5 = val5; private T6 val6 = val6; private T7 val7 = val7;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
-        4 => GetValue<T4, T>(val4), 
-        5 => GetValue<T5, T>(val5), 
-        6 => GetValue<T6, T>(val6), 
-        7 => GetValue<T7, T>(val7),
+    private T0? val0 = val0; 
+    private T1? val1 = val1;
+    private T2? val2 = val2;
+    private T3? val3 = val3;
+    private T4? val4 = val4;
+    private T5? val5 = val5;
+    private T6? val6 = val6;
+    private T7? val7 = val7;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
+        4 => Caster.TryCast(val4, out val), 
+        5 => Caster.TryCast(val5, out val), 
+        6 => Caster.TryCast(val6, out val), 
+        7 => Caster.TryCast(val7, out val),
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            case 4: SetValue(ref val4, value); break; 
-            case 5: SetValue(ref val5, value); break;
-            case 6: SetValue(ref val6, value); break; 
-            case 7: SetValue(ref val7, value); break;
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        4 => TrySet(value, ref val4),
+        5 => TrySet(value, ref val5),
+        6 => TrySet(value, ref val6),
+        7 => TrySet(value, ref val7),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, T8 val8, Mapper mapper) : DynaObject(mapper, 9) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3; private T4 val4 = val4; private T5 val5 = val5; private T6 val6 = val6; private T7 val7 = val7; private T8 val8 = val8;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
-        4 => GetValue<T4, T>(val4), 
-        5 => GetValue<T5, T>(val5), 
-        6 => GetValue<T6, T>(val6), 
-        7 => GetValue<T7, T>(val7),
-        8 => GetValue<T8, T>(val8), 
+    private T0? val0 = val0;
+    private T1? val1 = val1;
+    private T2? val2 = val2;
+    private T3? val3 = val3;
+    private T4? val4 = val4;
+    private T5? val5 = val5;
+    private T6? val6 = val6; 
+    private T7? val7 = val7; 
+    private T8? val8 = val8;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
+        4 => Caster.TryCast(val4, out val), 
+        5 => Caster.TryCast(val5, out val), 
+        6 => Caster.TryCast(val6, out val), 
+        7 => Caster.TryCast(val7, out val),
+        8 => Caster.TryCast(val8, out val), 
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            case 4: SetValue(ref val4, value); break; 
-            case 5: SetValue(ref val5, value); break;
-            case 6: SetValue(ref val6, value); break; 
-            case 7: SetValue(ref val7, value); break;
-            case 8: SetValue(ref val8, value); break; 
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        4 => TrySet(value, ref val4),
+        5 => TrySet(value, ref val5),
+        6 => TrySet(value, ref val6),
+        7 => TrySet(value, ref val7),
+        8 => TrySet(value, ref val8),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, T8 val8, T9 val9, Mapper mapper) : DynaObject(mapper, 10) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3; private T4 val4 = val4; private T5 val5 = val5; private T6 val6 = val6; private T7 val7 = val7; private T8 val8 = val8; private T9 val9 = val9;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
-        4 => GetValue<T4, T>(val4), 
-        5 => GetValue<T5, T>(val5), 
-        6 => GetValue<T6, T>(val6), 
-        7 => GetValue<T7, T>(val7),
-        8 => GetValue<T8, T>(val8), 
-        9 => GetValue<T9, T>(val9), 
+    private T0? val0 = val0;
+    private T1? val1 = val1;
+    private T2? val2 = val2;
+    private T3? val3 = val3;
+    private T4? val4 = val4;
+    private T5? val5 = val5;
+    private T6? val6 = val6;
+    private T7? val7 = val7; 
+    private T8? val8 = val8; 
+    private T9? val9 = val9;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
+        4 => Caster.TryCast(val4, out val), 
+        5 => Caster.TryCast(val5, out val), 
+        6 => Caster.TryCast(val6, out val), 
+        7 => Caster.TryCast(val7, out val),
+        8 => Caster.TryCast(val8, out val), 
+        9 => Caster.TryCast(val9, out val), 
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            case 4: SetValue(ref val4, value); break; 
-            case 5: SetValue(ref val5, value); break;
-            case 6: SetValue(ref val6, value); break; 
-            case 7: SetValue(ref val7, value); break;
-            case 8: SetValue(ref val8, value); break; 
-            case 9: SetValue(ref val9, value); break;
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        4 => TrySet(value, ref val4),
+        5 => TrySet(value, ref val5),
+        6 => TrySet(value, ref val6),
+        7 => TrySet(value, ref val7),
+        8 => TrySet(value, ref val8),
+        9 => TrySet(value, ref val9),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, T8 val8, T9 val9, T10 val10, Mapper mapper) : DynaObject(mapper, 11) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3; private T4 val4 = val4; private T5 val5 = val5; private T6 val6 = val6; private T7 val7 = val7; private T8 val8 = val8; private T9 val9 = val9; private T10 val10 = val10;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
-        4 => GetValue<T4, T>(val4), 
-        5 => GetValue<T5, T>(val5), 
-        6 => GetValue<T6, T>(val6), 
-        7 => GetValue<T7, T>(val7),
-        8 => GetValue<T8, T>(val8), 
-        9 => GetValue<T9, T>(val9), 
-        10 => GetValue<T10, T>(val10), 
+    private T0? val0 = val0;
+    private T1? val1 = val1;
+    private T2? val2 = val2;
+    private T3? val3 = val3;
+    private T4? val4 = val4;
+    private T5? val5 = val5;
+    private T6? val6 = val6;
+    private T7? val7 = val7; 
+    private T8? val8 = val8; 
+    private T9? val9 = val9; 
+    private T10? val10 = val10;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
+        4 => Caster.TryCast(val4, out val), 
+        5 => Caster.TryCast(val5, out val), 
+        6 => Caster.TryCast(val6, out val), 
+        7 => Caster.TryCast(val7, out val),
+        8 => Caster.TryCast(val8, out val), 
+        9 => Caster.TryCast(val9, out val), 
+        10 => Caster.TryCast(val10, out val), 
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            case 4: SetValue(ref val4, value); break; 
-            case 5: SetValue(ref val5, value); break;
-            case 6: SetValue(ref val6, value); break; 
-            case 7: SetValue(ref val7, value); break;
-            case 8: SetValue(ref val8, value); break; 
-            case 9: SetValue(ref val9, value); break;
-            case 10: SetValue(ref val10, value); break; 
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        4 => TrySet(value, ref val4),
+        5 => TrySet(value, ref val5),
+        6 => TrySet(value, ref val6),
+        7 => TrySet(value, ref val7),
+        8 => TrySet(value, ref val8),
+        9 => TrySet(value, ref val9),
+        10 => TrySet(value, ref val10),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, T8 val8, T9 val9, T10 val10, T11 val11, Mapper mapper) : DynaObject(mapper, 12) {
-    private T0 val0 = val0; private T1 val1 = val1; private T2 val2 = val2; private T3 val3 = val3; private T4 val4 = val4; private T5 val5 = val5; private T6 val6 = val6; private T7 val7 = val7; private T8 val8 = val8; private T9 val9 = val9; private T10 val10 = val10; private T11 val11 = val11;
-    public override T Get<T>(int index) => index switch {
-        0 => GetValue<T0, T>(val0), 
-        1 => GetValue<T1, T>(val1), 
-        2 => GetValue<T2, T>(val2), 
-        3 => GetValue<T3, T>(val3),
-        4 => GetValue<T4, T>(val4), 
-        5 => GetValue<T5, T>(val5), 
-        6 => GetValue<T6, T>(val6), 
-        7 => GetValue<T7, T>(val7),
-        8 => GetValue<T8, T>(val8), 
-        9 => GetValue<T9, T>(val9), 
-        10 => GetValue<T10, T>(val10), 
-        11 => GetValue<T11, T>(val11),
+    private T0? val0 = val0;
+    private T1? val1 = val1;
+    private T2? val2 = val2;
+    private T3? val3 = val3;
+    private T4? val4 = val4;
+    private T5? val5 = val5;
+    private T6? val6 = val6;
+    private T7? val7 = val7;
+    private T8? val8 = val8;
+    private T9? val9 = val9;
+    private T10? val10 = val10;
+    private T11? val11 = val11;
+    public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
+        0 => Caster.TryCast(val0, out val), 
+        1 => Caster.TryCast(val1, out val), 
+        2 => Caster.TryCast(val2, out val), 
+        3 => Caster.TryCast(val3, out val),
+        4 => Caster.TryCast(val4, out val), 
+        5 => Caster.TryCast(val5, out val), 
+        6 => Caster.TryCast(val6, out val), 
+        7 => Caster.TryCast(val7, out val),
+        8 => Caster.TryCast(val8, out val), 
+        9 => Caster.TryCast(val9, out val), 
+        10 => Caster.TryCast(val10, out val), 
+        11 => Caster.TryCast(val11, out val),
         _ => throw new IndexOutOfRangeException()
     };
-    public override void Set<T>(int index, T value) {
-        switch (index) {
-            case 0: SetValue(ref val0, value); break; 
-            case 1: SetValue(ref val1, value); break;
-            case 2: SetValue(ref val2, value); break; 
-            case 3: SetValue(ref val3, value); break;
-            case 4: SetValue(ref val4, value); break; 
-            case 5: SetValue(ref val5, value); break;
-            case 6: SetValue(ref val6, value); break; 
-            case 7: SetValue(ref val7, value); break;
-            case 8: SetValue(ref val8, value); break; 
-            case 9: SetValue(ref val9, value); break;
-            case 10: SetValue(ref val10, value); break; 
-            case 11: SetValue(ref val11, value); break;
-            default: throw new IndexOutOfRangeException();
-        }
-    }
+
+    public override bool Set<T>(int index, T value) => index switch {
+        0 => TrySet(value, ref val0),
+        1 => TrySet(value, ref val1),
+        2 => TrySet(value, ref val2),
+        3 => TrySet(value, ref val3),
+        4 => TrySet(value, ref val4),
+        5 => TrySet(value, ref val5),
+        6 => TrySet(value, ref val6),
+        7 => TrySet(value, ref val7),
+        8 => TrySet(value, ref val8),
+        9 => TrySet(value, ref val9),
+        10 => TrySet(value, ref val10),
+        11 => TrySet(value, ref val11),
+        _ => throw new Exception("Unable to set the value"),
+    };
 }

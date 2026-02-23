@@ -140,8 +140,10 @@ public unsafe ref struct QueryExtracter {
     public const char JoinAndOrChar = '&';
     /// <summary>Identifier to indicate that a comment should not be a condition, but actualy a comment</summary>
     public const char CommentAsCommentChar = '~';
+#pragma warning disable CA2211
     /// <summary>Identifier to indicate that a variable is a handled variable</summary>
     public static char HandlerChar = '_';
+#pragma warning restore CA2211
     private int Length;
     private char* CurrentChar;
     private char* LastChar;

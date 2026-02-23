@@ -116,7 +116,8 @@ public class QueryCommand : IQueryCommand, ICache {
                 cache = new SchemaParser<T>(p, entry.CommandBehavior);
                 return !NeedToCache(usageMap);
             }
-        NextEntry: ;
+        NextEntry:
+            ;
         }
         cache = default;
         return false;
@@ -159,7 +160,8 @@ public class QueryCommand : IQueryCommand, ICache {
                 return !NeedToCache(usageMap);
             }
 
-        NextEntry: ;
+        NextEntry:
+            ;
         }
 
         cache = default;
@@ -431,7 +433,9 @@ public class QueryCommand : IQueryCommand, ICache {
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool SetCommand(IDbCommand cmd, object parameterObj, Span<bool> usageMap) {
+    public bool SetCommand(IDbCommand cmd, object? parameterObj, Span<bool> usageMap) {
+        if (parameterObj is null)
+            return ActualSetCommand(cmd, new NoTypeAccessor(), usageMap);
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
         var cache = GetAccessorCache(handle, type);
@@ -440,7 +444,9 @@ public class QueryCommand : IQueryCommand, ICache {
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool SetCommand(DbCommand cmd, object parameterObj, Span<bool> usageMap) {
+    public bool SetCommand(DbCommand cmd, object? parameterObj, Span<bool> usageMap) {
+        if (parameterObj is null)
+            return ActualSetCommand(cmd, new NoTypeAccessor(), usageMap);
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
         var cache = GetAccessorCache(handle, type);
@@ -519,50 +525,57 @@ public class QueryCommand : IQueryCommand, ICache {
     }
 #if NET9_0_OR_GREATER
     private bool ActualSetCommand<T>(IDbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
-        Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
-        return true;
-    }
-    private bool ActualSetCommand<T>(DbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
-        Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
-        return true;
-    }
 #else
+    private bool ActualSetCommand(IDbCommand cmd, NoTypeAccessor accessor, Span<bool> usageMap) {
+#endif
+        Debug.Assert(usageMap.Length == Mapper.Count);
+        var varInfos = Parameters._variablesInfo;
+        var handlers = Parameters._specialHandlers;
+
+        ref string pKeys = ref Mapper.KeysStartPtr;
+        var total = Mapper.Count;
+        int i = 0;
+        for (; i < StartSpecialHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
+
+        for (; i < StartBaseHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlers[i].Use(cmd, accessor.GetValue(i));
+
+        for (; i < total; i++)
+            usageMap[i] = accessor.IsUsed(i);
+
+        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        return true;
+    }
+#if NET9_0_OR_GREATER
+    private bool ActualSetCommand<T>(DbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
+#else
+    private bool ActualSetCommand(DbCommand cmd, NoTypeAccessor accessor, Span<bool> usageMap) {
+#endif
+        Debug.Assert(usageMap.Length == Mapper.Count);
+        var varInfos = Parameters._variablesInfo;
+        var handlers = Parameters._specialHandlers;
+
+        ref string pKeys = ref Mapper.KeysStartPtr;
+        var total = Mapper.Count;
+        int i = 0;
+        for (; i < StartSpecialHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
+
+        for (; i < StartBaseHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlers[i].Use(cmd, accessor.GetValue(i));
+
+        for (; i < total; i++)
+            usageMap[i] = accessor.IsUsed(i);
+
+        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        return true;
+    }
+#if !NET9_0_OR_GREATER
     private bool ActualSetCommand(IDbCommand cmd, TypeAccessor accessor, Span<bool> usageMap) {
         Debug.Assert(usageMap.Length == Mapper.Count);
         var varInfos = Parameters._variablesInfo;
@@ -652,4 +665,4 @@ public class QueryCommand : IQueryCommand, ICache {
         return true;
     }
 #endif
-}
+    }

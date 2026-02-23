@@ -80,6 +80,16 @@ public class MapperTests {
         Assert.False(missing);
         Assert.Equal(-1, missingIndex);
     }
+    [Fact]
+    public void AtFoo_And_At_ID_Span() {
+        using var mapper = Mapper.GetMapper(["@foo", "@id"]);
+
+        string name = "id";
+        Span<char> nameSpan = stackalloc char[name.Length + 1];
+        nameSpan[0] = '@';
+        name.AsSpan().CopyTo(nameSpan[1..]);
+        Assert.Equal(1, mapper.GetIndex(nameSpan));
+    }
 
     #endregion
 

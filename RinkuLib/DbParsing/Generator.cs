@@ -70,7 +70,7 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
         var name = $"L{labelCounter++:000}";
         LabelNames[label] = name;
 
-        Write($"[IL] DefineLabel {name}");
+        //Write($"[IL] DefineLabel {name}");
         return label;
     }
 

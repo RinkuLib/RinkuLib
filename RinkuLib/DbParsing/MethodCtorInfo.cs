@@ -179,14 +179,18 @@ public class MethodCtorInfo {
             return false;
         if (this.MethodBase == info.MethodBase)
             return false;
+        bool hasMoreSpecific = false;
         for (int i = 0; i < len; i++) {
             var typeThis = this.Parameters[i].TargetType;
             var typeOther = info.Parameters[i].TargetType;
-            if (typeThis.IsAssignableTo(typeOther))
+            if (typeThis.IsAssignableTo(typeOther)) {
+                if (!hasMoreSpecific)
+                    hasMoreSpecific = typeThis != typeOther;
                 continue;
+            }
             return false;
         }
-        return true;
+        return hasMoreSpecific || len < this.Parameters.Length;
     }
     /// <summary>
     /// Compares signatures to determine if two candidates are functionally identical.

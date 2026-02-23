@@ -29,6 +29,15 @@ public interface ITypeAccessor {
 /// <summary>
 /// IL compiled access of an item
 /// </summary>
+public readonly struct NoTypeAccessor : ITypeAccessor {
+    /// <inheritdoc/>
+    public bool IsUsed(int index) => false;
+    /// <inheritdoc/>
+    public object GetValue(int index) => null!;
+}
+/// <summary>
+/// IL compiled access of an item
+/// </summary>
 public readonly ref struct TypeAccessor(object item, Func<object, int, bool> usage, Func<object, int, object> value) : ITypeAccessor {
     private readonly object _item = item;
     private readonly Func<object, int, bool> _getUsage = usage;

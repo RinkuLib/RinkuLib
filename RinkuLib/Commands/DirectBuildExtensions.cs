@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Runtime.CompilerServices;
 using RinkuLib.Queries;
 
 namespace RinkuLib.Commands; 
@@ -51,12 +50,8 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public int ExecuteQuery(DbConnection cnn, object parametersObj, DbTransaction? transaction = null, int? timeout = null) {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public int ExecuteQuery(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
@@ -71,17 +66,47 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<int> ExecuteQueryAsync(DbConnection cnn, object parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public Task<int> ExecuteQueryAsync(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteQueryAsync(command, true, ct);
             return cmd.ExecuteQueryAsync<NoNeedToCache>(default, true, ct);
+        }
+
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public DbDataReader ExecuteReader(DbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReader(command, behavior);
+            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+        }
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<DbDataReader> ExecuteReaderAsync(DbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReaderAsync(command, behavior, ct);
+            return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
         }
 
         /// <summary>
@@ -91,17 +116,13 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T? QuerySingle<T>(DbConnection cnn, object parametersObj, DbTransaction? transaction = null, int? timeout = null) {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public T? QueryOne<T>(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingle<SchemaParser<T>, T>(cache, true);
-            return cmd.QuerySingle<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -110,17 +131,28 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public IEnumerable<T> QueryMultiple<T>(DbConnection cnn, object parametersObj, DbTransaction? transaction = null, int? timeout = null) {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public IEnumerable<T> QueryAll<T>(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultiple<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryMultiple<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public List<T> QueryAllBuffered<T>(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
 
         /// <summary>
@@ -131,17 +163,13 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QuerySingleAsync<T>(DbConnection cnn, object parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public Task<T?> QueryOneAsync<T>(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QuerySingleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -151,17 +179,29 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryMultipleAsync<T>(DbConnection cnn, object parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public IAsyncEnumerable<T> QueryAllAsync<T>(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultipleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryMultipleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T>(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
 
         /// <summary>
@@ -171,14 +211,10 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public int ExecuteQuery(IDbConnection cnn, object parametersObj, IDbTransaction? transaction = null, int? timeout = null) {
+        public int ExecuteQuery(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) {
             if (cnn is DbConnection c && transaction is DbTransaction t)
                 return command.ExecuteQuery(c, parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
@@ -193,19 +229,32 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<int> ExecuteQueryAsync(IDbConnection cnn, object parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public Task<int> ExecuteQueryAsync(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             if (cnn is DbConnection c && transaction is DbTransaction t)
                 return command.ExecuteQueryAsync(c, parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteQueryAsync(command, true, ct);
             return cmd.ExecuteQueryAsync<NoNeedToCache>(default, true, ct);
+        }
+
+        /// <summary>
+        /// Executes the reader of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public DbDataReader ExecuteReader(IDbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReader(command, behavior);
+            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
         }
 
         /// <summary>
@@ -215,19 +264,15 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T? QuerySingle<T>(IDbConnection cnn, object parametersObj, IDbTransaction? transaction = null, int? timeout = null) {
+        public T? QueryOne<T>(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QuerySingle<T>(c, parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryOne<T>(c, parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingle<SchemaParser<T>, T>(cache, true);
-            return cmd.QuerySingle<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -236,19 +281,32 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public IEnumerable<T> QueryMultiple<T>(IDbConnection cnn, object parametersObj, IDbTransaction? transaction = null, int? timeout = null) {
+        public IEnumerable<T> QueryAll<T>(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QueryMultiple<T>(c, parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryAll<T>(c, parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultiple<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryMultiple<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public List<T> QueryAllBuffered<T>(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.QueryAllBuffered<T>(c, parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
 
         /// <summary>
@@ -259,19 +317,15 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QuerySingleAsync<T>(IDbConnection cnn, object parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public Task<T?> QueryOneAsync<T>(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QuerySingleAsync<T>(c, parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryOneAsync<T>(c, parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QuerySingleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -281,19 +335,33 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryMultipleAsync<T>(IDbConnection cnn, object parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public IAsyncEnumerable<T> QueryAllAsync<T>(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QueryMultipleAsync<T>(c, parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryAllAsync<T>(c, parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultipleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryMultipleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T>(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.QueryAllBufferedAsync<T>(c, parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         #endregion
         #region generic param
@@ -305,11 +373,7 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         public int ExecuteQuery<TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
@@ -325,16 +389,46 @@ public static class DirectBuildExtensions {
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
         public Task<int> ExecuteQueryAsync<TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteQueryAsync(command, true, ct);
             return cmd.ExecuteQueryAsync<NoNeedToCache>(default, true, ct);
+        }
+
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public DbDataReader ExecuteReader<TObj>(DbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReader(command, behavior);
+            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+        }
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<DbDataReader> ExecuteReaderAsync<TObj>(DbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReaderAsync(command, behavior, ct);
+            return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
         }
 
         /// <summary>
@@ -344,17 +438,13 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T? QuerySingle<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public T? QueryOne<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingle<SchemaParser<T>, T>(cache, true);
-            return cmd.QuerySingle<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -363,17 +453,28 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public IEnumerable<T> QueryMultiple<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public IEnumerable<T> QueryAll<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultiple<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryMultiple<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public List<T> QueryAllBuffered<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
 
         /// <summary>
@@ -384,17 +485,13 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QuerySingleAsync<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public Task<T?> QueryOneAsync<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QuerySingleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -404,17 +501,29 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryMultipleAsync<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public IAsyncEnumerable<T> QueryAllAsync<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultipleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryMultipleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
 
         /// <summary>
@@ -427,11 +536,7 @@ public static class DirectBuildExtensions {
         public int ExecuteQuery<TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
                 return command.ExecuteQuery<TObj>(c, parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
@@ -449,16 +554,29 @@ public static class DirectBuildExtensions {
         public Task<int> ExecuteQueryAsync<TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
                 return command.ExecuteQueryAsync<TObj>(c, parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteQueryAsync(command, true, ct);
             return cmd.ExecuteQueryAsync<NoNeedToCache>(default, true, ct);
+        }
+
+        /// <summary>
+        /// Executes the reader of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public DbDataReader ExecuteReader<TObj>(IDbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReader(command, behavior);
+            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
         }
 
         /// <summary>
@@ -468,19 +586,15 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T? QuerySingle<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+        public T? QueryOne<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QuerySingle<T, TObj>(c, parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryOne<T, TObj>(c, parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingle<SchemaParser<T>, T>(cache, true);
-            return cmd.QuerySingle<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -489,19 +603,32 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public IEnumerable<T> QueryMultiple<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+        public IEnumerable<T> QueryAll<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QueryMultiple<T, TObj>(c, parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryAll<T, TObj>(c, parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultiple<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryMultiple<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public List<T> QueryAllBuffered<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.QueryAllBuffered<T, TObj>(c, parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
 
         /// <summary>
@@ -512,19 +639,15 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QuerySingleAsync<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+        public Task<T?> QueryOneAsync<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QuerySingleAsync<T, TObj>(c, parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryOneAsync<T, TObj>(c, parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QuerySingleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -534,19 +657,33 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryMultipleAsync<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+        public IAsyncEnumerable<T> QueryAllAsync<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QueryMultipleAsync<T, TObj>(c, parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryAllAsync<T, TObj>(c, parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultipleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryMultipleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.QueryAllBufferedAsync<T, TObj>(c, parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         #endregion
         #region ref generic param
@@ -558,11 +695,7 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         public int ExecuteQuery<TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
@@ -578,16 +711,46 @@ public static class DirectBuildExtensions {
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
         public Task<int> ExecuteQueryAsync<TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteQueryAsync(command, true, ct);
             return cmd.ExecuteQueryAsync<NoNeedToCache>(default, true, ct);
+        }
+
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public DbDataReader ExecuteReader<TObj>(DbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReader(command, behavior);
+            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+        }
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<DbDataReader> ExecuteReaderAsync<TObj>(DbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReaderAsync(command, behavior, ct);
+            return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
         }
 
         /// <summary>
@@ -597,17 +760,13 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T? QuerySingle<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public T? QueryOne<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingle<SchemaParser<T>, T>(cache, true);
-            return cmd.QuerySingle<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -616,17 +775,28 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public IEnumerable<T> QueryMultiple<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public IEnumerable<T> QueryAll<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultiple<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryMultiple<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public List<T> QueryAllBuffered<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
 
         /// <summary>
@@ -637,17 +807,13 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QuerySingleAsync<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public Task<T?> QueryOneAsync<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QuerySingleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -657,17 +823,29 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryMultipleAsync<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+        public IAsyncEnumerable<T> QueryAllAsync<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultipleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryMultipleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
 
         /// <summary>
@@ -680,11 +858,7 @@ public static class DirectBuildExtensions {
         public int ExecuteQuery<TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
                 return command.ExecuteQuery<TObj>(c, ref parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
@@ -702,16 +876,29 @@ public static class DirectBuildExtensions {
         public Task<int> ExecuteQueryAsync<TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
                 return command.ExecuteQueryAsync<TObj>(c, ref parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteQueryAsync(command, true, ct);
             return cmd.ExecuteQueryAsync<NoNeedToCache>(default, true, ct);
+        }
+
+        /// <summary>
+        /// Executes the reader of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public DbDataReader ExecuteReader<TObj>(IDbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteReader(command, behavior);
+            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
         }
 
         /// <summary>
@@ -721,19 +908,15 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T? QuerySingle<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+        public T? QueryOne<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QuerySingle<T, TObj>(c, ref parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryOne<T, TObj>(c, ref parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingle<SchemaParser<T>, T>(cache, true);
-            return cmd.QuerySingle<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -742,19 +925,32 @@ public static class DirectBuildExtensions {
         /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public IEnumerable<T> QueryMultiple<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+        public IEnumerable<T> QueryAll<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QueryMultiple<T, TObj>(c, ref parametersObj, t, timeout);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryAll<T, TObj>(c, ref parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultiple<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryMultiple<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+                return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public List<T> QueryAllBuffered<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.QueryAllBuffered<T, TObj>(c, ref parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
         }
 
         /// <summary>
@@ -765,19 +961,15 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QuerySingleAsync<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+        public Task<T?> QueryOneAsync<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QuerySingleAsync<T, TObj>(c, ref parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryOneAsync<T, TObj>(c, ref parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QuerySingleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QuerySingleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -787,19 +979,33 @@ public static class DirectBuildExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryMultipleAsync<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+        public IAsyncEnumerable<T> QueryAllAsync<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
             if (cnn is DbConnection c && transaction is DbTransaction t)
-                return command.QueryMultipleAsync<T, TObj>(c, ref parametersObj, t, timeout, ct);
-            var cmd = cnn.CreateCommand();
-            if (transaction is not null)
-                cmd.Transaction = transaction;
-            if (timeout.HasValue)
-                cmd.CommandTimeout = timeout.Value;
+                return command.QueryAllAsync<T, TObj>(c, ref parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
-                return cmd.QueryMultipleAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryMultipleAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.QueryAllBufferedAsync<T, TObj>(c, ref parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.TryGetCache<T>(usageMap, out var cache))
+                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
         }
         #endregion
     }

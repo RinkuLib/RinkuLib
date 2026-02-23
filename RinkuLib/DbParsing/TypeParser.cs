@@ -132,9 +132,9 @@ public static class TypeParser<T> {
     /// <item>Evaluates if the generated logic allows for <see cref="CommandBehavior.SequentialAccess"/> optimization.</item>
     /// </list>
     /// </remarks>
-    private unsafe static bool TryMakeParser(Type closedType, INullColHandler? nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out DbParsingInfo<T> parser) {
+    private static bool TryMakeParser(Type closedType, INullColHandler? nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out DbParsingInfo<T> parser) {
         bool isNullable = Nullable.GetUnderlyingType(typeof(T)) is not null;
-        nullColHandler ??= isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance;
+        nullColHandler ??= isNullable || !typeof(T).IsValueType ? NullableTypeHandle.Instance : NotNullHandle.Instance;
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
         var rd = TypeParsingInfo.ForceGet(closedType)
             .TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], "root", nullColHandler, cols, new(), isNullable, ref colUsage);

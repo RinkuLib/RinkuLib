@@ -44,6 +44,31 @@ public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
     }
 }
 /// <summary>Handling for tuple that force usage of ite argument types</summary>
+public class NotNullMatcher : IDbTypeParserInfoMatcher {
+    /// <summary>Singleton</summary>
+    public static readonly NotNullMatcher Instance = new();
+    private NotNullMatcher() { }
+    /// <inheritdoc/>
+    public bool CanUseType(Type TargetType) {
+        if (!TargetType.IsGenericType)
+            return false;
+        TargetType = TargetType.GetGenericTypeDefinition();
+        return TargetType == typeof(NotNull<>);
+    }
+    /// <inheritdoc/>
+    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
+        if (declaringTypeArguments.Length != 1)
+            return null;
+        var type = declaringTypeArguments[0];
+        var r = TypeParsingInfo.ForceGet(type)
+            .TryGetParser(type.IsGenericType ? type.GetGenericArguments() : [], "Value", NotNullHandle.Instance, columns, colModifier, false, ref colUsage);
+        if (r is null)
+            return null;
+        var method = closedTargetType.GetConstructor(declaringTypeArguments) ?? throw new Exception($"unable to load the ctor for {closedTargetType}");
+        return new CustomClassParser(closedTargetType, paramName, nullColHandler, method, [r]);
+    }
+}
+/// <summary>Handling for tuple that force usage of ite argument types</summary>
 public class TupleTypeMatcher : IDbTypeParserInfoMatcher {
     /// <summary>Singleton</summary>
     public static readonly TupleTypeMatcher Instance = new();
@@ -113,27 +138,26 @@ public class TupleTypeMatcher : IDbTypeParserInfoMatcher {
 /// </remarks>
 public class TypeParsingInfo {
     static TypeParsingInfo() {
-        AddValueTuple(typeof(ValueTuple<>));
-        AddValueTuple(typeof(ValueTuple<,>));
-        AddValueTuple(typeof(ValueTuple<,,>));
-        AddValueTuple(typeof(ValueTuple<,,,>));
-        AddValueTuple(typeof(ValueTuple<,,,,>));
-        AddValueTuple(typeof(ValueTuple<,,,,,>));
-        AddValueTuple(typeof(ValueTuple<,,,,,,>));
-        AddValueTuple(typeof(ValueTuple<,,,,,,,>));
-        var ti = GetOrAdd<DynaObject>();
-        ti.Matcher = DynaObjectTypeMatcher.Instance;
-        ti.IsInit = true;
-    }
-    private static void AddValueTuple(Type tupleType) {
-        var ti = GetOrAdd(tupleType);
-        ti.Matcher = TupleTypeMatcher.Instance;
-        ti.IsInit = true;
+        GetOrAdd(typeof(ValueTuple<>)).InitWith(TupleTypeMatcher.Instance);
+        GetOrAdd(typeof(ValueTuple<,>)).InitWith(TupleTypeMatcher.Instance);
+        GetOrAdd(typeof(ValueTuple<,,>)).InitWith(TupleTypeMatcher.Instance);
+        GetOrAdd(typeof(ValueTuple<,,,>)).InitWith(TupleTypeMatcher.Instance);
+        GetOrAdd(typeof(ValueTuple<,,,,>)).InitWith(TupleTypeMatcher.Instance);
+        GetOrAdd(typeof(ValueTuple<,,,,,>)).InitWith(TupleTypeMatcher.Instance);
+        GetOrAdd(typeof(ValueTuple<,,,,,,>)).InitWith(TupleTypeMatcher.Instance);
+        GetOrAdd(typeof(ValueTuple<,,,,,,,>)).InitWith(TupleTypeMatcher.Instance);
+        GetOrAdd<DynaObject>().InitWith(DynaObjectTypeMatcher.Instance);
+        GetOrAdd(typeof(NotNull<>)).InitWith(NotNullMatcher.Instance);
     }
     private TypeParsingInfo(Type Type, IDbTypeParserInfoMatcher? Matcher) {
         this.Type = Nullable.GetUnderlyingType(Type) ?? Type;
         IsInit = false;
         this._matcher = Matcher;
+    }
+    /// <summary>Set the match and set as initialized</summary>
+    public void InitWith(IDbTypeParserInfoMatcher Matcher) {
+        this.Matcher = Matcher;
+        IsInit = true;
     }
     /// <summary>
     /// The internal state tracker indicating if the automatic discovery of members and 

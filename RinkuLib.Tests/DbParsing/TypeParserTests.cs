@@ -609,7 +609,7 @@ public class TypeParserTests {
             new("Salary", typeof(decimal), true),
             new("JoinedAt", typeof(DateTime), true)
         ];
-
+        //var t = new DynaObject<Guid, string, decimal?, DateTime?>(badge, "Engineering", 95000.50m, joinDate, Mapper.GetMapper(columns.Select(c => c.Name)));
         using var reader = CreateReader(columns, [
             [badge, "Engineering", 95000.50m, joinDate],
             [badge, "Engineeringg", DBNull.Value, DBNull.Value]
@@ -697,9 +697,9 @@ public class Shipment(int shipmentId, Package? contents, Label routing) : IDbRea
 public interface IPayment : IDbReadable {
     public static IPayment CreateCard(string cardNumber) => new Card(cardNumber);
     public static IPayment CreateCard(string cardNumber, string owner) => new CardDetailed(cardNumber, owner);
-    public static IPayment CreateTransfer(string iban, string bic) => new Transfer(iban, bic);
     public static IPayment Create([Alt("CardNumber")][Alt("Iban")]string cardNumberOrIban, string? bic) 
         => bic is null ? new Card(cardNumberOrIban) :new Transfer(cardNumberOrIban, bic);
+    public static IPayment CreateTransfer(string iban, string bic) => new Transfer(iban, bic);
 }
 
 public record Card(string CardNumber) : IPayment;

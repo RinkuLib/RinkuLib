@@ -29,7 +29,7 @@ builder.Use("@Grp", "Admin");  // Always added to the string and throw if not us
 // 3. EXECUTION: DB call (SQL Generation + Type Parsing Negotiation)
 using DbConnection cnn = GetConnection();
 // Generates the final SQL, assign the parameters and fetches the compiled parser delegate.
-IEnumerable<User> users = builder.QueryMultiple<User>(cnn);
+IEnumerable<User> users = builder.QueryAll<User>(cnn);
 
 // Resulting SQL: SELECT ID, Name FROM Users WHERE Group = @Grp AND Age > @MinAge
 ```
@@ -47,7 +47,7 @@ In truth, originaly it was meant as an extensions to `Dapper`, but the blueprint
 
 2.  **State Definition (`QueryBuilder`):** A temporary struct. You create this for every database call to hold your specific parameters and true conditions. It acts as the bridge between your C# data and the command's blueprint.
 
-3.  **Execution (`QueryX` methods):** The DB call using methods (such as `QueryMultipleAsync`, `QueryFirst`, etc.). The engine takes the blueprint from Step 1 and the data from Step 2 to generate the finalized SQL and create the complete `DbCommand`. It then find the mots apropriate mapping function between the schema and the type.
+3.  **Execution (`QueryX` methods):** The DB call using methods (such as `QueryAllAsync`, `QueryOne`, etc.). The engine takes the blueprint from Step 1 and the data from Step 2 to generate the finalized SQL and create the complete `DbCommand`. It then find the mots apropriate mapping function between the schema and the type.
 
 ---
 
@@ -109,7 +109,7 @@ There are two types of builder via `StartBuilder()` extensions for different nee
 ```csharp
 var builder = userCmd.StartBuilder();
 builder.Use("@id", 10);
-var user = builder.QueryFirst<User>(cnn);
+var user = builder.QueryOne<User>(cnn);
 ```
 
 ### `QueryBuilderCommand<T>` (Multiple call)
@@ -134,14 +134,14 @@ public record class StateParameters(int? MinSalary, string? DeptName, string? Em
 ```
 By default, it match the members with variables in SQL (`@DeptName` instead of `DeptName`), if you want to correspond to a boolean condition, you must use the `[ForBoolCond]` attribute and the member must be of type bool.
 ```csharp
-var user = userCmd.QuerySingle<User>(new StateParameters(10, null, "Employed") { Year = true }, cnn);
+var user = userCmd.QueryOne<User>(new StateParameters(10, null, "Employed") { Year = true }, cnn);
 ```
 It is also possible to use parameter objects with a builder if you want to modify the values before executing
 ```csharp
 var builder = userCmd.StartBuilder(); // or .StartBuilder(sqlCmd);
 builder.UseWith(stateParams);
 builder.Use("Year");
-var users = builder.QueryMultiple<User>(cnn);
+var users = builder.QueryAll<User>(cnn);
 ```
 
 ---
@@ -153,16 +153,16 @@ The `QueryX` extension methods handle the entire database "trip." They generate 
 | Goal | Method | Sync Return | Async Return |
 | --- | --- | --- | --- |
 | **Update/Delete/Insert** | `ExecuteQuery` | `int` | `Task<int>` |
-| **Fetch Single Row** | `QuerySingle<T>` | `T?` | `Task<T?>` |
-| **Stream Multiple Rows** | `QueryMultiple<T>` | `IEnumerable<T>` | `IAsyncEnumerable<T>` |
+| **Fetch Single Row** | `QueryOne<T>` | `T?` | `Task<T?>` |
+| **Stream Multiple Rows** | `QueryAll<T>` | `IEnumerable<T>` | `IAsyncEnumerable<T>` |
 
 ```csharp
-var user = builder.QuerySingle<User>(cnn);
-var users = builder.QueryMultiple<User>(cnn);
-var (user, supervisor) = await builder.QuerySingleAsync<(User, Supervisor)>(cnn);
-var cboItems = await builder.QueryMultipleAsync<KeyValuePair<int, string>>(cnn, null, null, ct);
-var id = builder.QuerySingle<int>(cnn);
-var names = await builder.QueryMultipleAsync<string>(cnn);
+var user = builder.QueryOne<User>(cnn);
+var users = builder.QueryAll<User>(cnn);
+var (user, supervisor) = await builder.QueryOneAsync<(User, Supervisor)>(cnn);
+var cboItems = await builder.QueryAllAsync<KeyValuePair<int, string>>(cnn, null, null, ct);
+var id = builder.QueryOne<int>(cnn);
+var names = await builder.QueryAllAsync<string>(cnn);
 var nbAffected = builder.ExecuteQuery(cnn, trans);
 ```
 
@@ -186,8 +186,8 @@ The same extensions are provided directly on the the `DbCommand` (there is also 
 | Goal | Method | Sync Return | Async Return |
 | --- | --- | --- | --- |
 | **Update/Delete/Insert** | `ExecuteQuery` | `int` | `Task<int>` |
-| **Fetch Single Row** | `QuerySingle<T>` | `T?` | `Task<T?>` |
-| **Stream Multiple Rows** | `QueryMultiple<T>` | `IEnumerable<T>` | `IAsyncEnumerable<T>` |
+| **Fetch Single Row** | `QueryOne<T>` | `T?` | `Task<T?>` |
+| **Stream Multiple Rows** | `QueryAll<T>` | `IEnumerable<T>` | `IAsyncEnumerable<T>` |
 
 The parameters are a bit different since the `DbCommand` should allready been properly made.
 

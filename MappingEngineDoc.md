@@ -40,7 +40,7 @@ Mapping is strictly sequential based on the SQL column order.
 ```csharp
 // Index 0 -> int
 // Index 1 -> string
-var (id, name) = await builder.QuerySingleAsync<(int, string)>(cnn, ct);
+var (id, name) = await builder.QueryOneAsync<(int, string)>(cnn, ct);
 ```
 
 #### **Mixed Types**
@@ -50,7 +50,7 @@ A basic type consumes the next available column, then the complex type begins it
 ```csharp
 // Index 0 -> int
 // Index 1+ -> Location Negociate as is Query<Location> directly but now the first col is allready used
-var (id, employee) = await builder.QuerySingleAsync<(int, Location)>(cnn, ct);
+var (id, employee) = await builder.QueryOneAsync<(int, Location)>(cnn, ct);
 ```
 
 #### **Complex Types**
@@ -61,7 +61,7 @@ The engine ignores the tuple's "Item" name and matches the object's internal pro
 public record struct Person(int ID, string Name);
 // Matches 'ID' and 'Name' directly (no 'Item1' prefix used)
 // Then matches the next available 'ID' and 'Name' for the second person
-var (p1, p2) = await builder.QuerySingleAsync<(Person, Person)>(cnn, ct);
+var (p1, p2) = await builder.QueryOneAsync<(Person, Person)>(cnn, ct);
 ```
 
 #### **Unexpected Consumption**
@@ -77,7 +77,7 @@ public struct Person { int ID; string Name; string Email}
 // 1. Person 1 new() then maps ID(0) and Name(1) but also finds Email(4).
 // 2. Person 2 new() then maps ID(2) and Name(3).
 // Result: Person 2 has no Email because Person 1 already consumed it.
-var (p1, p2) = await builder.QuerySingleAsync<(Person, Person)>(cnn, ct);
+var (p1, p2) = await builder.QueryOneAsync<(Person, Person)>(cnn, ct);
 ```
 
 #### **Unexpected sequence**
@@ -91,7 +91,7 @@ Simple types always look at the column immediately following the **last used ind
 // 2. The cursor is now at Index 3.
 // 3. The following 'int' looks at Index 4 (Next-in-Line).
 // Result: Fails to match the schema since 'int' could not be mapped"
-var (person, roleId) = await builder.QuerySingleAsync<(Person, int)>(cnn, ct);
+var (person, roleId) = await builder.QueryOneAsync<(Person, int)>(cnn, ct);
 ```
 ---
 ### **Dynamic Mapping with DynaObject**
@@ -103,7 +103,7 @@ Access columns using the indexer (which returns `object?`) or the `Get<T>` metho
 
 ```csharp
 // Schema: | ID | Name | Email |
-var row = await builder.QuerySingleAsync<DynaObject>(cnn, ct);
+var row = await builder.QueryOneAsync<DynaObject>(cnn, ct);
 
 // Using string keys
 int id = row.Get<int>("ID");
@@ -123,7 +123,7 @@ If the result set contains duplicate column names, the engine ensures every key 
 **Schema:** `| ID | Name | ID | Name |`
 
 ```csharp
-var row = await builder.QuerySingleAsync<DynaObject>(cnn, ct);
+var row = await builder.QueryOneAsync<DynaObject>(cnn, ct);
 
 // First occurrence
 int id1 = row.Get<int>("ID");

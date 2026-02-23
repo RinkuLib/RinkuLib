@@ -309,7 +309,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
             : string.Equals(Key2, key, StringComparison.OrdinalIgnoreCase) ? 1 : -1;
         public override int GetIndex(ReadOnlySpan<char> key)
             => key.Equals(Key1, StringComparison.OrdinalIgnoreCase) ? 0
-            : key.Equals(Key2, StringComparison.OrdinalIgnoreCase) ? 0 : -1;
+            : key.Equals(Key2, StringComparison.OrdinalIgnoreCase) ? 1 : -1;
     }
     internal unsafe sealed class DictMapper : Mapper {
         private readonly Dictionary<string, int> _stringDict;
