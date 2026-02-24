@@ -21,6 +21,17 @@ public class AsyncTestsFixture : DBFixture<SqlConnection> {
     public QueryCommand IdNameIdName = new("select 1 as id, 'abc' as name, 2 as id, 'def' as name");
     public QueryCommand IdNameCategoryIdName = new("select 1 as id, 'abc' as name, 2 as categoryId, 'def' as categoryName");
     public QueryCommand Select_3_4 = new("select 3 as [three], 4 as [four]");
+    public QueryCommand DropTableLiteral = new("drop table literal1");
+    public QueryCommand CreateTableLiteral = new("create table literal1 (id int not null, foo int not null)");
+    public QueryCommand InsertInLiteral = new("insert literal1 (id,foo) values (@id_N, @foo)");
+    public QueryCommand SelectCountLiteral = new("select count(1) from literal1 where id = @foo_N");
+    public QueryCommand SelectSumLiteral = new("select sum(id) + sum(foo) from literal1");
+    public QueryCommand CreateTableLiteralIn = new("create table #literalin(id int not null);");
+    public QueryCommand InsertInLiteralin = new("insert #literalin (id) values (@id)");
+    public QueryCommand SelectCountLiteralWithIn = new("select count(1) from #literalin where id in (@IDs_X)");
+    public QueryCommand Select_1_2 = new("select 1; select 2");
+    public QueryCommand SelectCol1Col2 = new("select Cast(1 as BigInt) Col1; select Cast(2 as BigInt) Col2");
+    public QueryCommand Select_1_2_3_4_5 = new("select 1; select 2; select 3; select 4; select 5");
 }
 public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFixture> {
     private readonly AsyncTestsFixture Fixture = Fixture;
@@ -193,7 +204,105 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         Assert.Null(product.Category.Description);
         Assert.False(await enumerator.MoveNextAsync());
     }
-    
+    [Fact]
+    public async Task TestMultiAsync() {
+        using var cnn = Fixture.GetConnection();
+        await cnn.OpenAsync(TestContext.Current.CancellationToken);
+        using var multi = await Fixture.Select_1_2.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var res1 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        await using var enumerator = res1.GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        Assert.True(await enumerator.MoveNextAsync());
+        var item1 = enumerator.Current;
+        Assert.Equal(1, item1);
+        Assert.False(await enumerator.MoveNextAsync());
+        var item2 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(2, item2);
+    }
+
+    [Fact]
+    public async Task TestMultiConversionAsync() {
+        using var cnn = Fixture.GetConnection();
+        await cnn.OpenAsync(TestContext.Current.CancellationToken);
+        using var multi = await Fixture.SelectCol1Col2.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(1, item1);
+        var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        await using var enumerator = res2.GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        Assert.True(await enumerator.MoveNextAsync());
+        var item2 = enumerator.Current;
+        Assert.Equal(2, item2);
+        Assert.False(await enumerator.MoveNextAsync());
+    }
+
+    [Fact]
+    public async Task TestMultiAsyncViaFirstOrDefault() {
+        using var cnn = Fixture.GetConnection();
+        await cnn.OpenAsync(TestContext.Current.CancellationToken);
+        using var multi = await Fixture.Select_1_2_3_4_5.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(1, item1);
+        var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        await using var enumerator = res2.GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        Assert.True(await enumerator.MoveNextAsync());
+        var item2 = enumerator.Current;
+        Assert.Equal(2, item2);
+        Assert.False(await enumerator.MoveNextAsync());
+        var item3 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(3, item3);
+        var res4 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        await using var enumerator4 = res4.GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        Assert.True(await enumerator4.MoveNextAsync());
+        var item4 = enumerator4.Current;
+        Assert.Equal(4, item4);
+        Assert.False(await enumerator4.MoveNextAsync());
+        var item5 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(5, item5);
+    }
+
+    [Fact]
+    public async Task TestMultiClosedConnAsync() {
+        using var cnn = Fixture.GetConnection();
+        using var multi = await Fixture.Select_1_2.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var res1 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        await using var enumerator = res1.GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        Assert.True(await enumerator.MoveNextAsync());
+        var item1 = enumerator.Current;
+        Assert.Equal(1, item1);
+        Assert.False(await enumerator.MoveNextAsync());
+        var item2 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(2, item2);
+    }
+
+    [Fact]
+    public async Task TestMultiClosedConnAsyncViaFirstOrDefault() {
+        using var cnn = Fixture.GetConnection();
+        using var multi = await Fixture.Select_1_2_3_4_5.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(1, item1);
+        var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        await using var enumerator = res2.GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        Assert.True(await enumerator.MoveNextAsync());
+        var item2 = enumerator.Current;
+        Assert.Equal(2, item2);
+        Assert.False(await enumerator.MoveNextAsync());
+        var item3 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(3, item3);
+        var res4 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        await using var enumerator4 = res4.GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        Assert.True(await enumerator4.MoveNextAsync());
+        var item4 = enumerator4.Current;
+        Assert.Equal(4, item4);
+        Assert.False(await enumerator4.MoveNextAsync());
+        var item5 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        Assert.Equal(5, item5);
+    }
     [Fact]
     public async Task ExecuteReaderOpenAsync() {
         var dt = new DataTable();
@@ -221,75 +330,59 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         Assert.Equal(3, (int)dt.Rows[0][0]);
         Assert.Equal(4, (int)dt.Rows[0][1]);
     }
-    /*
+    
     [Fact]
     public async Task LiteralReplacementOpen() {
-        await LiteralReplacement(connection).ConfigureAwait(false);
+        using var cnn = Fixture.GetConnection();
+        await cnn.OpenAsync(TestContext.Current.CancellationToken);
+        await LiteralReplacement(cnn);
     }
 
     [Fact]
     public async Task LiteralReplacementClosed() {
-        using var conn = GetClosedConnection();
-        await LiteralReplacement(conn).ConfigureAwait(false);
+        using var cnn = Fixture.GetConnection();
+        await LiteralReplacement(cnn);
     }
 
-    private static async Task LiteralReplacement(IDbConnection conn) {
+    private async Task LiteralReplacement(DbConnection conn) {
         try {
-            await conn.ExecuteAsync("drop table literal1").ConfigureAwait(false);
+            await Fixture.DropTableLiteral.ExecuteQueryAsync(conn, ct: TestContext.Current.CancellationToken);
         }
-        catch { 
-    //don't care
-    }
-        await conn.ExecuteAsync("create table literal1 (id int not null, foo int not null)").ConfigureAwait(false);
-        await conn.ExecuteAsync("insert literal1 (id,foo) values ({=id}, @foo)", new { id = 123, foo = 456 }).ConfigureAwait(false);
-        var rows = new[] { new { id = 1, foo = 2 }, new { id = 3, foo = 4 } };
-        await conn.ExecuteAsync("insert literal1 (id,foo) values ({=id}, @foo)", rows).ConfigureAwait(false);
-        var count = (await conn.QueryAsync<int>("select count(1) from literal1 where id={=foo}", new { foo = 123 }).ConfigureAwait(false)).Single();
+        catch {
+            //don't care
+        }
+        await Fixture.CreateTableLiteral.ExecuteQueryAsync(conn, ct: TestContext.Current.CancellationToken);
+        var builder = Fixture.InsertInLiteral.StartBuilder(conn.CreateCommand());
+        builder.UseWith(new { id = 123, foo = 456 });
+        await builder.ExecuteQueryAsync(ct: TestContext.Current.CancellationToken);
+        builder.UseWith(new { id = 1, foo = 2 });
+        await builder.ExecuteQueryAsync(ct: TestContext.Current.CancellationToken);
+        builder.UseWith(new { id = 3, foo = 4 });
+        await builder.ExecuteQueryAsync(ct: TestContext.Current.CancellationToken);
+        var count = (await Fixture.SelectCountLiteral.QueryAllBufferedAsync<int>(conn, new { foo = 123 }, ct: TestContext.Current.CancellationToken)).Single();
         Assert.Equal(1, count);
-        int sum = (await conn.QueryAsync<int>("select sum(id) + sum(foo) from literal1").ConfigureAwait(false)).Single();
+        var sum = (await Fixture.SelectSumLiteral.QueryAllBufferedAsync<int>(conn, ct: TestContext.Current.CancellationToken)).Single();
         Assert.Equal(123 + 456 + 1 + 2 + 3 + 4, sum);
     }
 
     [Fact]
-    public async Task LiteralReplacementDynamicOpen() {
-        await LiteralReplacementDynamic(connection).ConfigureAwait(false);
-    }
-
-    [Fact]
-    public async Task LiteralReplacementDynamicClosed() {
-        using var conn = GetClosedConnection();
-        await LiteralReplacementDynamic(conn).ConfigureAwait(false);
-    }
-
-    private static async Task LiteralReplacementDynamic(IDbConnection conn) {
-        var args = new DynamicParameters();
-        args.Add("id", 123);
-        try { await conn.ExecuteAsync("drop table literal2").ConfigureAwait(false); }
-        catch { 
-    //don't care
-    }
-        await conn.ExecuteAsync("create table literal2 (id int not null)").ConfigureAwait(false);
-        await conn.ExecuteAsync("insert literal2 (id) values ({=id})", args).ConfigureAwait(false);
-
-        args = new DynamicParameters();
-        args.Add("foo", 123);
-        var count = (await conn.QueryAsync<int>("select count(1) from literal2 where id={=foo}", args).ConfigureAwait(false)).Single();
-        Assert.Equal(1, count);
-    }
-
-    [Fact]
     public async Task LiteralInAsync() {
-        await connection.ExecuteAsync("create table #literalin(id int not null);").ConfigureAwait(false);
-        await connection.ExecuteAsync("insert #literalin (id) values (@id)", new[] {
-                new { id = 1 },
-                new { id = 2 },
-                new { id = 3 },
-            }).ConfigureAwait(false);
-        var count = (await connection.QueryAsync<int>("select count(1) from #literalin where id in {=ids}",
-            new { ids = new[] { 1, 3, 4 } }).ConfigureAwait(false)).Single();
+
+        using var cnn = Fixture.GetConnection();
+        await cnn.OpenAsync(TestContext.Current.CancellationToken);
+        await Fixture.CreateTableLiteralIn.ExecuteQueryAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var builder = Fixture.InsertInLiteralin.StartBuilder(cnn.CreateCommand());
+        builder.Use("@id", 1);
+        await builder.ExecuteQueryAsync(ct: TestContext.Current.CancellationToken);
+        builder.Use("@id", 2);
+        await builder.ExecuteQueryAsync(ct: TestContext.Current.CancellationToken);
+        builder.Use("@id", 3);
+        await builder.ExecuteQueryAsync(ct: TestContext.Current.CancellationToken);
+        var count = (await Fixture.SelectCountLiteralWithIn.QueryAllBufferedAsync<int>(cnn,
+            new { ids = new[] { 1, 3, 4 } }, ct: TestContext.Current.CancellationToken)).Single();
         Assert.Equal(2, count);
     }
-
+    /*
     [FactLongRunning]
     public async Task RunSequentialVersusParallelAsync() {
         var ids = Enumerable.Range(1, 20000).Select(id => new { id }).ToArray();

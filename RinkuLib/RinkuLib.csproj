@@ -8,7 +8,7 @@
 		<LangVersion>latest</LangVersion>
 
 		<PackageId>Rinku</PackageId>
-		<Version>0.3.0</Version>
+		<Version>0.4.0</Version>
 		<Authors>adam.therrien.marois</Authors>
 		<Product>Rinku</Product>
 		<Title>Rinku</Title>

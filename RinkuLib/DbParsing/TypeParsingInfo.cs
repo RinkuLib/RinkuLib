@@ -169,7 +169,7 @@ public class TypeParsingInfo {
     /// to ensure thread-safety and proper initialization.
     /// </summary>
     private static Dictionary<Type, TypeParsingInfo> TypeInfos = [];
-    private static readonly
+    internal static readonly
 #if NET9_0_OR_GREATER
         Lock
 #else

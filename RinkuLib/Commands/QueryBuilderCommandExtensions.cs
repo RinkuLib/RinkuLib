@@ -8,7 +8,13 @@ namespace RinkuLib.Commands;
 /// Extensions on <see cref="QueryBuilderCommand{T}"/>
 /// </summary>
 public static class QueryBuilderCommandExtensions {
-
+    /// <summary>Transform into a bool array where true means a not null value</summary>
+    public static bool[] ToBoolArr(this object?[] vars) {
+        var res = new bool[vars.Length];
+        for (int i = 0; i < vars.Length; i++)
+            res[i] = vars[i] is not null;
+        return res;
+    }
     extension(QueryBuilderCommand<DbCommand> builder) {
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and return the nb of affected rows.
@@ -61,6 +67,29 @@ public static class QueryBuilderCommandExtensions {
             if (command.NeedToCache(vars))
                 return cmd.ExecuteReaderAsync(command, behavior, ct);
             return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        public MultiReader ExecuteMultiReader(CommandBehavior behavior = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = builder.Command;
+            cmd.CommandText = command.QueryText.Parse(vars);
+            return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<MultiReader> ExecuteMultiReaderAsync(CommandBehavior behavior = default, CancellationToken ct = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = builder.Command;
+            cmd.CommandText = command.QueryText.Parse(vars);
+            return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
         }
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -178,6 +207,17 @@ public static class QueryBuilderCommandExtensions {
             if (command.NeedToCache(vars))
                 return cmd.ExecuteReader(command, behavior);
             return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        public MultiReader ExecuteMultiReader(CommandBehavior behavior = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = builder.Command;
+            cmd.CommandText = command.QueryText.Parse(vars);
+            return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
 
         /// <summary>

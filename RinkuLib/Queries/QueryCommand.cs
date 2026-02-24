@@ -85,7 +85,7 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <summary>
     /// Try getting the parsing cache without the schema
     /// </summary>
-    public unsafe bool TryGetCache<T>(Span<bool> usageMap, out SchemaParser<T> cache) {
+    public unsafe bool TryGetCache<T>(Span<bool> usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
         bool* pUsage = (bool*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(usageMap));
         uint mapLen = (uint)usageMap.Length;
         var cacheArray = ParsingCache;
@@ -108,7 +108,7 @@ public class QueryCommand : IQueryCommand, ICache {
                 }
             }
             object parserObj = entry.Parser;
-            if (parserObj is null) {
+            if (parserObj is null || entry.ResultSetIndex != resultSetIndex) {
                 cache = default;
                 return false;
             }
@@ -125,7 +125,7 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <summary>
     /// Try getting the parsing cache without the schema
     /// </summary>
-    public unsafe bool TryGetCache<T>(object?[] usageMap, out SchemaParser<T> cache) {
+    public unsafe bool TryGetCache<T>(object?[] usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
         ref object? usageBase = ref MemoryMarshal.GetArrayDataReference(usageMap);
 
         var cacheArray = ParsingCache;
@@ -150,7 +150,7 @@ public class QueryCommand : IQueryCommand, ICache {
             }
 
             object pObj = entry.Parser;
-            if (pObj is null) {
+            if (pObj is null || entry.ResultSetIndex != resultSetIndex) {
                 cache = default;
                 return false;
             }
@@ -170,7 +170,7 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <summary>
     /// Update the parsing cache for a given schema
     /// </summary>
-    public bool UpdateCache<T>(int[] falseIndexes, ColumnInfo[] schema, SchemaParser<T> cache) {
+    public bool UpdateCache<T>(int[] falseIndexes, ColumnInfo[] schema, SchemaParser<T> cache, int resultSetIndex = 0) {
         lock (ParsingCacheSharedLock) {
             if (ParsingCache.Length == 0)
                 ParsingCache = InitParsingCache();
@@ -185,7 +185,7 @@ public class QueryCommand : IQueryCommand, ICache {
                         cacheIndexesToRemove.Add(ind);
                     nbNullParser++;
                 }
-                else if (item.Parser is Func<DbDataReader, T> && schema.Equal(item.Schema)) {
+                else if (item.ResultSetIndex == resultSetIndex && item.Parser is Func<DbDataReader, T> && schema.Equal(item.Schema)) {
                     var currentLen = item.FalseIndexes.Length;
                     item.FalseIndexes = GetIntersection(item.FalseIndexes, falseIndexes);
                     if (item.FalseIndexes.Length < currentLen) {
@@ -214,11 +214,11 @@ public class QueryCommand : IQueryCommand, ICache {
             for (int i = nbNullParser; i < ParsingCache.Length; i++) {
                 ref var item = ref ParsingCache[i];
                 if (!allreadyIn && item.FalseIndexes.Length < falseIndexesLen)
-                    newCache[j++] = new() { FalseIndexes = falseIndexes, CommandBehavior = cache.Behavior, Parser = cache.parser, Schema = schema };
+                    newCache[j++] = new(cache.parser, falseIndexes, schema, cache.Behavior, resultSetIndex);
                 newCache[j++] = item;
             }
             if (!allreadyIn && newCache[^1].FalseIndexes is null)
-                newCache[^1] = new() { FalseIndexes = falseIndexes, CommandBehavior = cache.Behavior, Parser = cache.parser, Schema = schema };
+                newCache[^1] = new(cache.parser, falseIndexes, schema, cache.Behavior, resultSetIndex);
             ParsingCache = newCache;
             return true;
         }

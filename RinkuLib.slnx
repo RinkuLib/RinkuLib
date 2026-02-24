@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="RinkuLib.Tests.Benchmark/RinkuLib.Tests.Benchmark.csproj" Id="13a880dc-30c8-443a-9670-6e6340116456" />
   <Project Path="RinkuLib.Tests/RinkuLib.Tests.csproj" Id="e8d6c7ee-7551-4837-80ad-b6033bc067c0" />
   <Project Path="RinkuLib/RinkuLib.csproj" />
 </Solution>

@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
+using System.Runtime.Intrinsics.X86;
 using RinkuLib.Queries;
 
 namespace RinkuLib.Commands; 
@@ -107,6 +108,35 @@ public static class DirectBuildExtensions {
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteReaderAsync(command, behavior, ct);
             return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader(DbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReader(command, usageMap, true, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<MultiReader> ExecuteMultiReaderAsync(DbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReaderAsync(command, usageMap, true, behavior, ct);
         }
 
         /// <summary>
@@ -255,6 +285,20 @@ public static class DirectBuildExtensions {
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteReader(command, behavior);
             return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader(IDbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReader(command, usageMap, true, behavior);
         }
 
         /// <summary>
@@ -432,6 +476,36 @@ public static class DirectBuildExtensions {
         }
 
         /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader<TObj>(DbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReader(command, usageMap, true, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<MultiReader> ExecuteMultiReaderAsync<TObj>(DbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReaderAsync(command, usageMap, true, behavior, ct);
+        }
+
+        /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
@@ -577,6 +651,20 @@ public static class DirectBuildExtensions {
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteReader(command, behavior);
             return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader<TObj>(IDbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReader(command, usageMap, true, behavior);
         }
 
         /// <summary>
@@ -752,6 +840,35 @@ public static class DirectBuildExtensions {
                 return cmd.ExecuteReaderAsync(command, behavior, ct);
             return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
         }
+        /// <summary>
+        /// Executes the <see cref = "MultiReader" /> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader<TObj>(DbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReader(command, usageMap, true, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref = "MultiReader" /> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<MultiReader> ExecuteMultiReaderAsync<TObj>(DbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReaderAsync(command, usageMap, true, behavior, ct);
+        }
 
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -899,6 +1016,20 @@ public static class DirectBuildExtensions {
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteReader(command, behavior);
             return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref = "MultiReader" /> of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader<TObj>(IDbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReader(command, usageMap, true, behavior);
         }
 
         /// <summary>

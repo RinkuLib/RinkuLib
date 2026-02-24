@@ -74,7 +74,7 @@ public static class TypeParser<T> {
     /// </summary>
     /// <param name="cols">The schema received from the data source.</param>
     /// <param name="nullColHandler">Specified nullability handling</param>
-    public unsafe static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, INullColHandler? nullColHandler = null)
+    public static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, INullColHandler? nullColHandler = null)
         => GetParserFunc(ref cols, out _, nullColHandler);
     /// <summary>
     /// Entry point for retrieving a parser. 
@@ -83,7 +83,7 @@ public static class TypeParser<T> {
     /// </summary>
     /// <param name="cols">The schema received from the data source.</param>
     /// <param name="isNullable">Identify wether to throw or not when the root item is null</param>
-    public unsafe static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, bool isNullable)
+    public static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, bool isNullable)
         => GetParserFunc(ref cols, out _, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
     /// <summary>
     /// Entry point for retrieving a parser. 
@@ -93,7 +93,7 @@ public static class TypeParser<T> {
     /// <param name="cols">The schema received from the data source.</param>
     /// <param name="isNullable">Identify wether to throw or not when the root item is null</param>
     /// <param name="defaultBehavior">Outputs the optimized behavior (e.g., SequentialAccess).</param>
-    public unsafe static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, bool isNullable, out CommandBehavior defaultBehavior)
+    public static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, bool isNullable, out CommandBehavior defaultBehavior)
         => GetParserFunc(ref cols, out defaultBehavior, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
     /// <summary>
     /// Entry point for retrieving a parser. 
@@ -103,20 +103,22 @@ public static class TypeParser<T> {
     /// <param name="cols">The schema received from the data source.</param>
     /// <param name="defaultBehavior">Outputs the optimized behavior (e.g., SequentialAccess).</param>
     /// <param name="nullColHandler">Specified nullability handling</param>
-    public unsafe static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, out CommandBehavior defaultBehavior, INullColHandler? nullColHandler = null) {
-        for (int i = 0; i < ReadingInfos.Count; i++) {
-            if (cols.Equal(ReadingInfos[i].Schema)) {
-                var rdInfo = ReadingInfos[i];
-                cols = rdInfo.Schema;
-                defaultBehavior = rdInfo.DefaultBehavior;
-                return rdInfo.ReaderFunc;
+    public static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, out CommandBehavior defaultBehavior, INullColHandler? nullColHandler = null) {
+        lock (TypeParsingInfo.WriteLock) {
+            for (int i = 0; i < ReadingInfos.Count; i++) {
+                if (cols.Equal(ReadingInfos[i].Schema)) {
+                    var rdInfo = ReadingInfos[i];
+                    cols = rdInfo.Schema;
+                    defaultBehavior = rdInfo.DefaultBehavior;
+                    return rdInfo.ReaderFunc;
+                }
             }
+            if (!TryMakeParser(typeof(T), nullColHandler, cols, out var info))
+                throw new Exception($"cannot make the parser for {typeof(T)} with the schema ({string.Join(", ", cols.Select(c => $"{c.Type.ShortName()}{(c.IsNullable ? "?" : "")} {c.Name}"))})");
+            ReadingInfos.Add(info);
+            defaultBehavior = info.DefaultBehavior;
+            return info.ReaderFunc;
         }
-        if (!TryMakeParser(typeof(T), nullColHandler, cols, out var info))
-            throw new Exception($"cannot make the parser for {typeof(T)} with the schema ({string.Join(", ", cols.Select(c => $"{c.Type.Name}{(c.IsNullable ? "?" : "")} {c.Name}"))})");
-        ReadingInfos.Add(info);
-        defaultBehavior = info.DefaultBehavior;
-        return info.ReaderFunc;
     }
     private static readonly Type[] TReaderArg = [typeof(object), typeof(DbDataReader)];
     internal static readonly Module Module = typeof(DbDataReader).Module;
@@ -157,7 +159,7 @@ public static class TypeParser<T> {
         gen.Emit(OpCodes.Ret);
         dm.DefineParameter(1, ParameterAttributes.In, "reader");
         var prevIndex = -1;
-        var defaultBehavior = cols.Length == 1 ? CommandBehavior.SingleResult : CommandBehavior.Default;
+        var defaultBehavior = CommandBehavior.Default;
         if (rd.IsSequencial(ref prevIndex))
             defaultBehavior |= CommandBehavior.SequentialAccess;
         parser = new(dm, cols, defaultBehavior, targetObj);

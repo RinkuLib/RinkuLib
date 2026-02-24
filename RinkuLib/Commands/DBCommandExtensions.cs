@@ -91,9 +91,9 @@ public static class DBCommandExtensions {
             return reader;
         }
         /// <summary>
-        /// Executes the <see cref="DbCommand"/> and return the nb of affected rows.
+        /// Executes the reader of the <see cref="DbCommand"/>.
         /// </summary>
-        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="cache">A cache to be used with the reader</param>
         /// <param name="behavior">The default behavior to use for the reader</param>
         /// <param name="ct">The fowarded cancellation token</param>
         public async Task<DbDataReader> ExecuteReaderAsync<T>(T cache, CommandBehavior behavior = default, CancellationToken ct = default) where T : ICache {
@@ -106,6 +106,38 @@ public static class DBCommandExtensions {
             cache.UpdateCache(cmd);
             return reader;
         }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        public MultiReader ExecuteMultiReader(QueryCommand command, bool[] usageMap, bool disposeCommand, CommandBehavior behavior = default) {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+                wasClosed = false;
+            }
+            var reader = cmd.ExecuteReader(behavior);
+            if (command.NeedToCache(usageMap))
+                command.UpdateCache(cmd);
+            return new(usageMap, command, reader, cmd, disposeCommand, wasClosed);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        public async Task<MultiReader> ExecuteMultiReaderAsync(QueryCommand command, bool[] usageMap, bool disposeCommand, CommandBehavior behavior = default, CancellationToken ct = default) {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            if (wasClosed) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+                wasClosed = false;
+            }
+            var reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            if (command.NeedToCache(usageMap))
+                command.UpdateCache(cmd);
+            return new(usageMap, command, reader, cmd, disposeCommand, wasClosed);
+        }
 
         /// <summary>
         /// Executes the <see cref="DbCommand"/> to fecth the schema and send it to the cache.
@@ -116,7 +148,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = CommandBehavior.SchemaOnly;
+                var behavior = CommandBehavior.SchemaOnly | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -150,7 +182,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior | CommandBehavior.SingleRow;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult | CommandBehavior.SingleRow;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -188,7 +220,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -226,7 +258,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -268,7 +300,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior | CommandBehavior.SingleRow;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult | CommandBehavior.SingleRow;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -307,7 +339,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -346,7 +378,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -387,7 +419,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior | CommandBehavior.SingleRow;
+                var behavior = parser.Behavior | CommandBehavior.SingleRow | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -426,7 +458,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -465,7 +497,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -557,6 +589,23 @@ public static class DBCommandExtensions {
             cache.UpdateCache(cmd);
             return reader;
         }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
+        /// </summary>
+        public MultiReader ExecuteMultiReader(QueryCommand command, bool[] usageMap, bool disposeCommand, CommandBehavior behavior = default) {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+                wasClosed = false;
+            }
+            var r = cmd.ExecuteReader(behavior);
+            var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+            if (command.NeedToCache(usageMap))
+                command.UpdateCache(cmd);
+            return new(usageMap, command, reader, cmd, disposeCommand, wasClosed);
+        }
 
         /// <summary>
         /// Executes the <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -594,7 +643,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior | CommandBehavior.SingleRow;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult | CommandBehavior.SingleRow;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -628,7 +677,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -662,7 +711,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -766,7 +815,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior | CommandBehavior.SingleRow;
+                var behavior = parser.Behavior | CommandBehavior.SingleRow | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -800,7 +849,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -834,7 +883,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = parser.Behavior;
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;

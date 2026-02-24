@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
+using System.Transactions;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tools;
@@ -143,6 +144,35 @@ public static class QueryBuilderExtensions {
                 return cmd.ExecuteReaderAsync(command, behavior, ct);
             return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
         }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader(DbConnection cnn, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            cmd.CommandText = command.QueryText.Parse(vars);
+            return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<MultiReader> ExecuteMultiReaderAsync(DbConnection cnn, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            cmd.CommandText = command.QueryText.Parse(vars);
+            return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
+        }
 
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -276,6 +306,20 @@ public static class QueryBuilderExtensions {
             if (command.NeedToCache(vars))
                 return cmd.ExecuteReader(command, behavior);
             return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader(IDbConnection cnn, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            cmd.CommandText = command.QueryText.Parse(vars);
+            return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
 
         /// <summary>

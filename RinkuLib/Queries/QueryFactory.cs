@@ -137,7 +137,11 @@ public struct QueryFactory {
             if (seg.Handler is not null || seg.ExcessOrInd == 0)
                 continue;
             var endIndex = seg.Start + seg.Length - seg.ExcessOrInd;
-            if (endIndex > seg.Start && char.IsWhiteSpace(Query[endIndex - 1]))
+            if (endIndex <= seg.Start)
+                continue;
+            if (Query[endIndex] == ';')
+                Segments[i].ExcessOrInd = 0;
+            else if (char.IsWhiteSpace(Query[endIndex - 1]))
                 Segments[i].ExcessOrInd++;
         }
     }
