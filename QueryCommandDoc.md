@@ -59,7 +59,7 @@ Once a `DbParamInfo` is captured, it is **cached permanently** in the `QueryComm
 
 ```csharp
 // Manually update the cache for a parameter by name
-userCmd.UpdateParamCache("@id", TypedDbParamCache.Get(DbType.Int32));
+userCmd.UpdateParamCache("@Name", TypedDbParamCache.Get(DbType.AnsiStringFixedLength, 1000));
 ```
 
 ---

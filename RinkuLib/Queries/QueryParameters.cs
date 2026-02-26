@@ -39,8 +39,10 @@ public sealed class QueryParameters : IDbParamCache {
     public bool UpdateCache(int ind, DbParamInfo info) {
         if (ind < 0 || ind >= _variablesInfo.Length)
             return false;
-        _variablesInfo[ind] = info;
-        if (!info.IsCached) {
+        ref var oldVal = ref _variablesInfo[ind];
+        var isDifferentCached = oldVal.IsCached != info.IsCached;
+        oldVal = info;
+        if (isDifferentCached) {
             var oldArray = _nonCachedIndexes;
             int len = oldArray.Length;
             var nbNon = new int[len + 1];

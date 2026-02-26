@@ -10,22 +10,29 @@ The library is designed as two independent, highly customizable parts
 ## Quick Start
 
 ```csharp
-// 1. INTERPRETATION: The blueprint (SQL Generation Part)
+// 1. INTERPRETATION: The blueprint (Create once and reuse throughout the app)
 // Define the template once to analyzed and cached the sql generation conditions
 string sql = "SELECT ID, Name FROM Users WHERE Group = @Grp AND Cat = ?@Category AND Age > ?@MinAge";
-QueryCommand query = new QueryCommand(sql);
+public static readonly QueryCommand usersQuery = new QueryCommand(sql);
 
-// 2. STATE DEFINITION: The transient builder (State Data)
-// Create a builder for a specific database trip
-QueryBuilder builder = query.StartBuilder();
-builder.Use("@MinAge", 18);      // Will add everything related to the variable
-builder.Use("@Grp", "Admin");    // Always added to the string and throw if not used
-                                 // @Category not used so wont use anything related to that variable
+public QueryBuilder GetBuilder(QueryCommand queryCmd) {
+    // 2. STATE DEFINITION: A temporary builder (Does not manage DbConnection or DbCommand)
+    // Create a builder for a specific database trip
+    // Identify which variables are used and their values
+    QueryBuilder builder = queryCmd.StartBuilder();
+    builder.Use("@MinAge", 18);      // Will add everything related to the variable
+    builder.Use("@Grp", "Admin");    // Always added to the string and throw if not used
+                        // @Category not used so wont use anything related to that variable
+    return builder;
+}
 
-// 3. EXECUTION: DB call (SQL Generation + Type Parsing Negotiation)
-using DbConnection cnn = GetConnection();
-// Generates the final SQL, assign the parameters and fetches the compiled parser delegate.
-IEnumerable<User> users = builder.QueryAll<User>(cnn);
+public IEnumerable<User> GetUsers(QueryBuilder builder) {
+    // 3. EXECUTION: DB call (SQL Generation + Type Parsing Negotiation)
+    using DbConnection cnn = GetConnection();
+    // Uses the QueryCommand and the values in the builder to create the DbCommand and parse the result
+    IEnumerable<User> users = builder.QueryAll<User>(cnn);
+    return users;
+}
 
 // Resulting SQL: SELECT ID, Name FROM Users WHERE Group = @Grp AND Age > @MinAge
 ```
