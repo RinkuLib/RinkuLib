@@ -1,4 +1,5 @@
-﻿using System.Reflection.Emit;
+﻿using System.Reflection;
+using System.Reflection.Emit;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
@@ -114,6 +115,17 @@ public class BasicParser(Type Type, string ParamName, INullColHandler NullColHan
                 default:
                     throw new NotSupportedException($"Unsupported primitive conversion to {effectiveTarget.Name}");
             }
+            return;
+        }
+        if (effectiveTarget == typeof(decimal)) {
+            var c = typeof(decimal).GetConstructor([dbType]);
+            if (c is not null) {
+                generator.Emit(OpCodes.Newobj, c);
+                return;
+            }
+            var m = typeof(decimal).GetMethod("op_Explicit", [dbType]);
+            if (m is not null)
+                generator.Emit(OpCodes.Call, m);
             return;
         }
         throw new NotSupportedException($"No IL conversion exists between {dbType.Name} and {targetType.Name}.");

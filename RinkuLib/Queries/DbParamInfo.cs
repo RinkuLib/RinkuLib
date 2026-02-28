@@ -7,7 +7,7 @@ namespace RinkuLib.Queries;
 /// <summary>
 /// Delegate that tries to create a provider for parameter metadata using a specific implementation of <see cref="IDbCommand"/>.
 /// </summary>
-public delegate bool ParamInfoGetterMaker(IDbCommand cmd, out IDbParamInfoGetter getter);
+public delegate bool ParamInfoGetterMaker(IDbCommand cmd, [MaybeNullWhen(false)] out IDbParamInfoGetter getter);
 #if !NET8_0_OR_GREATER
 /// <summary>Static class to access <see cref="ParamGetterMakers"/>.</summary>
 public static class DbParamInfoGetter {

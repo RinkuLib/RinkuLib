@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Transactions;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tools;
@@ -112,6 +111,35 @@ public static class QueryBuilderExtensions {
             if (command.NeedToCache(vars))
                 return cmd.ExecuteAsync(command, true, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            if (command.NeedToCache(vars))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            if (command.NeedToCache(vars))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
         }
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
@@ -324,6 +352,35 @@ public static class QueryBuilderExtensions {
             if (command.NeedToCache(vars))
                 return cmd.ExecuteAsync(command, true, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            if (command.NeedToCache(vars))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            if (command.NeedToCache(vars))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
         }
         /// <summary>
         /// Executes the reader of the <see cref="IDbCommand"/>.

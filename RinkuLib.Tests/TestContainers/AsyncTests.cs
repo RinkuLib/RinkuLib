@@ -364,6 +364,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         var sum = (await Fixture.SelectSumLiteral.QueryAllBufferedAsync<int>(conn, ct: TestContext.Current.CancellationToken)).Single();
         Assert.Equal(123 + 456 + 1 + 2 + 3 + 4, sum);
     }
+    private static readonly int[] IDs = [1, 3, 4];
 
     [Fact]
     public async Task LiteralInAsync() {
@@ -379,7 +380,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         builder.Use("@id", 3);
         await builder.ExecuteAsync(ct: TestContext.Current.CancellationToken);
         var count = (await Fixture.SelectCountLiteralWithIn.QueryAllBufferedAsync<int>(cnn,
-            new { ids = new[] { 1, 3, 4 } }, ct: TestContext.Current.CancellationToken)).Single();
+            new { ids = IDs }, ct: TestContext.Current.CancellationToken)).Single();
         Assert.Equal(2, count);
     }
     /*

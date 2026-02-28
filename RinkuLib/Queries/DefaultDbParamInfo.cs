@@ -57,6 +57,55 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     }
 }
 /// <summary>
+/// A provider that extracts parameter metadata from an existing <see cref="IDbCommand"/> 
+/// to populate the query's parameter cache.
+/// </summary>
+public struct ForceInferedParamCache(IDbCommand cmd) : IDbParamInfoGetter {
+    /// <summary>
+    /// Delegate that create a getter returning forced infered cache when the cmd is of type T.
+    /// </summary>
+    public static bool GetInfoGetterMaker<T>(IDbCommand cmd, [MaybeNullWhen(false)] out IDbParamInfoGetter getter) where T : IDbCommand {
+        if (cmd is not T) {
+            getter = default;
+            return false; 
+        }
+        getter = new ForceInferedParamCache(cmd);
+        return true;
+    }
+    /// <summary>The command containing the parameters</summary>
+    public IDbCommand Command = cmd;
+    /// <inheritdoc/>
+    public readonly IEnumerable<KeyValuePair<string, int>> EnumerateParameters() {
+        var parameters = Command.Parameters;
+        var count = parameters.Count;
+        for (int i = 0; i < count; i++)
+            if (parameters[i] is IDbDataParameter p)
+                yield return new(p.ParameterName, i);
+    }
+    /// <inheritdoc/>
+    public readonly DbParamInfo MakeInfoAt(int i) {
+        var p = Command.Parameters[i] as IDbDataParameter
+            ?? throw new Exception($"there is no valid parameter at index {i}");
+        return InferedDbParamCache.ForceInfered;
+    }
+    /// <summary>
+    /// Attempts to resolve a <see cref="DbParamInfo"/> for a specific parameter name 
+    /// by inspecting the current command's parameter collection.
+    /// </summary>
+    public readonly bool TryGetInfo(string paramName, [MaybeNullWhen(false)] out DbParamInfo info) {
+        var parameters = Command.Parameters;
+        var count = parameters.Count;
+        for (int i = 0; i < count; i++) {
+            if (parameters[i] is not IDbDataParameter p || !string.Equals(p.ParameterName, paramName))
+                continue;
+            info = InferedDbParamCache.ForceInfered;
+            return true;
+        }
+        info = null;
+        return false;
+    }
+}
+/// <summary>
 /// Represents metadata for fixed-type database parameters (e.g., Integers, Booleans) 
 /// where size is not a factor in performance optimization.
 /// </summary>
@@ -253,8 +302,10 @@ public class SizedDbParamCache : DbParamInfo {
 /// </summary>
 public class InferedDbParamCache : DbParamInfo {
     /// <summary>Singleton instance of the infered cache</summary>
-    public static readonly InferedDbParamCache Instance = new();
-    private InferedDbParamCache() : base(false) { }
+    public static readonly InferedDbParamCache Instance = new(false);
+    /// <summary>Singleton instance of the infered cache</summary>
+    public static readonly InferedDbParamCache ForceInfered = new(true);
+    private InferedDbParamCache(bool isCached) : base(isCached) { }
     /// <inheritdoc/>
     public override bool Update(IDbCommand cmd, ref object? currentValue, object? newValue) {
         if (currentValue is not IDbDataParameter p)

@@ -74,6 +74,37 @@ public static class DirectBuildExtensions {
                 return cmd.ExecuteAsync(command, true, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
         }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T>(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
+        }
 
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
@@ -303,6 +334,41 @@ public static class DirectBuildExtensions {
                 return cmd.ExecuteAsync(command, true, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
         }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T>(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.ExecuteScalar<T>(c, parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.ExecuteScalarAsync<T>(c, parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
+        }
 
         /// <summary>
         /// Executes the reader of the <see cref="IDbCommand"/>.
@@ -490,6 +556,37 @@ public static class DirectBuildExtensions {
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteAsync(command, true, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T, TObj>(DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
         }
 
         /// <summary>
@@ -721,6 +818,41 @@ public static class DirectBuildExtensions {
                 return cmd.ExecuteAsync(command, true, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
         }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.ExecuteScalar<T, TObj>(c, parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T, TObj>(IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.ExecuteScalarAsync<T, TObj>(c, parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
+        }
 
         /// <summary>
         /// Executes the reader of the <see cref="IDbCommand"/>.
@@ -908,6 +1040,37 @@ public static class DirectBuildExtensions {
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteAsync(command, true, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T, TObj>(DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
         }
 
         /// <summary>
@@ -1137,6 +1300,41 @@ public static class DirectBuildExtensions {
             if (command.NeedToCache(usageMap))
                 return cmd.ExecuteAsync(command, true, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.ExecuteScalar<T, TObj>(c, ref parametersObj, t, timeout);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T, TObj>(IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            if (cnn is DbConnection c && transaction is DbTransaction t)
+                return command.ExecuteScalarAsync<T, TObj>(c, ref parametersObj, t, timeout, ct);
+            var cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, ref parametersObj, usageMap);
+            if (command.NeedToCache(usageMap))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
         }
 
         /// <summary>

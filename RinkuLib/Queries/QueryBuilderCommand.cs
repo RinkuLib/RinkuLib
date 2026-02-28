@@ -1,9 +1,6 @@
 ﻿using System.Data;
-using System.Data.Common;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
 
@@ -12,7 +9,7 @@ namespace RinkuLib.Queries;
 /// </summary>
 /// <remarks>
 /// This struct manages the "active" state of a query. Unlike a standard builder, 
-/// every call to <see cref="Use(string, object)"/> or <see cref="Remove"/> immediately updates 
+/// every call to <see cref="Use(string, object)"/> or <see cref="Remove(string)"/> immediately updates 
 /// the underlying <see cref="Command"/> (e.g., adding, updating, or removing DB parameters).
 /// </remarks>
 public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, TCommand Command) : IQueryBuilder where TCommand : IDbCommand {
@@ -46,8 +43,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         }
     }
     /// <inheritdoc/>
-    public readonly void Remove(string condition) {
-        var ind = QueryCommand.Mapper.GetIndex(condition);
+    public readonly void Remove(int ind) {
         if (ind < 0)
             return;
         if (ind >= QueryCommand.StartBaseHandlers) {
@@ -65,26 +61,57 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             QueryCommand.Parameters._specialHandlers[ind - QueryCommand.StartSpecialHandlers].Update(Command, ref val, null);
     }
     /// <inheritdoc/>
-    public readonly void Use(string condition) {
+    public readonly void Remove(string condition) 
+        => Remove(QueryCommand.Mapper.GetIndex(condition));
+    /// <inheritdoc/>
+    public readonly void Remove(ReadOnlySpan<char> condition)
+        => Remove(QueryCommand.Mapper.GetIndex(condition));
+    /// <inheritdoc/>
+    public readonly bool Use(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind < QueryCommand.StartBoolCond)
-            throw new ArgumentException(condition);
+            return false;
         Variables[ind] = QueryBuilder.Used;
+        return true;
+    }
+    /// <inheritdoc/>
+    public readonly bool Use(ReadOnlySpan<char> condition) {
+        var ind = QueryCommand.Mapper.GetIndex(condition);
+        if (ind < QueryCommand.StartBoolCond)
+            return false;
+        Variables[ind] = QueryBuilder.Used;
+        return true;
     }
     /// <inheritdoc/>
     public readonly void Use(int conditionIndex) 
         => Variables[conditionIndex] = QueryBuilder.Used;
     /// <inheritdoc/>
-    public void UnUse(string condition) {
+    public bool UnUse(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind < QueryCommand.StartBoolCond)
-            throw new ArgumentException(condition);
+            return false;
         Variables[ind] = null;
+        return true;
+    }
+    /// <inheritdoc/>
+    public bool UnUse(ReadOnlySpan<char> condition) {
+        var ind = QueryCommand.Mapper.GetIndex(condition);
+        if (ind < QueryCommand.StartBoolCond)
+            return false;
+        Variables[ind] = null;
+        return true;
     }
 
     /// <inheritdoc/>
     public void UnUse(int conditionIndex)
         => Variables[conditionIndex] = null;
+    /// <inheritdoc/>
+    public readonly bool Use(char charVariable, string variable, object? value) {
+        Span<char> span = stackalloc char[variable.Length + 1];
+        span[0] = charVariable;
+        variable.AsSpan().CopyTo(span[1..]);
+        return Use(QueryCommand.Mapper.GetIndex(span), value);
+    }
     /// <summary>
     /// Activates a variable and binds its data to the live <see cref="Command"/>.
     /// </summary>
@@ -97,6 +124,9 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     /// </list>
     /// </remarks>
     public readonly bool Use(string variable, object? value)
+        => Use(QueryCommand.Mapper.GetIndex(variable), value);
+    /// <inheritdoc/>
+    public readonly bool Use(ReadOnlySpan<char> variable, object? value)
         => Use(QueryCommand.Mapper.GetIndex(variable), value);
     /// <inheritdoc/>
     public readonly bool Use(int variableIndex, object? value) {
@@ -137,21 +167,18 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         return true;
     }
     /// <inheritdoc/>
+    void IQueryBuilder.Use(int variableIndex, object? value) => Use(variableIndex, value);
+    /// <inheritdoc/>
     public readonly object? this[string condition] {
+        get => Variables[QueryCommand.Mapper.GetIndex(condition)];
+    }
+    /// <inheritdoc/>
+    public readonly object? this[ReadOnlySpan<char> condition] {
         get => Variables[QueryCommand.Mapper.GetIndex(condition)];
     }
     /// <inheritdoc/>
     public readonly object? this[int ind] {
         get => Variables[ind];
-    }
-    /// <inheritdoc/>
-    public readonly int GetRelativeIndex(string key) {
-        var ind = QueryCommand.Mapper.GetIndex(key);
-        var nbBefore = 0;
-        for (int i = 0; i < ind; i++)
-            if (Variables[i] is not null)
-                nbBefore++;
-        return nbBefore;
     }
     /// <inheritdoc/>
     public readonly string GetQueryText()

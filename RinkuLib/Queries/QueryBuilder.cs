@@ -95,55 +95,85 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
         Variables[ind] = null;
     }
     /// <inheritdoc/>
-    public readonly void Use(string condition) {
+    public readonly void Remove(ReadOnlySpan<char> condition) {
+        var ind = QueryCommand.Mapper.GetIndex(condition);
+        Variables[ind] = null;
+    }
+    /// <inheritdoc/>
+    public readonly bool Use(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind < QueryCommand.StartBoolCond)
-            throw new ArgumentException(condition);
+            return false;
         Variables[ind] = Used;
+        return true;
+    }
+    /// <inheritdoc/>
+    public readonly bool Use(ReadOnlySpan<char> condition) {
+        var ind = QueryCommand.Mapper.GetIndex(condition);
+        if (ind < QueryCommand.StartBoolCond)
+            return false;
+        Variables[ind] = Used;
+        return true;
     }
     /// <inheritdoc/>
     public void Use(int conditionIndex)
         => Variables[conditionIndex] = Used;
 
     /// <inheritdoc/>
-    public void UnUse(string condition) {
+    public bool UnUse(string condition) {
         var ind = QueryCommand.Mapper.GetIndex(condition);
         if (ind < QueryCommand.StartBoolCond)
-            throw new ArgumentException(condition);
+            return false;
         Variables[ind] = null;
+        return true;
+    }
+    /// <inheritdoc/>
+    public bool UnUse(ReadOnlySpan<char> condition) {
+        var ind = QueryCommand.Mapper.GetIndex(condition);
+        if (ind < QueryCommand.StartBoolCond)
+            return false;
+        Variables[ind] = null;
+        return true;
     }
 
     /// <inheritdoc/>
     public void UnUse(int conditionIndex)
         => Variables[conditionIndex] = null;
     /// <inheritdoc/>
+    public readonly bool Use(char charVariable, string variable, object? value) {
+        Span<char> span = stackalloc char[variable.Length + 1];
+        span[0] = charVariable;
+        variable.AsSpan().CopyTo(span[1..]);
+        return Use(QueryCommand.Mapper.GetIndex(span), value);
+    }
+    /// <inheritdoc/>
     public readonly bool Use(string variable, object? value)
         => Use(QueryCommand.Mapper.GetIndex(variable), value);
     /// <inheritdoc/>
+    public readonly bool Use(ReadOnlySpan<char> variable, object? value)
+        => Use(QueryCommand.Mapper.GetIndex(variable), value);
+    /// <inheritdoc/>
     public bool Use(int variableIndex, object? value) {
-        if (value is IEnumerable && value is not string && !HasAny(ref Unsafe.As<object, IEnumerable>(ref value)))
-            return false;
         if (variableIndex < 0 || variableIndex >= QueryCommand.StartBoolCond)
+            return false;
+        if (variableIndex >= QueryCommand.StartSpecialHandlers && value is IEnumerable && value is not string && !HasAny(ref Unsafe.As<object, IEnumerable>(ref value)))
             return false;
         Variables[variableIndex] = value;
         return true;
     }
     /// <inheritdoc/>
+    void IQueryBuilder.Use(int variableIndex, object? value) => Use(variableIndex, value);
+    /// <inheritdoc/>
     public readonly object? this[string condition] {
+        get => Variables[QueryCommand.Mapper.GetIndex(condition)];
+    }
+    /// <inheritdoc/>
+    public readonly object? this[ReadOnlySpan<char> condition] {
         get => Variables[QueryCommand.Mapper.GetIndex(condition)];
     }
     /// <inheritdoc/>
     public readonly object? this[int ind] {
         get => Variables[ind];
-    }
-    /// <inheritdoc/>
-    public readonly int GetRelativeIndex(string key) {
-        var ind = QueryCommand.Mapper.GetIndex(key);
-        var nbBefore = 0;
-        for (int i = 0; i < ind; i++)
-            if (Variables[i] is not null)
-                nbBefore++;
-        return nbBefore;
     }
     /// <inheritdoc/>
     public readonly string GetQueryText()

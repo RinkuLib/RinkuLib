@@ -45,7 +45,7 @@ public class QueryParsingTests {
         // @Status is not provided
         Assert.False(builder.Use("NotInQuery", true));
         Assert.False(builder.Use("@NotInQuery", true));
-        Assert.Throws<ArgumentException>(() => builder.Use("NotInQuery"));
+        Assert.False(builder.Use("NotInQuery"));
     }
     [Fact]
     public void Example2_OptionalVariableFilter_NotProvided() {
@@ -595,6 +595,15 @@ public class QueryParsingTests {
         builder.UseWith(t);
         Verify(builder, "SELECT EmployeeId, FirstName, Salary, Year FROM Employees WHERE Salary >= @MinSalary AND Department = @DeptName ORDER BY Salary DESC",
             [("@MinSalary", 23), ("@DeptName", "Marketin")]);
+    }
+    [Fact]
+    public void Extract_Select_Implicit_And() {
+        var query = new QueryCommand("?SELECT ID, Username, /*#Admin*/Email FROM Users");
+        var builder = query.StartBuilder();
+        builder.Use("ID");
+        builder.Use("Username");
+        builder.Use("Email");
+        Verify(builder, "SELECT ID, Username FROM Users", []);
     }
 }
 public record struct TestDtoStruct(int? MinSalary, string? DeptName, string? EmployeeStatus);

@@ -174,7 +174,7 @@ public record class StateParameters(int? MinSalary, string? DeptName, string? Em
 ```
 By default, it match the members with variables in SQL (`@DeptName` instead of `DeptName`), if you want to correspond to a boolean condition, you must use the `[ForBoolCond]` attribute and the member must be of type bool.
 ```csharp
-var user = userCmd.QueryOne<User>(new StateParameters(10, null, "Employed") { Year = true }, cnn);
+var user = userCmd.QueryOne<User>(cnn, new StateParameters(10, null, "Employed") { Year = true });
 ```
 It is also possible to use parameter objects with a builder if you want to modify the values before executing
 ```csharp
@@ -193,6 +193,7 @@ The `QueryX` extension methods handle the entire database "trip." They generate 
 | Goal | Method | Sync Return | Async Return |
 | --- | --- | --- | --- |
 | **Update/Delete/Insert** | `Execute` | `int` | `Task<int>` |
+| **Update/Delete/Insert** | `ExecuteScalar<T>` | `T` | `Task<T>` |
 | **Fetch Single Row** | `QueryOne<T>` | `T?` | `Task<T?>` |
 | **Stream Multiple Rows** | `QueryAll<T>` | `IEnumerable<T>` | `IAsyncEnumerable<T>` |
 | **Get Reader** | `ExecuteReader` | `DbDataReader` | `Task<DbDataReader>` |
@@ -228,6 +229,7 @@ The same extensions are provided directly on the the `DbCommand` (there is also 
 | Goal | Method | Sync Return | Async Return |
 | --- | --- | --- | --- |
 | **Update/Delete/Insert** | `Execute` | `int` | `Task<int>` |
+| **Update/Delete/Insert** | `ExecuteScalar<T>` | `T` | `Task<T>` |
 | **Fetch Single Row** | `QueryOne<T>` | `T?` | `Task<T?>` |
 | **Stream Multiple Rows** | `QueryAll<T>` | `IEnumerable<T>` | `IAsyncEnumerable<T>` |
 | **Get Reader** | `ExecuteReader` | `DbDataReader` | `Task<DbDataReader>` |

@@ -102,7 +102,11 @@ public class DBFixture<T> : IAsyncLifetime where T : IDbConnection {
             await Container.StartAsync();
         ConnectionString = CnnStrGetter();
     }
-    public async ValueTask DisposeAsync() { if (Container is not null) await Container.DisposeAsync(); }
+    public async ValueTask DisposeAsync() {
+        if (Container is not null)
+            await Container.DisposeAsync();
+        GC.SuppressFinalize(this);
+    }
 }
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 public class RepeatAttribute(int count) : DataAttribute {

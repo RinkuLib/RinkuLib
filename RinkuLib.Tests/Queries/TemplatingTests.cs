@@ -635,4 +635,24 @@ public class TemplatingTests {
         };
         Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Test"]);
     }
+    [Fact]
+    public void Extract_Select_Implicit_And() {
+        var sql = "?SELECT ID, Username, /*#Admin*/Email FROM Users";
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var expectedSegments = new[] {
+            new SegmentVerify("SELECT", 6, false),
+            new SegmentVerify(" ID,", 1, false),
+            new SegmentVerify(" Username,", 1, false),
+            new SegmentVerify(" Email", 0, false),
+            new SegmentVerify(" FROM Users", 0, true)
+        };
+
+        var expectedConditions = new[] {
+            new ConditionVerify("ID", " ID,", 1),
+            new ConditionVerify("Username", " Username,", 1),
+            new ConditionVerify("Email", " Email", 2),
+            new ConditionVerify("#Admin", " Email", 2)
+        };
+        Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Email", "#Admin"]);
+    }
 }

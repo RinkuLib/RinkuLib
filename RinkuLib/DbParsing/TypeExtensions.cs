@@ -236,9 +236,10 @@ public static class TypeExtensions {
             return true;
         if (targetCore.IsEnum)
             return dbType.IsPrimitive;
-        if (targetCore.IsPrimitive && dbType.IsPrimitive)
-            return true;
-        return false;
+        bool isTargetNumeric = targetCore.IsPrimitive || targetCore == typeof(decimal);
+        bool isSourceNumeric = dbType.IsPrimitive || dbType == typeof(decimal);
+
+        return isTargetNumeric && isSourceNumeric;
     }
     /// <summary>
     /// Replaces generic placeholders (T, TKey) with actual types from the parent closed type.

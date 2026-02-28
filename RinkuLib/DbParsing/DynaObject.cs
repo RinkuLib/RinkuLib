@@ -1,14 +1,30 @@
 ﻿using System.Collections;
 using System.Diagnostics.CodeAnalysis;
-using System.Dynamic;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
+/// <summary></summary>
+public class DynaObjectConverter : JsonConverter<DynaObject> {
+    /// <inheritdoc/>
+    public override void Write(Utf8JsonWriter writer, DynaObject value, JsonSerializerOptions options) {
+        writer.WriteStartObject();
+        value.WriteJsonProperties(writer, options);
+        writer.WriteEndObject();
+    }
+
+    /// <inheritdoc/>
+    public override DynaObject Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
+        throw new NotImplementedException($"{typeof(DynaObject)} may not be built from JSON");
+    }
+}
 /// <summary>
 /// Represent an object that let dynamic acces to its members
 /// </summary>
 public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOnlyDictionary<string, int> {
+    internal abstract void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options);
     ///<inheritdoc/>
     internal DynaObject(Mapper mapper, int len) {
         if (mapper.Count != len)
@@ -228,7 +244,10 @@ internal class DynaObject<T0>(T0 val0, Mapper mapper) : DynaObject(mapper, 1) {
 
     public override bool Set<T>(int index, T value)
         => index == 0 && TrySet(value, ref val0);
-
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+    }
 }
 internal class DynaObject<T0, T1>(T0 val0, T1 val1, Mapper mapper) : DynaObject(mapper, 2) {
     private T0? val0 = val0;
@@ -244,6 +263,12 @@ internal class DynaObject<T0, T1>(T0 val0, T1 val1, Mapper mapper) : DynaObject(
         1 => TrySet(value, ref val1),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+    }
 }
 internal class DynaObject<T0, T1, T2>(T0 val0, T1 val1, T2 val2, Mapper mapper) : DynaObject(mapper, 3) {
     private T0? val0 = val0;
@@ -262,6 +287,14 @@ internal class DynaObject<T0, T1, T2>(T0 val0, T1 val1, T2 val2, Mapper mapper) 
         2 => TrySet(value, ref val2),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+    }
 }
 /// <summary></summary>
 internal class DynaObject<T0, T1, T2, T3>(T0 val0, T1 val1, T2 val2, T3 val3, Mapper mapper) : DynaObject(mapper, 4) {
@@ -284,6 +317,16 @@ internal class DynaObject<T0, T1, T2, T3>(T0 val0, T1 val1, T2 val2, T3 val3, Ma
         3 => TrySet(value, ref val3),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+    }
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, Mapper mapper) : DynaObject(mapper, 5) {
@@ -309,6 +352,18 @@ internal class DynaObject<T0, T1, T2, T3, T4>(T0 val0, T1 val1, T2 val2, T3 val3
         4 => TrySet(value, ref val4),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+        writer.WritePropertyName(Mapper.GetKey(4));
+        JsonSerializer.Serialize(writer, val4, options);
+    }
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, Mapper mapper) : DynaObject(mapper, 6) {
@@ -337,6 +392,20 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5>(T0 val0, T1 val1, T2 val2, T3 
         5 => TrySet(value, ref val5),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+        writer.WritePropertyName(Mapper.GetKey(4));
+        JsonSerializer.Serialize(writer, val4, options);
+        writer.WritePropertyName(Mapper.GetKey(5));
+        JsonSerializer.Serialize(writer, val5, options);
+    }
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, Mapper mapper) : DynaObject(mapper, 7) {
@@ -368,6 +437,22 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6>(T0 val0, T1 val1, T2 val2,
         6 => TrySet(value, ref val6),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+        writer.WritePropertyName(Mapper.GetKey(4));
+        JsonSerializer.Serialize(writer, val4, options);
+        writer.WritePropertyName(Mapper.GetKey(5));
+        JsonSerializer.Serialize(writer, val5, options);
+        writer.WritePropertyName(Mapper.GetKey(6));
+        JsonSerializer.Serialize(writer, val6, options);
+    }
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, Mapper mapper) : DynaObject(mapper, 8) {
@@ -402,6 +487,24 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7>(T0 val0, T1 val1, T2 v
         7 => TrySet(value, ref val7),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+        writer.WritePropertyName(Mapper.GetKey(4));
+        JsonSerializer.Serialize(writer, val4, options);
+        writer.WritePropertyName(Mapper.GetKey(5));
+        JsonSerializer.Serialize(writer, val5, options);
+        writer.WritePropertyName(Mapper.GetKey(6));
+        JsonSerializer.Serialize(writer, val6, options);
+        writer.WritePropertyName(Mapper.GetKey(7));
+        JsonSerializer.Serialize(writer, val7, options);
+    }
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, T8 val8, Mapper mapper) : DynaObject(mapper, 9) {
@@ -439,6 +542,26 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8>(T0 val0, T1 val1, 
         8 => TrySet(value, ref val8),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+        writer.WritePropertyName(Mapper.GetKey(4));
+        JsonSerializer.Serialize(writer, val4, options);
+        writer.WritePropertyName(Mapper.GetKey(5));
+        JsonSerializer.Serialize(writer, val5, options);
+        writer.WritePropertyName(Mapper.GetKey(6));
+        JsonSerializer.Serialize(writer, val6, options);
+        writer.WritePropertyName(Mapper.GetKey(7));
+        JsonSerializer.Serialize(writer, val7, options);
+        writer.WritePropertyName(Mapper.GetKey(8));
+        JsonSerializer.Serialize(writer, val8, options);
+    }
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, T8 val8, T9 val9, Mapper mapper) : DynaObject(mapper, 10) {
@@ -479,6 +602,28 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(T0 val0, T1 va
         9 => TrySet(value, ref val9),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+        writer.WritePropertyName(Mapper.GetKey(4));
+        JsonSerializer.Serialize(writer, val4, options);
+        writer.WritePropertyName(Mapper.GetKey(5));
+        JsonSerializer.Serialize(writer, val5, options);
+        writer.WritePropertyName(Mapper.GetKey(6));
+        JsonSerializer.Serialize(writer, val6, options);
+        writer.WritePropertyName(Mapper.GetKey(7));
+        JsonSerializer.Serialize(writer, val7, options);
+        writer.WritePropertyName(Mapper.GetKey(8));
+        JsonSerializer.Serialize(writer, val8, options);
+        writer.WritePropertyName(Mapper.GetKey(9));
+        JsonSerializer.Serialize(writer, val9, options);
+    }
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, T8 val8, T9 val9, T10 val10, Mapper mapper) : DynaObject(mapper, 11) {
@@ -522,6 +667,30 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(T0 val0, 
         10 => TrySet(value, ref val10),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+        writer.WritePropertyName(Mapper.GetKey(4));
+        JsonSerializer.Serialize(writer, val4, options);
+        writer.WritePropertyName(Mapper.GetKey(5));
+        JsonSerializer.Serialize(writer, val5, options);
+        writer.WritePropertyName(Mapper.GetKey(6));
+        JsonSerializer.Serialize(writer, val6, options);
+        writer.WritePropertyName(Mapper.GetKey(7));
+        JsonSerializer.Serialize(writer, val7, options);
+        writer.WritePropertyName(Mapper.GetKey(8));
+        JsonSerializer.Serialize(writer, val8, options);
+        writer.WritePropertyName(Mapper.GetKey(9));
+        JsonSerializer.Serialize(writer, val9, options);
+        writer.WritePropertyName(Mapper.GetKey(10));
+        JsonSerializer.Serialize(writer, val10, options);
+    }
 }
 
 internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>(T0 val0, T1 val1, T2 val2, T3 val3, T4 val4, T5 val5, T6 val6, T7 val7, T8 val8, T9 val9, T10 val10, T11 val11, Mapper mapper) : DynaObject(mapper, 12) {
@@ -568,4 +737,30 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>(T0 v
         11 => TrySet(value, ref val11),
         _ => throw new Exception("Unable to set the value"),
     };
+    internal override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
+        writer.WritePropertyName(Mapper.GetKey(0));
+        JsonSerializer.Serialize(writer, val0, options);
+        writer.WritePropertyName(Mapper.GetKey(1));
+        JsonSerializer.Serialize(writer, val1, options);
+        writer.WritePropertyName(Mapper.GetKey(2));
+        JsonSerializer.Serialize(writer, val2, options);
+        writer.WritePropertyName(Mapper.GetKey(3));
+        JsonSerializer.Serialize(writer, val3, options);
+        writer.WritePropertyName(Mapper.GetKey(4));
+        JsonSerializer.Serialize(writer, val4, options);
+        writer.WritePropertyName(Mapper.GetKey(5));
+        JsonSerializer.Serialize(writer, val5, options);
+        writer.WritePropertyName(Mapper.GetKey(6));
+        JsonSerializer.Serialize(writer, val6, options);
+        writer.WritePropertyName(Mapper.GetKey(7));
+        JsonSerializer.Serialize(writer, val7, options);
+        writer.WritePropertyName(Mapper.GetKey(8));
+        JsonSerializer.Serialize(writer, val8, options);
+        writer.WritePropertyName(Mapper.GetKey(9));
+        JsonSerializer.Serialize(writer, val9, options);
+        writer.WritePropertyName(Mapper.GetKey(10));
+        JsonSerializer.Serialize(writer, val10, options);
+        writer.WritePropertyName(Mapper.GetKey(11));
+        JsonSerializer.Serialize(writer, val11, options);
+    }
 }

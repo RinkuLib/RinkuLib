@@ -302,8 +302,8 @@ public unsafe ref struct QueryExtracter {
         return true;
     }
 
-    private const ulong BoundaryMask = 0x930100002601;
-    private static unsafe bool IsBoundary(char c)
+    private const ulong BoundaryMask = 0x800930100002601;
+    private static bool IsBoundary(char c)
         => c < 64 && (BoundaryMask >> c & 1) == 1;
     private void ManageBoundary() {
         var c = *CurrentChar;
@@ -324,6 +324,10 @@ public unsafe ref struct QueryExtracter {
             LowerParentesis();
         else if (c == ',')
             ManageComa();
+        else if (c == ';') {
+            UpdateConditionsEnd(BuilderInd - 1, true, 0);
+            UpdateCurrentStart(BuilderInd, 0);
+        }
     }
 
     private void ManageComa() {

@@ -42,6 +42,31 @@ public static class QueryBuilderCommandExtensions {
             return cmd.ExecuteAsync<NoNeedToCache>(default, false, ct);
         }
         /// <summary>
+        /// Executes the managed <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        public T ExecuteScalar<T>() {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = builder.Command;
+            cmd.CommandText = command.QueryText.Parse(vars);
+            if (command.NeedToCache(vars))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, false);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, false);
+        }
+        /// <summary>
+        /// Executes the managed <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(CancellationToken ct = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = builder.Command;
+            cmd.CommandText = command.QueryText.Parse(vars);
+            if (command.NeedToCache(vars))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, false, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, false, ct);
+        }
+        /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
         /// </summary>
         /// <param name="behavior">The behavior to use for the reader</param>
@@ -194,6 +219,31 @@ public static class QueryBuilderCommandExtensions {
             if (command.NeedToCache(vars))
                 return cmd.ExecuteAsync(command, false, ct);
             return cmd.ExecuteAsync<NoNeedToCache>(default, false, ct);
+        }
+        /// <summary>
+        /// Executes the managed <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        public T ExecuteScalar<T>() {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = builder.Command;
+            cmd.CommandText = command.QueryText.Parse(vars);
+            if (command.NeedToCache(vars))
+                return cmd.ExecuteScalar<T, QueryCommand>(command, false);
+            return cmd.ExecuteScalar<T, NoNeedToCache>(default, false);
+        }
+        /// <summary>
+        /// Executes the managed <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(CancellationToken ct = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = builder.Command;
+            cmd.CommandText = command.QueryText.Parse(vars);
+            if (command.NeedToCache(vars))
+                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, false, ct);
+            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, false, ct);
         }
         /// <summary>
         /// Executes the reader of the <see cref="IDbCommand"/>.

@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Runtime.CompilerServices;
 
 namespace RinkuLib.Queries;
 
@@ -21,19 +20,21 @@ public interface IQueryBuilder {
     /// </summary>
     object? this[string condition] { get; }
     /// <summary>
+    /// Returns the current state or value for a specific condition or variable name.
+    /// </summary>
+    object? this[ReadOnlySpan<char> condition] { get; }
+    /// <summary>
     /// Generates the SQL text only using the actual variables states without making or maintaining a command.
     /// </summary>
     string GetQueryText();
     /// <summary>
-    /// Returns the position of an active item relative to other active items in the query.
-    /// </summary>
-    /// <param name="key">The name of the condition or variable.</param>
-    /// <returns>The number of active items appearing before this one.</returns>
-    int GetRelativeIndex(string key);
-    /// <summary>
     /// Deactivates a condition or variable so it is no longer included in the query.
     /// </summary>
     void Remove(string condition);
+    /// <summary>
+    /// Deactivates a condition or variable so it is no longer included in the query.
+    /// </summary>
+    void Remove(ReadOnlySpan<char> condition);
     /// <summary>
     /// Deactivates all items, resetting the state of the query.
     /// </summary>
@@ -42,7 +43,12 @@ public interface IQueryBuilder {
     /// Activates a condition that only functions as a toggle (such as a column or a conditional marker).
     /// </summary>
     /// <param name="condition">The name of the condition to activate.</param>
-    void Use(string condition);
+    bool Use(string condition);
+    /// <summary>
+    /// Activates a condition that only functions as a toggle (such as a column or a conditional marker).
+    /// </summary>
+    /// <param name="condition">The name of the condition to activate.</param>
+    bool Use(ReadOnlySpan<char> condition);
     /// <summary>
     /// Activates a condition that only functions as a toggle (such as a column or a conditional marker).
     /// </summary>
@@ -52,12 +58,26 @@ public interface IQueryBuilder {
     /// Desactivate a condition that only functions as a toggle (such as a column or a conditional marker).
     /// </summary>
     /// <param name="condition">The name of the condition to activate.</param>
-    void UnUse(string condition);
+    bool UnUse(string condition);
+    /// <summary>
+    /// Desactivate a condition that only functions as a toggle (such as a column or a conditional marker).
+    /// </summary>
+    /// <param name="condition">The name of the condition to activate.</param>
+    bool UnUse(ReadOnlySpan<char> condition);
     /// <summary>
     /// Desactivate a condition that only functions as a toggle (such as a column or a conditional marker).
     /// </summary>
     /// <param name="conditionIndex">The index of the condition to activate.</param>
     void UnUse(int conditionIndex);
+
+    /// <summary>
+    /// Activates a variable and assigns it a data value.
+    /// </summary>
+    /// <param name="charVariable">The character to appent to the start of the variable to match as a key.</param>
+    /// <param name="variable">The name of the item to activate.</param>
+    /// <param name="value">The data value to assign.</param>
+    /// <returns>True if the item is active after this call.</returns>
+    public bool Use(char charVariable, string variable, object? value);
     /// <summary>
     /// Activates a variable and assigns it a data value.
     /// </summary>
@@ -68,27 +88,34 @@ public interface IQueryBuilder {
     /// <summary>
     /// Activates a variable and assigns it a data value.
     /// </summary>
+    /// <param name="variable">The name of the item to activate.</param>
+    /// <param name="value">The data value to assign.</param>
+    /// <returns>True if the item is active after this call.</returns>
+    bool Use(ReadOnlySpan<char> variable, object? value);
+    /// <summary>
+    /// Activates a variable and assigns it a data value.
+    /// </summary>
     /// <param name="variableIndex">The index of the item to activate.</param>
     /// <param name="value">The data value to assign.</param>
     /// <returns>True if the item is active after this call.</returns>
-    bool Use(int variableIndex, object? value);
+    void Use(int variableIndex, object? value);
     /// <summary>
     /// Set the builder state alligned with the parameter object
     /// </summary>
-    public unsafe void UseWith(object parameterObj);
+    public void UseWith(object parameterObj);
     /// <summary>
     /// Set the builder state alligned with the parameter object
     /// </summary>
-    public unsafe void UseWith<T>(T parameterObj) where T : notnull;
+    public void UseWith<T>(T parameterObj) where T : notnull;
     /// <summary>
     /// Set the builder state alligned with the parameter object
     /// </summary>
-    public unsafe void UseWith<T>(ref T parameterObj) where T : notnull;
+    public void UseWith<T>(ref T parameterObj) where T : notnull;
 }
 /// <summary>
 /// A <see cref="ISchemaParser{T}"/> allready initialized
 /// </summary>
-public readonly unsafe struct SchemaParser<T>(/*delegate**/Func<DbDataReader, T> Parser, CommandBehavior Behavior) : ISchemaParser<T> {
+public readonly struct SchemaParser<T>(/*delegate**/Func<DbDataReader, T> Parser, CommandBehavior Behavior) : ISchemaParser<T> {
     /// <inheritdoc/>
     public bool IsInit => parser != null;
     //public readonly delegate*<DbDataReader, T> parser = Parser;
@@ -104,7 +131,7 @@ public readonly unsafe struct SchemaParser<T>(/*delegate**/Func<DbDataReader, T>
 /// <summary>
 /// A <see cref="ISchemaParser{T}"/> allready initialized
 /// </summary>
-public readonly unsafe struct SchemaParserAsync<T>(/*delegate**/Func<DbDataReader, Task<T>> Parser, CommandBehavior Behavior) : ISchemaParserAsync<T> {
+public readonly struct SchemaParserAsync<T>(/*delegate**/Func<DbDataReader, Task<T>> Parser, CommandBehavior Behavior) : ISchemaParserAsync<T> {
     /// <inheritdoc/>
     public bool IsInit => parser != null;
     //public readonly delegate*<DbDataReader, T> parser = Parser;

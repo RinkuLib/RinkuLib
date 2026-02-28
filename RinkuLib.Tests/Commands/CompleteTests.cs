@@ -1,4 +1,5 @@
 ﻿using System.Data.Common;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using RinkuLib.Commands;
 using RinkuLib.DbParsing;
@@ -56,6 +57,13 @@ public class CompleteTests {
         Assert.Equal(2, p2.ID);
         Assert.Equal("Victor", p2.Username);
         Assert.Equal("abc@email.com", p2.Email);
+    }
+    [Fact]
+    public void Double_to_Decimal() {
+        var query = new QueryCommand("SELECT Number FROM Users WHERE ID = 1");
+        using var cnn = GetDbCnn();
+        var d = query.QueryOne<decimal>(cnn);
+        Assert.Equal(10.2M, d);
     }
     [Fact]
     public void Example1_StaticQuery_Reuse() {

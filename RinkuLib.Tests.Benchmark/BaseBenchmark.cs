@@ -292,6 +292,7 @@ public class BaseBenchmark : IAsyncDisposable {
     public async ValueTask DisposeAsync() {
         await cnn.DisposeAsync();
         await _fixture.DisposeAsync();
+        GC.SuppressFinalize(this);
     }
 }
 
@@ -302,12 +303,9 @@ public record User(int Id, string Name, string Email, int Age) {
     public int Sum() => Id + Name.Length + Email.Length + Age;
 }
 
-
 public class Product {
     public int Id { get; set; }
-
     public string? Name { get; set; }
-
     public Category? Category { get; set; }
     public static bool operator ==(Product? p1, Product? p2) {
         // Handle nulls on either side
