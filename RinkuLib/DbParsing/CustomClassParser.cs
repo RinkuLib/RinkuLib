@@ -8,7 +8,8 @@ namespace RinkuLib.DbParsing;
 /// A composite parser responsible for instantiating complex types and populating their members.
 /// It coordinates the evaluation stack to satisfy constructor parameters and setter methods.
 /// </summary>
-public class CustomClassParser(Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters, List<(MemberInfo, DbItemParser)> Members) : DbItemParser {
+public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters, List<(MemberInfo, DbItemParser)> Members) : DbItemParser {
+    private readonly Type ParentType = ParentType;
     private readonly Type Type = Type;
     private readonly string ParamName = ParamName;
     private readonly INullColHandler NullColHandler = NullColHandler;
@@ -19,8 +20,8 @@ public class CustomClassParser(Type Type, string ParamName, INullColHandler Null
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedNullJumpSetPoint(Type);
     /// <summary>Creation without member assignations</summary>
-    public CustomClassParser(Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters)
-        : this(Type, ParamName, NullColHandler, MethodBase, Parameters, EmptyMembers) { }
+    public CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters)
+        : this(ParentType, Type, ParamName, NullColHandler, MethodBase, Parameters, EmptyMembers) { }
     /// <inheritdoc/>
     public override bool IsSequencial(ref int previousIndex) {
         for (int i = 0; i < Readers.Count; i++)
@@ -34,7 +35,7 @@ public class CustomClassParser(Type Type, string ParamName, INullColHandler Null
     /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
         Label? jump = null;
-        var localSetPoint = nullSetPoint;
+        var localSetPoint = NeedNullSetPoint(cols) ? nullSetPoint : default;
         targetObject = null;
         for (int i = 0; i < Readers.Count; i++) {
             var reader = Readers[i];
@@ -57,7 +58,7 @@ public class CustomClassParser(Type Type, string ParamName, INullColHandler Null
         generator.Emit(op, notNull);
         if (jump.HasValue)
             generator.MarkLabel(jump.Value);
-        Label? endLabel = NullColHandler.HandleNull(Type, ParamName, generator, nullSetPoint);
+        Label? endLabel = NullColHandler.HandleNull(ParentType, Type, ParamName, generator, nullSetPoint);
         if (endLabel.HasValue)
             generator.MarkLabel(endLabel.Value);
         generator.MarkLabel(notNull);

@@ -1,4 +1,7 @@
+using System.Reflection;
 using RinkuDemo;
+using RinkuLib.Commands;
+using RinkuLib.TypeAccessing;
 
 var builder = WebApplication.CreateBuilder(args);
 Registry.Initialize(builder.Configuration);
@@ -18,6 +21,7 @@ app.MapModule<ArtistModule, Artist>();
 app.MapModule<AlbumModule, Album>();
 app.MapModule<TrackModule, Track>();
 app.MapModule<MediaTypeModule, Reference>();
+app.MapModule<GenreModule, KeyValuePair<int, string>>();
 app.MapModule<EmployeeModule, Employee>();
 app.MapModule<CustomerModule, Customer>();
 app.MapModule<InvoiceModule, Invoice>();

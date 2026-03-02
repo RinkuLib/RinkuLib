@@ -197,6 +197,11 @@ You can combine multiple conditions in a single `/*...*/` marker using `|` (OR) 
 * **Template:** `SELECT * FROM Users WHERE /*IsAdmin|IsManager&Active*/ Salary > 50000`
 * **Result:** `SELECT * FROM Users`
 
+You can also use the `!` operator to indicate that you require the absence of the condition.  
+* **Template:** `SELECT * FROM Products WHERE /*!All*/IsActive = 1`
+* **Result (if `All` is not provided):** `SELECT * FROM Users WHERE IsActive = 1`
+* **Result (if `All` is provided):** `SELECT * FROM Users`
+
 There is a special usage of `/*...*/`: if placed directly before a SQL clause (like a `JOIN`), the entire clause is treated as a conditional segment.
 * **Template:** `SELECT o.ID, o.Total FROM Orders o /*FilterUsers*/ JOIN Users u ON o.UserID = u.ID WHERE u.Role = ?@Role`
 * **Result:** `SELECT o.ID, o.Total FROM Orders o`

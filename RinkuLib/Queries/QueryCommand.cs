@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Queries;
 
@@ -500,11 +501,9 @@ public class QueryCommand : IQueryCommand, ICache {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TypeAccessorCache GetAccessorCache(IntPtr handle, Type type) {
         var hds = _handles;
-        for (int i = 0; i < hds.Length; i++) {
-            if (hds[i] != handle) {
+        for (int i = 0; i < hds.Length; i++)
+            if (hds[i] == handle)
                 return _funcs[i];
-            }
-        }
         lock (TypeAccessorSharedLock) {
             for (int i = 0; i < _handles.Length; i++)
                 if (_handles[i] == handle)

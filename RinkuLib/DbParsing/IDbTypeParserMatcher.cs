@@ -49,12 +49,13 @@ public interface IDbTypeParserMatcher {
     /// <summary>
     /// The core negotiation method for the item.
     /// </summary>
+    /// <param name="parentType">The parent containint the item to match.</param>
     /// <param name="declaringTypeArguments">Generic arguments from the parent type (if any).</param>
     /// <param name="columns">The available schema to match against.</param>
     /// <param name="colModifier">Transformation logic for column names/types.</param>
     /// <param name="colUsage">Identify which columns has allready been used.</param>
     /// <returns>A parser node if the item successfully matches a column; otherwise, null.</returns>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
+    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
 }
 /// <summary>
 /// Defines a custom strategy for matching a specific Type against a schema.
@@ -64,7 +65,7 @@ public interface IDbTypeParserInfoMatcher {
     /// Negotiates the schema for the target type. 
     /// If successful, returns a parser node that handles the entire object construction.
     /// </summary>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType);
+    public DbItemParser? TryGetParser(Type ParentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType);
     /// <summary>Identify if the instance can actualy handle the <see cref="Type"/> of <paramref name="TargetType"/></summary>
     public bool CanUseType(Type TargetType);
 }

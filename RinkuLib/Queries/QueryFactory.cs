@@ -146,7 +146,7 @@ public struct QueryFactory {
         }
     }
 
-    private readonly Condition MakeSentinel() => new(Mapper.Count, Segments.Length, -1, 0);
+    private readonly Condition MakeSentinel() => new(Mapper.Count, Segments.Length, -1, 0, true);
     private readonly void UpdateCondToSkip() {
         Array.Sort(Conditions);
         var len = Conditions.Length - 1;
@@ -207,7 +207,7 @@ public struct QueryFactory {
         var isOrIdentifier = 0;
         if (cond.Type == CondInfo.OrComment)
             isOrIdentifier = -1;
-        return new(condMapperInd, segInd, end - segInd, isOrIdentifier);
+        return new(condMapperInd, segInd, end - segInd, isOrIdentifier, !cond.Flags.HasFlag(CondFlags.IsNot));
     }
 
     private readonly bool SetHandler(ref CondInfo cond) {

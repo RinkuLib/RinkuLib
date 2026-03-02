@@ -84,8 +84,6 @@ public struct ForceInferedParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     }
     /// <inheritdoc/>
     public readonly DbParamInfo MakeInfoAt(int i) {
-        var p = Command.Parameters[i] as IDbDataParameter
-            ?? throw new Exception($"there is no valid parameter at index {i}");
         return InferedDbParamCache.ForceInfered;
     }
     /// <summary>

@@ -9,7 +9,7 @@ using RinkuLib.Queries;
 namespace RinkuDemo;
 
 public static class Registry {
-    public const string AllJoin = "AllJ";
+    public const string GetAll = "GetAll";
     public static string ConnStr { get; private set; } = null!;
     public static DbConnection GetConnection() => new SqliteConnection(ConnStr);
     public static CrudCommands<Artist> Artists { get; private set; } = null!;
@@ -24,7 +24,7 @@ public static class Registry {
     public static async IAsyncEnumerable<T> Stream<T>(HttpContext ctx, CrudCommands<T> commands) {
         using var db = GetConnection();
         var b = commands.Read.StartBuilder();
-        b.Use(AllJoin);
+        b.Use(GetAll);
         foreach (var (k, v) in ctx.Request.Query)
             b.Use('@', k, v.ToInferredObject());
         await foreach (var item in b.QueryAllAsync<T>(db))
@@ -73,8 +73,8 @@ public static class Registry {
 }
 
 public class CrudCommands<T>(IConfiguration config, string key) {
-    public QueryCommand Create { get; } = new(config[$"SQLStrings:{key}:Create"]!);
-    public QueryCommand Read { get; } = new(config[$"SQLStrings:{key}:Read"]!);
-    public QueryCommand Update { get; } = new(config[$"SQLStrings:{key}:Update"]!);
-    public QueryCommand Delete { get; } = new(config[$"SQLStrings:{key}:Delete"]!);
+    public QueryCommand Create { get; } = new(config[$"SQLStrings:{key}:Create"] ?? throw new Exception($"{key} : Create does not exist"));
+    public QueryCommand Read { get; } = new(config[$"SQLStrings:{key}:Read"] ?? throw new Exception($"{key} : Read does not exist"));
+    public QueryCommand Update { get; } = new(config[$"SQLStrings:{key}:Update"] ?? throw new Exception($"{key} : Update does not exist"));
+    public QueryCommand Delete { get; } = new(config[$"SQLStrings:{key}:Delete"] ?? throw new Exception($"{key} : Delete does not exist"));
 }

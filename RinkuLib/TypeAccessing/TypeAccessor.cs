@@ -3,7 +3,7 @@ using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using RinkuLib.Tools;
 
-namespace RinkuLib.Queries;
+namespace RinkuLib.TypeAccessing;
 /// <summary>
 /// Identifies a member as a boolean condition for SQL templates rather than a variable.
 /// </summary>

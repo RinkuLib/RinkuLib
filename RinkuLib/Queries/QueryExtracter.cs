@@ -6,6 +6,7 @@ namespace RinkuLib.Queries;
 [Flags]
 internal enum CondFlags : byte {
     None = 0,
+    IsNot = 0b_0000_0100,
     NeedSectionToFinish = 0b_0000_1000,
     IsRequired = 0b_0001_0000,
     NextIsSection = 0b_0100_0000,
@@ -35,6 +36,7 @@ internal enum CondFlags : byte {
 /// </list>
 /// </remarks>
 internal struct CondInfo {
+    public const char NotCommentChar = '!';
     public const char AndComment = (char)1;
     public const char AndCommentChar = '&';
     public const char OrComment = (char)2;
@@ -73,14 +75,15 @@ internal struct CondInfo {
             VarIndex = VarIndex,
             Flags = CondFlags.IsRequired | CondFlags.Finished
         };
-    public static CondInfo NewOptional(string Cond, char Type, int VarIndex, int StartIndex, ulong ParMap, int Excess)
+    public static CondInfo NewOptional(string Cond, char Type, int VarIndex, int StartIndex, ulong ParMap, int Excess, bool IsNot)
         => new() {
             Cond = Cond,
             Type = Type,
             VarIndex = VarIndex,
             StartIndex = StartIndex,
             ParMapOrExcesses = ParMap,
-            EndIndex = Excess
+            EndIndex = Excess,
+            Flags = IsNot ? CondFlags.IsNot : default
         };
     public static CondInfo NewSelect(int StartIndex, ulong parMap, int prevExcessExcess) 
         =>new() {
@@ -367,7 +370,7 @@ public unsafe ref struct QueryExtracter {
             Conditions.Add(CondInfo.NewRequired(cond, type, varIndex));
         else {
             var decal = GetDecalToSectionLevel(ParMap);
-            Conditions.Add(CondInfo.NewOptional(cond, type, varIndex, CurrentStart[-decal], ParMap >> decal, CurrentExcess[-decal]));
+            Conditions.Add(CondInfo.NewOptional(cond, type, varIndex, CurrentStart[-decal], ParMap >> decal, CurrentExcess[-decal], false));
         }
         if (type >= CondInfo.Special) {
             var c = CurrentChar;
@@ -399,11 +402,11 @@ public unsafe ref struct QueryExtracter {
         var type = CondInfo.AndComment;
         var nbCond = 0;
         while (true) {
-            var cond = GetCommentString();
+            var cond = GetCommentString(out var isNot);
             if (string.IsNullOrWhiteSpace(cond))
                 continue;
             nbCond++;
-            Conditions.Add(CondInfo.NewOptional(cond, type, BuilderInd - 1, *CurrentStart, ParMap, *CurrentExcess));
+            Conditions.Add(CondInfo.NewOptional(cond, type, BuilderInd - 1, *CurrentStart, ParMap, *CurrentExcess, isNot));
             if ((*CurrentChar == '*' && CurrentChar[1] == '/') || CurrentChar >= LastChar)
                 break;
             type = *CurrentChar == CondInfo.OrCommentChar ? CondInfo.OrComment : CondInfo.AndComment;
@@ -424,7 +427,7 @@ public unsafe ref struct QueryExtracter {
             CurrentChar++;
         }
     }
-    private string GetCommentString() {
+    private string GetCommentString(out bool isNot) {
         var start = CurrentChar;
         while (char.IsWhiteSpace(*start))
             start++;
@@ -438,6 +441,9 @@ public unsafe ref struct QueryExtracter {
         }
         if (CurrentChar >= LastChar)
             throw new Exception("comment unclosed");
+        isNot = *start == CondInfo.NotCommentChar;
+        if (isNot)
+            start++;
         var i = (int)(CurrentChar - start);
         while (char.IsWhiteSpace(start[i]))
             i--;

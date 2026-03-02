@@ -13,18 +13,20 @@ public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
     public bool CanUseType(Type TargetType)
         => TargetType.IsBaseType() || TargetType.IsEnum;
     /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type[] _, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
-
+    public DbItemParser? TryGetParser(Type parentType, Type[] _, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
+        ITypeConverter? converter = null;
+        if (isNullable && closedTargetType.IsValueType)
+            closedTargetType = typeof(Nullable<>).MakeGenericType(closedTargetType);
         int i = 0;
         if (colModifier.DoesModify) {
             for (; i < columns.Length; i++) {
                 if (colUsage.IsUsed(i))
                     continue;
                 var column = columns[i];
-                if (column.Type.CanConvert(closedTargetType) && colModifier.Match(column.Name, NoNameComparer.Instance))
+                if (colModifier.Match(column.Name, NoNameComparer.Instance) && ITypeConverter.TryGetConverter(column.Type, closedTargetType, out converter))
                     break;
             }
-            if (i >= columns.Length)
+            if (i >= columns.Length || converter is null)
                 return null;
         }
         else {
@@ -34,13 +36,11 @@ public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
             if (colUsage.IsUsed(i))
                 return null;
             var column = columns[i];
-            if (!column.Type.CanConvert(closedTargetType) || !colModifier.Match(column.Name, NoNameComparer.Instance))
+            if (!colModifier.Match(column.Name, NoNameComparer.Instance) || !ITypeConverter.TryGetConverter(column.Type, closedTargetType, out converter))
                 return null;
         }
         colUsage.Use(i);
-        if (isNullable && closedTargetType.IsValueType)
-            closedTargetType = typeof(Nullable<>).MakeGenericType(closedTargetType);
-        return new BasicParser(closedTargetType, paramName, nullColHandler, i);
+        return new BasicParser(parentType, converter, paramName, nullColHandler, i);
     }
 }
 /// <summary>Handling for tuple that force usage of ite argument types</summary>
@@ -56,16 +56,16 @@ public class NotNullMatcher : IDbTypeParserInfoMatcher {
         return TargetType == typeof(NotNull<>);
     }
     /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
+    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
         if (declaringTypeArguments.Length != 1)
             return null;
         var type = declaringTypeArguments[0];
         var r = TypeParsingInfo.ForceGet(type)
-            .TryGetParser(type.IsGenericType ? type.GetGenericArguments() : [], "Value", NotNullHandle.Instance, columns, colModifier, false, ref colUsage);
+            .TryGetParser(parentType, type.IsGenericType ? type.GetGenericArguments() : [], "Value", NotNullHandle.Instance, columns, colModifier, false, ref colUsage);
         if (r is null)
             return null;
         var method = closedTargetType.GetConstructor(declaringTypeArguments) ?? throw new Exception($"unable to load the ctor for {closedTargetType}");
-        return new CustomClassParser(closedTargetType, paramName, nullColHandler, method, [r]);
+        return new CustomClassParser(parentType, closedTargetType, paramName, nullColHandler, method, [r]);
     }
 }
 /// <summary>Handling for tuple that force usage of ite argument types</summary>
@@ -88,7 +88,7 @@ public class TupleTypeMatcher : IDbTypeParserInfoMatcher {
         || TargetType == typeof(ValueTuple<,,,,,,,>);
     }
     /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
+    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
         colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
         var readers = new DbItemParser[declaringTypeArguments.Length];
@@ -102,7 +102,7 @@ public class TupleTypeMatcher : IDbTypeParserInfoMatcher {
                 args = type.GetGenericArguments();
             }
             var typeInfo = TypeParsingInfo.ForceGet(type);
-            var r = typeInfo.TryGetParser(args, $"Item{i + 1}", maybeNull ? NullableTypeHandle.Instance : NotNullHandle.Instance, columns, colModifier, maybeNull, ref colUsage);
+            var r = typeInfo.TryGetParser(parentType, args, $"Item{i + 1}", maybeNull ? NullableTypeHandle.Instance : NotNullHandle.Instance, columns, colModifier, maybeNull, ref colUsage);
             if (r is null) {
                 colUsage.Rollback(checkpoint, lastIndUsed);
                 return null;
@@ -110,7 +110,7 @@ public class TupleTypeMatcher : IDbTypeParserInfoMatcher {
             readers[i] = r;
         }
         var method = closedTargetType.GetConstructor(declaringTypeArguments) ?? throw new Exception($"unable to load the ctor for {closedTargetType}");
-        return new CustomClassParser(
+        return new CustomClassParser(parentType,
             isNullable && closedTargetType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedTargetType) : closedTargetType,
             paramName, nullColHandler, method, [..readers]);
     }
@@ -510,16 +510,16 @@ public class TypeParsingInfo {
     /// <returns>
     /// A configured <see cref="DbItemParser"/> if the schema satisfies a construction path; otherwise, null.
     /// </returns>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
+    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
         if (!IsInit)
             Init();
         var closedType = Type.CloseType(declaringTypeArguments);
         if (_matcher is not null)
-            return _matcher.TryGetParser(declaringTypeArguments, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage, closedType);
-        return DefaultTryGetParser(declaringTypeArguments, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage, closedType);
+            return _matcher.TryGetParser(parentType, declaringTypeArguments, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage, closedType);
+        return DefaultTryGetParser(parentType, declaringTypeArguments, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage, closedType);
     }
 
-    private CustomClassParser? DefaultTryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedType) {
+    private CustomClassParser? DefaultTryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedType) {
         var actualType = isNullable && closedType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedType) : closedType;
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
         colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
@@ -531,7 +531,7 @@ public class TypeParsingInfo {
             var mci = mcis[i];
             var parameters = mci.Parameters;
             for (int j = 0; j < parameters.Length; j++) {
-                var r = parameters[j].TryGetParser(declaringTypeArguments, columns, colModifier, ref colUsage);
+                var r = parameters[j].TryGetParser(closedType, declaringTypeArguments, columns, colModifier, ref colUsage);
                 if (r is null)
                     break;
                 readers.Add(r);
@@ -551,16 +551,16 @@ public class TypeParsingInfo {
             canCompleteWithMembers = true;
         }
         if (!canCompleteWithMembers)
-            return new CustomClassParser(actualType, paramName, nullColHandler, method, readers);
+            return new CustomClassParser(parentType, actualType, paramName, nullColHandler, method, readers);
         List<(MemberInfo, DbItemParser)> memberReaders = [];
         var members = Members;
         for (int i = 0; i < members.Length; i++) {
-            var r = members[i].Param.TryGetParser(declaringTypeArguments, columns, colModifier, ref colUsage);
+            var r = members[i].Param.TryGetParser(closedType, declaringTypeArguments, columns, colModifier, ref colUsage);
             if (r is not null)
                 memberReaders.Add((members[i].Member.GetClosedMember(closedType), r));
         }
         if (memberReaders.Count == 0 && readers.Count == 0)
             return null;
-        return new CustomClassParser(actualType, paramName, nullColHandler, method, readers, memberReaders);
+        return new CustomClassParser(parentType, actualType, paramName, nullColHandler, method, readers, memberReaders);
     }
 }

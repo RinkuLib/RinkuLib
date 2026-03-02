@@ -1,5 +1,6 @@
 ﻿using RinkuLib.DbParsing;
 using RinkuLib.Queries;
+using RinkuLib.TypeAccessing;
 using Xunit;
 
 namespace RinkuLib.Tests.Queries; 
@@ -604,6 +605,21 @@ public class QueryParsingTests {
         builder.Use("Username");
         builder.Use("Email");
         Verify(builder, "SELECT ID, Username FROM Users", []);
+    }
+    [Fact]
+    public void UsingNot_NotPresent() {
+        var template = "SELECT * FROM Products WHERE /*!All*/IsActive = 1";
+        var query = new QueryCommand(template);
+        var builder = query.StartBuilder();
+        Verify(builder, "SELECT * FROM Products WHERE IsActive = 1", []);
+    }
+    [Fact]
+    public void UsingNot_Present() {
+        var template = "SELECT * FROM Products WHERE /*!All*/IsActive = 1";
+        var query = new QueryCommand(template);
+        var builder = query.StartBuilder();
+        builder.Use("All");
+        Verify(builder, "SELECT * FROM Products", []);
     }
 }
 public record struct TestDtoStruct(int? MinSalary, string? DeptName, string? EmployeeStatus);

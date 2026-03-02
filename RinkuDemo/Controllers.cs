@@ -242,6 +242,14 @@ public class EmployeeModule : IApiModule<Employee> {
         return await b.ExecuteAsync(db) > 0;
     }
     public static void Validate() {
+        if (!Registry.Employees.Read.Mapper.ContainsKey("@ID"))
+            throw new Exception("Employees select should have a @ID variable");
+        if (!Registry.Employees.Read.Mapper.ContainsKey("@ReportsTo"))
+            throw new Exception("Employees select should have a @ReportsTo variable");
+        if (!Registry.Employees.Delete.Mapper.ContainsKey("@ID"))
+            throw new Exception("Employees delete should have a @ID variable");
+        if (!Registry.Employees.Update.Mapper.ContainsKey("@ID"))
+            throw new Exception("Employees update should have a @ID variable");
     }
 }
 public class CustomerModule : IApiModule<Customer> {
@@ -291,6 +299,16 @@ public class CustomerModule : IApiModule<Customer> {
         return await b.ExecuteAsync(db) > 0;
     }
     public static void Validate() {
+        if (!Registry.Customers.Read.Mapper.ContainsKey("@ID"))
+            throw new Exception("Customers select should have a @ID variable");
+        if (!Registry.Invoices.Read.Mapper.ContainsKey("@CustomerID"))
+            throw new Exception("Invoices select should have a @CustomerID variable");
+        if (!Registry.InvoiceLines.Read.Mapper.ContainsKey("@InvoiceID"))
+            throw new Exception("InvoiceLines select should have a @InvoiceID variable");
+        if (!Registry.Customers.Delete.Mapper.ContainsKey("@ID"))
+            throw new Exception("Customers delete should have a @ID variable");
+        if (!Registry.Customers.Update.Mapper.ContainsKey("@ID"))
+            throw new Exception("Customers update should have a @ID variable");
     }
 }
 public class InvoiceModule : IApiModule<Invoice> {
@@ -333,6 +351,14 @@ public class InvoiceModule : IApiModule<Invoice> {
         return await b.ExecuteAsync(db) > 0;
     }
     public static void Validate() {
+        if (!Registry.Invoices.Read.Mapper.ContainsKey("@ID"))
+            throw new Exception("Invoices select should have a @ID variable");
+        if (!Registry.InvoiceLines.Read.Mapper.ContainsKey("@InvoiceID"))
+            throw new Exception("InvoiceLines select should have a @InvoiceID variable");
+        if (!Registry.Invoices.Delete.Mapper.ContainsKey("@ID"))
+            throw new Exception("Invoices delete should have a @ID variable");
+        if (!Registry.Invoices.Update.Mapper.ContainsKey("@ID"))
+            throw new Exception("Invoices update should have a @ID variable");
     }
 }
 public class InvoiceLineModule : IApiModule<InvoiceLine> {
@@ -360,5 +386,11 @@ public class InvoiceLineModule : IApiModule<InvoiceLine> {
         return await b.ExecuteAsync(db) > 0;
     }
     public static void Validate() {
+        if (!Registry.InvoiceLines.Read.Mapper.ContainsKey("@ID"))
+            throw new Exception("InvoiceLines select should have a @ID variable");
+        if (!Registry.InvoiceLines.Delete.Mapper.ContainsKey("@ID"))
+            throw new Exception("InvoiceLines delete should have a @ID variable");
+        if (!Registry.InvoiceLines.Update.Mapper.ContainsKey("@ID"))
+            throw new Exception("InvoiceLines update should have a @ID variable");
     }
 }
