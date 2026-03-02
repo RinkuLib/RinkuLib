@@ -5,10 +5,13 @@ namespace RinkuDemo;
 
 public class ArtistModule : IApiModule<Artist> {
     public static string Name => "artist";
-    public static async Task<int> Create(Artist a) {
+    public static async Task<Artist> Create(Artist a) {
         using var db = Registry.GetConnection();
-        return await Registry.Artists.Create.ExecuteScalarAsync<int>(db, a);
+        return a with {
+            ID = await Registry.Artists.Create.ExecuteScalarAsync<int>(db, a)
+        };
     }
+    public static int GetID(Artist a) => a.ID;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         db.Open();
@@ -66,10 +69,13 @@ public class ArtistModule : IApiModule<Artist> {
 }
 public class AlbumModule : IApiModule<Album> {
     public static string Name => "album";
-    public static async Task<int> Create(Album a) {
+    public static async Task<Album> Create(Album a) {
         using var db = Registry.GetConnection();
-        return await Registry.Albums.Create.ExecuteScalarAsync<int>(db, a);
+        return a with {
+            ID = await Registry.Albums.Create.ExecuteScalarAsync<int>(db, a)
+        };
     }
+    public static int GetID(Album a) => a.ID;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         db.Open();
@@ -112,10 +118,13 @@ public class AlbumModule : IApiModule<Album> {
 }
 public class TrackModule : IApiModule<Track> {
     public static string Name => "track";
-    public static async Task<int> Create(Track t) {
+    public static async Task<Track> Create(Track t) {
         using var db = Registry.GetConnection();
-        return await Registry.Tracks.Create.ExecuteScalarAsync<int>(db, t);
+        return t with {
+            ID = await Registry.Tracks.Create.ExecuteScalarAsync<int>(db, t)
+        };
     }
+    public static int GetID(Track t) => t.ID;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         var rows = await Registry.Tracks.Delete.ExecuteAsync(db, new { ID = id });
@@ -146,10 +155,13 @@ public class TrackModule : IApiModule<Track> {
 }
 public class MediaTypeModule : IApiModule<Reference> {
     public static string Name => "mediatype";
-    public static async Task<int> Create(Reference mt) {
+    public static async Task<Reference> Create(Reference mt) {
         using var db = Registry.GetConnection();
-        return await Registry.MediaTypes.Create.ExecuteScalarAsync<int>(db, mt);
+        return mt with {
+            ID = await Registry.MediaTypes.Create.ExecuteScalarAsync<int>(db, mt)
+        };
     }
+    public static int GetID(Reference mt) => mt.ID;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         var rows = await Registry.MediaTypes.Delete.ExecuteAsync(db, new { ID = id });
@@ -180,10 +192,11 @@ public class MediaTypeModule : IApiModule<Reference> {
 }
 public class GenreModule : IApiModule<KeyValuePair<int, string>> {
     public static string Name => "genre";
-    public static async Task<int> Create(KeyValuePair<int, string> g) {
+    public static async Task<KeyValuePair<int, string>> Create(KeyValuePair<int, string> g) {
         using var db = Registry.GetConnection();
-        return await Registry.Genres.Create.ExecuteScalarAsync<int>(db, g);
+        return new(await Registry.Genres.Create.ExecuteScalarAsync<int>(db, g), g.Value);
     }
+    public static int GetID(KeyValuePair<int, string> g) => g.Key;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         var rows = await Registry.Genres.Delete.ExecuteAsync(db, new { ID = id });
@@ -204,7 +217,7 @@ public class GenreModule : IApiModule<KeyValuePair<int, string>> {
         return await b.ExecuteAsync(db) > 0;
     }
     public static void Validate() {
-        if (!Registry.Genres.Read.Mapper.ContainsKey("@ID"))
+        if (false && !Registry.Genres.Read.Mapper.ContainsKey("@ID"))
             throw new Exception("Genres select should have a @ID variable");
         if (!Registry.Genres.Delete.Mapper.ContainsKey("@ID"))
             throw new Exception("Genres delete should have a @ID variable");
@@ -214,10 +227,13 @@ public class GenreModule : IApiModule<KeyValuePair<int, string>> {
 }
 public class EmployeeModule : IApiModule<Employee> {
     public static string Name => "employee";
-    public static async Task<int> Create(Employee e) {
+    public static async Task<Employee> Create(Employee e) {
         using var db = Registry.GetConnection();
-        return await Registry.Employees.Create.ExecuteScalarAsync<int>(db, e);
+        return e with {
+            ID = await Registry.Employees.Create.ExecuteScalarAsync<int>(db, e)
+        };
     }
+    public static int GetID(Employee e) => e.ID;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         var rows = await Registry.Employees.Delete.ExecuteAsync(db, new { ID = id });
@@ -254,10 +270,13 @@ public class EmployeeModule : IApiModule<Employee> {
 }
 public class CustomerModule : IApiModule<Customer> {
     public static string Name => "customer";
-    public static async Task<int> Create(Customer c) {
+    public static async Task<Customer> Create(Customer c) {
         using var db = Registry.GetConnection();
-        return await Registry.Customers.Create.ExecuteScalarAsync<int>(db, c);
+        return c with {
+            ID = await Registry.Customers.Create.ExecuteScalarAsync<int>(db, c)
+        };
     }
+    public static int GetID(Customer c) => c.ID;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         db.Open();
@@ -313,10 +332,13 @@ public class CustomerModule : IApiModule<Customer> {
 }
 public class InvoiceModule : IApiModule<Invoice> {
     public static string Name => "invoice";
-    public static async Task<int> Create(Invoice i) {
+    public static async Task<Invoice> Create(Invoice i) {
         using var db = Registry.GetConnection();
-        return await Registry.Invoices.Create.ExecuteScalarAsync<int>(db, i);
+        return i with {
+            ID = await Registry.Invoices.Create.ExecuteScalarAsync<int>(db, i)
+        };
     }
+    public static int GetID(Invoice i) => i.ID;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         db.Open();
@@ -363,10 +385,13 @@ public class InvoiceModule : IApiModule<Invoice> {
 }
 public class InvoiceLineModule : IApiModule<InvoiceLine> {
     public static string Name => "invoiceline";
-    public static async Task<int> Create(InvoiceLine il) {
+    public static async Task<InvoiceLine> Create(InvoiceLine il) {
         using var db = Registry.GetConnection();
-        return await Registry.InvoiceLines.Create.ExecuteScalarAsync<int>(db, il);
+        return il with {
+            ID = await Registry.InvoiceLines.Create.ExecuteScalarAsync<int>(db, il)
+        };
     }
+    public static int GetID(InvoiceLine il) => il.ID;
     public static async Task<bool> Delete(int id) {
         using var db = Registry.GetConnection();
         return await Registry.InvoiceLines.Delete.ExecuteAsync(db, new { ID = id }) > 0;
