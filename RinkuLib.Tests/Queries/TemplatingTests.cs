@@ -4,7 +4,7 @@ using Xunit;
 namespace RinkuLib.Tests.Queries;
 
 public record struct SegmentVerify(string ExpectedContent, int ExpectedTrim, bool IsSection);
-public record struct ConditionVerify(string ExpectedKey, string ConditionSegment, int NbSameCondContext, bool IsOr = false);
+public record struct ConditionVerify(string ExpectedKey, string ConditionSegment, int NbSameCondContext, bool IsOr = false, bool IsNot = false);
 
 public class TemplatingTests {
     private static void Verify(QueryFactory factory, SegmentVerify[] expectedSegments, ConditionVerify[] expectedConditions, string[] keys) {
@@ -45,6 +45,7 @@ public class TemplatingTests {
             Assert.Equal(expected.ExpectedKey, mapper.GetKey(actual.CondIndex));
             var startSegment = actualSegments[actual.SegmentInd];
             var lastSegment = actualSegments[actual.SegmentInd + actual.Length - 1];
+            Assert.NotEqual(expected.IsNot, actual.IsNeeded);
             if (expected.IsOr) {
                 checkingOr = true;
                 Assert.Equal(expected.NbSameCondContext, -actual.NbConditionSkip);
@@ -654,5 +655,21 @@ public class TemplatingTests {
             new ConditionVerify("#Admin", " Email", 2)
         };
         Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Email", "#Admin"]);
+    }
+    [Fact]
+    public void UsingNot() {
+        var sql = "SELECT * FROM Products WHERE /*!All*/IsActive = 1";
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+
+        var expectedSegments = new[] {
+        new SegmentVerify("SELECT * FROM Products WHERE", 6, false),
+        new SegmentVerify(" IsActive = 1", 0, false)
+    };
+
+        var expectedConditions = new[] {
+        new ConditionVerify("All", " IsActive = 1", 1, false, true)
+    };
+
+        Verify(factory, expectedSegments, expectedConditions, ["All"]);
     }
 }

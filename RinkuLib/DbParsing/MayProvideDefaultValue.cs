@@ -12,8 +12,8 @@ public abstract class MayProvideDefaultValue(INullColHandler nullColHandler) : I
     /// <summary>The <see cref="INullColHandler"/> thet will be use when a normal match with the schema occurs</summary>
     public INullColHandler NullColHandler { get => field; set => field = Interlocked.Exchange(ref field, value); } = nullColHandler;
     /// <inheritdoc/>
-    public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint)
-        => NullColHandler.HandleNull(closedType, paramName, generator, nullSetPoint);
+    public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint)
+        => NullColHandler.HandleNull(parentType, closedType, paramName, generator, nullSetPoint);
     /// <inheritdoc/>
     public bool IsBr_S(Type closedType)
         => NullColHandler.IsBr_S(closedType);

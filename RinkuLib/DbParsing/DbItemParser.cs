@@ -4,9 +4,11 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
 /// <summary>Identify a parameter that should not be null, but the row provided a null value. Can be direcly a null column or a sub-class that lead to a null value</summary>
-public class NullValueAssignmentException(Type paramType, string paramName) : Exception($"Constraint Violation: Parameter '{paramName}' of type '{paramType.Name}' is marked as non-nullable, but the source provided a null value.") {
+public class NullValueAssignmentException(Type parentType, Type paramType, string paramName) : Exception($"Constraint Violation: Parameter '{paramName}' of type '{paramType.Name}' is marked as non-nullable, but the source provided a null value. Parent: {parentType}") {
     /// <summary>The name of the parameter that should not be null</summary>
     public readonly string ParameterName = paramName;
+    /// <summary>The type of the parent</summary>
+    public readonly Type ParentType = parentType;
     /// <summary>The type of the parameter that should not be null</summary>
     public readonly Type ParameterType = paramType;
 }
@@ -32,14 +34,16 @@ public abstract class DbItemParser {
     /// <param name="nullSetPoint">The recovery point when value is null.</param>
     /// <param name="targetObject">The arg_0 if needed</param>
     public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject);
-    internal static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(string)])!;
+    internal static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(Type), typeof(string)])!;
     internal static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;
 
     /// <summary>
     /// Emits a throw instruction for an <see cref="NullValueAssignmentException"/> when 
     /// a non-nullable target receives a null value from the schema.
     /// </summary>
-    public static void EmitThrowNullAssignment(Type paramType, string paramName, Generator generator) {
+    public static void EmitThrowNullAssignment(Type parentType, Type paramType, string paramName, Generator generator) {
+        generator.Emit(OpCodes.Ldtoken, parentType);
+        generator.Emit(OpCodes.Call, GetTypeHandle);
         generator.Emit(OpCodes.Ldtoken, paramType);
         generator.Emit(OpCodes.Call, GetTypeHandle);
         generator.Emit(OpCodes.Ldstr, paramName);

@@ -2,6 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Queries;
 
@@ -85,7 +86,7 @@ public sealed class QueryText : IQueryText {
                         break;
 
                 Restart:
-                    if (!usageMap[(*cond).CondIndex]) {
+                    if (usageMap[(*cond).CondIndex] != (*cond).IsNeeded) {
                         if (length > 0) {
                             sb.Append(ptr + start, length);
                             length = 0;
@@ -95,7 +96,7 @@ public sealed class QueryText : IQueryText {
                             var orCount = (*(cond + 1)).NbConditionSkip;
                             int j = 1;
                             for (; j <= orCount; j++)
-                                if (usageMap[(*(cond + j)).CondIndex])
+                                if (usageMap[(*(cond + j)).CondIndex] == (*(cond + j)).IsNeeded)
                                     break;
                             if (j <= orCount) {
                                 cond += orCount + 1;
@@ -190,7 +191,7 @@ public sealed class QueryText : IQueryText {
                         break;
 
                 Restart:
-                    if (!usageMap[(*cond).CondIndex]) {
+                    if (usageMap[(*cond).CondIndex] != (*cond).IsNeeded) {
                         if (length > 0) {
                             sb.Append(ptr + start, length);
                             length = 0;
@@ -200,7 +201,7 @@ public sealed class QueryText : IQueryText {
                             var orCount = (*(cond + 1)).NbConditionSkip;
                             int j = 1;
                             for (; j <= orCount; j++)
-                                if (usageMap[(*(cond + j)).CondIndex])
+                                if (usageMap[(*(cond + j)).CondIndex] == (*(cond + j)).IsNeeded)
                                     break;
                             if (j <= orCount) {
                                 cond += orCount + 1;
@@ -294,7 +295,7 @@ public sealed class QueryText : IQueryText {
                         break;
 
                 Restart:
-                    if (!usageMap[(*cond).CondIndex]) {
+                    if (usageMap[(*cond).CondIndex] != (*cond).IsNeeded) {
                         if (length > 0) {
                             sb.Append(ptr + start, length);
                             length = 0;
@@ -304,7 +305,7 @@ public sealed class QueryText : IQueryText {
                             var orCount = (*(cond + 1)).NbConditionSkip;
                             int j = 1;
                             for (; j <= orCount; j++)
-                                if (usageMap[(*(cond + j)).CondIndex])
+                                if (usageMap[(*(cond + j)).CondIndex] == (*(cond + j)).IsNeeded)
                                     break;
                             if (j <= orCount) {
                                 cond += orCount + 1;
@@ -399,7 +400,7 @@ public sealed class QueryText : IQueryText {
                         break;
 
                 Restart:
-                    if (Unsafe.Add(ref pVarBase, (*cond).CondIndex) is null) {
+                    if ((Unsafe.Add(ref pVarBase, (*cond).CondIndex) is null) == (*cond).IsNeeded) {
                         if (length > 0) {
                             sb.Append(ptr + start, length);
                             length = 0;
@@ -409,7 +410,7 @@ public sealed class QueryText : IQueryText {
                             var orCount = (*(cond + 1)).NbConditionSkip;
                             int j = 1;
                             for (; j <= orCount; j++) 
-                                if (Unsafe.Add(ref pVarBase, (*(cond + j)).CondIndex) is not null)
+                                if ((Unsafe.Add(ref pVarBase, (*(cond + j)).CondIndex) is not null) == (*(cond + j)).IsNeeded)
                                     break;
                             if (j <= orCount) {
                                 cond += orCount + 1;

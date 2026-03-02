@@ -227,21 +227,6 @@ public static class TypeExtensions {
         return MethodBase.GetMethodFromHandle(mi.MethodHandle, closedType.TypeHandle)!;
     }
     /// <summary>
-    /// Checks if a database-sourced type can be logically converted to a target C# type 
-    /// without explicit transformation logic.
-    /// </summary>
-    public static bool CanConvert(this Type dbType, Type target) {
-        Type targetCore = Nullable.GetUnderlyingType(target) ?? target;
-        if (targetCore.IsAssignableFrom(dbType))
-            return true;
-        if (targetCore.IsEnum)
-            return dbType.IsPrimitive;
-        bool isTargetNumeric = targetCore.IsPrimitive || targetCore == typeof(decimal);
-        bool isSourceNumeric = dbType.IsPrimitive || dbType == typeof(decimal);
-
-        return isTargetNumeric && isSourceNumeric;
-    }
-    /// <summary>
     /// Replaces generic placeholders (T, TKey) with actual types from the parent closed type.
     /// </summary>
     /// <param name="type">The member type that might be open (e.g., <see cref="List{T}"/>)</param>

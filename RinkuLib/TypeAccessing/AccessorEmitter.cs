@@ -1,7 +1,7 @@
 ﻿using System.Reflection;
 using System.Reflection.Emit;
 
-namespace RinkuLib.Queries;
+namespace RinkuLib.TypeAccessing;
 /// <summary>Generate the IL emit to get the usage at a specific index</summary>
 public abstract class AccessorEmitter {
     /// <summary>Generate the IL emit to get the usage at a specific index</summary>

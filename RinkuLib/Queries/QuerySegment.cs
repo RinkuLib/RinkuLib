@@ -38,7 +38,8 @@ public record struct QuerySegment(int Start, int Length, int ExcessOrInd, bool I
 /// indicates the total number of conditions (including itself) that form the OR block. 
 /// If this condition is met (True), the engine can short-circuit and skip the remaining members of the OR-group.</para>
 /// </param>
-public record struct Condition(int CondIndex, int SegmentInd, int Length, int NbConditionSkip) : IComparable<Condition> {
+/// <param name="IsNeeded">Represent the not operator, true require usage, while false require non-usage</param>
+public record struct Condition(int CondIndex, int SegmentInd, int Length, int NbConditionSkip, bool IsNeeded) : IComparable<Condition> {
     /// <summary>The logic for sorting</summary>
     public readonly int CompareTo(Condition other) {
         int c = SegmentInd.CompareTo(other.SegmentInd);

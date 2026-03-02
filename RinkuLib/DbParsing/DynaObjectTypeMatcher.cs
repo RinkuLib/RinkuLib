@@ -1,5 +1,4 @@
-﻿using System.Reflection;
-using System.Reflection.Emit;
+﻿using System.Reflection.Emit;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
@@ -9,7 +8,7 @@ internal class DynaObjectTypeMatcher : IDbTypeParserInfoMatcher {
     /// <inheritdoc/>
     public bool CanUseType(Type TargetType) => TargetType == typeof(DynaObject);
     /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
+    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
         var readers = new DbItemParser[columns.Length];
         var arguments = new Type[columns.Length];
         for (int i = 0; i < readers.Length; i++) {
@@ -23,7 +22,7 @@ internal class DynaObjectTypeMatcher : IDbTypeParserInfoMatcher {
                 args = type.GetGenericArguments();
             }
             var typeInfo = TypeParsingInfo.ForceGet(type);
-            var r = typeInfo.TryGetParser(args, $"val{i}", NullableTypeHandle.Instance, columns, new(), maybeNull, ref colUsage);
+            var r = typeInfo.TryGetParser(parentType, args, $"val{i}", NullableTypeHandle.Instance, columns, new(), maybeNull, ref colUsage);
             if (r is null)
                 return null;
             arguments[i] = type.IsValueType && maybeNull ? typeof(Nullable<>).MakeGenericType(type) : type;

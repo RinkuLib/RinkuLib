@@ -113,7 +113,7 @@ public static class TypeParser<T> {
                     return rdInfo.ReaderFunc;
                 }
             }
-            if (!TryMakeParser(typeof(T), nullColHandler, cols, out var info))
+            if (!TryMakeParser(nullColHandler, cols, out var info))
                 throw new Exception($"cannot make the parser for {typeof(T)} with the schema ({string.Join(", ", cols.Select(c => $"{c.Type.ShortName()}{(c.IsNullable ? "?" : "")} {c.Name}"))})");
             ReadingInfos.Add(info);
             defaultBehavior = info.DefaultBehavior;
@@ -134,12 +134,14 @@ public static class TypeParser<T> {
     /// <item>Evaluates if the generated logic allows for <see cref="CommandBehavior.SequentialAccess"/> optimization.</item>
     /// </list>
     /// </remarks>
-    private static bool TryMakeParser(Type closedType, INullColHandler? nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out DbParsingInfo<T> parser) {
-        bool isNullable = Nullable.GetUnderlyingType(typeof(T)) is not null;
+    private static bool TryMakeParser(INullColHandler? nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out DbParsingInfo<T> parser) {
+        var t = Nullable.GetUnderlyingType(typeof(T));
+        bool isNullable = t is not null;
+        var closedType = t ?? typeof(T);
         nullColHandler ??= isNullable || !typeof(T).IsValueType ? NullableTypeHandle.Instance : NotNullHandle.Instance;
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
         var rd = TypeParsingInfo.ForceGet(closedType)
-            .TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], "root", nullColHandler, cols, new(), isNullable, ref colUsage);
+            .TryGetParser(typeof(Root), closedType.IsGenericType ? closedType.GetGenericArguments() : [], "root", nullColHandler, cols, new(), isNullable, ref colUsage);
         if (rd is null) {
             parser = default;
             return false;
@@ -166,3 +168,4 @@ public static class TypeParser<T> {
         return true;
     }
 }
+internal static class Root;

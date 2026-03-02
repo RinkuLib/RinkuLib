@@ -527,6 +527,35 @@ public class TypeParserTests {
         Assert.Equal("Albert", boss.Name);
     }
     [Fact]
+    public void Recursive_User_InvalidOnNull() {
+        // Same structure, different Generic types: <double, int>
+        ColumnInfo[] columns = [
+            new("ID", typeof(int), false),
+            new("Name", typeof(string), false),
+            new("SupervisorID", typeof(int), true),
+            new("SupervisorName", typeof(string), true),
+            new("SupervisorBossID", typeof(int), true),
+            new("SupervisorBossName", typeof(string), true)
+            ];
+
+        using var reader = CreateReader(columns, [
+            [3, "Roger", 2, "Victor", DBNull.Value, DBNull.Value]
+        ]);
+
+        var parser = TypeParser<User2>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var result = parser(reader);
+        Assert.Equal(3, result.ID);
+        Assert.Equal("Roger", result.Name);
+        var sup = result.Supervisor;
+        Assert.NotNull(sup);
+        Assert.Equal(2, sup.ID);
+        Assert.Equal("Victor", sup.Name);
+        var boss = sup.Supervisor;
+        Assert.Null(boss);
+    }
+    [Fact]
     public void Multi_Level_Jump() {
         // Same structure, different Generic types: <double, int>
         ColumnInfo[] columns = [
@@ -655,10 +684,42 @@ public class TypeParserTests {
         emp.Set("BadgeID", badge2);
         Assert.Equal(badge2, emp[0]);
     }
+    [Fact]
+    public void Test_Casting() {
+        ColumnInfo[] columns = [
+            new("Amount", typeof(decimal), true),
+            new("Currency", typeof(int), true),
+        ];
+
+        using var reader = CreateReader(columns, [
+            [99.50m, 1],
+            [DBNull.Value, 2],
+            [10.00m, 3]
+        ]);
+
+        var parser = TypeParser<Price<decimal>?>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var p1 = parser(reader);
+        Assert.True(p1.HasValue);
+        Assert.Equal(99.50m, p1.Value.Amount);
+        Assert.Equal(CurrencyCode.CAD, p1.Value.Currency);
+
+        reader.Read();
+        var p2 = parser(reader);
+        Assert.False(p2.HasValue);
+
+        reader.Read();
+        var p3 = parser(reader);
+        Assert.True(p3.HasValue);
+        Assert.Equal(10.00m, p3.Value.Amount);
+        Assert.Equal(CurrencyCode.GBP, p3.Value.Currency);
+    }
 }
 public record class TestStop(int ID, string Name, string? Other = null);
 public record class TestStop2(int ID, string Name, [CanLookAnywhere]string? Other = null);
-public record class User(int ID, string Name, [Alt("Boss")]User? Supervisor = null);
+public record class User(int ID, string Name, [Alt("Boss")] User? Supervisor = null);
+public record class User2([InvalidOnNull]int ID, string Name, [Alt("Boss")] User2? Supervisor = null);
 public class SimpleUser {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;

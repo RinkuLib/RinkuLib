@@ -73,32 +73,36 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <item><b>Basic Column Mapping:</b> If the type is not registered, the engine searches 
     /// <paramref name="columns"/> for a direct match. A match is confirmed if:
     /// <list type="bullet">
-    /// <item>The column type is compatible (<see cref="TypeExtensions.CanConvert"/>).</item>
+    /// <item>The column type has a converter (<see cref="ITypeConverter.TryGetConverter"/>).</item>
     /// <item>The column name satisfies the <see cref="NameComparer"/> (accounting for active <see cref="ColModifier"/>).</item>
     /// </list>
     /// </item>
     /// </list>
     /// </remarks>
-    public DbItemParser? TryGetParser(Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
         var t = Nullable.GetUnderlyingType(Type);
+        var isNullableStruct = t is not null;
         var closedType = (t ?? Type).CloseType(declaringTypeArguments);
         var defaultProvider = NullColHandler as MayProvideDefaultValue;
         var actualNull = defaultProvider?.NullColHandler ?? NullColHandler;
         if (TypeParsingInfo.TryGetInfo(closedType, out var typeInfo) && typeInfo.Matcher != BaseTypeMatcher.Instance) {
-            var node = typeInfo.TryGetParser(closedType.IsGenericType ? closedType.GetGenericArguments() : [], NameComparer.GetDefaultName(), actualNull, columns, colModifier.Add(NameComparer), t is not null, ref colUsage);
+            var node = typeInfo.TryGetParser(parentType, closedType.IsGenericType ? closedType.GetGenericArguments() : [], NameComparer.GetDefaultName(), actualNull, columns, colModifier.Add(NameComparer), isNullableStruct, ref colUsage);
             if (node is not null)
                 return node;
-            if (t is not null)
+            if (isNullableStruct)
                 closedType = typeof(Nullable<>).MakeGenericType(closedType);
             return defaultProvider?.TryGetItemParser(closedType);
         }
+        if (isNullableStruct)
+            closedType = typeof(Nullable<>).MakeGenericType(closedType);
         int i = 0;
+        ITypeConverter? converter = null;
         if (CanLookAnywhere) {
             for (; i < columns.Length; i++) {
                 if (!CanReuseCol && colUsage.IsUsed(i))
                     continue;
                 var column = columns[i];
-                if (column.Type.CanConvert(closedType) && colModifier.Match(column.Name, NameComparer))
+                if (colModifier.Match(column.Name, NameComparer) && ITypeConverter.TryGetConverter(column.Type, closedType, out converter))
                     break;
             }
         }
@@ -109,17 +113,15 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                     i = columns.Length;
                 else {
                     var column = columns[i];
-                    if (!column.Type.CanConvert(closedType) || !colModifier.Match(column.Name, NameComparer))
+                    if (!colModifier.Match(column.Name, NameComparer) || !ITypeConverter.TryGetConverter(column.Type, closedType, out converter))
                         i = columns.Length;
                 }
             }
         }
-        if (t is not null)
-            closedType = typeof(Nullable<>).MakeGenericType(closedType);
-        if (i >= columns.Length)
+        if (i >= columns.Length || converter is null)
             return defaultProvider?.TryGetItemParser(closedType);
         colUsage.Use(i);
-        return new BasicParser(closedType, NameComparer.GetDefaultName(), actualNull, i);
+        return new BasicParser(parentType, converter, NameComparer.GetDefaultName(), actualNull, i);
     }
     /// <summary>
     /// Creates a matcher for a constructor or method parameter if the type is usable.
@@ -174,9 +176,11 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         bool isInvalidOnNull = false;
         bool canReuseCol = false;
         bool canLookAnywhere = true;
-
-        if (param is ParameterInfo pp)
+        bool isTypeDefault = false;
+        if (param is ParameterInfo pp) {
+            isTypeDefault = IsTypeDefault(pp);
             canLookAnywhere = pp.Position == 0;
+        }
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
             if (attr is AltAttribute)
@@ -200,7 +204,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         }
         nullColHandler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
         nullColHandler = nullColHandler.SetInvalidOnNull(type, isInvalidOnNull);
-        if (param is ParameterInfo p && IsTypeDefault(p))
+        if (isTypeDefault)
             nullColHandler = new DefaultValueProvider(nullColHandler);
         string[] altNames = [];
         if (altCount > 0) {
@@ -232,11 +236,8 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         object? value = p.DefaultValue;
         Type type = p.ParameterType;
 
-        if (value == null || value == DBNull.Value) {
-            if (type.IsGenericParameter)
-                return true;
-            return !type.IsValueType || Nullable.GetUnderlyingType(type) != null;
-        }
+        if (value == null || value == DBNull.Value)
+            return true;
 
         Type actualType = type.IsEnum ? Enum.GetUnderlyingType(type) : type;
 

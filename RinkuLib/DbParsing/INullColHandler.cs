@@ -47,7 +47,7 @@ public interface INullColHandler {
     /// Emits the IL instructions to handle a null value.
     /// </summary>
     /// <returns>A label to branch to after handling, or null if the handler performs an absolute jump/throw.</returns>
-    public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint);
+    public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint);
     /// <summary>
     /// Returns a handler configured with the specified jump behavior.
     /// </summary>
@@ -59,7 +59,7 @@ public class NullableTypeHandle : INullColHandler {
     public static readonly NullableTypeHandle Instance = new();
     private NullableTypeHandle() { }
     /// <inheritdoc/>
-    public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+    public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         var endLabel = generator.DefineLabel();
         DbItemParser.EmitDefaultValue(closedType, generator);
         generator.Emit(OpCodes.Br_S, endLabel);
@@ -79,7 +79,7 @@ public class InvalidOnNullAndNullableHandle : INullColHandler {
     public static InvalidOnNullAndNullableHandle Instance { get; } = new();
     private InvalidOnNullAndNullableHandle() { }
     /// <inheritdoc/>
-    public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+    public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         nullSetPoint.MakeNullJump(generator);
         return null;
     }
@@ -97,8 +97,8 @@ public class NotNullHandle : INullColHandler {
     public static readonly NotNullHandle Instance = new();
     private NotNullHandle() { }
     /// <inheritdoc/>
-    public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
-        DbItemParser.EmitThrowNullAssignment(closedType, paramName, generator);
+    public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+        DbItemParser.EmitThrowNullAssignment(parentType, closedType, paramName, generator);
         return null;
     }
     /// <inheritdoc/>
@@ -115,7 +115,7 @@ public class InvalidOnNullAndNotNullHandle : INullColHandler {
     public static InvalidOnNullAndNotNullHandle Instance { get; } = new();
     private InvalidOnNullAndNotNullHandle() { }
     /// <inheritdoc/>
-    public Label? HandleNull(Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+    public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         nullSetPoint.MakeNullJump(generator);
         return null;
     }

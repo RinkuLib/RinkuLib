@@ -135,8 +135,57 @@ public class CompleteTests {
         Assert.Equal("Victor", p.Username);
         Assert.Equal("abc@email.com", email);
     }
+    [Fact]
+    public void Using_Two_DifferentAnonymous() {
+        var query = new QueryCommand("SELECT * FROM u WHERE u.ID = ?@ID AND u.OtherID = ?@OtherID");
+        using var cnn = GetDbCnn();
+        nint handle1 = default;
+        using (var cmd1 = cnn.CreateCommand()) {
+            var val1 = new { ID = 1 };
+            handle1 = val1.GetType().TypeHandle.Value;
+            Span<bool> usageMap1 = stackalloc bool[query.Mapper.Count];
+            query.SetCommand(cmd1, val1, usageMap1);
+            Assert.Equal("SELECT * FROM u WHERE u.ID = @ID", cmd1.CommandText);
+            Assert.True(usageMap1[0]);
+            Assert.False(usageMap1[1]);
+        }
+        using (var cmd2 = cnn.CreateCommand()) {
+            var val2 = new { OtherID = 1 };
+            Assert.NotEqual(handle1, val2.GetType().TypeHandle.Value);
+            Span<bool> usageMap2 = stackalloc bool[query.Mapper.Count];
+            query.SetCommand(cmd2, val2, usageMap2);
+            Assert.Equal("SELECT * FROM u WHERE u.OtherID = @OtherID", cmd2.CommandText);
+            Assert.False(usageMap2[0]);
+            Assert.True(usageMap2[1]);
+        }
+    }
+    [Fact]
+    public void Using_Two_DifferentTyped() {
+        var query = new QueryCommand("SELECT * FROM u WHERE u.ID = ?@ID AND u.OtherID = ?@OtherID");
+        using var cnn = GetDbCnn();
+        using (var cmd1 = cnn.CreateCommand()) {
+            Span<bool> usageMap1 = stackalloc bool[query.Mapper.Count];
+            query.SetCommand(cmd1, new A1 { ID = 1 }, usageMap1);
+            Assert.Equal("SELECT * FROM u WHERE u.ID = @ID", cmd1.CommandText);
+            Assert.True(usageMap1[0]);
+            Assert.False(usageMap1[1]);
+        }
+        using (var cmd2 = cnn.CreateCommand()) {
+            Span<bool> usageMap2 = stackalloc bool[query.Mapper.Count];
+            query.SetCommand(cmd2, new A2 { OtherID = 1 }, usageMap2);
+            Assert.Equal("SELECT * FROM u WHERE u.OtherID = @OtherID", cmd2.CommandText);
+            Assert.False(usageMap2[0]);
+            Assert.True(usageMap2[1]);
+        }
+    }
 }
 public record struct  PersonParam(bool Active);
 public record Person(int ID, [Alt("Name")]string Username, string? Email) : IDbReadable {
     public Person(int ID, [Alt("Name")]string Username) :this(ID, Username, null) { }
+}
+public sealed class A1 {
+    public int ID;
+}
+public sealed class A2 {
+    public int OtherID;
 }
