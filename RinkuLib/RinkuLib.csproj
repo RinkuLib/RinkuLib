@@ -8,7 +8,7 @@
 		<LangVersion>latest</LangVersion>
 
 		<PackageId>Rinku</PackageId>
-		<Version>0.6.0</Version>
+		<Version>0.6.1</Version>
 		<Authors>adam.therrien.marois</Authors>
 		<Product>Rinku</Product>
 		<Title>Rinku</Title>
@@ -20,8 +20,8 @@
 		<DefaultLanguage>en-US</DefaultLanguage>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 
-		<PackageProjectUrl>https://github.com/adamtherrienmarois/RinkuLib</PackageProjectUrl>
-		<RepositoryUrl>https://github.com/adamtherrienmarois/RinkuLib</RepositoryUrl>
+		<PackageProjectUrl>https://github.com/RinkuLib/RinkuLib</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/RinkuLib/RinkuLib</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 		<PackageReadmeFile>readmeNuGet.md</PackageReadmeFile>

@@ -98,7 +98,7 @@ The engine analyzes your SQL to create a **reusable blueprint**, fragmenting the
 * **Conditional Markers:** Uses `?@Var` and `/*...*/` to define optional segments, parameters or even entire clauses and ensure valid SQL syntax.
 * **Structural Handlers:** Special suffixes like `_N` (Numeric), `_X` (Collection spreading), and `_R` (Raw injection) to influence the result using runtime data.
 
-**[Read the Full Templating Syntax Documentation](https://github.com/adamtherrienmarois/RinkuLib/blob/main/TemplatingSyntaxDoc.md)**
+**[Read the Full Templating Syntax Documentation](https://github.com/RinkuLib/RinkuLib/blob/main/TemplatingSyntaxDoc.md)**
 
 ---
 
@@ -109,7 +109,7 @@ Stores metadata about types that are customizable and will be used during negoci
 * **Schema Negotiation:** Out of the box, it can map complex types via various ctors, factory methods, members or even a mix of both. It even handle recursive types.
 * **Customization:** Almost everything is public and let you adjust the negociation registery how you see fit.
 
-**[Read the Full Mapping Engine Documentation](https://github.com/adamtherrienmarois/RinkuLib/blob/main/MappingEngineDoc.md)**
+**[Read the Full Mapping Engine Documentation](https://github.com/RinkuLib/RinkuLib/blob/main/MappingEngineDoc.md)**
 
 ---
 
@@ -133,7 +133,7 @@ The `QueryCommand` stores the following key elements:
 * **Parser Cache:** A specialized cache that stores compiled IL-functions for mapping database results to C# types based on the schema used.
 * **Type Accessor Cache:** A specialized cache that stores compiled IL-functions for parameter object to generate the `DbCommand`.
 
-**[Read the Full QueryCommand Documentation](https://github.com/adamtherrienmarois/RinkuLib/blob/main/QueryCommandDoc.md)**
+**[Read the Full QueryCommand Documentation](https://github.com/RinkuLib/RinkuLib/blob/main/QueryCommandDoc.md)**
 
 ---
 ## State Initialization: The Builders
