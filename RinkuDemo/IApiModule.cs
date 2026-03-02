@@ -2,7 +2,8 @@
 public interface IApiModule<T> {
     static abstract void Validate();
     static abstract string Name { get; }
-    static abstract Task<int> Create(T a);
+    static abstract Task<T> Create(T a);
+    static abstract int GetID(T a);
     static abstract Task<bool> Delete(int id);
     static abstract IAsyncEnumerable<T> GetAll(HttpContext context);
     static abstract Task<T?> GetOne(int id);
@@ -18,8 +19,8 @@ public static class ApiModuleExtensions {
             return result is not null ? Results.Ok(result) : Results.NotFound();
         });
         g.MapPost("/", async (T item) => {
-            var id = await TModule.Create(item);
-            return Results.Created($"/{TModule.Name.ToLower()}/{id}", item);
+            var res = await TModule.Create(item);
+            return Results.Created($"/{TModule.Name.ToLower()}/{TModule.GetID(res)}", res);
         });
         g.MapPut("/{id:int}", async (int id, HttpContext context) => {
             var success = await TModule.Update(id, context);

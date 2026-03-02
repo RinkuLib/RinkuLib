@@ -38,8 +38,8 @@ public static class Registry {
         info.SetInvalidOnNull("key", true);
         IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferedParamCache.GetInfoGetterMaker<SqliteCommand>);
 
-        ConnStr = config["ConnStr"]
-            ?? throw new InvalidOperationException("ConnStr is missing from configuration.");
+        var fileName = config["DbFile"] ?? throw new InvalidOperationException("DbFile is missing.");
+        ConnStr = $"Data Source={Path.Combine(AppContext.BaseDirectory, fileName)}";
         Artists = new(config, "Artist");
         Albums = new(config, "Album");
         Tracks = new(config, "Track");
