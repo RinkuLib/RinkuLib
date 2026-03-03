@@ -8,6 +8,7 @@ using RinkuLib.Queries;
 
 namespace RinkuDemo;
 
+public enum Role { User = 0, Employee = 1, Admin = 2 }
 public static class Registry {
     public const string GetAll = "GetAll";
     public static string ConnStr { get; private set; } = null!;
@@ -25,6 +26,7 @@ public static class Registry {
         using var db = GetConnection();
         var b = commands.Read.StartBuilder();
         b.Use(GetAll);
+        UseRole(GetRole(ctx), b);
         foreach (var (k, v) in ctx.Request.Query)
             b.Use('@', k, v.ToInferredObject());
         await foreach (var item in b.QueryAllAsync<T>(db))
@@ -69,6 +71,38 @@ public static class Registry {
         if (double.TryParse(span, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
             return d;
         return val;
+    }
+    public static Role GetRole(HttpContext context) {
+        // Use safer auth in real applications
+        string? header = context.Request.Headers["X-Role"];
+        if (header?.Length != 1)
+            return Role.User;
+        int val = header[0] - '0';
+        return val is >= 0 and <= 2 ? (Role)val : Role.User;
+    }
+    public static void UseRole<T>(Role role, T builder) where T : IQueryBuilder {
+        if (role >= Role.Employee) {
+            builder.Use("#Emp");
+            if (role >= Role.Admin)
+                builder.Use("#Adm");
+        }
+    }
+    public static QueryBuilder GetBuilder(HttpContext ctx, QueryCommand command, IEnumerable<KeyValuePair<string, StringValues>> parameters) {
+        var b = command.StartBuilder();
+        b.Use(GetAll);
+        UseRole(GetRole(ctx), b);
+        foreach (var (k, v) in parameters) {
+            if (string.IsNullOrEmpty(k) || k[0] == '#')
+                continue;
+            if (k.Equals("Uses", StringComparison.InvariantCultureIgnoreCase)) {
+                foreach (var useValue in v)
+                    if (!string.IsNullOrEmpty(useValue))
+                        b.Use(useValue);
+            }
+            else
+                b.Use('@', k, v.ToInferredObject());
+        }
+        return b;
     }
 }
 

@@ -1,10 +1,8 @@
-using System.Reflection;
 using RinkuDemo;
-using RinkuLib.Commands;
-using RinkuLib.TypeAccessing;
 
 var builder = WebApplication.CreateBuilder(args);
 Registry.Initialize(builder.Configuration);
+var dynaActions = builder.Configuration.LoadActions();
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
@@ -26,5 +24,5 @@ app.MapModule<EmployeeModule, Employee>();
 app.MapModule<CustomerModule, Customer>();
 app.MapModule<InvoiceModule, Invoice>();
 app.MapModule<InvoiceLineModule, InvoiceLine>();
-
+app.MapDynaApi(dynaActions);
 app.Run();

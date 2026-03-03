@@ -149,15 +149,14 @@ public class CompleteTests {
             Assert.True(usageMap1[0]);
             Assert.False(usageMap1[1]);
         }
-        using (var cmd2 = cnn.CreateCommand()) {
-            var val2 = new { OtherID = 1 };
-            Assert.NotEqual(handle1, val2.GetType().TypeHandle.Value);
-            Span<bool> usageMap2 = stackalloc bool[query.Mapper.Count];
-            query.SetCommand(cmd2, val2, usageMap2);
-            Assert.Equal("SELECT * FROM u WHERE u.OtherID = @OtherID", cmd2.CommandText);
-            Assert.False(usageMap2[0]);
-            Assert.True(usageMap2[1]);
-        }
+        using var cmd2 = cnn.CreateCommand();
+        var val2 = new { OtherID = 1 };
+        Assert.NotEqual(handle1, val2.GetType().TypeHandle.Value);
+        Span<bool> usageMap2 = stackalloc bool[query.Mapper.Count];
+        query.SetCommand(cmd2, val2, usageMap2);
+        Assert.Equal("SELECT * FROM u WHERE u.OtherID = @OtherID", cmd2.CommandText);
+        Assert.False(usageMap2[0]);
+        Assert.True(usageMap2[1]);
     }
     [Fact]
     public void Using_Two_DifferentTyped() {
@@ -170,13 +169,42 @@ public class CompleteTests {
             Assert.True(usageMap1[0]);
             Assert.False(usageMap1[1]);
         }
-        using (var cmd2 = cnn.CreateCommand()) {
-            Span<bool> usageMap2 = stackalloc bool[query.Mapper.Count];
-            query.SetCommand(cmd2, new A2 { OtherID = 1 }, usageMap2);
-            Assert.Equal("SELECT * FROM u WHERE u.OtherID = @OtherID", cmd2.CommandText);
-            Assert.False(usageMap2[0]);
-            Assert.True(usageMap2[1]);
-        }
+        using var cmd2 = cnn.CreateCommand();
+        Span<bool> usageMap2 = stackalloc bool[query.Mapper.Count];
+        query.SetCommand(cmd2, new A2 { OtherID = 1 }, usageMap2);
+        Assert.Equal("SELECT * FROM u WHERE u.OtherID = @OtherID", cmd2.CommandText);
+        Assert.False(usageMap2[0]);
+        Assert.True(usageMap2[1]);
+    }
+    [Fact]
+    public void Cache_Bug() {
+        var template = "SELECT ID, /*Name*/Name FROM Users WHERE Name = ?@Name";
+        var query = new QueryCommand(template);
+
+        using var cnn = GetDbCnn();
+        var builder1 = query.StartBuilder();
+        var dObj1 = builder1.QueryOne<DynaObject>(cnn);
+        Assert.NotNull(dObj1);
+        Assert.Single(dObj1);
+
+        var builder2 = query.StartBuilder();
+        builder2.Use("Name");
+        builder2.Use("@Name", "Victor");
+        var dObj2 = builder2.QueryOne<DynaObject>(cnn);
+        Assert.NotNull(dObj2);
+        Assert.Equal(2, dObj2.Count);
+
+        var builder3 = query.StartBuilder();
+        builder3.Use("@Name", "Victor");
+        var dObj3 = builder3.QueryOne<DynaObject>(cnn);
+        Assert.NotNull(dObj3);
+        Assert.Single(dObj3);
+
+        var builder4 = query.StartBuilder();
+        builder4.Use("Name");
+        var dObj4 = builder4.QueryOne<DynaObject>(cnn);
+        Assert.NotNull(dObj4);
+        Assert.Equal(2, dObj4.Count);
     }
 }
 public record struct  PersonParam(bool Active);
