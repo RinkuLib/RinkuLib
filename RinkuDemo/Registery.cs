@@ -96,7 +96,7 @@ public static class Registry {
                 continue;
             if (k.Equals("Uses", StringComparison.InvariantCultureIgnoreCase)) {
                 foreach (var useValue in v)
-                    if (!string.IsNullOrEmpty(useValue))
+                    if (!string.IsNullOrEmpty(useValue) && useValue[0] != '#')
                         b.Use(useValue);
             }
             else

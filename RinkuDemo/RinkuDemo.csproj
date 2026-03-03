@@ -19,7 +19,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.3" />
-    <PackageReference Include="Rinku" Version="0.6.1" />
+    <PackageReference Include="Rinku" Version="0.6.2" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.2" />
   </ItemGroup>
 

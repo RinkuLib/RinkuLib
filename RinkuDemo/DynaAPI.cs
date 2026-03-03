@@ -24,6 +24,20 @@ public sealed class QueryOneAction(string n, HttpMethod m, QueryCommand c) : Dyn
         return Results.Ok(await builder.QueryOneAsync<DynaObject>(cnn));
     }
 }
+public sealed class ExecuteAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
+    public override async Task<IResult> ExecuteAsync(HttpContext context) {
+        using var cnn = Registry.GetConnection();
+        var builder = Registry.GetBuilder(context, Command, GetParams(context));
+        return Results.Ok(await builder.ExecuteAsync(cnn));
+    }
+}
+public sealed class ExecuteScalarAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
+    public override async Task<IResult> ExecuteAsync(HttpContext context) {
+        using var cnn = Registry.GetConnection();
+        var builder = Registry.GetBuilder(context, Command, GetParams(context));
+        return Results.Ok(await builder.ExecuteScalarAsync<object>(cnn));
+    }
+}
 
 public sealed class QueryAllAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
     public override Task<IResult> ExecuteAsync(HttpContext context) {
@@ -55,6 +69,8 @@ public static class DynaLoader {
             actions.Add(type switch {
                 "QueryOne" => new QueryOneAction(name, method, new(template)),
                 "QueryAll" => new QueryAllAction(name, method, new(template)),
+                "Execute" => new ExecuteAction(name, method, new(template)),
+                "ExecuteScalar" => new ExecuteScalarAction(name, method, new(template)),
                 _ => throw new NotSupportedException(type)
             });
         }
