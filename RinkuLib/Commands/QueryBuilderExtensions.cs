@@ -8,12 +8,12 @@ namespace RinkuLib.Commands;
 /// <summary>
 /// Uses the <see cref="TypeParser{T}"/> to retrieve or make the complied parser function and cache both the parser and any used parameters
 /// </summary>
-public struct ParsingCacheToMake<T>(QueryCommand command, SchemaParser<T> cache, int[] falseIndexes) : ISchemaParser<T> {
+public struct ParsingCacheToMake<T>(QueryCommand command, SchemaParser<T> cache, bool[] usageMap) : ISchemaParser<T> {
     private readonly QueryCommand Command = command;
     private Func<DbDataReader, T> parser = cache.parser;
     /// <inheritdoc/>
     public CommandBehavior Behavior { get; } = cache.Behavior;
-    private readonly int[] FalseIndexes = falseIndexes;
+    private readonly bool[] UsageMap = usageMap;
     /// <inheritdoc/>
     public readonly bool IsInit => false;
     /// <inheritdoc/>
@@ -22,7 +22,7 @@ public struct ParsingCacheToMake<T>(QueryCommand command, SchemaParser<T> cache,
             var schema = reader.GetColumns();
             var p = TypeParser<T>.GetParserFunc(ref schema, out var defaultBehavior);
             parser = p;
-            Command.UpdateCache(FalseIndexes, schema, new SchemaParser<T>(parser, defaultBehavior));
+            Command.UpdateCache(UsageMap, schema, new SchemaParser<T>(parser, defaultBehavior));
         }
         Command.UpdateCache(cmd);
     }
@@ -247,7 +247,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -261,7 +261,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -275,7 +275,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
         }
 
         /// <summary>
@@ -291,7 +291,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -306,7 +306,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -321,7 +321,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
         }
 
         /// <summary>
@@ -440,7 +440,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -454,7 +454,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -468,7 +468,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
         }
 
         /// <summary>
@@ -484,7 +484,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -499,7 +499,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -514,7 +514,7 @@ public static class QueryBuilderExtensions {
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCache<T>(vars, out var cache))
                 return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
         }
     }
 }

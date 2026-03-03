@@ -87,26 +87,19 @@ public class QueryCommand : IQueryCommand, ICache {
     /// Try getting the parsing cache without the schema
     /// </summary>
     public unsafe bool TryGetCache<T>(Span<bool> usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
-        bool* pUsage = (bool*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(usageMap));
+        ref bool pUsage = ref MemoryMarshal.GetReference(usageMap);
         uint mapLen = (uint)usageMap.Length;
         var cacheArray = ParsingCache;
         int cacheLen = cacheArray.Length;
 
         for (int i = 0; i < cacheLen; i++) {
             ref var entry = ref cacheArray[i];
-            var idxs = entry.FalseIndexes;
-            int idxLen = idxs.Length;
-
-            fixed (int* pIdx = &MemoryMarshal.GetArrayDataReference(idxs)) {
-                if (idxLen == 1) {
-                    if (*(pUsage + *pIdx))
-                        goto NextEntry;
-                }
-                else {
-                    for (int j = 0; j < idxLen; j++)
-                        if (*(pUsage + pIdx[j]))
-                            goto NextEntry;
-                }
+            int idxLen = entry.CondStates.Length;
+            ref int pBase = ref MemoryMarshal.GetReference(entry.CondStates);
+            for (int j = 0; j < idxLen; j++) {
+                int packed = Unsafe.Add(ref pBase, j);
+                if (Unsafe.Add(ref pUsage, packed >> 1) != ((packed & 1) != 0))
+                    goto NextEntry;
             }
             object parserObj = entry.Parser;
             if (parserObj is null || entry.ResultSetIndex != resultSetIndex) {
@@ -126,7 +119,7 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <summary>
     /// Try getting the parsing cache without the schema
     /// </summary>
-    public unsafe bool TryGetCache<T>(object?[] usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
+    public bool TryGetCache<T>(object?[] usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
         ref object? usageBase = ref MemoryMarshal.GetArrayDataReference(usageMap);
 
         var cacheArray = ParsingCache;
@@ -134,20 +127,12 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (int i = 0; i < cacheLen; i++) {
             ref var entry = ref cacheArray[i];
-            int[] idxs = entry.FalseIndexes;
-            int idxLen = idxs.Length;
-
-            fixed (int* pIdx = &MemoryMarshal.GetArrayDataReference(idxs)) {
-                if (idxLen == 1) {
-                    if (Unsafe.Add(ref usageBase, *pIdx) is not null)
-                        goto NextEntry;
-                }
-                else {
-                    for (int j = 0; j < idxLen; j++) {
-                        if (Unsafe.Add(ref usageBase, pIdx[j]) is not null)
-                            goto NextEntry;
-                    }
-                }
+            int idxLen = entry.CondStates.Length;
+            ref int pBase = ref MemoryMarshal.GetArrayDataReference(entry.CondStates);
+            for (int j = 0; j < idxLen; j++) {
+                int packed = Unsafe.Add(ref pBase, j);
+                if ((Unsafe.Add(ref usageBase, packed >> 1) is not null) != ((packed & 1) != 0))
+                    goto NextEntry;
             }
 
             object pObj = entry.Parser;
@@ -171,124 +156,47 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <summary>
     /// Update the parsing cache for a given schema
     /// </summary>
-    public bool UpdateCache<T>(int[] falseIndexes, ColumnInfo[] schema, SchemaParser<T> cache, int resultSetIndex = 0) {
+    public void UpdateCache<T>(bool[] usageMap, ColumnInfo[] schema, SchemaParser<T> cache, int resultSetIndex = 0) {
         lock (ParsingCacheSharedLock) {
-            if (ParsingCache.Length == 0)
-                ParsingCache = InitParsingCache();
-            var cacheIndexesToRemove = new List<int>();
-            var nbNullParser = 0;
-            var ind = 0;
-            int j;
-            for (; ind < ParsingCache.Length; ind++) {
-                ref var item = ref ParsingCache[ind];
-                if (item.Parser is null) {
-                    if (MatchIndexes(falseIndexes, item.FalseIndexes))
-                        cacheIndexesToRemove.Add(ind);
-                    nbNullParser++;
-                }
-                else if (item.ResultSetIndex == resultSetIndex && item.Parser is Func<DbDataReader, T> && schema.EquivalentTo(item.Schema)) {
-                    var currentLen = item.FalseIndexes.Length;
-                    item.FalseIndexes = GetIntersection(item.FalseIndexes, falseIndexes);
-                    if (item.FalseIndexes.Length < currentLen) {
-                        currentLen = item.FalseIndexes.Length;
-                        for (j = ind + 1; j < ParsingCache.Length; j++)
-                            if (ParsingCache[j].FalseIndexes.Length > currentLen)
+            for (var i = 0; i < ParsingCache.Length; i++) {
+                ref var item = ref ParsingCache[i];
+                if (item.ResultSetIndex == resultSetIndex && item.Parser is Func<DbDataReader, T> && schema.EquivalentTo(item.Schema)) {
+                    var currentLen = item.CondStates.Length;
+                    item.CondStates = GetUpdatedStates(usageMap, item.CondStates);
+                    if (item.CondStates.Length < currentLen) {
+                        currentLen = item.CondStates.Length;
+                        for (int j = i + 1; j < ParsingCache.Length; j++)
+                            if (ParsingCache[j].CondStates.Length > currentLen)
                                 (ParsingCache[j], ParsingCache[j - 1]) = (ParsingCache[j - 1], ParsingCache[j]);
                     }
-                    break;
+                    return;
                 }
             }
-            var allreadyIn = ind < ParsingCache.Length;
-            if (cacheIndexesToRemove.Count == 0 && allreadyIn)
-                return true;
-            var newCache = new ParsingCacheItem[ParsingCache.Length - cacheIndexesToRemove.Count + (allreadyIn ? 0 : 1)];
-            j = 0;
-            int k = 0;
-            for (int i = 0; i < nbNullParser; i++) {
-                if (k < cacheIndexesToRemove.Count && cacheIndexesToRemove[k] == i) {
-                    k++;
-                    continue;
-                }
-                newCache[j++] = ParsingCache[i];
-            }
-            var falseIndexesLen = falseIndexes.Length;
-            for (int i = nbNullParser; i < ParsingCache.Length; i++) {
-                ref var item = ref ParsingCache[i];
-                if (!allreadyIn && item.FalseIndexes.Length < falseIndexesLen)
-                    newCache[j++] = new(cache.parser, falseIndexes, schema, cache.Behavior, resultSetIndex);
-                newCache[j++] = item;
-            }
-            if (!allreadyIn && newCache[^1].FalseIndexes is null)
-                newCache[^1] = new(cache.parser, falseIndexes, schema, cache.Behavior, resultSetIndex);
+            var condStates = new int[usageMap.Length];
+            for (int i = 0; i < condStates.Length; i++)
+                condStates[i] = EncodeState(i, usageMap[i]);
+
+            var newCache = new ParsingCacheItem[ParsingCache.Length + 1];
+            Array.Copy(ParsingCache, 0, newCache, 1, ParsingCache.Length);
+            newCache[0] = new(cache.parser, condStates, schema, cache.Behavior, resultSetIndex);
             ParsingCache = newCache;
-            return true;
         }
     }
-    private static int[] GetIntersection(int[] left, int[] right) {
-        int leftLen = left.Length;
-        int rightLen = right.Length;
-
-        if (ReferenceEquals(left, right))
-            return left;
-        if (leftLen == 0)
-            return left;
-        if (rightLen == 0)
-            return right;
-
-        Span<int> intersectBuffer = stackalloc int[Math.Min(leftLen, rightLen)];
+    private static int EncodeState(int index, bool state) => (index << 1) | (state ? 1 : 0);
+    private static int[] GetUpdatedStates(bool[] usageMap, int[] condState) {
+        int idxLen = condState.Length;
+        Span<int> intersectBuffer = stackalloc int[idxLen];
         int count = 0;
 
-        for (int i = 0; i < leftLen; i++) {
-            int target = left[i];
-            for (int j = 0; j < rightLen; j++) {
-                if (target == right[j]) {
-                    intersectBuffer[count++] = target;
-                    break;
-                }
-            }
+        ref int pBase = ref MemoryMarshal.GetArrayDataReference(condState);
+        for (int j = 0; j < idxLen; j++) {
+            int packed = Unsafe.Add(ref pBase, j);
+            if (usageMap[packed >> 1] == ((packed & 1) != 0))
+                intersectBuffer[count++] = packed;
         }
-        if (count == leftLen)
-            return left;
-        if (count == rightLen)
-            return right;
+        if (count == idxLen)
+            return condState;
         return intersectBuffer[..count].ToArray();
-    }
-    private static bool MatchIndexes(int[] falseIndexes, int[] cachedFalseIndexes) {
-        for (int i = 0; i < cachedFalseIndexes.Length; i++) {
-            var look = cachedFalseIndexes[i];
-            for (int j = 0; j < falseIndexes.Length; j++)
-                if (j == look)
-                    goto Match;
-            return false;
-        Match:;
-        }
-        return true;
-    }
-
-    private ParsingCacheItem[] InitParsingCache() {
-        var conditions = QueryText.Conditions;
-        HashSet<int[]> indexes = new(ArrayContentComparer<int>.Instance);
-        var nbConds = conditions.Length - 1;
-        for (int i = 0; i < nbConds; i++) {
-            ref var cond = ref conditions[i];
-            if (cond.NbConditionSkip >= 0) {
-                indexes.Add([cond.CondIndex]);
-                continue;
-            }
-            var count = conditions[i + 1].NbConditionSkip;
-            var ii = new int[count + 1];
-            ii[0] = cond.CondIndex;
-            for (int j = 1; j <= count; j++)
-                ii[j] = conditions[i + j].CondIndex;
-        }
-        var res = new ParsingCacheItem[indexes.Count];
-        var ind = 0;
-        foreach (var item in indexes) {
-            res[ind++] = new() {
-                FalseIndexes = item
-            };
-        }
-        return res;
     }
     /// <summary>
     /// A fast way to identify if there are parameters that are used for the first time in the given state.

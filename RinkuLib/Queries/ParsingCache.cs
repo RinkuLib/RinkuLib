@@ -1,13 +1,12 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
 /// <summary>
 /// Represent an cached item used for parsing a <see cref="DbDataReader"/>
 /// </summary>
-public struct ParsingCacheItem(object Parser, int[] FalseIndexes, ColumnInfo[] Schema, CommandBehavior CommandBehavior, int ResultSetIndex) {
+public struct ParsingCacheItem(object Parser, int[] CondStates, ColumnInfo[] Schema, CommandBehavior CommandBehavior, int ResultSetIndex) {
     /// <summary>
     /// The actual parser func
     /// </summary>
@@ -15,7 +14,7 @@ public struct ParsingCacheItem(object Parser, int[] FalseIndexes, ColumnInfo[] S
     /// <summary>
     /// The indexes at which the condition muts be false
     /// </summary>
-    public int[] FalseIndexes  = FalseIndexes;
+    public int[] CondStates = CondStates;
     /// <summary>
     /// The schema for which the <see cref="Parser"/> is for
     /// </summary>

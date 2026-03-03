@@ -8,38 +8,12 @@ public static class DirectBuildExtensions {
     /// <summary>
     /// Extension to get the indexes of the false items
     /// </summary>
-    public static int[] GetFalseIndexes(this Span<bool> usageMap) {
-        if (usageMap.Length == 0)
-            return [];
-        Span<int> buffer = usageMap.Length <= 256
-            ? stackalloc int[usageMap.Length]
-            : new int[usageMap.Length];
-
-        int count = 0;
-        for (int i = 0; i < usageMap.Length; i++)
-            if (!usageMap[i])
-                buffer[count++] = i;
-        if (count == 0)
-            return [];
-        return buffer[..count].ToArray();
-    }
-    /// <summary>
-    /// Extension to get the indexes of the false items
-    /// </summary>
-    public static int[] GetFalseIndexes(this object?[] variables) {
-        if (variables.Length == 0)
-            return [];
-        Span<int> buffer = variables.Length <= 256
-            ? stackalloc int[variables.Length]
-            : new int[variables.Length];
-
-        int count = 0;
+    public static bool[] ToBoolArray(this object?[] variables) {
+        var arr = new bool[variables.Length];
         for (int i = 0; i < variables.Length; i++)
-            if (variables[i] is null)
-                buffer[count++] = i;
-        if (count == 0)
-            return [];
-        return buffer[..count].ToArray();
+            if (variables[i] is not null)
+                arr[i] = true;
+        return arr;
     }
     extension(QueryCommand command) {
         #region object param
@@ -217,7 +191,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -232,7 +206,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -247,7 +221,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
 
         /// <summary>
@@ -264,7 +238,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -280,7 +254,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -296,7 +270,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
 
         /// <summary>
@@ -433,7 +407,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -450,7 +424,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -467,7 +441,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
 
         /// <summary>
@@ -486,7 +460,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -504,7 +478,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -522,7 +496,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         #endregion
         #region generic param
@@ -701,7 +675,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -716,7 +690,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -731,7 +705,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
 
         /// <summary>
@@ -748,7 +722,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -764,7 +738,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -780,7 +754,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
 
         /// <summary>
@@ -917,7 +891,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -934,7 +908,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -951,7 +925,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
 
         /// <summary>
@@ -970,7 +944,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -988,7 +962,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -1006,7 +980,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         #endregion
         #region ref generic param
@@ -1184,7 +1158,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -1199,7 +1173,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -1214,7 +1188,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
 
         /// <summary>
@@ -1231,7 +1205,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -1247,7 +1221,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -1263,7 +1237,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
 
         /// <summary>
@@ -1400,7 +1374,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -1417,7 +1391,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -1434,7 +1408,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true);
+            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true);
         }
 
         /// <summary>
@@ -1453,7 +1427,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
@@ -1471,7 +1445,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
@@ -1489,7 +1463,7 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCache<T>(usageMap, out var cache))
                 return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.GetFalseIndexes()), true, ct);
+            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, usageMap.ToArray()), true, ct);
         }
         #endregion
     }
