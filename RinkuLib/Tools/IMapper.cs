@@ -1,4 +1,6 @@
 ﻿using System.Buffers;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace RinkuLib.Tools;
@@ -107,7 +109,14 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         int i = GetIndex(key);
         return i >= 0 ? _keys[i] : null!;
     }
-
+    /// <summary>An optimal way to look using an prepended char</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int GetIndex(char prependChar, string value) {
+        Span<char> nameSpan = stackalloc char[value.Length + 1];
+        nameSpan[0] = prependChar;
+        value.AsSpan().CopyTo(nameSpan[1..]);
+        return GetIndex(nameSpan);
+    }
     /// <summary>
     /// Returns the stable index associated with the provided key.
     /// </summary>
@@ -311,7 +320,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
             => key.Equals(Key1, StringComparison.OrdinalIgnoreCase) ? 0
             : key.Equals(Key2, StringComparison.OrdinalIgnoreCase) ? 1 : -1;
     }
-    internal unsafe sealed class DictMapper : Mapper {
+    internal sealed class DictMapper : Mapper {
         private readonly Dictionary<string, int> _stringDict;
 
 #if NET9_0_OR_GREATER

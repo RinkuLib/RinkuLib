@@ -1,18 +1,8 @@
 ﻿using System.Reflection;
 using System.Reflection.Emit;
-using System.Runtime.CompilerServices;
 using RinkuLib.Tools;
 
 namespace RinkuLib.TypeAccessing;
-/// <summary>
-/// Identifies a member as a boolean condition for SQL templates rather than a variable.
-/// </summary>
-/// <remarks>
-/// <b>Note:</b> Only valid on <see cref="bool"/> fields or properties. 
-/// If applied to other types, it is silently ignored and treated as a standard member.
-/// </remarks>
-[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public sealed class ForBoolCondAttribute : Attribute;
 /// <summary>
 /// access of an item members
 /// </summary>
@@ -73,6 +63,9 @@ public class TypeAccessorCache {
         GetValue = default!;
     }
     /// <inheritdoc/>
+    public TypeAccessorCache((DynamicMethod usageMethod, DynamicMethod valueMethod) methods)
+        : this(methods.usageMethod, methods.valueMethod) { }
+    /// <inheritdoc/>
     public TypeAccessorCache(DynamicMethod usageMethod, DynamicMethod valueMethod) {
         this.GetUsage = usageMethod.CreateDelegate<Func<object, int, bool>>(null);
         this.GetValue = valueMethod.CreateDelegate<Func<object, int, object>>(null);
@@ -94,6 +87,9 @@ public class StructTypeAccessorCache<T> : TypeAccessorCache {
     public MemberUsageDelegate<T> GenericGetUsage;
     /// <summary>The generic delegate to get the value</summary>
     public MemberValueDelegate<T> GenericGetValue;
+    /// <inheritdoc/>
+    public StructTypeAccessorCache((DynamicMethod usageMethod, DynamicMethod valueMethod) methods)
+        : this(methods.usageMethod, methods.valueMethod) {}
     /// <inheritdoc/>
     public StructTypeAccessorCache(DynamicMethod usageMethod, DynamicMethod valueMethod) {
         this.GenericGetUsage = usageMethod.CreateDelegate<MemberUsageDelegate<T>>(null);
@@ -144,84 +140,74 @@ public static class TypeAccessorCacher<T> {
             foreach (var (Keys, Cache) in Variants)
                 if (ReferenceEquals(Keys, mapper))
                     return Cache;
-            var firstKey = mapper.Count > 0 ? mapper.Keys[0] : default;
-            var varChar = string.IsNullOrEmpty(firstKey) ? default : firstKey[0];
             TypeAccessorCache cache = typeof(T).IsValueType
-                ? new StructTypeAccessorCache<T>(GenerateDelegate(varChar, mapper, true), GenerateDelegate(varChar, mapper, false))
-                : new TypeAccessorCache(GenerateDelegate(varChar, mapper, true), GenerateDelegate(varChar, mapper, false));
+                ? new StructTypeAccessorCache<T>(GenerateDelegate(mapper))
+                : new TypeAccessorCache(GenerateDelegate(mapper));
 
             Variants = [.. Variants, (mapper, cache)];
             return cache;
         }
     }
-    private static DynamicMethod GenerateDelegate(char varChar, Mapper mapper, bool forUsage) {
+    private static (DynamicMethod Usage, DynamicMethod Value) GenerateDelegate(Mapper mapper) {
+        var varChar = mapper.Count <= 0 ? default : mapper.Keys[0].Length <= 0 ? default : mapper.Keys[0][0];
         Type type = typeof(T);
         Type arg0 = type.IsValueType ? type.MakeByRefType() : typeof(object);
-        DynamicMethod dm = new($"{type.Name}_{(forUsage ? "U" : "V")}", forUsage ? typeof(bool) : typeof(object), [typeof(object), arg0, typeof(int)], type.Module, true);
-        var il = dm.GetILGenerator();
+        DynamicMethod usageDm = new($"{type.Name}_U", typeof(bool), [typeof(object), arg0, typeof(int)], type.Module, true);
+        DynamicMethod valueDm = new($"{type.Name}_V", typeof(object), [typeof(object), arg0, typeof(int)], type.Module, true);
+        var usageIl = usageDm.GetILGenerator();
+        var valueIl = valueDm.GetILGenerator();
 
         int switchCount = mapper.Count;
-        AccessorEmitter?[] plans = new AccessorEmitter?[switchCount];
-        Label[] switchTable = new Label[switchCount];
-        Label defaultLabel = il.DefineLabel();
-
-        for (int i = 0; i < switchCount; i++)
-            switchTable[i] = defaultLabel;
+        IAccessorEmiter?[] usagePlans = new IAccessorEmiter?[switchCount];
+        IAccessorEmiter?[] valuePlans = new IAccessorEmiter?[switchCount];
 
         MemberInfo[] allMembers = type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-        int index;
         foreach (var member in allMembers) {
-            if (member is not FieldInfo && member is not PropertyInfo)
+            if (member is MethodBase m && m.IsSpecialName)
                 continue;
-            Type? memberType = 
-                member is FieldInfo f ? f.FieldType : 
-                member is PropertyInfo p ? p.PropertyType : 
-                member is MethodInfo m ? m.ReturnType :
-                null;
-            if (memberType == typeof(bool) &&
-                              member.IsDefined(typeof(ForBoolCondAttribute), inherit: true)) {
-                index = mapper.GetIndex(member.Name);
-                if (index < 0 || index >= switchCount)
-                    continue;
-                plans[index] = forUsage
-                    ? new MemberCondUsageEmitter(type, member)
-                    : new MemberValueEmitter(type, member);
-                switchTable[index] = il.DefineLabel();
+            if (member is FieldInfo f && (f.IsSpecialName || f.Name[0] == '<'))
+                continue;
+            if (member is Type)
+                continue;
+
+            var handler = member.GetCustomAttribute<AccessorEmiterHandler>();
+            if (handler is not null) {
+                handler.HandleEmit(varChar, usagePlans, valuePlans, type, member, mapper);
                 continue;
             }
-            index = GetIndexAppendVarChar(varChar, mapper, member);
-            if (index < 0 || index >= switchCount)
-                continue;
-            plans[index] = forUsage
-                ? new MemberUsageEmitter(type, member)
-                : new MemberValueEmitter(type, member);
-            switchTable[index] = il.DefineLabel();
-        }
 
+            if (member is FieldInfo or PropertyInfo) {
+                int index = mapper.GetIndex(varChar, member.Name);
+                if (index >= 0) {
+                    usagePlans[index] = new MemberUsageEmitter(type, member);
+                    valuePlans[index] = new MemberValueEmitter(type, member);
+                }
+            }
+        }
+        HandlePlans(usagePlans, usageIl, OpCodes.Ldc_I4_0);
+        HandlePlans(valuePlans, valueIl, OpCodes.Ldnull);
+        return (usageDm, valueDm);
+    }
+    private static void HandlePlans(IAccessorEmiter?[] plans, ILGenerator il, OpCode defaultOpCode) {
+        var switchCount = plans.Length;
+        Label[] switchTable = new Label[switchCount];
+        Label valueDefaultLabel = il.DefineLabel();
+        for (int i = 0; i < switchCount; i++)
+            switchTable[i] = plans[i] is null ? valueDefaultLabel : il.DefineLabel();
         il.Emit(OpCodes.Ldarg_2);
         il.Emit(OpCodes.Switch, switchTable);
 
-        il.MarkLabel(defaultLabel);
-        il.Emit(forUsage ? OpCodes.Ldc_I4_0 : OpCodes.Ldnull);
+        il.MarkLabel(valueDefaultLabel);
+        il.Emit(defaultOpCode);
         il.Emit(OpCodes.Ret);
-        for (int i = 0; i < switchCount; i++) {
-            ref var plan = ref plans[i];
-            var label = switchTable[i];
-            if (label == defaultLabel || plan is null)
-                continue;
 
-            il.MarkLabel(label);
+        for (int i = 0; i < switchCount; i++) {
+            var plan = plans[i];
+            if (plan is null)
+                continue;
+            il.MarkLabel(switchTable[i]);
             plan.Emit(il);
             il.Emit(OpCodes.Ret);
         }
-        return dm;
-    }
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int GetIndexAppendVarChar(char variableChar, Mapper mapper, MemberInfo member) {
-        string name = member.Name;
-        Span<char> nameSpan = stackalloc char[name.Length + 1];
-        nameSpan[0] = variableChar;
-        name.AsSpan().CopyTo(nameSpan[1..]);
-        return mapper.GetIndex(nameSpan);
     }
 }

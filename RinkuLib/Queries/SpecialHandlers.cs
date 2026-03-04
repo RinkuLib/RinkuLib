@@ -35,6 +35,28 @@ namespace RinkuLib.Queries;
 /// </list>
 /// </remarks>
 public abstract class SpecialHandler : IQuerySegmentHandler {
+    /// <summary>init the special handler values of a query command</summary>
+    public static SpecialHandler[] GetHandlers(int startSpecialHandlers, int startBaseHandlers, Mapper mapper, string queryString, QuerySegment[] segments) {
+        if (startSpecialHandlers == startBaseHandlers)
+            return [];
+        var handlers = new SpecialHandler[startBaseHandlers - startSpecialHandlers];
+        for (int i = 0; i < segments.Length; i++) {
+            ref var seg = ref segments[i];
+            var h = seg.Handler;
+            if (h is null || h != IQuerySegmentHandler.NotSet)
+                continue;
+            var last = seg.Start + seg.Length - 1;
+            var ind = mapper.GetIndex(queryString[seg.Start..(last - 1)]);
+            ref var handler = ref handlers[ind - startSpecialHandlers];
+            if (handler is null) {
+                var getter = SpecialHandlerGetter[queryString[last]];
+                handler = getter(mapper.GetKey(ind));
+            }
+            seg.Handler = handler;
+            seg.ExcessOrInd = ind;
+        }
+        return handlers;
+    }
     /// <summary>
     /// Global registry mapping variable type-suffix characters (e.g., 'X' for Multi-Variable) 
     /// to their corresponding <see cref="SpecialHandler"/> factory delegates.
