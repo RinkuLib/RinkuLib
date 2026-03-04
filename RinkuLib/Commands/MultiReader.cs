@@ -29,7 +29,7 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
             return cache;
         var schema = reader.GetColumns();
         cache = new(TypeParser<T>.GetParserFunc(ref schema, out var behavior), behavior);
-        command.UpdateCache(usage, schema, cache, nbResultSetPassedMinusOne);
+        command.UpdateParseCache(usage, schema, cache, nbResultSetPassedMinusOne);
         return cache;
     }
     /// <summary>Automaticaly skip non-returning set, parse the first row in that result set and go to next result directly (ignore orher rows)</summary>

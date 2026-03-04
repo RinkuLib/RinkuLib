@@ -8,14 +8,6 @@ using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Queries;
-
-[StructLayout(LayoutKind.Sequential)]
-internal struct RawObject {
-    public IntPtr MethodTable;
-    public byte Data;
-}
-[StructLayout(LayoutKind.Sequential)]
-internal class RawData { public byte Data; }
 /// <summary>
 /// The central orchestration engine that integrates SQL text generation (<see cref="Queries.QueryText"/>) 
 /// with parameter metadata management (<see cref="QueryParameters"/>).
@@ -79,14 +71,14 @@ public class QueryCommand : IQueryCommand, ICache {
         StartBoolCond = Mapper.Count - factory.NbNonVarComment;
         StartBaseHandlers = StartBoolCond - factory.NbBaseHandlers;
         StartSpecialHandlers = StartBaseHandlers - factory.NbSpecialHandlers;
-        var specialHandlers = GetHandlers(queryString, segments);
+        var specialHandlers = SpecialHandler.GetHandlers(StartSpecialHandlers, StartBaseHandlers, Mapper, queryString, segments);
         QueryText = new(queryString, segments, factory.Conditions);
         Parameters = new(factory.NbNormalVar, specialHandlers);
     }
     /// <summary>
     /// Try getting the parsing cache without the schema
     /// </summary>
-    public unsafe bool TryGetCache<T>(Span<bool> usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
+    public bool TryGetCache<T>(Span<bool> usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
         ref bool pUsage = ref MemoryMarshal.GetReference(usageMap);
         uint mapLen = (uint)usageMap.Length;
         var cacheArray = ParsingCache;
@@ -156,47 +148,10 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <summary>
     /// Update the parsing cache for a given schema
     /// </summary>
-    public void UpdateCache<T>(bool[] usageMap, ColumnInfo[] schema, SchemaParser<T> cache, int resultSetIndex = 0) {
-        lock (ParsingCacheSharedLock) {
-            for (var i = 0; i < ParsingCache.Length; i++) {
-                ref var item = ref ParsingCache[i];
-                if (item.ResultSetIndex == resultSetIndex && item.Parser is Func<DbDataReader, T> && schema.EquivalentTo(item.Schema)) {
-                    var currentLen = item.CondStates.Length;
-                    item.CondStates = GetUpdatedStates(usageMap, item.CondStates);
-                    if (item.CondStates.Length < currentLen) {
-                        currentLen = item.CondStates.Length;
-                        for (int j = i + 1; j < ParsingCache.Length; j++)
-                            if (ParsingCache[j].CondStates.Length > currentLen)
-                                (ParsingCache[j], ParsingCache[j - 1]) = (ParsingCache[j - 1], ParsingCache[j]);
-                    }
-                    return;
-                }
-            }
-            var condStates = new int[usageMap.Length];
-            for (int i = 0; i < condStates.Length; i++)
-                condStates[i] = EncodeState(i, usageMap[i]);
-
-            var newCache = new ParsingCacheItem[ParsingCache.Length + 1];
-            Array.Copy(ParsingCache, 0, newCache, 1, ParsingCache.Length);
-            newCache[0] = new(cache.parser, condStates, schema, cache.Behavior, resultSetIndex);
-            ParsingCache = newCache;
+    public void UpdateParseCache<T>(bool[] usageMap, ColumnInfo[] schema, SchemaParser<T> cache, int resultSetIndex = 0) {
+        lock (ParsingCacheSharedLock) { 
+            ParsingCache = ParsingCache.GetUpdatedCache(QueryText, usageMap, schema, cache, resultSetIndex);
         }
-    }
-    private static int EncodeState(int index, bool state) => (index << 1) | (state ? 1 : 0);
-    private static int[] GetUpdatedStates(bool[] usageMap, int[] condState) {
-        int idxLen = condState.Length;
-        Span<int> intersectBuffer = stackalloc int[idxLen];
-        int count = 0;
-
-        ref int pBase = ref MemoryMarshal.GetArrayDataReference(condState);
-        for (int j = 0; j < idxLen; j++) {
-            int packed = Unsafe.Add(ref pBase, j);
-            if (usageMap[packed >> 1] == ((packed & 1) != 0))
-                intersectBuffer[count++] = packed;
-        }
-        if (count == idxLen)
-            return condState;
-        return intersectBuffer[..count].ToArray();
     }
     /// <summary>
     /// A fast way to identify if there are parameters that are used for the first time in the given state.
@@ -210,27 +165,6 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <returns><see langword="false"/> no parameters are used for the first time</returns>
     public bool NeedToCache(object?[] variables)
         => Parameters.NeedToCache(variables);
-    private SpecialHandler[] GetHandlers(string queryString, QuerySegment[] segments) {
-        if (StartSpecialHandlers == StartBaseHandlers)
-            return [];
-        var handlers = new SpecialHandler[StartBaseHandlers - StartSpecialHandlers];
-        for (int i = 0; i < segments.Length; i++) {
-            ref var seg = ref segments[i];
-            var h = seg.Handler;
-            if (h is null || h != IQuerySegmentHandler.NotSet)
-                continue;
-            var last = seg.Start + seg.Length - 1;
-            var ind = Mapper.GetIndex(queryString[seg.Start..(last - 1)]);
-            ref var handler = ref handlers[ind - StartSpecialHandlers];
-            if (handler is null) {
-                var getter = SpecialHandler.SpecialHandlerGetter[queryString[last]];
-                handler = getter(Mapper.GetKey(ind));
-            }
-            seg.Handler = handler;
-            seg.ExcessOrInd = ind;
-        }
-        return handlers;
-    }
     /// <summary>
     /// Synchronizes the command with a database provider's metadata. 
     /// Or any overrided comportement

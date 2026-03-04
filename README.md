@@ -167,14 +167,15 @@ foreach(var val in dataList) {
 #### One step building
 There are ways to initialize the state in one step by using object instances with the state values:
 ```csharp
-public record class StateParameters(int? MinSalary, string? DeptName, string? EmployeeStatus) {
+public record class StateParameters(int? MinSalary, string? DeptName, [property:NotNullOrWhitespace] string? EmployeeStatus) {
     public int OtherField = 32;
     [ForBoolCond] public bool Year;
 }
 ```
 By default, it match the members with variables in SQL (`@DeptName` instead of `DeptName`), if you want to correspond to a boolean condition, you must use the `[ForBoolCond]` attribute and the member must be of type bool.
+There are also options to modify the "usage" condition or the returned value using attributes inheriting `AccessorEmiterHandler` (eg, `NotNullOrWhitespace` will only use if the value is not null nor whitespace)
 ```csharp
-var user = userCmd.QueryOne<User>(cnn, new StateParameters(10, null, "Employed") { Year = true });
+var user = userCmd.QueryOne<User>(cnn, new StateParameters(10, "Marketing", "  ") { Year = true });
 ```
 It is also possible to use parameter objects with a builder if you want to modify the values before executing
 ```csharp

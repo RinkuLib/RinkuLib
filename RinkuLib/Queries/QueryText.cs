@@ -10,8 +10,66 @@ namespace RinkuLib.Queries;
 /// The execution contract responsible for assembling the final query string.
 /// </summary>
 public interface IQueryText {
-    /// <summary>Processes the variables to genereate the SQL query string</summary>
-    public unsafe string Parse(object?[] variables);
+    /// <summary>
+    /// Processes the input state array to synthesize the final query string based on segment logic.
+    /// </summary>
+    /// <remarks>
+    /// The execution follows a high-performance linear path:
+    /// <list type="bullet">
+    /// <item>Evaluates the nullability of <paramref name="variables"/> against the jump-table to determine segment visibility.</item>
+    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
+    /// <item>Bypasses string allocation and returns QueryString if the logic resolves to the full original template.</item>
+    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
+    /// </list>
+    /// </remarks>
+    /// <param name="variables">The state array containing logical indicators and data values.</param>
+    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
+    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    public string Parse(object?[] variables);
+    /// <summary>Indicate if a variable index exist in any condition</summary>
+    public bool IsInCondition(int varIndex);
+
+    /// <summary>
+    /// Processes the input state array to synthesize the final query string based on segment logic.
+    /// </summary>
+    /// <remarks>
+    /// The execution follows a high-performance linear path:
+    /// <list type="bullet">
+    /// <item>Evaluates the <paramref name="usageMap"/> against the jump-table to determine segment visibility.</item>
+    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
+    /// <item>Bypasses string allocation and returns QueryString if the logic resolves to the full original template.</item>
+    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
+    /// </list>
+    /// </remarks>
+    /// <param name="usageMap">The state array containing logical indicators</param>
+    /// <param name="accessor">The accessor to get the values</param>
+    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
+    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+#if NET9_0_OR_GREATER
+    public string Parse<T>(Span<bool> usageMap, T accessor) where T : ITypeAccessor, allows ref struct;
+#else
+    public string Parse(Span<bool> usageMap, NoTypeAccessor accessor);
+#endif
+
+#if !NET9_0_OR_GREATER
+    /// <summary>
+    /// Processes the input state array to synthesize the final query string based on segment logic.
+    /// </summary>
+    /// <remarks>
+    /// The execution follows a high-performance linear path:
+    /// <list type="bullet">
+    /// <item>Evaluates the <paramref name="usageMap"/> against the jump-table to determine segment visibility.</item>
+    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
+    /// <item>Bypasses string allocation and returns QueryString if the logic resolves to the full original template.</item>
+    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
+    /// </list>
+    /// </remarks>
+    /// <param name="usageMap">The state array containing logical indicators</param>
+    /// <param name="accessor">The accessor to get the values</param>
+    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
+    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    public string Parse(Span<bool> usageMap, TypeAccessor accessor);
+#endif
 }
 /// <summary>Thrown when a handled variable needs to be used in the final SQL query, but the value was not provided</summary>
 public class RequiredHandlerValueException(int Index) : Exception($"The variable at index {Index} should be set") {
@@ -46,22 +104,14 @@ public sealed class QueryText : IQueryText {
         this.RequiredVariablesLength = Conditions[^1].CondIndex;
         ContainsHandlers = Segments.Any(s => s.Handler is not null);
     }
-    /// <summary>
-    /// Processes the input state array to synthesize the final query string based on segment logic.
-    /// </summary>
-    /// <remarks>
-    /// The execution follows a high-performance linear path:
-    /// <list type="bullet">
-    /// <item>Evaluates the <paramref name="usageMap"/> against the jump-table to determine segment visibility.</item>
-    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
-    /// <item>Bypasses string allocation and returns <see cref="QueryString"/> if the logic resolves to the full original template.</item>
-    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="usageMap">The state array containing logical indicators</param>
-    /// <param name="accessor">The accessor to get the values</param>
-    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
-    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    /// <inheritdoc/>
+    public bool IsInCondition(int varIndex) {
+        for (int i = 0; i < Conditions.Length; i++)
+            if (Conditions[i].CondIndex == varIndex)
+                return true;
+        return false;
+    }
+    /// <inheritdoc/>
 #if NET9_0_OR_GREATER
     public unsafe string Parse<T>(Span<bool> usageMap, T accessor) where T : ITypeAccessor, allows ref struct { 
 #else
@@ -155,22 +205,7 @@ public sealed class QueryText : IQueryText {
         return sb.ToStringAndDispose();
     }
 #if !NET9_0_OR_GREATER
-    /// <summary>
-    /// Processes the input state array to synthesize the final query string based on segment logic.
-    /// </summary>
-    /// <remarks>
-    /// The execution follows a high-performance linear path:
-    /// <list type="bullet">
-    /// <item>Evaluates the <paramref name="usageMap"/> against the jump-table to determine segment visibility.</item>
-    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
-    /// <item>Bypasses string allocation and returns <see cref="QueryString"/> if the logic resolves to the full original template.</item>
-    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="usageMap">The state array containing logical indicators</param>
-    /// <param name="accessor">The accessor to get the values</param>
-    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
-    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    /// <inheritdoc/>
     public unsafe string Parse(Span<bool> usageMap, TypeAccessor accessor) {
         Debug.Assert(usageMap.Length == RequiredVariablesLength);
 
@@ -364,21 +399,7 @@ public sealed class QueryText : IQueryText {
         return sb.ToStringAndDispose();
     }
 #endif
-    /// <summary>
-    /// Processes the input state array to synthesize the final query string based on segment logic.
-    /// </summary>
-    /// <remarks>
-    /// The execution follows a high-performance linear path:
-    /// <list type="bullet">
-    /// <item>Evaluates the nullability of <paramref name="variables"/> against the jump-table to determine segment visibility.</item>
-    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
-    /// <item>Bypasses string allocation and returns <see cref="QueryString"/> if the logic resolves to the full original template.</item>
-    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="variables">The state array containing logical indicators and data values.</param>
-    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
-    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    /// <inheritdoc/>
     public unsafe string Parse(object?[] variables) {
         Debug.Assert(variables.Length == RequiredVariablesLength);
         ref object? pVarBase = ref MemoryMarshal.GetArrayDataReference(variables);

@@ -22,7 +22,7 @@ public struct ParsingCacheToMake<T>(QueryCommand command, SchemaParser<T> cache,
             var schema = reader.GetColumns();
             var p = TypeParser<T>.GetParserFunc(ref schema, out var defaultBehavior);
             parser = p;
-            Command.UpdateCache(UsageMap, schema, new SchemaParser<T>(parser, defaultBehavior));
+            Command.UpdateParseCache(UsageMap, schema, new SchemaParser<T>(parser, defaultBehavior));
         }
         Command.UpdateCache(cmd);
     }

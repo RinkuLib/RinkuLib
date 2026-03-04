@@ -107,12 +107,8 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     public void UnUse(int conditionIndex)
         => Variables[conditionIndex] = null;
     /// <inheritdoc/>
-    public readonly bool Use(char charVariable, string variable, object? value) {
-        Span<char> span = stackalloc char[variable.Length + 1];
-        span[0] = charVariable;
-        variable.AsSpan().CopyTo(span[1..]);
-        return Use(QueryCommand.Mapper.GetIndex(span), value);
-    }
+    public readonly bool Use(char charVariable, string variable, object? value) 
+        => Use(QueryCommand.Mapper.GetIndex(charVariable, variable), value);
     /// <summary>
     /// Activates a variable and binds its data to the live <see cref="Command"/>.
     /// </summary>
