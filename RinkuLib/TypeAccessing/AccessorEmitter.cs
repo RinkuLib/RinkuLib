@@ -6,7 +6,7 @@ namespace RinkuLib.TypeAccessing;
 /// <summary>Handle the population of the emit switch case(s)</summary>
 public abstract class AccessorEmiterHandler : Attribute {
     /// <summary>Handle the population of the emit switch case(s)</summary>
-    public abstract void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo member, Mapper mapper);
+    public abstract void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo? member, Mapper mapper);
 }
 /// <summary>Generate the IL emit to get the usage at a specific index</summary>
 public interface IAccessorEmiter {
