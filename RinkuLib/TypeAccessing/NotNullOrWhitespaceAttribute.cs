@@ -13,7 +13,8 @@ namespace RinkuLib.TypeAccessing;
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class NotNullOrWhitespaceAttribute : AccessorEmiterHandler {
     /// <inheritdoc/>
-    public override void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo member, Mapper mapper) {
+    public override void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo? member, Mapper mapper) {
+        ArgumentNullException.ThrowIfNull(member);
         if (!(member is PropertyInfo p && p.PropertyType == typeof(string)
             || member is FieldInfo f && f.FieldType == typeof(string)))
             throw new Exception($"When using {typeof(NotNullOrWhitespaceAttribute)}, the type must be of type {typeof(string)}");

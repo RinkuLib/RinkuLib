@@ -160,16 +160,12 @@ public static class TypeAccessorCacher<T> {
         int switchCount = mapper.Count;
         IAccessorEmiter?[] usagePlans = new IAccessorEmiter?[switchCount];
         IAccessorEmiter?[] valuePlans = new IAccessorEmiter?[switchCount];
+        var typeHandlers = type.GetCustomAttributes<AccessorEmiterHandler>();
+        foreach (var handler in typeHandlers)
+            handler.HandleEmit(varChar, usagePlans, valuePlans, type, null, mapper);
 
-        MemberInfo[] allMembers = type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-        foreach (var member in allMembers) {
-            if (member is MethodBase m && m.IsSpecialName)
-                continue;
-            if (member is FieldInfo f && (f.IsSpecialName || f.Name[0] == '<'))
-                continue;
-            if (member is Type)
-                continue;
-
+        var members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+        foreach (var member in members) {
             var handler = member.GetCustomAttribute<AccessorEmiterHandler>();
             if (handler is not null) {
                 handler.HandleEmit(varChar, usagePlans, valuePlans, type, member, mapper);

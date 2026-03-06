@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using RinkuLib.Commands;
 using RinkuLib.DbParsing;
+using RinkuLib.DbRegister;
 using RinkuLib.Queries;
 using RinkuLib.Tests.TestContainers;
 using RinkuLib.Tools;
@@ -206,8 +207,73 @@ public class CompleteTests {
         Assert.NotNull(dObj4);
         Assert.Equal(2, dObj4.Count);
     }
+    [Fact]
+    public async Task ExecutingActions() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories");
+        using var cnn = GetDbCnn();
+        var cats = await query.QueryAllBufferedAsync<Category>(cnn, ct: TestContext.Current.CancellationToken);
+        await cats.ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        foreach (var c in cats) {
+            Assert.NotEmpty(c.Products);
+        }
+    }
+    [Fact]
+    public async Task ExecutingActions_Struct() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories");
+        using var cnn = GetDbCnn();
+        var cats = await query.QueryAllBufferedAsync<CategoryStruct>(cnn, ct: TestContext.Current.CancellationToken);
+        await cats.ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        foreach (var c in cats) {
+            Assert.NotEmpty(c.Products);
+        }
+    }
+    [Fact]
+    public async Task ExecutingActions_Struct_Prod_Struct() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories");
+        using var cnn = GetDbCnn();
+        var cats = await query.QueryAllBufferedAsync<CategoryStructS>(cnn, ct: TestContext.Current.CancellationToken);
+        await cats.ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        foreach (var c in cats) {
+            Assert.NotEmpty(c.Products);
+        }
+    }
+    [Fact]
+    public async Task ExecutingActions_One() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories");
+        using var cnn = GetDbCnn();
+        var c = await query.QueryOneAsync<Category>(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.NotNull(c);
+        await c.ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.NotEmpty(c.Products);
+    }
+    [Fact]
+    public async Task ExecutingActions_Struct_One() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories");
+        using var cnn = GetDbCnn();
+        var c = await query.QueryOneAsync<CategoryStruct>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.NotEmpty(c.Products);
+    }
+    [Fact]
+    public async Task ExecutingActions_Struct_Prod_Struct_One() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories");
+        using var cnn = GetDbCnn();
+        var c = await query.QueryOneAsync<CategoryStructS>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.NotEmpty(c.Products);
+    }
+    [Fact]
+    public async Task Using_Default_Nullable() {
+        var query = new QueryCommand("SELECT ID, Name FROM Users WHERE ID = @ID");
+        using var cnn = GetDbCnn();
+        var withNullable = query.QueryOne<WithDefNullable>(cnn, new { ID = 1 });
+        Assert.NotNull(withNullable);
+        Assert.Equal(1, withNullable.ID);
+        Assert.Equal("John", withNullable.Name);
+        Assert.Null(withNullable.notUsed);
+    }
 }
-public record struct  PersonParam(bool Active);
+public record struct PersonParam(bool Active);
 public record Person(int ID, [Alt("Name")]string Username, string? Email) : IDbReadable {
     public Person(int ID, [Alt("Name")]string Username) :this(ID, Username, null) { }
 }
@@ -217,3 +283,18 @@ public sealed class A1 {
 public sealed class A2 {
     public int OtherID;
 }
+public record class Category(int ID, [Alt("Label")]string Name) : IDbReadable {
+    [PopulateList("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID", true)]
+    public List<Product> Products = [];
+}
+public record class Product(int ID, string Name, Category? Category = null);
+public record struct CategoryStruct(int ID, [Alt("Label")] string Name) {
+    [PopulateList("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID", true)]
+    public List<Product> Products = [];
+}
+public record struct CategoryStructS(int ID, [Alt("Label")] string Name) {
+    [PopulateList("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID", true)]
+    public List<ProductStruct> Products = [];
+}
+public record struct ProductStruct(int ID, string Name, CategoryStructS? Category = null);
+public record class WithDefNullable(int ID, string Name, int? notUsed = null);

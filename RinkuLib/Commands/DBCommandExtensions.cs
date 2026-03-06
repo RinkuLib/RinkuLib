@@ -1,7 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
 using System.Globalization;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
@@ -83,7 +82,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public int Execute<T>(T cache, bool disposeCommand = true) where T : ICache {
+        public int Execute<T>(T cache, bool disposeCommand) where T : ICache {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -108,7 +107,7 @@ public static class DBCommandExtensions {
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async Task<int> ExecuteAsync<T>(T cache, bool disposeCommand = true, CancellationToken ct = default) where T : ICache {
+        public async Task<int> ExecuteAsync<T>(T cache, bool disposeCommand, CancellationToken ct = default) where T : ICache {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -132,7 +131,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public T ExecuteScalar<T, TCache>(TCache cache, bool disposeCommand = true) where TCache : ICache {
+        public T ExecuteScalar<T, TCache>(TCache cache, bool disposeCommand) where TCache : ICache {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -157,7 +156,7 @@ public static class DBCommandExtensions {
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async Task<T> ExecuteScalarAsync<T, TCache>(TCache cache, bool disposeCommand = true, CancellationToken ct = default) where TCache : ICache {
+        public async Task<T> ExecuteScalarAsync<T, TCache>(TCache cache, bool disposeCommand, CancellationToken ct = default) where TCache : ICache {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -278,7 +277,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public T? QueryOne<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        public T? QueryOne<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -308,7 +307,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public IEnumerable<T> QueryAll<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        public IEnumerable<T> QueryAll<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -346,7 +345,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public List<T> QueryAllBuffered<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        public List<T> QueryAllBuffered<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -388,7 +387,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async Task<T?> QueryOneAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+        public async Task<T?> QueryOneAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -419,7 +418,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async IAsyncEnumerable<T> QueryAllAsync<TParser, T>(TParser parser, bool disposeCommand = true, [EnumeratorCancellation] CancellationToken ct = default) where TParser : ISchemaParser<T> {
+        public async IAsyncEnumerable<T> QueryAllAsync<TParser, T>(TParser parser, bool disposeCommand, [EnumeratorCancellation] CancellationToken ct = default) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -458,7 +457,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async Task<List<T>> QueryAllBufferedAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+        public async Task<List<T>> QueryAllBufferedAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -499,7 +498,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async Task<T?> QueryOneParseAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+        public async Task<T?> QueryOneParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -538,7 +537,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async IAsyncEnumerable<T> QueryAllParseAsync<TParser, T>(TParser parser, bool disposeCommand = true, [EnumeratorCancellation] CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+        public async IAsyncEnumerable<T> QueryAllParseAsync<TParser, T>(TParser parser, bool disposeCommand, [EnumeratorCancellation] CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -577,7 +576,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async Task<List<T>> QueryAllBufferedParseAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+        public async Task<List<T>> QueryAllBufferedParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -628,7 +627,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public int Execute<T>(T cache, bool disposeCommand = true) where T : ICache {
+        public int Execute<T>(T cache, bool disposeCommand) where T : ICache {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -653,7 +652,7 @@ public static class DBCommandExtensions {
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<int> ExecuteAsync<T>(T cache, bool disposeCommand = true, CancellationToken ct = default) where T : ICache {
+        public Task<int> ExecuteAsync<T>(T cache, bool disposeCommand, CancellationToken ct = default) where T : ICache {
             if (cmd is DbCommand c)
                 return c.ExecuteAsync(cache, disposeCommand, ct);
             return Task.FromResult(cmd.Execute(cache, disposeCommand));
@@ -663,7 +662,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public T ExecuteScalar<T, TCache>(TCache cache, bool disposeCommand = true) where TCache : ICache {
+        public T ExecuteScalar<T, TCache>(TCache cache, bool disposeCommand) where TCache : ICache {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -688,7 +687,7 @@ public static class DBCommandExtensions {
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T> ExecuteScalarAsync<T, TCache>(TCache cache, bool disposeCommand = true, CancellationToken ct = default) where TCache : ICache {
+        public Task<T> ExecuteScalarAsync<T, TCache>(TCache cache, bool disposeCommand, CancellationToken ct = default) where TCache : ICache {
             if (cmd is DbCommand c)
                 return c.ExecuteScalarAsync<T, TCache>(cache, disposeCommand, ct);
             return Task.FromResult(cmd.ExecuteScalar<T, TCache>(cache, disposeCommand));
@@ -732,7 +731,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public T? QueryOne<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        public T? QueryOne<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             if (cmd is DbCommand c)
                 return c.QueryOne<TParser, T>(parser, disposeCommand);
             return cmd.QueryOneImpl<TParser, T>(parser, disposeCommand);
@@ -742,7 +741,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public IEnumerable<T> QueryAll<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        public IEnumerable<T> QueryAll<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             if (cmd is DbCommand c)
                 return c.QueryAll<TParser, T>(parser, disposeCommand);
             return cmd.QueryAllImpl<TParser, T>(parser, disposeCommand);
@@ -752,13 +751,13 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public List<T> QueryAllBuffered<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        public List<T> QueryAllBuffered<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             if (cmd is DbCommand c)
                 return c.QueryAllBuffered<TParser, T>(parser, disposeCommand);
             return cmd.QueryAllBufferedImpl<TParser, T>(parser, disposeCommand);
         }
 
-        private T? QueryOneImpl<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        private T? QueryOneImpl<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -784,7 +783,7 @@ public static class DBCommandExtensions {
                     cnn.Close();
             }
         }
-        private IEnumerable<T> QueryAllImpl<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        private IEnumerable<T> QueryAllImpl<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -818,7 +817,7 @@ public static class DBCommandExtensions {
                     cnn.Close();
             }
         }
-        private List<T> QueryAllBufferedImpl<TParser, T>(TParser parser, bool disposeCommand = true) where TParser : ISchemaParser<T> {
+        private List<T> QueryAllBufferedImpl<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -861,7 +860,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QueryOneAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+        public Task<T?> QueryOneAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
             if (cmd is DbCommand c)
                 return c.QueryOneAsync<TParser, T>(parser, disposeCommand, ct);
             return Task.FromResult(cmd.QueryOneImpl<TParser, T>(parser, disposeCommand));
@@ -872,7 +871,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryAllAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+        public IAsyncEnumerable<T> QueryAllAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
             if (cmd is DbCommand c)
                 return c.QueryAllAsync<TParser, T>(parser, disposeCommand, ct);
             return cmd.QueryAllImpl<TParser, T>(parser, disposeCommand).ToAsyncEnumerable();
@@ -883,7 +882,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<List<T>> QueryAllBufferedAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+        public Task<List<T>> QueryAllBufferedAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
             if (cmd is DbCommand c)
                 return c.QueryAllBufferedAsync<TParser, T>(parser, disposeCommand, ct);
             return Task.FromResult(cmd.QueryAllBufferedImpl<TParser, T>(parser, disposeCommand));
@@ -894,7 +893,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QueryOneParseAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+        public Task<T?> QueryOneParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
             if (cmd is DbCommand c)
                 return c.QueryOneParseAsync<TParser, T>(parser, disposeCommand, ct);
             return cmd.QueryOneParseAsyncImpl<TParser, T>(parser, disposeCommand);
@@ -905,7 +904,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryAllParseAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+        public IAsyncEnumerable<T> QueryAllParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
             if (cmd is DbCommand c)
                 return c.QueryAllParseAsync<TParser, T>(parser, disposeCommand, ct);
             return cmd.QueryAllParseAsyncImpl<TParser, T>(parser, disposeCommand, ct);
@@ -916,7 +915,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<List<T>> QueryAllBufferedParseAsync<TParser, T>(TParser parser, bool disposeCommand = true, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+        public Task<List<T>> QueryAllBufferedParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
             if (cmd is DbCommand c)
                 return c.QueryAllBufferedParseAsync<TParser, T>(parser, disposeCommand, ct);
             return cmd.QueryAllBufferedParseAsyncImpl<TParser, T>(parser, disposeCommand, ct);

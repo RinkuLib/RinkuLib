@@ -26,7 +26,8 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
         return MakeInfo(p);
     }
 
-    private static DbParamInfo MakeInfo(IDbDataParameter p) {
+    /// <inheritdoc/>
+    public static DbParamInfo MakeInfo(IDbDataParameter p) {
         var type = p.DbType;
         ref var arr = ref SizedDbParamCache.GetCacheArray(type);
         if (Unsafe.IsNullRef(ref arr))
