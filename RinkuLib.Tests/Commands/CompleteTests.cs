@@ -211,8 +211,8 @@ public class CompleteTests {
     public async Task ExecutingActions() {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
-        var cats = await query.QueryAllBufferedAsync<Category>(cnn, ct: TestContext.Current.CancellationToken);
-        await cats.ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var cats = await query.QueryAllBufferedAsync<Category>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ["Products"], ct: TestContext.Current.CancellationToken);
         foreach (var c in cats) {
             Assert.NotEmpty(c.Products);
         }
@@ -221,8 +221,8 @@ public class CompleteTests {
     public async Task ExecutingActions_Struct() {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
-        var cats = await query.QueryAllBufferedAsync<CategoryStruct>(cnn, ct: TestContext.Current.CancellationToken);
-        await cats.ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var cats = await query.QueryAllBufferedAsync<CategoryStruct>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ["Products"], ct: TestContext.Current.CancellationToken);
         foreach (var c in cats) {
             Assert.NotEmpty(c.Products);
         }
@@ -231,8 +231,8 @@ public class CompleteTests {
     public async Task ExecutingActions_Struct_Prod_Struct() {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
-        var cats = await query.QueryAllBufferedAsync<CategoryStructS>(cnn, ct: TestContext.Current.CancellationToken);
-        await cats.ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        var cats = await query.QueryAllBufferedAsync<CategoryStructS>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ["Products"], ct: TestContext.Current.CancellationToken);
         foreach (var c in cats) {
             Assert.NotEmpty(c.Products);
         }
@@ -241,9 +241,9 @@ public class CompleteTests {
     public async Task ExecutingActions_One() {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
-        var c = await query.QueryOneAsync<Category>(cnn, ct: TestContext.Current.CancellationToken);
+        var c = await query.QueryOneAsync<Category>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ["Products"], ct: TestContext.Current.CancellationToken);
         Assert.NotNull(c);
-        await c.ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
         Assert.NotEmpty(c.Products);
     }
     [Fact]
@@ -251,7 +251,7 @@ public class CompleteTests {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
         var c = await query.QueryOneAsync<CategoryStruct>(cnn, ct: TestContext.Current.CancellationToken)
-            .ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+            .ExecuteDBActionsAsync(cnn, ["Products"], ct: TestContext.Current.CancellationToken);
         Assert.NotEmpty(c.Products);
     }
     [Fact]
@@ -259,7 +259,7 @@ public class CompleteTests {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
         var c = await query.QueryOneAsync<CategoryStructS>(cnn, ct: TestContext.Current.CancellationToken)
-            .ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+            .ExecuteDBActionsAsync(cnn, ["Products"], ct: TestContext.Current.CancellationToken);
         Assert.NotEmpty(c.Products);
     }
     [Fact]
@@ -272,12 +272,12 @@ public class CompleteTests {
         Assert.Equal("John", withNullable.Name);
         Assert.Null(withNullable.NotUsed);
     }
-    //[Fact]
+    [Fact]
     public async Task ExecutingActions_Cascade_One() {
         var query = new QueryCommand("SELECT ID, Label FROM Categories WHERE ID = 1");
         using var cnn = GetDbCnn();
         var c = await query.QueryOneAsync<CategoryCascade>(cnn, ct: TestContext.Current.CancellationToken)
-            .ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+            .ExecuteDBActionsAsync(cnn, ["Products", "Products.OwnedBy"], ct: TestContext.Current.CancellationToken);
         Assert.NotNull(c);
         Assert.Equal(5, c.Products.Count);
         foreach (var prod in c.Products) {
@@ -298,27 +298,26 @@ public sealed class A2 {
     public int OtherID;
 }
 public record class Category(int ID, [Alt("Label")]string Name) : IDbReadable {
-    [PopulateList("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID", true)]
+    [PopulateList("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1}", "CategoryID")]
     public List<Product> Products = [];
 }
 public record class Product(int ID, string Name, Category? Category = null);
 public record struct CategoryStruct(int ID, [Alt("Label")] string Name) {
-    [PopulateList("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID", true)]
+    [PopulateList("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1}", "CategoryID")]
     public List<Product> Products = [];
 }
 public record struct CategoryStructS(int ID, [Alt("Label")] string Name) {
-    [PopulateList("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID", true)]
+    [PopulateList("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1}", "CategoryID")]
     public List<ProductStruct> Products = [];
 }
 public record struct ProductStruct(int ID, string Name, CategoryStructS? Category = null);
 public record class WithDefNullable(int ID, string Name, int? NotUsed = null);
 public record class CategoryCascade(int ID, [Alt("Label")] string Name) : IDbReadable {
-    [PopulateList("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID", true)]
-    [AddSubItemDefaultDbActions(true)]
+    [PopulateList("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1}", "CategoryID")]
     public List<ProductCascade> Products = [];
 }
 public record class ProductCascade(int ID, string Name, CategoryCascade? Category = null) {
-    [PopulateList("ID", "SELECT ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID = @ID", true)]
+    [PopulateList("ID", "SELECT {0}ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID {1}", "ProductID")]
     public List<UserCascade> OwnedBy = [];
 }
 public record UserCascade(int ID, [Alt("Name")] string Username, string? Email = null);

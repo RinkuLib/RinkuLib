@@ -1,4 +1,5 @@
-﻿using RinkuLib.Tools;
+﻿using System.Runtime.InteropServices;
+using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
 
@@ -46,30 +47,39 @@ public class BaseTypeInfo : TypeParsingInfo {
     }
 }
 
+/// <summary></summary>
+public readonly struct DBPair<TKey, TValue>(TKey Key, TValue Value) {
+    /// <summary></summary>
+    public readonly TKey Key = Key;
+    /// <summary></summary>
+    public readonly TValue Value = Value;
+}
 /// <summary>Handling for tuple that force usage of ite argument types</summary>
-public class NotNullTypeInfo : TypeParsingInfo {
-    internal static readonly ParamInfo TransientParamInfo = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
+public class WrapperTypeInfo<TWrapper> : TypeParsingInfo {
+    private readonly static Type GenericDefinition = typeof(TWrapper).GetGenericTypeDefinition();
     /// <summary>Singleton</summary>
-    public static readonly NotNullTypeInfo Instance = new();
-    private NotNullTypeInfo() { }
+    public static readonly WrapperTypeInfo<TWrapper> Instance = new();
+    private WrapperTypeInfo() {}
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type TargetType) {
-        if (!TargetType.IsGenericType || TargetType.GetGenericTypeDefinition() != typeof(NotNull<>))
-            throw new InvalidOperationException($"Only supports the NotNull<> types");
+        if (!TargetType.IsGenericType || TargetType.GetGenericTypeDefinition() != GenericDefinition)
+            throw new InvalidOperationException($"Only supports the {GenericDefinition} types");
     }
     /// <inheritdoc/>
     public override DbItemParser? TryGetParser(Type parentType, Type currentClosedType, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
-        if (!currentClosedType.IsGenericType)
+        if (!currentClosedType.IsGenericType || currentClosedType.GetGenericTypeDefinition() != GenericDefinition)
             return null;
         var args = currentClosedType.GetGenericArguments();
-        if (args.Length != 1)
-            return null;
-        var type = args[0];
-        var r = ForceGet(type).TryGetParser(currentClosedType, type, TransientParamInfo, columns, colModifier, ref colUsage);
-        if (r is null)
-            return null;
+        var readers = new List<DbItemParser>(args.Length);
+        for (int i = 0; i < args.Length; i++) {
+            var type = args[i];
+            var r = ForceGet(type).TryGetParser(currentClosedType, type, NotNullTransientParamInfo, columns, colModifier, ref colUsage);
+            if (r is null)
+                return null;
+            readers.Add(r);
+        }
         var method = currentClosedType.GetConstructor(args) ?? throw new Exception($"unable to load the ctor for {currentClosedType}");
-        return new CustomClassParser(parentType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, [r]);
+        return new CustomClassParser(parentType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers);
     }
 }
 /// <summary>Handling for tuple that force usage of ite argument types</summary>

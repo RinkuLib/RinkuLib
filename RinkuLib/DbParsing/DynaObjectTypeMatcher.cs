@@ -3,7 +3,6 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
 internal class DynaObjectTypeInfo : TypeParsingInfo {
-    internal static readonly ParamInfo TransientParamInfo = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     public static readonly DynaObjectTypeInfo Instance = new();
     private DynaObjectTypeInfo() { }
     /// <inheritdoc/>
@@ -20,7 +19,7 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
             var type = col.Type;
             if (type.IsValueType && col.IsNullable && Nullable.GetUnderlyingType(type) is null)
                 type = typeof(Nullable<>).MakeGenericType(type);
-            var r = ForceGet(type).TryGetParser(currentClosedType, type, TransientParamInfo, columns, colModifier, ref colUsage);
+            var r = ForceGet(type).TryGetParser(currentClosedType, type, NullableTransientParamInfo, columns, colModifier, ref colUsage);
             if (r is null)
                 return null;
             arguments[i] = type;

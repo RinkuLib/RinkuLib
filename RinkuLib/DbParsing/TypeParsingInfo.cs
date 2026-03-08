@@ -22,6 +22,8 @@ namespace RinkuLib.DbParsing;
 /// 
 /// </remarks>
 public abstract class TypeParsingInfo {
+    internal static readonly ParamInfo NullableTransientParamInfo = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
+    internal static readonly ParamInfo NotNullTransientParamInfo = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
     /// <summary>Identify if the instance can actualy handle the <see cref="Type"/> of <paramref name="TargetType"/></summary>
     public abstract void ValidateCanUseType(Type TargetType);
     static TypeParsingInfo() {
@@ -34,7 +36,8 @@ public abstract class TypeParsingInfo {
         AddOrSet(typeof(ValueTuple<,,,,,,>), TupleTypeinfo.Instance);
         AddOrSet(typeof(ValueTuple<,,,,,,,>), TupleTypeinfo.Instance);
         AddOrSet<DynaObject>(DynaObjectTypeInfo.Instance);
-        AddOrSet(typeof(NotNull<>), NotNullTypeInfo.Instance);
+        AddOrSet(typeof(NotNull<>), WrapperTypeInfo<NotNull<bool>>.Instance);
+        AddOrSet(typeof(DBPair<,>), WrapperTypeInfo<DBPair<bool, bool>>.Instance);
     }
     /// <summary>
     /// Global cache of type metadata. Access is managed through static methods 
