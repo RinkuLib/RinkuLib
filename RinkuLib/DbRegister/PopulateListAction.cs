@@ -1,96 +1,20 @@
 ﻿using System.Data;
 using System.Data.Common;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Commands;
-using RinkuLib.DbParsing;
 using RinkuLib.Queries;
-using RinkuLib.Tools;
 
 namespace RinkuLib.DbRegister;
-/// <summary></summary>
-public static class Populator {
-    /// <summary>Correspond to the parameter name that will be used to bind to</summary>
-    public const string BindParamName = "@ID";
-    /// <summary>A simple array that holds @ID00 through @ID99</summary>
-    public static readonly string[] BindParamNames = [.. Enumerable.Range(0, 100).Select(i => $"{BindParamName}{i:00}")];
-    /// <summary>Build the string placing the " IN (@ID00 ... @IDCount)"</summary>
-    public static string BuildInClause(string template, int tIdx, int count) {
-        // Math: template.Length - 3 (for {0}) + 5 (for " IN (") + (count * 6 (for "@IDxx,")) - 1 (for ",") + 1 (for ")")
-        int totalLength = template.Length + 2 + (count * 6);
-
-        return string.Create(totalLength, (template, tIdx, count), (span, state) => {
-            var (tpl, idx, c) = state;
-            tpl.AsSpan(0, idx).CopyTo(span);
-            int pos = idx;
-            " IN (".AsSpan().CopyTo(span[pos..]);
-            pos += 5;
-            for (int i = 0; i < c; i++) {
-                BindParamNames[i].AsSpan().CopyTo(span[pos..]);
-                pos += 5;
-                span[pos++] = ',';
-            }
-            span[pos - 1] = ')';
-            tpl.AsSpan(idx + 3).CopyTo(span[pos..]);
-        });
-    }
-}
-/// <summary>
-/// The default implementation without a cache nor an allready set function
-/// </summary>
-internal struct CacheOneItem<T>(WithParser<T> p) : ISchemaParser<T> {
-    private readonly WithParser<T> p = p;
-    private Func<DbDataReader, T> parser = null!;
-    /// <inheritdoc/>
-    public readonly CommandBehavior Behavior => default;
-    /// <inheritdoc/>
-    public readonly bool IsInit => false;
-    /// <inheritdoc/>
-    public void Init(DbDataReader reader, IDbCommand cmd) {
-        var schema = reader.GetColumnsFast();
-        parser = p.Parser = TypeParser<T>.GetParserFunc(ref schema, out var b);
-        p.Behavior = b;
-        var makers = CollectionsMarshal.AsSpan(IDbParamInfoGetter.ParamGetterMakers);
-        for (int i = 0; i < makers.Length; i++) {
-            if (!makers[i](cmd, out var getter))
-                continue;
-            foreach (var item in getter.EnumerateParameters()) {
-                if (item.Key == Populator.BindParamName)
-                    continue;
-                p.ParamInfo = getter.MakeInfoAt(item.Value);
-            }
-            return;
-        }
-        var parameters = cmd.Parameters;
-        var count = parameters.Count;
-        for (int i = 0; i < count; i++) {
-            if (parameters[i] is not IDbDataParameter pa || pa.ParameterName == Populator.BindParamName)
-                continue;
-            p.ParamInfo = DefaultParamCache.MakeInfo(pa);
-            break;
-        }
-    }
-    /// <inheritdoc/>
-    public readonly T Parse(DbDataReader reader) => parser(reader);
-}
-internal interface WithParser<T> {
-    /// <inheritdoc/>
-    public Func<DbDataReader, T>? Parser { set; }
-    /// <inheritdoc/>
-    public CommandBehavior Behavior { set; }
-    /// <inheritdoc/>
-    public DbParamInfo ParamInfo { set; }
-}
 /// <inheritdoc/>
-public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>, IDbAction<TObj> where TObj : class {
+public class PopulateListInClassAction<TObj, TItem, TParam> : IWithParserAndParam<TItem>, IDbAction<TObj> where TObj : class {
     private readonly Getter<TObj, TParam> Getter;
     private readonly Setter<TObj, List<TItem>> Setter;
     private readonly string Query;
     /// <inheritdoc/>
     public PopulateListInClassAction(string Query, Getter<TObj, TParam> Getter, Setter<TObj, List<TItem>> Setter) {
-        if (!Query.Contains(Populator.BindParamName))
-            throw new ArgumentException($"The {nameof(Query)} string must contains a variable named {Populator.BindParamName}");
+        if (!Query.Contains(ActionNameCache.BindParamName))
+            throw new ArgumentException($"The {nameof(Query)} string must contains a variable named {ActionNameCache.BindParamName}");
         this.Getter = Getter;
         this.Setter = Setter;
         this.Query = Query;
@@ -106,7 +30,7 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
         var param = Getter(instance) ?? throw new Exception($"The \"ID\" value was null");
-        ParamInfo.Use(Populator.BindParamName, cmd, param);
+        ParamInfo.Use(ActionNameCache.BindParamName, cmd, param);
         var items = Parser is null
             ? cmd.QueryAllBuffered<CacheOneItem<TItem>, TItem>(new(this), false)
             : cmd.QueryAllBuffered<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false);
@@ -117,7 +41,7 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
         var param = Getter(instance) ?? throw new Exception($"The \"ID\" value was null");
-        ParamInfo.Use(Populator.BindParamName, cmd, param);
+        ParamInfo.Use(ActionNameCache.BindParamName, cmd, param);
         var items = Parser is null
             ? cmd.QueryAllBuffered<CacheOneItem<TItem>, TItem>(new(this), false)
             : cmd.QueryAllBuffered<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false);
@@ -128,7 +52,7 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
         var param = Getter(instance) ?? throw new Exception($"The \"ID\" value was null");
-        ParamInfo.Use(Populator.BindParamName, cmd, param);
+        ParamInfo.Use(ActionNameCache.BindParamName, cmd, param);
         var items = await (Parser is null
             ? cmd.QueryAllBufferedAsync<CacheOneItem<TItem>, TItem>(new(this), false, ct)
             : cmd.QueryAllBufferedAsync<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false, ct)).ConfigureAwait(false);
@@ -139,7 +63,7 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
         var param = Getter(instance) ?? throw new Exception($"The \"ID\" value was null");
-        ParamInfo.Use(Populator.BindParamName, cmd, param);
+        ParamInfo.Use(ActionNameCache.BindParamName, cmd, param);
         var items = await (Parser is null
             ? cmd.QueryAllBufferedAsync<CacheOneItem<TItem>, TItem>(new(this), false, ct)
             : cmd.QueryAllBufferedAsync<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false, ct)).ConfigureAwait(false);
@@ -154,7 +78,7 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
         object? param = Getter(instance) ?? throw new Exception($"The \"ID\" value was null");
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
-        ParamInfo.SaveUse(Populator.BindParamName, cmd, ref param);
+        ParamInfo.SaveUse(ActionNameCache.BindParamName, cmd, ref param);
         var items = Parser is null
             ? cmd.QueryAllBuffered<CacheOneItem<TItem>, TItem>(new(this), false)
             : cmd.QueryAllBuffered<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false);
@@ -176,7 +100,7 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
         object? param = Getter(instance) ?? throw new Exception($"The \"ID\" value was null");
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
-        ParamInfo.SaveUse(Populator.BindParamName, cmd, ref param);
+        ParamInfo.SaveUse(ActionNameCache.BindParamName, cmd, ref param);
         var items = Parser is null
             ? cmd.QueryAllBuffered<CacheOneItem<TItem>, TItem>(new(this), false)
             : cmd.QueryAllBuffered<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false);
@@ -197,7 +121,7 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
         object? param = Getter(instance) ?? throw new Exception($"The \"ID\" value was null");
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
-        ParamInfo.SaveUse(Populator.BindParamName, cmd, ref param);
+        ParamInfo.SaveUse(ActionNameCache.BindParamName, cmd, ref param);
         var items = await (Parser is null
             ? cmd.QueryAllBufferedAsync<CacheOneItem<TItem>, TItem>(new(this), false, ct)
             : cmd.QueryAllBufferedAsync<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false, ct)).ConfigureAwait(false);
@@ -218,7 +142,7 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
         object? param = Getter(instance) ?? throw new Exception($"The \"ID\" value was null");
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
-        ParamInfo.SaveUse(Populator.BindParamName, cmd, ref param);
+        ParamInfo.SaveUse(ActionNameCache.BindParamName, cmd, ref param);
         var items = await (Parser is null
             ? cmd.QueryAllBufferedAsync<CacheOneItem<TItem>, TItem>(new(this), false, ct)
             : cmd.QueryAllBufferedAsync<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false, ct)).ConfigureAwait(false);
@@ -233,14 +157,14 @@ public class PopulateListInClassAction<TObj, TItem, TParam> : WithParser<TItem>,
     }
 }
 /// <inheritdoc/>
-public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>, IDbAction<TObj> where TObj : struct {
+public class PopulateListInStructAction<TObj, TItem, TParam> : IWithParserAndParam<TItem>, IDbAction<TObj> where TObj : struct {
     private readonly StructGetter<TObj, TParam> Getter;
     private readonly StructSetter<TObj, List<TItem>> Setter;
     private readonly string Query;
     /// <inheritdoc/>
     public PopulateListInStructAction(string Query, StructGetter<TObj, TParam> Getter, StructSetter<TObj, List<TItem>> Setter) {
-        if (!Query.Contains(Populator.BindParamName))
-            throw new ArgumentException($"The {nameof(Query)} string must contains a variable named {Populator.BindParamName}");
+        if (!Query.Contains(ActionNameCache.BindParamName))
+            throw new ArgumentException($"The {nameof(Query)} string must contains a variable named {ActionNameCache.BindParamName}");
         this.Getter = Getter;
         this.Setter = Setter;
         this.Query = Query;
@@ -256,7 +180,7 @@ public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
         var param = Getter(ref instance) ?? throw new Exception($"The \"ID\" value was null");
-        ParamInfo.Use(Populator.BindParamName, cmd, param);
+        ParamInfo.Use(ActionNameCache.BindParamName, cmd, param);
         var items = Parser is null
             ? cmd.QueryAllBuffered<CacheOneItem<TItem>, TItem>(new(this), false)
             : cmd.QueryAllBuffered<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false);
@@ -267,7 +191,7 @@ public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
         var param = Getter(ref instance) ?? throw new Exception($"The \"ID\" value was null");
-        ParamInfo.Use(Populator.BindParamName, cmd, param);
+        ParamInfo.Use(ActionNameCache.BindParamName, cmd, param);
         var items = Parser is null
             ? cmd.QueryAllBuffered<CacheOneItem<TItem>, TItem>(new(this), false)
             : cmd.QueryAllBuffered<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false);
@@ -278,7 +202,7 @@ public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
         var param = Getter(ref instance) ?? throw new Exception($"The \"ID\" value was null");
-        ParamInfo.Use(Populator.BindParamName, cmd, param);
+        ParamInfo.Use(ActionNameCache.BindParamName, cmd, param);
         var items = await (Parser is null
             ? cmd.QueryAllBufferedAsync<CacheOneItem<TItem>, TItem>(new(this), false, ct)
             : cmd.QueryAllBufferedAsync<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false, ct)).ConfigureAwait(false);
@@ -289,7 +213,7 @@ public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
         var param = Getter(ref instance) ?? throw new Exception($"The \"ID\" value was null");
-        ParamInfo.Use(Populator.BindParamName, cmd, param);
+        ParamInfo.Use(ActionNameCache.BindParamName, cmd, param);
         var items = await (Parser is null
             ? cmd.QueryAllBufferedAsync<CacheOneItem<TItem>, TItem>(new(this), false, ct)
             : cmd.QueryAllBufferedAsync<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false, ct)).ConfigureAwait(false);
@@ -304,7 +228,7 @@ public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>
         object? param = Getter(ref instance) ?? throw new Exception($"The \"ID\" value was null");
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
-        ParamInfo.SaveUse(Populator.BindParamName, cmd, ref param);
+        ParamInfo.SaveUse(ActionNameCache.BindParamName, cmd, ref param);
         var items = Parser is null
             ? cmd.QueryAllBuffered<CacheOneItem<TItem>, TItem>(new(this), false)
             : cmd.QueryAllBuffered<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false);
@@ -326,7 +250,7 @@ public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>
         object? param = Getter(ref instance) ?? throw new Exception($"The \"ID\" value was null");
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
-        ParamInfo.SaveUse(Populator.BindParamName, cmd, ref param);
+        ParamInfo.SaveUse(ActionNameCache.BindParamName, cmd, ref param);
         var items = Parser is null
             ? cmd.QueryAllBuffered<CacheOneItem<TItem>, TItem>(new(this), false)
             : cmd.QueryAllBuffered<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false);
@@ -347,7 +271,7 @@ public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>
             ?? throw new Exception("The \"ID\" value was null");
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
-        ParamInfo.SaveUse(Populator.BindParamName, cmd, ref param);
+        ParamInfo.SaveUse(ActionNameCache.BindParamName, cmd, ref param);
         var items = await (Parser is null
             ? cmd.QueryAllBufferedAsync<CacheOneItem<TItem>, TItem>(new(this), false, ct)
             : cmd.QueryAllBufferedAsync<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false, ct)).ConfigureAwait(false);
@@ -368,7 +292,7 @@ public class PopulateListInStructAction<TObj, TItem, TParam> : WithParser<TItem>
             ?? throw new Exception("The \"ID\" value was null");
         using var cmd = cnn.GetCommand(transaction, timeout);
         cmd.CommandText = Query;
-        ParamInfo.SaveUse(Populator.BindParamName, cmd, ref param);
+        ParamInfo.SaveUse(ActionNameCache.BindParamName, cmd, ref param);
         var items = await (Parser is null
             ? cmd.QueryAllBufferedAsync<CacheOneItem<TItem>, TItem>(new(this), false, ct)
             : cmd.QueryAllBufferedAsync<SchemaParser<TItem>, TItem>(new(Parser, Behavior), false, ct)).ConfigureAwait(false);
@@ -417,7 +341,7 @@ public static class PopulateListActionFactory {
         return Activator.CreateInstance(actionType, query, getter, setter)!;
     }
 
-    private static Type GetListTypeFromMethod(MethodInfo m, Type tObj) {
+    internal static Type GetListTypeFromMethod(MethodInfo m, Type tObj) {
         ParameterInfo[] pars = m.GetParameters();
         if (m.IsStatic) {
             Type expectedFirstParam = tObj.IsValueType ? tObj.MakeByRefType() : tObj;

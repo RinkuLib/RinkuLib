@@ -24,6 +24,7 @@ public readonly struct DbParsingInfo<T>(DynamicMethod dm, ColumnInfo[] cols, Com
 }
 /// <summary>A simple struct used track the usage of the columns</summary>
 public ref struct ColumnUsage(Span<bool> Span) {
+    
     private readonly Span<bool> Span = Span;
     /// <summary>The index of the last column that was used</summary>
     public int LastIndexUsed { get; private set; } = -1;
@@ -104,7 +105,7 @@ public static class TypeParser<T> {
     /// <param name="defaultBehavior">Outputs the optimized behavior (e.g., SequentialAccess).</param>
     /// <param name="nullColHandler">Specified nullability handling</param>
     public static Func<DbDataReader, T> GetParserFunc(ref ColumnInfo[] cols, out CommandBehavior defaultBehavior, INullColHandler? nullColHandler = null) {
-        lock (TypeParsingInfo.WriteLock) {
+        lock (DefaultTypeParsingInfo.WriteLock) {
             for (int i = 0; i < ReadingInfos.Count; i++) {
                 if (cols.EquivalentTo(ReadingInfos[i].Schema)) {
                     var rdInfo = ReadingInfos[i];
@@ -122,6 +123,8 @@ public static class TypeParser<T> {
     }
     private static readonly Type[] TReaderArg = [typeof(object), typeof(DbDataReader)];
     internal static readonly Module Module = typeof(DbDataReader).Module;
+    internal static readonly ParamInfo InfoNullable = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
+    internal static readonly ParamInfo InfoNotNullable = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
     /// <summary>
     /// The compilation core. Orchestrates the transition from metadata to IL.
     /// </summary>
@@ -138,10 +141,11 @@ public static class TypeParser<T> {
         var t = Nullable.GetUnderlyingType(typeof(T));
         bool isNullable = t is not null;
         var closedType = t ?? typeof(T);
-        nullColHandler ??= isNullable || !typeof(T).IsValueType ? NullableTypeHandle.Instance : NotNullHandle.Instance;
+        var paramInfo = isNullable || !typeof(T).IsValueType ? InfoNullable : InfoNotNullable;
+        if (nullColHandler is not null)
+            paramInfo = new(ParamInfo.NoType, nullColHandler, NoNameComparer.Instance);
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
-        var rd = TypeParsingInfo.ForceGet(closedType)
-            .TryGetParser(typeof(Root), closedType.IsGenericType ? closedType.GetGenericArguments() : [], "root", nullColHandler, cols, new(), isNullable, ref colUsage);
+        var rd = TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(Root), typeof(T), paramInfo, cols, new(), ref colUsage);
         if (rd is null) {
             parser = default;
             return false;

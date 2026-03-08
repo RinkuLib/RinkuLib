@@ -1,11 +1,9 @@
-﻿using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
 /// <summary>
-/// The default implementation of <see cref="IDbTypeParserMatcher"/>. 
 /// Handles the standard negotiation flow for constructor parameters, properties, and fields.
 /// </summary>
 /// <remarks>
@@ -20,7 +18,10 @@ namespace RinkuLib.DbParsing;
 /// using <see cref="Interlocked"/> operations, allowing for dynamic updates to naming 
 /// and null-handling rules during the registration phase.
 /// </remarks>
-public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, bool CanLookAnywhere, bool CanReuseCol) : IDbTypeParserMatcher {
+public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer NameComparer) {
+    /// <summary>A default type to use for singleton, should only be used in transient ParamInfos</summary>
+    public static readonly Type NoType = typeof(NoTypeType);
+    private static class NoTypeType;
     /// <summary>
     /// The current strategy for handling database NULL values.
     /// </summary>
@@ -29,16 +30,6 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// The logic used to match column names against this member's identifiers.
     /// </summary>
     public INameComparer NameComparer { get => field; set => Interlocked.Exchange(ref field, value); } = NameComparer;
-    /// <inheritdoc/>
-    public bool CanReuseCol {
-        get => Volatile.Read(ref field);
-        set => Volatile.Write(ref field, value);
-    } = CanReuseCol;
-    /// <inheritdoc/>
-    public bool CanLookAnywhere {
-        get => Volatile.Read(ref field);
-        set => Volatile.Write(ref field, value);
-    } = CanLookAnywhere;
     /// <summary>
     /// The C# type of the parameter or member. (Can be generic)
     /// </summary>
@@ -47,9 +38,13 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// Updates the <see cref="NullColHandler"/> to handle a recovery jump if a null is encountered.
     /// </summary>
     public void SetInvalidOnNull(bool invalidOnNull) => NullColHandler = NullColHandler.SetInvalidOnNull(Type, invalidOnNull);
-    Type IDbTypeParserMatcher.TargetType => Type;
-
-
+    /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
+    public virtual void UpdateColModifier(ref ColModifier mod) { }
+    /// <summary>
+    /// Provide a way to retrieve a <see cref="DbItemParser"/> when the normal way fails
+    /// </summary>
+    /// <returns></returns>
+    public virtual DbItemParser? FallbackTryGetParser(Type type) => null;
     /// <summary>
     /// Adds an alternative name to the existing <see cref="NameComparer"/>.
     /// </summary>
@@ -60,79 +55,15 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// </summary>
     public string GetName() => NameComparer.GetDefaultName();
     /// <summary>
-    /// The default logic for resolving a member into an emission node.
-    /// </summary>
-    /// <remarks>
-    /// <b>The Default Flow:</b>
-    /// <list type="number">
-    /// <item><b>Normalization:</b> Unwraps <see cref="Nullable{T}"/> and resolves generic 
-    /// placeholders (e.g., <c>T</c> to <c>int</c>) using <paramref name="declaringTypeArguments"/>.</item>
-    /// <item><b>Recursive Registry Lookup:</b> Checks if the resolved type exists in the 
-    /// <see cref="TypeParsingInfo"/> registry. If found, it delegates to that type's 
-    /// <c>TryGetParser</c> to handle nested object construction.</item>
-    /// <item><b>Basic Column Mapping:</b> If the type is not registered, the engine searches 
-    /// <paramref name="columns"/> for a direct match. A match is confirmed if:
-    /// <list type="bullet">
-    /// <item>The column type has a converter (<see cref="ITypeConverter.TryGetConverter"/>).</item>
-    /// <item>The column name satisfies the <see cref="NameComparer"/> (accounting for active <see cref="ColModifier"/>).</item>
-    /// </list>
-    /// </item>
-    /// </list>
-    /// </remarks>
-    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
-        var t = Nullable.GetUnderlyingType(Type);
-        var isNullableStruct = t is not null;
-        var closedType = (t ?? Type).CloseType(declaringTypeArguments);
-        var defaultProvider = NullColHandler as MayProvideDefaultValue;
-        var actualNull = defaultProvider?.NullColHandler ?? NullColHandler;
-        if (TypeParsingInfo.TryGetInfo(closedType, out var typeInfo) && typeInfo.Matcher != BaseTypeMatcher.Instance) {
-            var node = typeInfo.TryGetParser(parentType, closedType.IsGenericType ? closedType.GetGenericArguments() : [], NameComparer.GetDefaultName(), actualNull, columns, colModifier.Add(NameComparer), isNullableStruct, ref colUsage);
-            if (node is not null)
-                return node;
-            if (isNullableStruct)
-                closedType = typeof(Nullable<>).MakeGenericType(closedType);
-            return defaultProvider?.TryGetItemParser(closedType);
-        }
-        if (isNullableStruct)
-            closedType = typeof(Nullable<>).MakeGenericType(closedType);
-        int i = 0;
-        ITypeConverter? converter = null;
-        if (CanLookAnywhere) {
-            for (; i < columns.Length; i++) {
-                if (!CanReuseCol && colUsage.IsUsed(i))
-                    continue;
-                var column = columns[i];
-                if (colModifier.Match(column.Name, NameComparer) && ITypeConverter.TryGetConverter(column.Type, closedType, out converter))
-                    break;
-            }
-        }
-        else {
-            i = colUsage.LastIndexUsed + 1;
-            if (i < columns.Length) {
-                if (!CanReuseCol && colUsage.IsUsed(i))
-                    i = columns.Length;
-                else {
-                    var column = columns[i];
-                    if (!colModifier.Match(column.Name, NameComparer) || !ITypeConverter.TryGetConverter(column.Type, closedType, out converter))
-                        i = columns.Length;
-                }
-            }
-        }
-        if (i >= columns.Length || converter is null)
-            return defaultProvider?.TryGetItemParser(closedType);
-        colUsage.Use(i);
-        return new BasicParser(parentType, converter, NameComparer.GetDefaultName(), actualNull, i);
-    }
-    /// <summary>
     /// Creates a matcher for a constructor or method parameter if the type is usable.
     /// </summary>
-    public static IDbTypeParserMatcher? TryNew(ParameterInfo p)
+    public static ParamInfo? TryNew(ParameterInfo p)
         => !TypeParsingInfo.IsUsableType(p.ParameterType) ? null :
             Create(p.ParameterType, p.Name, p.GetCustomAttributes(true), p);
     /// <summary>
     /// Creates a matcher for a class property if the type is usable.
     /// </summary>
-    public static IDbTypeParserMatcher? TryNew(PropertyInfo p) {
+    public static ParamInfo? TryNew(PropertyInfo p) {
         if (!TypeParsingInfo.IsUsableType(p.PropertyType))
             return null;
 
@@ -156,7 +87,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>
     /// Creates a matcher for a class field if the type is usable.
     /// </summary>
-    public static IDbTypeParserMatcher? TryNew(FieldInfo f)
+    public static ParamInfo? TryNew(FieldInfo f)
         => !TypeParsingInfo.IsUsableType(f.FieldType) ? null :
             Create(f.FieldType, f.Name, f.GetCustomAttributes(true), f);
     /// <summary>
@@ -165,28 +96,23 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <remarks>
     /// <b>Attribute Hierarchy:</b>
     /// <list type="bullet">
-    /// <item>If any attribute implements <see cref="IDbReadingMatcherMaker"/>, it takes control and creates the matcher.</item>
+    /// <item>If any attribute implements <see cref="IParamInfoMaker"/>, it takes control and creates the matcher.</item>
     /// <item><see cref="AltAttribute"/> instances are collected to build optimized <see cref="INameComparer"/> versions.</item>
     /// <item>Null-handling is determined by <see cref="NotNullAttribute"/>, <see cref="InvalidOnNullAttribute"/>, or custom <see cref="INullColHandlerMaker"/>.</item>
     /// </list>
     /// </remarks>
-    public static IDbTypeParserMatcher Create(Type type, string? name, object[] attributes, object? param = null) {
+    public static ParamInfo Create(Type type, string? name, object[] attributes, object? param = null) {
         int altCount = 0;
         INullColHandler? nullColHandler = null;
         bool isInvalidOnNull = false;
-        bool canReuseCol = false;
-        bool canLookAnywhere = true;
-        bool isTypeDefault = false;
-        if (param is ParameterInfo pp) {
-            isTypeDefault = IsTypeDefault(pp);
-            canLookAnywhere = pp.Position == 0;
-        }
+        IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
+        UsageFlags usageFlags = default;
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
             if (attr is AltAttribute)
                 altCount++;
-            if (attr is IDbReadingMatcherMaker mm)
-                return mm.MakeMatcher(type, name, attributes, param);
+            if (attr is IParamInfoMaker mm)
+                maker = mm;
             if (attr is INullColHandler nch)
                 nullColHandler = nch;
             if (attr is InvalidOnNullAttribute)
@@ -195,17 +121,11 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 nullColHandler = nchm.MakeColHandler(type, name, attributes, param);
             if (attr is NotNullAttribute)
                 nullColHandler = NotNullHandle.Instance;
-            if (attr is CanLookAnywhereAttribute)
-                canLookAnywhere = true;
-            if (attr is CanNotLookAnywhereAttribute)
-                canLookAnywhere = false;
-            if (attr is MayReuseColAttribute)
-                canReuseCol = true;
+            if (attr is IUsageFlagModifier ufm)
+                ufm.UpdateFlags(param, ref usageFlags);
         }
         nullColHandler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
         nullColHandler = nullColHandler.SetInvalidOnNull(type, isInvalidOnNull);
-        if (isTypeDefault)
-            nullColHandler = new DefaultValueProvider(nullColHandler);
         string[] altNames = [];
         if (altCount > 0) {
             altNames = new string[altCount];
@@ -227,58 +147,30 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
             comparer = new NameComparerTwo(name, altNames[0]);
         else
             comparer = new NameComparerMany(name, altNames);
-        return new ParamInfo(type, nullColHandler, comparer, canLookAnywhere, canReuseCol);
+        return maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
     }
-    private static bool IsTypeDefault(ParameterInfo p) {
-        if (!p.HasDefaultValue)
-            return false;
-
-        object? value = p.DefaultValue;
-        Type type = p.ParameterType;
-
-        if (value == null || value == DBNull.Value)
-            return true;
-
-        Type actualType = type.IsEnum ? Enum.GetUnderlyingType(type) : type;
-
-        try {
-            switch (Type.GetTypeCode(actualType)) {
-                case TypeCode.Boolean:
-                    return value is bool b && !b;
-                case TypeCode.Char:
-                    return value is char c && c == '\0';
-                case TypeCode.SByte:
-                case TypeCode.Byte:
-                case TypeCode.Int16:
-                case TypeCode.UInt16:
-                case TypeCode.Int32:
-                case TypeCode.UInt32:
-                case TypeCode.Int64:
-                case TypeCode.UInt64:
-                    return Convert.ToInt64(value) == 0;
-                case TypeCode.Single:
-                case TypeCode.Double:
-                    return Convert.ToDouble(value) == 0.0;
-                case TypeCode.Decimal:
-                    return Convert.ToDecimal(value) == 0m;
-                case TypeCode.DateTime:
-                    return value is DateTime dt && dt == default;
-
-                case TypeCode.Object:
-                    if (actualType == typeof(Guid))
-                        return value is Guid g && g == Guid.Empty;
-                    if (actualType == typeof(TimeSpan))
-                        return value is TimeSpan ts && ts == TimeSpan.Zero;
-                    if (actualType == typeof(DateTimeOffset))
-                        return value is DateTimeOffset dto && dto == default;
-                    return value.Equals(Activator.CreateInstance(actualType));
-
-                default:
-                    return false;
-            }
+}
+internal class DefaultParamInfoMaker : IParamInfoMaker {
+    public static readonly DefaultParamInfoMaker Instance = new();
+    private DefaultParamInfoMaker() { }
+    public ParamInfo MakeMatcher(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, string? name, object[] attributes, UsageFlags usageFlags, object? param) {
+        var fallback = param is ParameterInfo pp && pp.IsTypeDefault() ? DefaultValueFallback.Instance : IFallbackParserGetter.Nothing;
+        if (usageFlags != default || fallback != IFallbackParserGetter.Nothing) {
+            var colModifier = IColModifier.Nothing;
+            if (usageFlags.HasFlag(UsageFlags.CanReuse)) {
+                if (usageFlags.HasFlag(UsageFlags.RemoveSequentialRead))
+                    colModifier = FlagUpdater.CanReuseAndRemoveSequential;
+                else if (usageFlags.HasFlag(UsageFlags.SequentialRead))
+                    colModifier = FlagUpdater.CanReuseAndSequential;
+                else
+                    colModifier = FlagUpdater.CanReuse;
+            } 
+            else if (usageFlags.HasFlag(UsageFlags.RemoveSequentialRead))
+                colModifier = FlagUpdater.RemoveSequentialRead;
+            else if (usageFlags.HasFlag(UsageFlags.SequentialRead))
+                colModifier = FlagUpdater.SequentialRead;
+            return new ParamInfoPlus(Type, NullColHandler, NameComparer, colModifier, fallback);
         }
-        catch {
-            return false;
-        }
+        return new(Type, NullColHandler, NameComparer);
     }
 }

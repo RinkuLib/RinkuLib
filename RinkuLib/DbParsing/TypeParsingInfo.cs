@@ -1,120 +1,9 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
-/// <summary>Direcly match to the first unused column with the matching type</summary>
-public class BaseTypeMatcher : IDbTypeParserInfoMatcher {
-    /// <summary>Singleton</summary>
-    public static readonly BaseTypeMatcher Instance = new();
-    private BaseTypeMatcher() { }
-    /// <inheritdoc/>
-    public bool CanUseType(Type TargetType)
-        => TargetType.IsBaseType() || TargetType.IsEnum;
-    /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type parentType, Type[] _, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
-        ITypeConverter? converter = null;
-        if (isNullable && closedTargetType.IsValueType)
-            closedTargetType = typeof(Nullable<>).MakeGenericType(closedTargetType);
-        int i = 0;
-        if (colModifier.DoesModify) {
-            for (; i < columns.Length; i++) {
-                if (colUsage.IsUsed(i))
-                    continue;
-                var column = columns[i];
-                if (colModifier.Match(column.Name, NoNameComparer.Instance) && ITypeConverter.TryGetConverter(column.Type, closedTargetType, out converter))
-                    break;
-            }
-            if (i >= columns.Length || converter is null)
-                return null;
-        }
-        else {
-            i = colUsage.LastIndexUsed + 1;
-            if (i >= columns.Length)
-                return null;
-            if (colUsage.IsUsed(i))
-                return null;
-            var column = columns[i];
-            if (!colModifier.Match(column.Name, NoNameComparer.Instance) || !ITypeConverter.TryGetConverter(column.Type, closedTargetType, out converter))
-                return null;
-        }
-        colUsage.Use(i);
-        return new BasicParser(parentType, converter, paramName, nullColHandler, i);
-    }
-}
-/// <summary>Handling for tuple that force usage of ite argument types</summary>
-public class NotNullMatcher : IDbTypeParserInfoMatcher {
-    /// <summary>Singleton</summary>
-    public static readonly NotNullMatcher Instance = new();
-    private NotNullMatcher() { }
-    /// <inheritdoc/>
-    public bool CanUseType(Type TargetType) {
-        if (!TargetType.IsGenericType)
-            return false;
-        TargetType = TargetType.GetGenericTypeDefinition();
-        return TargetType == typeof(NotNull<>);
-    }
-    /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
-        if (declaringTypeArguments.Length != 1)
-            return null;
-        var type = declaringTypeArguments[0];
-        var r = TypeParsingInfo.ForceGet(type)
-            .TryGetParser(parentType, type.IsGenericType ? type.GetGenericArguments() : [], "Value", NotNullHandle.Instance, columns, colModifier, false, ref colUsage);
-        if (r is null)
-            return null;
-        var method = closedTargetType.GetConstructor(declaringTypeArguments) ?? throw new Exception($"unable to load the ctor for {closedTargetType}");
-        return new CustomClassParser(parentType, closedTargetType, paramName, nullColHandler, method, [r]);
-    }
-}
-/// <summary>Handling for tuple that force usage of ite argument types</summary>
-public class TupleTypeMatcher : IDbTypeParserInfoMatcher {
-    /// <summary>Singleton</summary>
-    public static readonly TupleTypeMatcher Instance = new();
-    private TupleTypeMatcher() { }
-    /// <inheritdoc/>
-    public bool CanUseType(Type TargetType) {
-        if (!TargetType.IsGenericType)
-            return false;
-        TargetType = TargetType.GetGenericTypeDefinition();
-        return TargetType == typeof(ValueTuple<>)
-        || TargetType == typeof(ValueTuple<,>)
-        || TargetType == typeof(ValueTuple<,,>)
-        || TargetType == typeof(ValueTuple<,,,>)
-        || TargetType == typeof(ValueTuple<,,,,>)
-        || TargetType == typeof(ValueTuple<,,,,,>)
-        || TargetType == typeof(ValueTuple<,,,,,,>)
-        || TargetType == typeof(ValueTuple<,,,,,,,>);
-    }
-    /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
-        Span<bool> checkpoint = stackalloc bool[colUsage.Length];
-        colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
-        var readers = new DbItemParser[declaringTypeArguments.Length];
-        for (int i = 0; i < readers.Length; i++) {
-            var type = declaringTypeArguments[i];
-            var maybeNull = !type.IsValueType;
-            Type[] args = [];
-            if (type.IsGenericType) {
-                if (type.IsValueType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
-                    maybeNull = true;
-                args = type.GetGenericArguments();
-            }
-            var typeInfo = TypeParsingInfo.ForceGet(type);
-            var r = typeInfo.TryGetParser(parentType, args, $"Item{i + 1}", maybeNull ? NullableTypeHandle.Instance : NotNullHandle.Instance, columns, colModifier, maybeNull, ref colUsage);
-            if (r is null) {
-                colUsage.Rollback(checkpoint, lastIndUsed);
-                return null;
-            }
-            readers[i] = r;
-        }
-        var method = closedTargetType.GetConstructor(declaringTypeArguments) ?? throw new Exception($"unable to load the ctor for {closedTargetType}");
-        return new CustomClassParser(parentType,
-            isNullable && closedTargetType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedTargetType) : closedTargetType,
-            paramName, nullColHandler, method, [..readers]);
-    }
-}
 /// <summary>
 /// A metadata registry representing a specific <see cref="Type"/>. 
 /// It stores the construction paths and members required to transform a schema into an object.
@@ -131,57 +20,29 @@ public class TupleTypeMatcher : IDbTypeParserInfoMatcher {
 /// specific closed generic type, but will fall back to the <b>Open Generic Type Definition</b> 
 /// if a specific version isn't registered. All lookups automatically unwrap <see cref="Nullable{T}"/>.
 /// 
-/// <para><b>III. Matching Logic &amp; Injected Implementation:</b></para>
-/// The class contains a default matching process that reconciles stored metadata 
-/// with a received schema. A specific injection point (<see cref="Matcher"/>) allows 
-/// this process to be replaced with custom logic.
 /// </remarks>
-public class TypeParsingInfo {
+public abstract class TypeParsingInfo {
+    /// <summary>Identify if the instance can actualy handle the <see cref="Type"/> of <paramref name="TargetType"/></summary>
+    public abstract void ValidateCanUseType(Type TargetType);
     static TypeParsingInfo() {
-        GetOrAdd(typeof(ValueTuple<>)).InitWith(TupleTypeMatcher.Instance);
-        GetOrAdd(typeof(ValueTuple<,>)).InitWith(TupleTypeMatcher.Instance);
-        GetOrAdd(typeof(ValueTuple<,,>)).InitWith(TupleTypeMatcher.Instance);
-        GetOrAdd(typeof(ValueTuple<,,,>)).InitWith(TupleTypeMatcher.Instance);
-        GetOrAdd(typeof(ValueTuple<,,,,>)).InitWith(TupleTypeMatcher.Instance);
-        GetOrAdd(typeof(ValueTuple<,,,,,>)).InitWith(TupleTypeMatcher.Instance);
-        GetOrAdd(typeof(ValueTuple<,,,,,,>)).InitWith(TupleTypeMatcher.Instance);
-        GetOrAdd(typeof(ValueTuple<,,,,,,,>)).InitWith(TupleTypeMatcher.Instance);
-        GetOrAdd<DynaObject>().InitWith(DynaObjectTypeMatcher.Instance);
-        GetOrAdd(typeof(NotNull<>)).InitWith(NotNullMatcher.Instance);
+        AddOrSet(typeof(ValueTuple<>), TupleTypeinfo.Instance);
+        AddOrSet(typeof(ValueTuple<,>), TupleTypeinfo.Instance);
+        AddOrSet(typeof(ValueTuple<,,>), TupleTypeinfo.Instance);
+        AddOrSet(typeof(ValueTuple<,,,>), TupleTypeinfo.Instance);
+        AddOrSet(typeof(ValueTuple<,,,,>), TupleTypeinfo.Instance);
+        AddOrSet(typeof(ValueTuple<,,,,,>), TupleTypeinfo.Instance);
+        AddOrSet(typeof(ValueTuple<,,,,,,>), TupleTypeinfo.Instance);
+        AddOrSet(typeof(ValueTuple<,,,,,,,>), TupleTypeinfo.Instance);
+        AddOrSet<DynaObject>(DynaObjectTypeInfo.Instance);
+        AddOrSet(typeof(NotNull<>), NotNullTypeInfo.Instance);
     }
-    private TypeParsingInfo(Type Type, IDbTypeParserInfoMatcher? Matcher) {
-        this.Type = Nullable.GetUnderlyingType(Type) ?? Type;
-        IsInit = false;
-        this._matcher = Matcher;
-    }
-    /// <summary>Set the match and set as initialized</summary>
-    public void InitWith(IDbTypeParserInfoMatcher Matcher) {
-        this.Matcher = Matcher;
-        IsInit = true;
-    }
-    /// <summary>
-    /// The internal state tracker indicating if the automatic discovery of members and 
-    /// constructors (Registration Phase) has been performed.
-    /// </summary>
-    private bool IsInit;
     /// <summary>
     /// Global cache of type metadata. Access is managed through static methods 
     /// to ensure thread-safety and proper initialization.
     /// </summary>
-    private static Dictionary<Type, TypeParsingInfo> TypeInfos = [];
-    internal static readonly
-#if NET9_0_OR_GREATER
-        Lock
-#else
-        object
-#endif
-        WriteLock = new();
-    /// <summary>
-    /// The target type being handled.
-    /// </summary>
-    public readonly Type Type;
-    private MethodCtorInfo[] MCIs = [];
-    private IDbTypeParserInfoMatcher? _matcher;
+    private static readonly ConcurrentDictionary<Type, TypeParsingInfo> TypeInfos = [];
+    //private IDbTypeParserInfoMatcher? _matcher;
+    /*
     /// <summary>
     /// A custom injection point that allows developers to replace the default matching logic.
     /// If provided, this implementation takes full control over the Negotiation Phase for this type.
@@ -195,63 +56,7 @@ public class TypeParsingInfo {
                 throw new InvalidOperationException($"the Matcher must be of type {Type}");
             Interlocked.Exchange(ref _matcher, value);
         }
-    }
-    /// <summary>
-    /// The collection of prioritized construction paths (constructors or static factory methods) 
-    /// discovered or manually registered for this type.
-    /// </summary>
-    public ReadOnlySpan<MethodCtorInfo> PossibleConstructors {
-        get {
-            if (!IsInit)
-                Init();
-            return MCIs;
-        }
-        set {
-            for (var i = 0; i < value.Length; i++) {
-                var c = value[i];
-                if (!c.TargetType.IsStackEquivalent(Type))
-                    throw new InvalidOperationException($"the method or constructor must be of type {Type} (returning type)");
-                var declare = c.MethodBase.DeclaringType!;
-                if (declare != Type && declare.IsGenericType)
-                    throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
-            }
-            Interlocked.Exchange(ref MCIs, value.ToArray());
-        }
-    }
-    private MemberParser[] Members = [];
-    /// <summary>
-    /// A collection of public properties and fields that can be set after instantiation.
-    /// </summary>
-    public ReadOnlySpan<MemberParser> AvailableMembers {
-        get => Members; set {
-            for (var i = 0; i < value.Length; i++) {
-                var c = value[i];
-                if (!c.TargetType.IsStackEquivalent(Type))
-                    throw new InvalidOperationException($"the method or constructor must be of type {Type}");
-                var declare = c.Member.DeclaringType!;
-                if (declare != Type && declare.IsGenericType)
-                    throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
-            }
-            Interlocked.Exchange(ref Members, value.ToArray());
-        }
-    }
-    private MethodBase? ParameterlessConstructor { get => field; set {
-            if (value is ConstructorInfo) {
-                if (value.DeclaringType != Type)
-                    throw new InvalidOperationException($"the constructor must be of type {Type}");
-            }
-            else {
-                if (value is not MethodInfo method)
-                    throw new InvalidOperationException("the value must be a ctor or a method");
-                if (method.ReturnType != Type)
-                    throw new InvalidOperationException($"the method must return {Type}");
-                var ex = MethodCtorInfo.ValidateMethodReturn(method);
-                if (ex is not null)
-                    throw ex;
-            }
-            Interlocked.Exchange(ref field, value);
-        }
-    }
+    }*/
     /// <summary>
     /// Checks if a type is supported for mapping. 
     /// Automatically unwraps <see cref="Nullable{T}"/> to evaluate the underlying type.
@@ -287,7 +92,8 @@ public class TypeParsingInfo {
         if (TypeInfos.TryGetValue(type, out typeInfo))
             return true;
         if (type.IsBaseType() || type.IsEnum) {
-            typeInfo = Add(type);
+            typeInfo = BaseTypeInfo.Instance;
+            TypeInfos[type] = typeInfo;
             return true;
         }
         if (type.IsGenericType) {
@@ -297,7 +103,8 @@ public class TypeParsingInfo {
         }
         if (!type.IsAssignableTo(typeof(IDbReadable)))
             return false;
-        typeInfo = Add(type);
+        typeInfo = new DefaultTypeParsingInfo(type);
+        TypeInfos[type] = typeInfo;
         return true;
     }
     /// <summary>
@@ -307,12 +114,18 @@ public class TypeParsingInfo {
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (TypeInfos.TryGetValue(type, out var infos))
             return infos;
-        if (!type.IsGenericType)
-            return Add(type);
+        if (!type.IsGenericType) {
+            infos = type.IsBaseType() || type.IsEnum
+                ? BaseTypeInfo.Instance : new DefaultTypeParsingInfo(type);
+            TypeInfos[type] = infos;
+            return infos;
+        }
         type = type.GetGenericTypeDefinition();
         if (TypeInfos.TryGetValue(type, out infos))
             return infos;
-        return Add(type);
+        infos = new DefaultTypeParsingInfo(type);
+        TypeInfos[type] = infos;
+        return infos;
     }
     /// <summary>
     /// Performs a prioritized lookup in the global cache.
@@ -339,228 +152,69 @@ public class TypeParsingInfo {
     /// <summary>
     /// Standard access point to retrieve or create a type's metadata registry.
     /// </summary>
-    public static TypeParsingInfo GetOrAdd(Type type, bool saveAsGenericDefinitionWhenGeneric = true) {
+    public static TypeParsingInfo GetOrAdd(Type type, TypeParsingInfo? toUseIfNotPresent = null, bool saveAsGenericDefinitionWhenGeneric = true) {
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (TypeInfos.TryGetValue(type, out var infos))
             return infos;
-        if (!type.IsGenericType)
-            return Add(type);
-        if (!saveAsGenericDefinitionWhenGeneric)
-            return Add(type);
+        if (!type.IsGenericType || !saveAsGenericDefinitionWhenGeneric) {
+            toUseIfNotPresent?.ValidateCanUseType(type);
+            infos = toUseIfNotPresent ?? (type.IsBaseType() || type.IsEnum
+                ? BaseTypeInfo.Instance : new DefaultTypeParsingInfo(type));
+            TypeInfos[type] = infos;
+            return infos;
+        }
         type = type.GetGenericTypeDefinition();
         if (TypeInfos.TryGetValue(type, out infos))
             return infos;
-        return Add(type);
+        toUseIfNotPresent?.ValidateCanUseType(type);
+        infos = toUseIfNotPresent ?? new DefaultTypeParsingInfo(type);
+        TypeInfos[type] = infos;
+        return infos;
     }
     /// <summary>
     /// Standard access point to retrieve or create a type's metadata registry.
     /// </summary>
-    public static TypeParsingInfo GetOrAdd<T>(bool saveAsGenericDefinitionWhenGeneric = true) => GetOrAdd(typeof(T), saveAsGenericDefinitionWhenGeneric);
-    private static TypeParsingInfo Add(Type type) {
-        lock (WriteLock) {
-            var newDict = new Dictionary<Type, TypeParsingInfo>(TypeInfos);
-            var res = new TypeParsingInfo(type, null);
-            newDict[type] = res;
-            TypeInfos = newDict;
-            return res;
-        }
+    public static void AddOrSet(Type type, TypeParsingInfo typeParsingInfo) {
+        typeParsingInfo.ValidateCanUseType(type);
+        TypeInfos[type] = typeParsingInfo;
     }
     /// <summary>
-    /// Scans the type via reflection to find all public constructors, static methods, 
-    /// properties, and fields for automatic mapping.
+    /// Standard access point to retrieve or create a type's metadata registry.
     /// </summary>
-    public void Init() {
-        lock (WriteLock) {
-            if (IsInit)
-                return;
-            var type = Nullable.GetUnderlyingType(Type) ?? Type;
-            if (BaseTypeMatcher.Instance.CanUseType(type)) {
-                _matcher = BaseTypeMatcher.Instance;
-                IsInit = true;
-                return;
-            }
-            var props = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
-            List<MemberParser> memberParsers = [];
-            for (int i = 0; i < fields.Length; i++) {
-                var field = fields[i];
-                if (!field.IsInitOnly)
-                    continue;
-                var p = ParamInfo.TryNew(field);
-                if (p is not null)
-                    memberParsers.Add(new(field, p));
-            }
-            for (int i = 0; i < props.Length; i++) {
-                var prop = props[i];
-                if (!prop.CanWrite || prop.GetSetMethod() is null)
-                    continue;
-                var p = ParamInfo.TryNew(prop);
-                if (p is not null)
-                    memberParsers.Add(new(prop, p));
-            }
-            var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
-            var staticMethods = type.GetMethods(BindingFlags.Public | BindingFlags.Static);
-            var infoList = new List<MethodCtorInfo>(constructors.Length);
-            foreach (var constructor in constructors) {
-                var ps = MethodCtorInfo.TryMakeParameters(constructor);
-                if (MethodCtorInfo.TryNew(constructor, ps, out var mci))
-                    infoList.Add(mci);
-                else if (ParameterlessConstructor is null && ps is not null && ps.Length == 0)
-                    ParameterlessConstructor = constructor;
-            }
-            foreach (var method in staticMethods) {
-                if (method.ReturnType != type || method.IsGenericMethod || !method.IsStatic)
-                    continue;
-                var ps = MethodCtorInfo.TryMakeParameters(method);
-                if (MethodCtorInfo.TryNew(method, ps, out var mci))
-                    infoList.Add(mci);
-            }
-            if (memberParsers.Count > 0) {
-                if (Members.Length == 0)
-                    Members = [.. memberParsers];
-                else {
-                    var mp = CollectionsMarshal.AsSpan(memberParsers);
-                    var result = new MemberParser[Members.Length + mp.Length];
-                    for (int i = 0; i < mp.Length; i++)
-                        result[i] = mp[i];
-                    Array.Copy(Members, 0, result, Members.Length, Members.Length);
-                    Members = result;
-                }
-            }
-            if (infoList.Count > 0) {
-                var infos = CollectionsMarshal.AsSpan(infoList);
-                if (MCIs.Length == 0)
-                    MCIs = MethodCtorInfo.GetOrderedInfos(infos);
-                else {
-                    var result = new MethodCtorInfo[MCIs.Length + infos.Length];
-                    Array.Copy(MCIs, 0, result, 0, MCIs.Length);
-                    infos.CopyTo(result.AsSpan(MCIs.Length));
-                    MCIs = MethodCtorInfo.GetOrderedInfos(result);
-                }
-            }
-            IsInit = true;
-        }
-    }
+    public static TypeParsingInfo GetOrAdd<T>(TypeParsingInfo? toUseIfNotPresent = null, bool saveAsGenericDefinitionWhenGeneric = true) => GetOrAdd(typeof(T), toUseIfNotPresent, saveAsGenericDefinitionWhenGeneric);
+    /// <summary>
+    /// Standard access point to retrieve or create a type's metadata registry.
+    /// </summary>
+    public static void AddOrSet<T>(TypeParsingInfo typeParsingInfo, bool saveAsGenericDefinitionWhenGeneric = true) => AddOrSet(saveAsGenericDefinitionWhenGeneric && typeof(T).IsGenericType ? typeof(T).GetGenericTypeDefinition() : typeof(T), typeParsingInfo);
+
     /// <summary>
     /// Maps a property name to a specific database column alias.
     /// </summary>
     /// <param name="defaultName">The member name in C#.</param>
     /// <param name="nameToAdd">The alternative name to add to the member.</param>
-    public void AddAltName(string defaultName, string nameToAdd) {
-        if (!IsInit)
-            Init();
-        for (int i = 0; i < MCIs.Length; i++) {
-            var parameters = MCIs[i].Parameters;
-            for (int j = 0; j < parameters.Length; j++) {
-                var p = parameters[j];
-                if (string.Equals(p.GetName(), defaultName, StringComparison.OrdinalIgnoreCase))
-                    p.AddAltName(nameToAdd);
-            }
-        }
-        for (int i = 0; i < Members.Length; i++) {
-            var p = Members[i].Param;
-            if (string.Equals(p.GetName(), defaultName, StringComparison.OrdinalIgnoreCase))
-                p.AddAltName(nameToAdd);
-        }
-    }
+    public virtual void AddAltName(string defaultName, string nameToAdd)
+        => throw new NotImplementedException();
     /// <summary>
     /// Configures the null-value response behavior for parameters matching <paramref name="defaultName"/>.
     /// </summary>
     /// <param name="defaultName">The parameter name in C#.</param>
     /// <param name="invalidOnNull">Wether or not the parameter should be invalid when null</param>
-    public void SetInvalidOnNull(string defaultName, bool invalidOnNull) {
-        if (!IsInit)
-            Init();
-        for (int i = 0; i < MCIs.Length; i++) {
-            var parameters = MCIs[i].Parameters;
-            for (int j = 0; j < parameters.Length; j++) {
-                var p = parameters[j];
-                if (string.Equals(p.GetName(), defaultName, StringComparison.OrdinalIgnoreCase))
-                    p.SetInvalidOnNull(invalidOnNull);
-            }
-        }
-    }
+    public virtual void SetInvalidOnNull(string defaultName, bool invalidOnNull)
+        => throw new NotImplementedException();
     /// <summary>
     /// Mannualy add a possible construction path that will be prioritized as much as possible
     /// </summary>
-    public void AddPossibleConstruction(MethodBase methodBase)
-        => AddPossibleConstruction(new MethodCtorInfo(methodBase));
-    /// <summary>
-    /// Mannualy add a possible construction path that will be prioritized as much as possible
-    /// </summary>
-    public void AddPossibleConstruction(MethodCtorInfo mci) {
-        lock (WriteLock) {
-            var target = mci.TargetType;
-            if (!target.IsStackEquivalent(Type))
-                throw new Exception($"the expected type is {Type} but the provided type via the method is {mci.TargetType}");
-            var declare = mci.MethodBase.DeclaringType!;
-            if (declare != Type && declare.IsGenericType)
-                throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
-            mci.InsertInto(ref MCIs);
-        }
-    }
+    public virtual void AddPossibleConstruction(MethodBase methodBase)
+        => throw new NotImplementedException();
     /// <summary>
     /// Evaluates a received schema against the registered metadata to emit a specialized parser.
     /// </summary>
     /// <remarks>
-    /// If a custom <see cref="Matcher"/> is assigned, it is used to perform the resolution. 
-    /// Otherwise, the default logic evaluates <see cref="PossibleConstructors"/> and 
-    /// <see cref="AvailableMembers"/> against the provided <paramref name="columns"/> schema.
+    /// The default logic evaluates <see cref="DefaultTypeParsingInfo.PossibleConstructors"/> and 
+    /// <see cref="DefaultTypeParsingInfo.AvailableMembers"/> against the provided <paramref name="columns"/> schema.
     /// </remarks>
     /// <returns>
     /// A configured <see cref="DbItemParser"/> if the schema satisfies a construction path; otherwise, null.
     /// </returns>
-    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage) {
-        if (!IsInit)
-            Init();
-        var closedType = Type.CloseType(declaringTypeArguments);
-        if (_matcher is not null)
-            return _matcher.TryGetParser(parentType, declaringTypeArguments, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage, closedType);
-        return DefaultTryGetParser(parentType, declaringTypeArguments, paramName, nullColHandler, columns, colModifier, isNullable, ref colUsage, closedType);
-    }
-
-    private CustomClassParser? DefaultTryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedType) {
-        var actualType = isNullable && closedType.IsValueType ? typeof(Nullable<>).MakeGenericType(closedType) : closedType;
-        Span<bool> checkpoint = stackalloc bool[colUsage.Length];
-        colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
-        var mcis = MCIs;
-        List<DbItemParser> readers = [];
-        MemberInfo? method = null;
-        bool canCompleteWithMembers = false;
-        for (int i = 0; i < mcis.Length; i++) {
-            var mci = mcis[i];
-            var parameters = mci.Parameters;
-            for (int j = 0; j < parameters.Length; j++) {
-                var r = parameters[j].TryGetParser(closedType, declaringTypeArguments, columns, colModifier, ref colUsage);
-                if (r is null)
-                    break;
-                readers.Add(r);
-            }
-            if (readers.Count == parameters.Length) {
-                method = mci.MethodBase.GetClosedMember(closedType);
-                canCompleteWithMembers = mci.CanCompleteWithMembers;
-                break;
-            }
-            colUsage.Rollback(checkpoint, lastIndUsed);
-            readers.Clear();
-        }
-        if (method is null) {
-            method = ParameterlessConstructor?.GetClosedMember(closedType);
-            if (method is null)
-                return null;
-            canCompleteWithMembers = true;
-        }
-        if (!canCompleteWithMembers)
-            return new CustomClassParser(parentType, actualType, paramName, nullColHandler, method, readers);
-        List<(MemberInfo, DbItemParser)> memberReaders = [];
-        var members = Members;
-        for (int i = 0; i < members.Length; i++) {
-            var r = members[i].Param.TryGetParser(closedType, declaringTypeArguments, columns, colModifier, ref colUsage);
-            if (r is not null)
-                memberReaders.Add((members[i].Member.GetClosedMember(closedType), r));
-        }
-        if (memberReaders.Count == 0 && readers.Count == 0)
-            return null;
-        return new CustomClassParser(parentType, actualType, paramName, nullColHandler, method, readers, memberReaders);
-    }
+    public abstract DbItemParser? TryGetParser(Type parentType, Type currentClosedType, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
 }

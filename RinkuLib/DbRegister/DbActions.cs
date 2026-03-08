@@ -2,18 +2,8 @@
 using System.Data.Common;
 using System.Reflection;
 using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.DbRegister;
-internal static class SharedLock {
-    internal static readonly
-#if NET9_0_OR_GREATER
-        Lock
-#else
-        object
-#endif
-        Lock = new();
-}
 /// <summary>
 /// Provide a dictionary of possible db actions to make on a type instance
 /// </summary>
@@ -33,13 +23,13 @@ public static class DbActions<T> {
 
         var members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
         foreach (var member in members) {
-            var actionMaker = member.GetCustomAttribute<ActionMaker>();
-            if (actionMaker is null)
-                continue;
-            var (name, action, def) = actionMaker.MakeAction<T>(member);
-            names.Add(name);
-            actions.Add(action);
-            isDefaults.Add(def);
+            actionMakers = member.GetCustomAttributes<ActionMaker>();
+            foreach (var actionMaker in actionMakers) {
+                var (name, action, def) = actionMaker.MakeAction<T>(member);
+                names.Add(name);
+                actions.Add(action);
+                isDefaults.Add(def);
+            }
         }
         var mapper = Mapper.GetMapper(names);
         if (mapper.Count != names.Count)
@@ -69,7 +59,7 @@ public static class DbActions<T> {
         if (mapper.Count != actions.Length || mapper.Count != isDefault.Length)
             throw new Exception($"all parameters must be of the same length {nameof(mapper)} : {mapper.Count}, {nameof(actions)} : {actions.Length}, {nameof(isDefault)} : {isDefault.Length}");
 
-        lock (SharedLock.Lock) {
+        lock (DbActions.Lock) {
             Mapper.Dispose();
             Mapper = mapper;
             _actions = actions;
@@ -84,7 +74,7 @@ public static class DbActions<T> {
     }
     /// <inheritdoc/>
     public static void AddOrUpdate(string key, IDbAction<T> action, bool isDefault) {
-        lock (SharedLock.Lock) {
+        lock (DbActions.Lock) {
             var idx = Mapper.GetIndex(key);
             if (idx >= 0) {
                 _actions[idx] = action;
@@ -100,7 +90,7 @@ public static class DbActions<T> {
     }
     /// <inheritdoc/>
     public static IDbAction<T> RemoveAt(int idx) {
-        lock (SharedLock.Lock) {
+        lock (DbActions.Lock) {
             if (idx < 0 || idx >= Mapper.Count)
                 throw new IndexOutOfRangeException();
             var oldKeys = Mapper.Keys;
@@ -135,6 +125,15 @@ public static class DbActions<T> {
 }
 /// <summary>Provide extensions to execute actions an intance(s)</summary>
 public static class DbActions {
+    internal static readonly
+#if NET9_0_OR_GREATER
+        Lock
+#else
+        object
+#endif
+        Lock = new();
+    /// <summary>The name used to run the default actions of an item, often use with the pattern MainAction.ExecuteDefaultActions</summary>
+    public const string ExecuteDefaultActions = "ExecuteDefaults";
     /// <summary>Execute the set of actions to do using the instance, will use the default actions</summary>
     public static void ExecuteDBActions<T>(ref T instance, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
         var actions = DbActions<T>._actions;
@@ -188,7 +187,7 @@ public static class DbActions {
         }
     }
     /// <summary>Execute the set of actions using the instance. Uses the default actions</summary>
-    public static async ValueTask ExecuteDBActionsAsync<T>(this T instance, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where T : class {
+    public static async ValueTask ImplExecuteDBActionsAsync<T>(T instance, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var actions = DbActions<T>._actions;
         var isDefault = DbActions<T>.IsDefault;
         for (int i = 0; i < actions.Length; i++) {
@@ -198,7 +197,7 @@ public static class DbActions {
         }
     }
     /// <summary>Execute the set of actions using the instance</summary>
-    public static async ValueTask ExecuteDBActionsAsync<T>(this T instance, DbConnection cnn, IEnumerable<string> actionsToDo, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where T : class {
+    public static async ValueTask ImplExecuteDBActionsAsync<T>(T instance, DbConnection cnn, IEnumerable<string> actionsToDo, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var actions = DbActions<T>._actions;
         var mapper = DbActions<T>.Mapper;
         foreach (var item in actionsToDo) {
@@ -208,6 +207,12 @@ public static class DbActions {
             await actions[idx].ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
         }
     }
+    /// <summary>Execute the set of actions using the instance. Uses the default actions</summary>
+    public static ValueTask ExecuteDBActionsAsync<T>(this T instance, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where T : class
+        => ImplExecuteDBActionsAsync(instance, cnn, transaction, timeout, ct);
+    /// <summary>Execute the set of actions using the instance</summary>
+    public static ValueTask ExecuteDBActionsAsync<T>(this T instance, DbConnection cnn, IEnumerable<string> actionsToDo, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where T : class
+        => ImplExecuteDBActionsAsync(instance, cnn, actionsToDo, transaction, timeout, ct);
     /// <summary>Execute the set of actions to do using the instances, will use the default actions</summary>
     public static async ValueTask ExecuteDBActionsAsync<T>(this List<T> instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var actions = DbActions<T>._actions;
@@ -284,7 +289,7 @@ public static class DbActions {
         }
     }
     /// <summary>Execute the set of actions using the instance. Uses the default actions</summary>
-    public static async ValueTask ExecuteDBActionsAsync<T>(this T instance, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where T : class {
+    public static async ValueTask ImplExecuteDBActionsAsync<T>(T instance, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var actions = DbActions<T>._actions;
         var isDefault = DbActions<T>.IsDefault;
         for (int i = 0; i < actions.Length; i++) {
@@ -294,7 +299,7 @@ public static class DbActions {
         }
     }
     /// <summary>Execute the set of actions using the instance.</summary>
-    public static async ValueTask ExecuteDBActionsAsync<T>(this T instance, IDbConnection cnn, IEnumerable<string> actionsToDo, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where T : class {
+    public static async ValueTask ImplExecuteDBActionsAsync<T>(T instance, IDbConnection cnn, IEnumerable<string> actionsToDo, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var actions = DbActions<T>._actions;
         var mapper = DbActions<T>.Mapper;
         foreach (var item in actionsToDo) {
@@ -304,6 +309,12 @@ public static class DbActions {
             await actions[idx].ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
         }
     }
+    /// <summary>Execute the set of actions using the instance. Uses the default actions</summary>
+    public static ValueTask ExecuteDBActionsAsync<T>(this T instance, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where T : class
+        => ImplExecuteDBActionsAsync(instance, cnn, transaction, timeout, ct);
+    /// <summary>Execute the set of actions using the instance</summary>
+    public static ValueTask ExecuteDBActionsAsync<T>(this T instance, IDbConnection cnn, IEnumerable<string> actionsToDo, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where T : class
+        => ImplExecuteDBActionsAsync(instance, cnn, actionsToDo, transaction, timeout, ct);
     /// <summary>Execute the set of actions to do using the instances, will use the default actions</summary>
     public static async ValueTask ExecuteDBActionsAsync<T>(this List<T> instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var actions = DbActions<T>._actions;
@@ -412,7 +423,7 @@ public static class DbActions {
     /// <summary>Execute the set of actions using the instance.</summary>
     public static async Task<List<T>> ExecuteDBActionsAsync<T>(this Task<List<T>> instancesTask, DbConnection cnn, IEnumerable<string> actionsToDo, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var instances = await instancesTask.ConfigureAwait(false);
-        await instances.ExecuteDBActionsAsync(cnn, transaction, timeout, ct).ConfigureAwait(false);
+        await instances.ExecuteDBActionsAsync(cnn, actionsToDo, transaction, timeout, ct).ConfigureAwait(false);
         return instances;
     }
 
@@ -425,7 +436,7 @@ public static class DbActions {
     /// <summary>Execute the set of actions using the instance.</summary>
     public static async Task<List<T>> ExecuteDBActionsAsync<T>(this Task<List<T>> instancesTask, IDbConnection cnn, IEnumerable<string> actionsToDo, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var instances = await instancesTask.ConfigureAwait(false);
-        await instances.ExecuteDBActionsAsync(cnn, transaction, timeout, ct).ConfigureAwait(false);
+        await instances.ExecuteDBActionsAsync(cnn, actionsToDo, transaction, timeout, ct).ConfigureAwait(false);
         return instances;
     }
 }

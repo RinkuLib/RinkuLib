@@ -18,7 +18,7 @@ public record class MemberParser {
     /// <summary>
     /// The matcher responsible for negotiating the data type and column name for this member.
     /// </summary>
-    public readonly IDbTypeParserMatcher Param;
+    public readonly ParamInfo Param;
     /// <summary>
     /// The type of the class that owns or receives this member assignment.
     /// </summary>
@@ -29,7 +29,7 @@ public record class MemberParser {
     /// <param name="Member">The property, field, or method to map.</param>
     /// <param name="Param">The matcher for database negotiation.</param>
     /// <exception cref="Exception">Thrown if the member is static, read-only, or type-mismatched.</exception>
-    public MemberParser(MemberInfo Member, IDbTypeParserMatcher Param) {
+    public MemberParser(MemberInfo Member, ParamInfo Param) {
         var val = Validate(Member, Param);
         if (val is Exception ex)
             throw ex;
@@ -40,7 +40,7 @@ public record class MemberParser {
     /// <summary>
     /// Private constructor used by <see cref="TryNew"/> to bypass redundant validation.
     /// </summary>
-    private MemberParser(MemberInfo Member, IDbTypeParserMatcher Param, Type TargetType) {
+    private MemberParser(MemberInfo Member, ParamInfo Param, Type TargetType) {
         this.Member = Member;
         this.Param = Param;
         this.TargetType = TargetType;
@@ -52,7 +52,7 @@ public record class MemberParser {
     /// <param name="param">The matcher to associate with the member.</param>
     /// <param name="memberParser">When this method returns, contains the parser if successful; otherwise, null.</param>
     /// <returns><c>true</c> if the member is a valid, writable target; otherwise, <c>false</c>.</returns>
-    public static bool TryNew(MemberInfo member, IDbTypeParserMatcher param,  [MaybeNullWhen(false)] out MemberParser memberParser) {
+    public static bool TryNew(MemberInfo member, ParamInfo param,  [MaybeNullWhen(false)] out MemberParser memberParser) {
         var val = Validate(member, param);
         if (val is not Type t) {
             memberParser = null;
@@ -67,7 +67,7 @@ public record class MemberParser {
     /// <param name="member">The member to check.</param>
     /// <param name="param">The matcher to compare against.</param>
     /// <returns>The <see cref="Type"/> of the declaring object if valid; otherwise, an <see cref="Exception"/>.</returns>
-    private static object Validate(MemberInfo member, IDbTypeParserMatcher param) {
+    private static object Validate(MemberInfo member, ParamInfo param) {
         bool isWriteable = false;
         Type? detectedMemberType = null;
         Type? detectedTargetType = null;
@@ -126,8 +126,8 @@ public record class MemberParser {
             return new ArgumentException("Member is not a supported writeable field, property, or method.");
         if (!isWriteable)
             return new ArgumentException($"Member '{member.Name}' is read-only or inacessible");
-        if (detectedMemberType != param.TargetType)
-            return new ArgumentException($"Type mismatch: Member expects {detectedMemberType.Name}, but Param provides {param.TargetType.Name}.");
+        if (detectedMemberType != param.Type)
+            return new ArgumentException($"Type mismatch: Member expects {detectedMemberType.Name}, but Param provides {param.Type.Name}.");
 
         return detectedTargetType;
     }

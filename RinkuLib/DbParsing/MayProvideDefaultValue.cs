@@ -1,31 +1,6 @@
-﻿using System.Reflection.Emit;
-using RinkuLib.Tools;
+﻿using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
-/// <summary>
-/// Class provide a default way to "match" the parameter when the schema negociation fail.
-/// Wraps the <see cref="INullColHandler"/> to reduce memory usage since normaly no default are provided.
-/// </summary>
-public abstract class MayProvideDefaultValue(INullColHandler nullColHandler) : INullColHandler {
-    /// <summary>The caller to get the item parser on fail to match with schema</summary>
-    public abstract DbItemParser? TryGetItemParser(Type type);
-    /// <summary>The <see cref="INullColHandler"/> thet will be use when a normal match with the schema occurs</summary>
-    public INullColHandler NullColHandler { get => field; set => field = Interlocked.Exchange(ref field, value); } = nullColHandler;
-    /// <inheritdoc/>
-    public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint)
-        => NullColHandler.HandleNull(parentType, closedType, paramName, generator, nullSetPoint);
-    /// <inheritdoc/>
-    public bool IsBr_S(Type closedType)
-        => NullColHandler.IsBr_S(closedType);
-    /// <inheritdoc/>
-    public bool NeedNullJumpSetPoint(Type closedType)
-        => NullColHandler.NeedNullJumpSetPoint(closedType);
-    /// <inheritdoc/>
-    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) {
-        NullColHandler = NullColHandler.SetInvalidOnNull(type, invalidOnNull);
-        return this;
-    }
-}
 /// <summary>
 /// Generate the IL of the default value of the type
 /// </summary>
@@ -42,11 +17,71 @@ public class DefaultEmiter(Type targetType) : DbItemParser {
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => false;
 }
+/// <summary>Fallbabk to emit the default value of the type</summary>
+public class DefaultValueFallback : IFallbackParserGetter {
+    /// <summary>Singleton</summary>
+    public static readonly DefaultValueFallback Instance = new();
+    private DefaultValueFallback() { }
+    /// <inheritdoc/>
+    public DbItemParser? FallbackTryGetParser(Type type) => new DefaultEmiter(type);
+}
+/// <summary>Fallbabk to emit the default value of the type</summary>
+public class FlagUpdater(UsageFlags Flags) : IColModifier {
+    /// <summary>The flag that will be added to the current modifyer</summary>
+    public UsageFlags Flags = Flags;
+    /// <summary>Singleton</summary>
+    public static readonly FlagUpdater CanReuse = new(UsageFlags.CanReuse);
+    /// <summary>Singleton</summary>
+    public static readonly FlagUpdater SequentialRead = new(UsageFlags.SequentialRead);
+    /// <summary>Singleton</summary>
+    public static readonly FlagUpdater RemoveSequentialRead = new(UsageFlags.RemoveSequentialRead);
+    /// <summary>Singleton</summary>
+    public static readonly FlagUpdater CanReuseAndSequential = new(UsageFlags.CanReuse | UsageFlags.SequentialRead);
+    /// <summary>Singleton</summary>
+    public static readonly FlagUpdater CanReuseAndRemoveSequential = new(UsageFlags.CanReuse | UsageFlags.RemoveSequentialRead);
+    /// <inheritdoc/>
+    public void UpdateColModifier(ref ColModifier mod) => mod.Flags |= Flags;
+}
 /// <summary>
 /// Emmit the default value of the type when no match with the schema
 /// </summary>
-public class DefaultValueProvider(INullColHandler nullColHandler) : MayProvideDefaultValue(nullColHandler) {
+public class ParamInfoPlus(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, IColModifier colModifier, IFallbackParserGetter fallbackParserGetter) : ParamInfo(Type, NullColHandler, NameComparer) {
     /// <inheritdoc/>
-    public override DbItemParser? TryGetItemParser(Type type) 
-        => new DefaultEmiter(type);
+    public IColModifier ColModifier { get => field; set => Interlocked.Exchange(ref field, value); } = colModifier;
+    /// <inheritdoc/>
+    public IFallbackParserGetter FallbackParserGetter { get => field; set => Interlocked.Exchange(ref field, value); } = fallbackParserGetter;
+    /// <inheritdoc/>
+    public override void UpdateColModifier(ref ColModifier mod)
+        => ColModifier.UpdateColModifier(ref mod);
+
+    /// <inheritdoc/>
+    public override DbItemParser? FallbackTryGetParser(Type type)
+        => FallbackParserGetter.FallbackTryGetParser(type);
+}
+/// <summary></summary>
+public interface IColModifier {
+    /// <summary>An instance that does nothing</summary>
+    public static readonly IColModifier Nothing = new NothingInst();
+    /// <summary></summary>
+    private class NothingInst : IColModifier {
+        /// <inheritdoc/>
+        public void UpdateColModifier(ref ColModifier mod) { }
+    }
+    /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
+    public void UpdateColModifier(ref ColModifier mod);
+}
+/// <summary></summary>
+public interface IFallbackParserGetter {
+    /// <summary>An instance that does nothing</summary>
+    public static readonly IFallbackParserGetter Nothing = new NothingInst();
+    /// <summary></summary>
+    private class NothingInst : IFallbackParserGetter {
+        /// <inheritdoc/>
+        public DbItemParser? FallbackTryGetParser(Type type) => null;
+    }
+    /// <summary>
+    /// Provide a way to retrieve a <see cref="DbItemParser"/> when the normal way fails
+    /// </summary>
+    /// <returns></returns>
+    public DbItemParser? FallbackTryGetParser(Type type);
 }

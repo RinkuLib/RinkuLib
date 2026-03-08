@@ -274,4 +274,57 @@ public static class TypeExtensions {
 
         return target;
     }
+    /// <summary>Define if the parameterhas a default value and thst this value is default</summary>
+    public static bool IsTypeDefault(this ParameterInfo p) {
+        if (!p.HasDefaultValue)
+            return false;
+
+        object? value = p.DefaultValue;
+        Type type = p.ParameterType;
+
+        if (value == null || value == DBNull.Value)
+            return true;
+
+        Type actualType = type.IsEnum ? Enum.GetUnderlyingType(type) : type;
+
+        try {
+            switch (Type.GetTypeCode(actualType)) {
+                case TypeCode.Boolean:
+                    return value is bool b && !b;
+                case TypeCode.Char:
+                    return value is char c && c == '\0';
+                case TypeCode.SByte:
+                case TypeCode.Byte:
+                case TypeCode.Int16:
+                case TypeCode.UInt16:
+                case TypeCode.Int32:
+                case TypeCode.UInt32:
+                case TypeCode.Int64:
+                case TypeCode.UInt64:
+                    return Convert.ToInt64(value) == 0;
+                case TypeCode.Single:
+                case TypeCode.Double:
+                    return Convert.ToDouble(value) == 0.0;
+                case TypeCode.Decimal:
+                    return Convert.ToDecimal(value) == 0m;
+                case TypeCode.DateTime:
+                    return value is DateTime dt && dt == default;
+
+                case TypeCode.Object:
+                    if (actualType == typeof(Guid))
+                        return value is Guid g && g == Guid.Empty;
+                    if (actualType == typeof(TimeSpan))
+                        return value is TimeSpan ts && ts == TimeSpan.Zero;
+                    if (actualType == typeof(DateTimeOffset))
+                        return value is DateTimeOffset dto && dto == default;
+                    return value.Equals(Activator.CreateInstance(actualType));
+
+                default:
+                    return false;
+            }
+        }
+        catch {
+            return false;
+        }
+    }
 }

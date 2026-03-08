@@ -270,7 +270,21 @@ public class CompleteTests {
         Assert.NotNull(withNullable);
         Assert.Equal(1, withNullable.ID);
         Assert.Equal("John", withNullable.Name);
-        Assert.Null(withNullable.notUsed);
+        Assert.Null(withNullable.NotUsed);
+    }
+    //[Fact]
+    public async Task ExecutingActions_Cascade_One() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories WHERE ID = 1");
+        using var cnn = GetDbCnn();
+        var c = await query.QueryOneAsync<CategoryCascade>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.NotNull(c);
+        Assert.Equal(5, c.Products.Count);
+        foreach (var prod in c.Products) {
+            if (prod.ID != 1)
+                continue;
+            Assert.Equal(2, prod.OwnedBy.Count);
+        }
     }
 }
 public record struct PersonParam(bool Active);
@@ -297,4 +311,14 @@ public record struct CategoryStructS(int ID, [Alt("Label")] string Name) {
     public List<ProductStruct> Products = [];
 }
 public record struct ProductStruct(int ID, string Name, CategoryStructS? Category = null);
-public record class WithDefNullable(int ID, string Name, int? notUsed = null);
+public record class WithDefNullable(int ID, string Name, int? NotUsed = null);
+public record class CategoryCascade(int ID, [Alt("Label")] string Name) : IDbReadable {
+    [PopulateList("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID", true)]
+    [AddSubItemDefaultDbActions(true)]
+    public List<ProductCascade> Products = [];
+}
+public record class ProductCascade(int ID, string Name, CategoryCascade? Category = null) {
+    [PopulateList("ID", "SELECT ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID = @ID", true)]
+    public List<UserCascade> OwnedBy = [];
+}
+public record UserCascade(int ID, [Alt("Name")] string Username, string? Email = null);

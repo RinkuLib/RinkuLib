@@ -2,30 +2,28 @@
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
-internal class DynaObjectTypeMatcher : IDbTypeParserInfoMatcher {
-    public static readonly DynaObjectTypeMatcher Instance = new();
-    private DynaObjectTypeMatcher() { }
+internal class DynaObjectTypeInfo : TypeParsingInfo {
+    internal static readonly ParamInfo TransientParamInfo = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
+    public static readonly DynaObjectTypeInfo Instance = new();
+    private DynaObjectTypeInfo() { }
     /// <inheritdoc/>
-    public bool CanUseType(Type TargetType) => TargetType == typeof(DynaObject);
+    public override void ValidateCanUseType(Type TargetType) {
+        if (TargetType != typeof(DynaObject))
+            throw new ArgumentException($"The type may only be {typeof(DynaObject)}");
+    }
     /// <inheritdoc/>
-    public DbItemParser? TryGetParser(Type parentType, Type[] declaringTypeArguments, string paramName, INullColHandler nullColHandler, ColumnInfo[] columns, ColModifier colModifier, bool isNullable, ref ColumnUsage colUsage, Type closedTargetType) {
+    public override DbItemParser? TryGetParser(Type parentType, Type currentClosedType, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
         var readers = new DbItemParser[columns.Length];
         var arguments = new Type[columns.Length];
         for (int i = 0; i < readers.Length; i++) {
             var col = columns[i];
             var type = col.Type;
-            var maybeNull = col.IsNullable;
-            Type[] args = [];
-            if (type.IsGenericType) {
-                if (type.IsValueType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
-                    maybeNull = true;
-                args = type.GetGenericArguments();
-            }
-            var typeInfo = TypeParsingInfo.ForceGet(type);
-            var r = typeInfo.TryGetParser(parentType, args, $"val{i}", NullableTypeHandle.Instance, columns, new(), maybeNull, ref colUsage);
+            if (type.IsValueType && col.IsNullable && Nullable.GetUnderlyingType(type) is null)
+                type = typeof(Nullable<>).MakeGenericType(type);
+            var r = ForceGet(type).TryGetParser(currentClosedType, type, TransientParamInfo, columns, colModifier, ref colUsage);
             if (r is null)
                 return null;
-            arguments[i] = type.IsValueType && maybeNull ? typeof(Nullable<>).MakeGenericType(type) : type;
+            arguments[i] = type;
             readers[i] = r;
         }
         return new DynaObjParser(arguments, readers);

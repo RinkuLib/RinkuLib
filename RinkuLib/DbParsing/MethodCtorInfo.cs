@@ -17,7 +17,7 @@ public class MethodCtorInfo {
     /// <summary>The constructor or static method used for instantiation.</summary>
     public readonly MethodBase MethodBase;
     /// <summary>The matchers for each parameter in the method signature.</summary>
-    public readonly IDbTypeParserMatcher[] Parameters;
+    public readonly ParamInfo[] Parameters;
     /// <summary>
     /// If true, the engine can continue to map additional properties or fields 
     /// after the primary method/constructor has been called.
@@ -40,7 +40,7 @@ public class MethodCtorInfo {
     /// <param name="MethodBase">The constructor or method to wrap.</param>
     /// <param name="Parameters">The matchers for the method parameters.</param>
     /// <exception cref="Exception">Thrown if validation fails.</exception>
-    public MethodCtorInfo(MethodBase MethodBase, IDbTypeParserMatcher[] Parameters) {
+    public MethodCtorInfo(MethodBase MethodBase, ParamInfo[] Parameters) {
         var ex = Validate(MethodBase, Parameters);
         if (ex is not null)
             throw ex;
@@ -54,7 +54,7 @@ public class MethodCtorInfo {
     /// <param name="MethodBase">The constructor or method to wrap.</param>
     /// <param name="Parameters">The matchers for the method parameters.</param>
     /// <param name="CanCompleteWithPropOrField">Whether to allow post-creation member mapping.</param>
-    public MethodCtorInfo(MethodBase MethodBase, IDbTypeParserMatcher[] Parameters, bool CanCompleteWithPropOrField) {
+    public MethodCtorInfo(MethodBase MethodBase, ParamInfo[] Parameters, bool CanCompleteWithPropOrField) {
         var ex = Validate(MethodBase, Parameters);
         if (ex is not null)
             throw ex;
@@ -62,7 +62,7 @@ public class MethodCtorInfo {
         this.Parameters = Parameters;
         this.CanCompleteWithMembers = CanCompleteWithPropOrField;
     }
-    private MethodCtorInfo(MethodBase MethodBase, IDbTypeParserMatcher[] Parameters, bool CanCompleteWithPropOrField, bool _) {
+    private MethodCtorInfo(MethodBase MethodBase, ParamInfo[] Parameters, bool CanCompleteWithPropOrField, bool _) {
         this.MethodBase = MethodBase;
         this.Parameters = Parameters;
         this.CanCompleteWithMembers = CanCompleteWithPropOrField;
@@ -74,7 +74,7 @@ public class MethodCtorInfo {
     /// <summary>
     /// Attempts to create a new <see cref="MethodCtorInfo"/>, returning false if validation fails.
     /// </summary>
-    public static bool TryNew(MethodBase MethodBase, IDbTypeParserMatcher[]? Parameters, [MaybeNullWhen(false)] out MethodCtorInfo mci) {
+    public static bool TryNew(MethodBase MethodBase, ParamInfo[]? Parameters, [MaybeNullWhen(false)] out MethodCtorInfo mci) {
         var ex = Validate(MethodBase, Parameters);
         if (ex is not null) {
             mci = null;
@@ -86,7 +86,7 @@ public class MethodCtorInfo {
     /// <summary>
     /// Attempts to create a new <see cref="MethodCtorInfo"/> with explicit member-completion control.
     /// </summary>
-    public static bool TryNew(MethodBase MethodBase, IDbTypeParserMatcher[]? Parameters, bool CanCompleteWithPropOrField, [MaybeNullWhen(false)] out MethodCtorInfo mci) {
+    public static bool TryNew(MethodBase MethodBase, ParamInfo[]? Parameters, bool CanCompleteWithPropOrField, [MaybeNullWhen(false)] out MethodCtorInfo mci) {
         var ex = Validate(MethodBase, Parameters);
         if (ex is not null) {
             mci = null;
@@ -99,7 +99,7 @@ public class MethodCtorInfo {
     /// Validates that the provided matchers are compatible with the method's parameters.
     /// </summary>
     /// <returns>An <see cref="Exception"/> if invalid; otherwise, null.</returns>
-    public static Exception? Validate(MethodBase methodBase, IDbTypeParserMatcher[]? parameters) {
+    public static Exception? Validate(MethodBase methodBase, ParamInfo[]? parameters) {
         if (parameters is null)
             return new Exception("parameters cant be null");
         if (parameters.Length == 0)
@@ -108,7 +108,7 @@ public class MethodCtorInfo {
         if (methodParameters.Length != parameters.Length)
             return new Exception("all the parameters must match with the ctor or method parameters");
         for (int i = 0; i < parameters.Length; i++)
-            if (methodParameters[i].ParameterType != parameters[i].TargetType)
+            if (methodParameters[i].ParameterType != parameters[i].Type)
                 return new Exception("all the parameters must match with the ctor or method parameters");
         if (methodBase is ConstructorInfo)
             return null;
@@ -146,19 +146,19 @@ public class MethodCtorInfo {
     /// <summary>
     /// Provides a string representation of the method signature for debugging.
     /// </summary>
-    public override string ToString() => $"{MethodBase.Name}({string.Join(", ", Parameters.Select(p => p.TargetType.ShortName()))})";
+    public override string ToString() => $"{MethodBase.Name}({string.Join(", ", Parameters.Select(p => p.Type.ShortName()))})";
     /// <summary>
     /// Automatically generates default matchers for all parameters of a method.
     /// </summary>
     /// <returns>An array of matchers, or null if any parameter is invalid.</returns>
-    public static IDbTypeParserMatcher[]? TryMakeParameters(MethodBase methodBase) {
+    public static ParamInfo[]? TryMakeParameters(MethodBase methodBase) {
         var type = methodBase is MethodInfo method ? method.ReturnType : methodBase.DeclaringType;
         if (type is null)
             return null;
         var parameters = methodBase.GetParameters();
         if (parameters.Length == 0)
             return [];
-        var ps = new IDbTypeParserMatcher[parameters.Length];
+        var ps = new ParamInfo[parameters.Length];
         for (int i = 0; i < parameters.Length; i++) {
             var param = parameters[i];
             var p = ParamInfo.TryNew(param);
@@ -181,8 +181,8 @@ public class MethodCtorInfo {
             return false;
         bool hasMoreSpecific = false;
         for (int i = 0; i < len; i++) {
-            var typeThis = this.Parameters[i].TargetType;
-            var typeOther = info.Parameters[i].TargetType;
+            var typeThis = this.Parameters[i].Type;
+            var typeOther = info.Parameters[i].Type;
             if (typeThis.IsAssignableTo(typeOther)) {
                 if (!hasMoreSpecific)
                     hasMoreSpecific = typeThis != typeOther;
@@ -199,7 +199,7 @@ public class MethodCtorInfo {
         if (Parameters.Length != b.Parameters.Length)
             return false;
         for (int i = 0; i < Parameters.Length; i++) {
-            if (Parameters[i].TargetType != b.Parameters[i].TargetType ||
+            if (Parameters[i].Type != b.Parameters[i].Type ||
                 string.Equals(Parameters[i].GetName(), b.Parameters[i].GetName(), StringComparison.OrdinalIgnoreCase)) {
                 return false;
             }

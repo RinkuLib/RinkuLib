@@ -131,7 +131,7 @@ public class TypeParserTests {
             [1, "Test1", 2, "Test2", "Stop1"]
         ]);
 
-        var parser = TypeParser<(TestStop2, TestStop)>.GetParserFunc(ref columns);
+        var parser = TypeParser<(TestStop2, TestStop3)>.GetParserFunc(ref columns);
 
         reader.Read();
         var (stop1, stop2) = parser(reader);
@@ -368,13 +368,13 @@ public class TypeParserTests {
         ColumnInfo[] columns = [
             new("ProductId", typeof(int), false),
         
-        // Price<decimal> mapping: ListingPrice (param) + Amount/Currency
-        new("ListingPriceAmount", typeof(decimal), true),
-        new("ListingPriceCurrency", typeof(byte), true),
+            // Price<decimal> mapping: ListingPrice (param) + Amount/Currency
+            new("ListingPriceAmount", typeof(decimal), true),
+            new("ListingPriceCurrency", typeof(byte), true),
         
-        // Metadata<string> mapping: Info (param) + Value/Source
-        new("InfoValue", typeof(string), false),
-        new("InfoSource", typeof(string), true)
+            // Metadata<string> mapping: Info (param) + Value/Source
+            new("InfoValue", typeof(string), false),
+            new("InfoSource", typeof(string), true)
         ];
 
         // Row 1: Fully populated with decimal and string
@@ -718,6 +718,7 @@ public class TypeParserTests {
 }
 public record class TestStop(int ID, string Name, string? Other = null);
 public record class TestStop2(int ID, string Name, [CanLookAnywhere]string? Other = null);
+public record class TestStop3([CanLookAnywhere]int ID, string Name, string? Other = null);
 public record class User(int ID, string Name, [Alt("Boss")] User? Supervisor = null);
 public record class User2([InvalidOnNull]int ID, string Name, [Alt("Boss")] User2? Supervisor = null);
 public class SimpleUser {
