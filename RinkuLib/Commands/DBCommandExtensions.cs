@@ -1,0 +1,1343 @@
+﻿using System.Data;
+using System.Data.Common;
+using System.Globalization;
+using System.Runtime.CompilerServices;
+using RinkuLib.DbParsing;
+using RinkuLib.Queries;
+using RinkuLib.Tools;
+
+namespace RinkuLib.Commands;
+/// <summary>
+/// The default implementation without a cache nor an allready set function
+/// </summary>
+public struct DefaultNoCache<T> : ISchemaParser<T> {
+    private Func<DbDataReader, T> parser;
+    /// <inheritdoc/>
+    public readonly CommandBehavior Behavior => default;
+    /// <inheritdoc/>
+    public readonly bool IsInit => false;
+    /// <inheritdoc/>
+    public void Init(DbDataReader reader, IDbCommand cmd) {
+        var schema = reader.GetColumnsFast();
+        parser = TypeParser<T>.GetParserFunc(ref schema);
+    }
+    /// <inheritdoc/>
+    public readonly T Parse(DbDataReader reader) => parser(reader);
+}
+/// <summary>Extensions on DbCommand</summary>
+public static class DBCommandExtensions {
+    static DBCommandExtensions() {
+        AddTypeParser(v => Convert.ToSByte(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToInt16(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToInt32(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToInt64(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToByte(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToUInt16(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToUInt32(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToUInt64(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToSingle(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToDouble(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToDecimal(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToChar(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => v.ToString() ?? string.Empty);
+        AddTypeParser(v => Convert.ToBoolean(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => Convert.ToDateTime(v, CultureInfo.InvariantCulture));
+        AddTypeParser(v => DateTimeOffset.Parse(v.ToString()!, CultureInfo.InvariantCulture));
+        AddTypeParser(v => TimeSpan.Parse(v.ToString()!, CultureInfo.InvariantCulture));
+        AddTypeParser(v => v switch {
+            Guid g => g,
+            string s => Guid.Parse(s),
+            byte[] b => new Guid(b),
+            _ => Guid.Parse(v.ToString()!)
+        });
+    }
+    private static readonly Dictionary<Type, object> TypeParsers = [];
+    /// <summary>Add a value to parse from object to a type</summary>
+    public static void AddTypeParser<T>(Func<object, T> parser) => TypeParsers[typeof(T)] = parser;
+    private static T Parse<T>(object? value) {
+        if (value is null || value is DBNull)
+            return default!;
+        if (value is T t)
+            return t;
+        var type = typeof(T);
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (type.IsEnum) {
+            if (value is float || value is double || value is decimal) {
+                value = Convert.ChangeType(value, Enum.GetUnderlyingType(type), CultureInfo.InvariantCulture);
+            }
+            return (T)Enum.ToObject(type, value);
+        }
+        if (TypeParsers.TryGetValue(type, out object? parser))
+            return Unsafe.As<object, Func<object, T>>(ref parser)(value);
+        return (T)Convert.ChangeType(value, type, CultureInfo.InvariantCulture);
+    }
+    /// <summary>Return the parser of <typeparamref name="T"/> using the <paramref name="reader"/> current result schema</summary>
+    public static Func<DbDataReader, T> GetParser<T>(this DbDataReader reader) {
+        var schema = reader.GetColumnsFast();
+        return TypeParser<T>.GetParserFunc(ref schema);
+    }
+    extension(DbCommand cmd) {
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public int Execute<T>(T cache, bool disposeCommand) where T : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                if (wasClosed)
+                    cnn.Open();
+                var res = cmd.ExecuteNonQuery();
+                cache.UpdateCache(cmd);
+                return res;
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async Task<int> ExecuteAsync<T>(T cache, bool disposeCommand, CancellationToken ct = default) where T : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                if (wasClosed)
+                    await cnn.OpenAsync(ct).ConfigureAwait(false);
+                var res = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                cache.UpdateCache(cmd);
+                return res;
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    await cmd.DisposeAsync().ConfigureAwait(false);
+                }
+                if (wasClosed)
+                    await cnn.CloseAsync().ConfigureAwait(false);
+            }
+        }
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T ExecuteScalar<T, TCache>(TCache cache, bool disposeCommand) where TCache : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                if (wasClosed)
+                    cnn.Open();
+                var res = cmd.ExecuteScalar();
+                cache.UpdateCache(cmd);
+                return Parse<T>(res);
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async Task<T> ExecuteScalarAsync<T, TCache>(TCache cache, bool disposeCommand, CancellationToken ct = default) where TCache : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                if (wasClosed)
+                    await cnn.OpenAsync(ct).ConfigureAwait(false);
+                var res = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                cache.UpdateCache(cmd);
+                return Parse<T>(res);
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    await cmd.DisposeAsync().ConfigureAwait(false);
+                }
+                if (wasClosed)
+                    await cnn.CloseAsync().ConfigureAwait(false);
+            }
+        }
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cache">A cache to be used with the reader</param>
+        /// <param name="behavior">The default behavior to use for the reader</param>
+        public DbDataReader ExecuteReader<T>(T cache, CommandBehavior behavior = default) where T : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            if (cnn.State != ConnectionState.Open) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            var reader = cmd.ExecuteReader(behavior);
+            cache.UpdateCache(cmd);
+            return reader;
+        }
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cache">A cache to be used with the reader</param>
+        /// <param name="behavior">The default behavior to use for the reader</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async Task<DbDataReader> ExecuteReaderAsync<T>(T cache, CommandBehavior behavior = default, CancellationToken ct = default) where T : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            if (cnn.State != ConnectionState.Open) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            var reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            cache.UpdateCache(cmd);
+            return reader;
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        public MultiReader ExecuteMultiReader(QueryCommand command, bool[] usageMap, bool disposeCommand, CommandBehavior behavior = default) {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+                wasClosed = false;
+            }
+            var reader = cmd.ExecuteReader(behavior);
+            if (command.NeedToCache(usageMap))
+                command.UpdateCache(cmd);
+            return new(usageMap, command, reader, cmd, disposeCommand, wasClosed);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
+        /// </summary>
+        public async Task<MultiReader> ExecuteMultiReaderAsync(QueryCommand command, bool[] usageMap, bool disposeCommand, CommandBehavior behavior = default, CancellationToken ct = default) {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            if (wasClosed) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+                wasClosed = false;
+            }
+            var reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            if (command.NeedToCache(usageMap))
+                command.UpdateCache(cmd);
+            return new(usageMap, command, reader, cmd, disposeCommand, wasClosed);
+        }
+
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> to fecth the schema and send it to the cache.
+        /// </summary>
+        /// <param name="cache">A parser used as a cache since only init is called</param>
+        public void CacheSchema<TParser, T>(TParser cache) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = CommandBehavior.SchemaOnly | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = cmd.ExecuteReader(behavior);
+                cache.Init(reader, cmd);
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    reader.Dispose();
+                }
+                cmd.Parameters.Clear();
+                cmd.Dispose();
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T? QueryOne<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult | CommandBehavior.SingleRow;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                using var reader = cmd.ExecuteReader(behavior);
+                parser.Init(reader, cmd);
+                if (!reader.Read())
+                    return default;
+                return parser.Parse(reader);
+            }
+            finally {
+                if (wasClosed)
+                    cnn.Close();
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+            }
+        }
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public IEnumerable<T> QueryAll<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = cmd.ExecuteReader(behavior);
+                parser.Init(reader, cmd);
+                while (reader.Read())
+                    yield return parser.Parse(reader);
+                while (reader.NextResult()) { }
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    reader.Dispose();
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public List<T> QueryAllBuffered<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = cmd.ExecuteReader(behavior);
+                parser.Init(reader, cmd);
+                List<T> res = [];
+                while (reader.Read())
+                    res.Add(parser.Parse(reader));
+                while (reader.NextResult()) { }
+                return res;
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    reader.Dispose();
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async Task<T?> QueryOneAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult | CommandBehavior.SingleRow;
+                if (wasClosed) {
+                    await cnn.OpenAsync(ct).ConfigureAwait(false);
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                using var reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                parser.Init(reader, cmd);
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    return default;
+                return parser.Parse(reader);
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    await cnn.CloseAsync().ConfigureAwait(false);
+            }
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async IAsyncEnumerable<T> QueryAllAsync<TParser, T>(TParser parser, bool disposeCommand, [EnumeratorCancellation] CancellationToken ct = default) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    await cnn.OpenAsync(ct).ConfigureAwait(false);
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                parser.Init(reader, cmd);
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    yield return parser.Parse(reader);
+                while (await reader.NextResultAsync(ct).ConfigureAwait(false)) { }
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    await reader.DisposeAsync().ConfigureAwait(false);
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    await cnn.CloseAsync().ConfigureAwait(false);
+            }
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async Task<List<T>> QueryAllBufferedAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    await cnn.OpenAsync(ct).ConfigureAwait(false);
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                parser.Init(reader, cmd);
+                List<T> res = [];
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    res.Add(parser.Parse(reader));
+                while (await reader.NextResultAsync(ct).ConfigureAwait(false)) { }
+                return res;
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    await reader.DisposeAsync().ConfigureAwait(false);
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    await cnn.CloseAsync().ConfigureAwait(false);
+            }
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row asynchronously to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async Task<T?> QueryOneParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleRow | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    await cnn.OpenAsync(ct).ConfigureAwait(false);
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                await parser.Init(reader, cmd).ConfigureAwait(false);
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    return default;
+                return await parser.Parse(reader).ConfigureAwait(false);
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    await reader.DisposeAsync().ConfigureAwait(false);
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    await cnn.CloseAsync().ConfigureAwait(false);
+            }
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse each rows asynchronously to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async IAsyncEnumerable<T> QueryAllParseAsync<TParser, T>(TParser parser, bool disposeCommand, [EnumeratorCancellation] CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    await cnn.OpenAsync(ct).ConfigureAwait(false);
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                await parser.Init(reader, cmd).ConfigureAwait(false);
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    yield return await parser.Parse(reader).ConfigureAwait(false);
+                while (await reader.NextResultAsync(ct).ConfigureAwait(false)) { }
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    await reader.DisposeAsync().ConfigureAwait(false);
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    await cnn.CloseAsync().ConfigureAwait(false);
+            }
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse each rows asynchronously to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public async Task<List<T>> QueryAllBufferedParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    await cnn.OpenAsync(ct).ConfigureAwait(false);
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                await parser.Init(reader, cmd).ConfigureAwait(false);
+                List<T> res = [];
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    res.Add(await parser.Parse(reader).ConfigureAwait(false));
+                while (await reader.NextResultAsync(ct).ConfigureAwait(false)) { }
+                return res;
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    await reader.DisposeAsync().ConfigureAwait(false);
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    await cnn.CloseAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+#if !NET9_0_OR_GREATER
+    internal static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(this IEnumerable<T> source) {
+        foreach (var item in source) {
+            yield return item;
+            await Task.Yield();
+        }
+    }
+#endif
+    extension(IDbCommand cmd) {
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public int Execute<T>(T cache, bool disposeCommand) where T : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                if (wasClosed)
+                    cnn.Open();
+                var res = cmd.ExecuteNonQuery();
+                cache.UpdateCache(cmd);
+                return res;
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<int> ExecuteAsync<T>(T cache, bool disposeCommand, CancellationToken ct = default) where T : ICache {
+            if (cmd is DbCommand c)
+                return c.ExecuteAsync(cache, disposeCommand, ct);
+            return Task.FromResult(cmd.Execute(cache, disposeCommand));
+        }
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T ExecuteScalar<T, TCache>(TCache cache, bool disposeCommand) where TCache : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                if (wasClosed)
+                    cnn.Open();
+                var res = cmd.ExecuteScalar();
+                cache.UpdateCache(cmd);
+                return Parse<T>(res);
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="cache">A cache to be used after execution</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T, TCache>(TCache cache, bool disposeCommand, CancellationToken ct = default) where TCache : ICache {
+            if (cmd is DbCommand c)
+                return c.ExecuteScalarAsync<T, TCache>(cache, disposeCommand, ct);
+            return Task.FromResult(cmd.ExecuteScalar<T, TCache>(cache, disposeCommand));
+        }
+        /// <summary>
+        /// Executes the reader of the <see cref="DbCommand"/>.
+        /// </summary>
+        /// <param name="cache">A cache to be used with the reader</param>
+        /// <param name="behavior">The default behavior to use for the reader</param>
+        public DbDataReader ExecuteReader<T>(T cache, CommandBehavior behavior = default) where T : ICache {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            if (cnn.State != ConnectionState.Open) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            var r = cmd.ExecuteReader(behavior);
+            var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+            cache.UpdateCache(cmd);
+            return reader;
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
+        /// </summary>
+        public MultiReader ExecuteMultiReader(QueryCommand command, bool[] usageMap, bool disposeCommand, CommandBehavior behavior = default) {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+                wasClosed = false;
+            }
+            var r = cmd.ExecuteReader(behavior);
+            var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+            if (command.NeedToCache(usageMap))
+                command.UpdateCache(cmd);
+            return new(usageMap, command, reader, cmd, disposeCommand, wasClosed);
+        }
+
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T? QueryOne<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            if (cmd is DbCommand c)
+                return c.QueryOne<TParser, T>(parser, disposeCommand);
+            return cmd.QueryOneImpl<TParser, T>(parser, disposeCommand);
+        }
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public IEnumerable<T> QueryAll<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            if (cmd is DbCommand c)
+                return c.QueryAll<TParser, T>(parser, disposeCommand);
+            return cmd.QueryAllImpl<TParser, T>(parser, disposeCommand);
+        }
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public List<T> QueryAllBuffered<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            if (cmd is DbCommand c)
+                return c.QueryAllBuffered<TParser, T>(parser, disposeCommand);
+            return cmd.QueryAllBufferedImpl<TParser, T>(parser, disposeCommand);
+        }
+
+        private T? QueryOneImpl<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult | CommandBehavior.SingleRow;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                var r = cmd.ExecuteReader(behavior);
+                using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+                parser.Init(reader, cmd);
+                if (!reader.Read())
+                    return default;
+                return parser.Parse(reader);
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        private IEnumerable<T> QueryAllImpl<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                var r = cmd.ExecuteReader(behavior);
+                reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+                parser.Init(reader, cmd);
+                while (reader.Read())
+                    yield return parser.Parse(reader);
+                while (reader.NextResult()) { }
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    reader.Dispose();
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        private List<T> QueryAllBufferedImpl<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParser<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                var r = cmd.ExecuteReader(behavior);
+                reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+                parser.Init(reader, cmd);
+                List<T> res = [];
+                while (reader.Read())
+                    res.Add(parser.Parse(reader));
+                while (reader.NextResult()) { }
+                return res;
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    reader.Dispose();
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T?> QueryOneAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+            if (cmd is DbCommand c)
+                return c.QueryOneAsync<TParser, T>(parser, disposeCommand, ct);
+            return Task.FromResult(cmd.QueryOneImpl<TParser, T>(parser, disposeCommand));
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> QueryAllAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+            if (cmd is DbCommand c)
+                return c.QueryAllAsync<TParser, T>(parser, disposeCommand, ct);
+            return cmd.QueryAllImpl<TParser, T>(parser, disposeCommand).ToAsyncEnumerable();
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParser<T> {
+            if (cmd is DbCommand c)
+                return c.QueryAllBufferedAsync<TParser, T>(parser, disposeCommand, ct);
+            return Task.FromResult(cmd.QueryAllBufferedImpl<TParser, T>(parser, disposeCommand));
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse the first row asynchronously to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T?> QueryOneParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+            if (cmd is DbCommand c)
+                return c.QueryOneParseAsync<TParser, T>(parser, disposeCommand, ct);
+            return cmd.QueryOneParseAsyncImpl<TParser, T>(parser, disposeCommand);
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse each rows asynchronously to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> QueryAllParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+            if (cmd is DbCommand c)
+                return c.QueryAllParseAsync<TParser, T>(parser, disposeCommand, ct);
+            return cmd.QueryAllParseAsyncImpl<TParser, T>(parser, disposeCommand, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse each rows asynchronously to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parser">The item responsible to parse the rows</param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedParseAsync<TParser, T>(TParser parser, bool disposeCommand, CancellationToken ct = default) where TParser : ISchemaParserAsync<T> {
+            if (cmd is DbCommand c)
+                return c.QueryAllBufferedParseAsync<TParser, T>(parser, disposeCommand, ct);
+            return cmd.QueryAllBufferedParseAsyncImpl<TParser, T>(parser, disposeCommand, ct);
+        }
+
+        private async Task<T?> QueryOneParseAsyncImpl<TParser, T>(TParser parser, bool disposeCommand) where TParser : ISchemaParserAsync<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleRow | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                var r = cmd.ExecuteReader(behavior);
+                using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+                await parser.Init(reader, cmd).ConfigureAwait(false);
+                if (!reader.Read())
+                    return default;
+                return await parser.Parse(reader).ConfigureAwait(false);
+            }
+            finally {
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        private async IAsyncEnumerable<T> QueryAllParseAsyncImpl<TParser, T>(TParser parser, bool disposeCommand, [EnumeratorCancellation] CancellationToken __) where TParser : ISchemaParserAsync<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                var r = cmd.ExecuteReader(behavior);
+                reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+                await parser.Init(reader, cmd).ConfigureAwait(false);
+                while (reader.Read())
+                    yield return await parser.Parse(reader).ConfigureAwait(false);
+                while (reader.NextResult()) { }
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    reader.Dispose();
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+        private async Task<List<T>> QueryAllBufferedParseAsyncImpl<TParser, T>(TParser parser, bool disposeCommand, CancellationToken __) where TParser : ISchemaParserAsync<T> {
+            var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = parser.Behavior | CommandBehavior.SingleResult;
+                if (wasClosed) {
+                    cnn.Open();
+                    behavior |= CommandBehavior.CloseConnection;
+                    wasClosed = false;
+                }
+                var r = cmd.ExecuteReader(behavior);
+                reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+                await parser.Init(reader, cmd).ConfigureAwait(false);
+                List<T> res = [];
+                while (reader.Read())
+                    res.Add(await parser.Parse(reader).ConfigureAwait(false));
+                while (reader.NextResult()) { }
+                return res;
+            }
+            finally {
+                if (reader is not null) {
+                    if (!reader.IsClosed) {
+                        try { cmd.Cancel(); }
+                        catch { }
+                    }
+                    reader.Dispose();
+                }
+                if (disposeCommand) {
+                    cmd.Parameters.Clear();
+                    cmd.Dispose();
+                }
+                if (wasClosed)
+                    cnn.Close();
+            }
+        }
+    }
+    extension(DbCommand cmd) {
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public int Execute(bool disposeCommand = true)
+            => cmd.Execute<NoNeedToCache>(default, disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<int> ExecuteAsync(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.ExecuteAsync<NoNeedToCache>(default, disposeCommand, ct);
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T ExecuteScalar<T>(bool disposeCommand = true)
+            => cmd.ExecuteScalar<T, NoNeedToCache>(default, disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, disposeCommand, ct);
+
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T? QueryOne<T>(bool disposeCommand = true)
+            => cmd.QueryOne<DefaultNoCache<T>, T>(default, disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public IEnumerable<T> QueryAll<T>(bool disposeCommand = true)
+            => cmd.QueryAll<DefaultNoCache<T>, T>(default, disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public List<T> QueryAllBuffered<T>(bool disposeCommand = true)
+            => cmd.QueryAllBuffered<DefaultNoCache<T>, T>(default, disposeCommand);
+
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T?> QueryOneAsync<T>(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryOneAsync<DefaultNoCache<T>, T>(default, disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> QueryAllAsync<T>(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllAsync<DefaultNoCache<T>, T>(default, disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T>(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllBufferedAsync<DefaultNoCache<T>, T>(default, disposeCommand, ct);
+    }
+    extension(IDbCommand cmd) {
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public int Execute(bool disposeCommand = true)
+            => cmd.Execute<NoNeedToCache>(default, disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<int> ExecuteAsync(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.ExecuteAsync<NoNeedToCache>(default, disposeCommand, ct);
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T ExecuteScalar<T>(bool disposeCommand = true)
+            => cmd.ExecuteScalar<T, NoNeedToCache>(default, disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and return the scalar value.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, disposeCommand, ct);
+
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T? QueryOne<T>(bool disposeCommand = true)
+            => cmd.QueryOne<DefaultNoCache<T>, T>(default, disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public IEnumerable<T> QueryAll<T>(bool disposeCommand = true)
+            => cmd.QueryAll<DefaultNoCache<T>, T>(default, disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public List<T> QueryAllBuffered<T>(bool disposeCommand = true)
+            => cmd.QueryAllBuffered<DefaultNoCache<T>, T>(default, disposeCommand);
+
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T?> QueryOneAsync<T>(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryOneAsync<DefaultNoCache<T>, T>(default, disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> QueryAllAsync<T>(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllAsync<DefaultNoCache<T>, T>(default, disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T>(bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllBufferedAsync<DefaultNoCache<T>, T>(default, disposeCommand, ct);
+    }
+    extension(DbCommand cmd) {
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T? QueryOne<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true)
+            => cmd.QueryOne<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public IEnumerable<T> QueryAll<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true)
+            => cmd.QueryAll<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public List<T> QueryAllBuffered<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true)
+            => cmd.QueryAllBuffered<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand);
+
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T?> QueryOneAsync<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryOneAsync<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> QueryAllAsync<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllAsync<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse asynchronously the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T?> QueryOneParseAsync<T>(Func<DbDataReader, Task<T>> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryOneParseAsync<SchemaParserAsync<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse asynchronously each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> QueryAllParseAsync<T>(Func<DbDataReader, Task<T>> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllParseAsync<SchemaParserAsync<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="DbCommand"/> and parse asynchronously each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedParseAsync<T>(Func<DbDataReader, Task<T>> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllBufferedParseAsync<SchemaParserAsync<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+    }
+    extension(IDbCommand cmd) {
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public T? QueryOne<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true)
+            => cmd.QueryOne<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public IEnumerable<T> QueryAll<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true)
+            => cmd.QueryAll<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand);
+        /// <summary>
+        /// Executes the <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        public List<T> QueryAllBuffered<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true)
+            => cmd.QueryAllBuffered<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand);
+
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T?> QueryOneAsync<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryOneAsync<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> QueryAllAsync<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllAsync<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedAsync<T>(Func<DbDataReader, T> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse asynchronously the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T?> QueryOneParseAsync<T>(Func<DbDataReader, Task<T>> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryOneParseAsync<SchemaParserAsync<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse asynchronously each rows to return a collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> QueryAllParseAsync<T>(Func<DbDataReader, Task<T>> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllParseAsync<SchemaParserAsync<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+        /// <summary>
+        /// Asynchronously executes the <see cref="IDbCommand"/> and parse asynchronously each rows to return a buffered collection of <typeparamref name="T"/>.
+        /// </summary>
+        /// <param name="parsingFunc">The function to use to parse the row</param>
+        /// <param name="behavior">The base <see cref="CommandBehavior"/> for the <see cref="DbDataReader"/></param>
+        /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<List<T>> QueryAllBufferedParseAsync<T>(Func<DbDataReader, Task<T>> parsingFunc, CommandBehavior behavior = default, bool disposeCommand = true, CancellationToken ct = default)
+            => cmd.QueryAllBufferedParseAsync<SchemaParserAsync<T>, T>(new(parsingFunc, behavior), disposeCommand, ct);
+    }
+    /// <summary>Create the <see cref="DbCommand"/> associated with the <see cref="DbConnection"/> and set <see cref="DbTransaction"/> and timeout</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    public static DbCommand GetCommand(this DbConnection cnn, DbTransaction? transaction, int? timeout) {
+        var cmd = cnn.CreateCommand();
+        if (transaction is not null)
+            cmd.Transaction = transaction;
+        if (timeout.HasValue)
+            cmd.CommandTimeout = timeout.Value;
+        return cmd;
+    }
+    /// <summary>Create the <see cref="IDbCommand"/> associated with the <see cref="IDbConnection"/> and set <see cref="IDbTransaction"/> and timeout</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    public static IDbCommand GetCommand(this IDbConnection cnn, IDbTransaction? transaction, int? timeout) {
+        var cmd = cnn.CreateCommand();
+        if (transaction is not null)
+            cmd.Transaction = transaction;
+        if (timeout.HasValue)
+            cmd.CommandTimeout = timeout.Value;
+        return cmd;
+    }
+}
