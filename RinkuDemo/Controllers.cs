@@ -1,4 +1,5 @@
 ﻿using RinkuLib.Commands;
+using RinkuLib.DbRegister;
 using RinkuLib.Queries;
 
 namespace RinkuDemo;
@@ -30,19 +31,8 @@ public class ArtistModule : IApiModule<Artist> {
         => Registry.Stream(context, Registry.Artists);
     public static async Task<Artist?> GetOne(int id) {
         using var db = Registry.GetConnection();
-        var a = await Registry.Artists.Read.QueryOneAsync<Artist>(db, new { ID = id });
-        if (a is null)
-            return null;
-        a.Albums = await Registry.Albums.Read.QueryAllBufferedAsync<Album>(db, new { ArtistID = id });
-        if (a.Albums.Count > 0) {
-            using var cmd = db.CreateCommand();
-            var b = Registry.Tracks.Read.StartBuilder(cmd);
-            foreach (var album in a.Albums) {
-                b.Use("@AlbumID", album.ID);
-                album.Tracks = await b.QueryAllBufferedAsync<Track>();
-            }
-        }
-        return a;
+        return await Registry.Artists.Read.QueryOneAsync<Artist>(db, new { ID = id })
+            .ExecuteDBActionsAsync(db, ["Albums", "Albums.Tracks"]);
     }
     public static async Task<bool> Update(int id, HttpContext context) {
         using var db = Registry.GetConnection();
@@ -91,11 +81,8 @@ public class AlbumModule : IApiModule<Album> {
         => Registry.Stream(context, Registry.Albums);
     public static async Task<Album?> GetOne(int id) {
         using var db = Registry.GetConnection();
-        var a = await Registry.Albums.Read.QueryOneAsync<Album>(db, new { ID = id });
-        if (a is null)
-            return null;
-        a.Tracks = await Registry.Tracks.Read.QueryAllBufferedAsync<Track>(db, new { AlbumID = id });
-        return a;
+        return await Registry.Albums.Read.QueryOneAsync<Album>(db, new { ID = id })
+            .ExecuteDBActionsAsync(db, ["Tracks"]);
     }
     public static async Task<bool> Update(int id, HttpContext context) {
         using var db = Registry.GetConnection();
@@ -217,7 +204,7 @@ public class GenreModule : IApiModule<KeyValuePair<int, string>> {
         return await b.ExecuteAsync(db) > 0;
     }
     public static void Validate() {
-        if (false && !Registry.Genres.Read.Mapper.ContainsKey("@ID"))
+        if (!Registry.Genres.Read.Mapper.ContainsKey("@ID"))
             throw new Exception("Genres select should have a @ID variable");
         if (!Registry.Genres.Delete.Mapper.ContainsKey("@ID"))
             throw new Exception("Genres delete should have a @ID variable");
@@ -243,11 +230,8 @@ public class EmployeeModule : IApiModule<Employee> {
         => Registry.Stream(context, Registry.Employees);
     public static async Task<Employee?> GetOne(int id) {
         using var db = Registry.GetConnection();
-        var e = await Registry.Employees.Read.QueryOneAsync<Employee>(db, new { ID = id });
-        if (e is null)
-            return null;
-        e.ManagingEmployees = await Registry.Employees.Read.QueryAllBufferedAsync<Employee>(db, new { ReportsTo = id });
-        return e;
+        return await Registry.Employees.Read.QueryOneAsync<Employee>(db, new { ID = id })
+            .ExecuteDBActionsAsync(db, ["ManagingEmployees"]);
     }
     public static async Task<bool> Update(int id, HttpContext context) {
         using var db = Registry.GetConnection();
@@ -297,17 +281,8 @@ public class CustomerModule : IApiModule<Customer> {
         => Registry.Stream(context, Registry.Customers);
     public static async Task<Customer?> GetOne(int id) {
         using var db = Registry.GetConnection();
-        var c = await Registry.Customers.Read.QueryOneAsync<Customer>(db, new { ID = id });
-        if (c is null)
-            return null;
-        c.Invoices = await Registry.Invoices.Read.QueryAllBufferedAsync<Invoice>(db, new { CustomerID = id });
-        using var cmd = db.CreateCommand();
-        var b = Registry.InvoiceLines.Read.StartBuilder(cmd);
-        foreach (var inv in c.Invoices) {
-            b.Use("InvoiceID", inv.ID);
-            inv.Lines = await Registry.InvoiceLines.Read.QueryAllBufferedAsync<InvoiceLine>(db, new { InvoiceID = inv.ID });
-        }
-        return c;
+        return await Registry.Customers.Read.QueryOneAsync<Customer>(db, new { ID = id })
+            .ExecuteDBActionsAsync(db, ["Invoices", "Invoices.Lines"]);
     }
     public static async Task<bool> Update(int id, HttpContext context) {
         using var db = Registry.GetConnection();
@@ -358,11 +333,8 @@ public class InvoiceModule : IApiModule<Invoice> {
         => Registry.Stream(context, Registry.Invoices);
     public static async Task<Invoice?> GetOne(int id) {
         using var db = Registry.GetConnection();
-        var inv = await Registry.Invoices.Read.QueryOneAsync<Invoice>(db, new { ID = id });
-        if (inv is null)
-            return null;
-        inv.Lines = await Registry.InvoiceLines.Read.QueryAllBufferedAsync<InvoiceLine>(db, new { InvoiceID = id });
-        return inv;
+        return await Registry.Invoices.Read.QueryOneAsync<Invoice>(db, new { ID = id })
+            .ExecuteDBActionsAsync(db, ["Lines"]);
     }
     public static async Task<bool> Update(int id, HttpContext context) {
         using var db = Registry.GetConnection();

@@ -91,7 +91,7 @@ In truth, originaly it was meant as an extensions to `Dapper`, but the blueprint
 
 ---
 
-### Templating Syntax (SQL generation)
+## Templating Syntax (SQL generation)
 
 The engine analyzes your SQL to create a **reusable blueprint**, fragmenting the query into "footprints" that are preserved or pruned based on the presence of data.
 
@@ -102,7 +102,7 @@ The engine analyzes your SQL to create a **reusable blueprint**, fragmenting the
 
 ---
 
-### Mapping Engine (Complex type Negotiation)
+## Mapping Engine (Complex type Negotiation)
 
 Stores metadata about types that are customizable and will be used during negociation to generate an optimal IL-compiled mapping function from type to schema.
 
