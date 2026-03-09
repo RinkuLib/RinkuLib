@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.Primitives;
 using RinkuLib.Commands;
 using RinkuLib.DbParsing;
-using RinkuLib.DbRegister;
 using RinkuLib.Queries;
 
 namespace RinkuDemo;
@@ -21,10 +20,8 @@ public abstract class DynaAction(string name, HttpMethod method, QueryCommand co
 public sealed class QueryOneAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
     public override async Task<IResult> ExecuteAsync(HttpContext context) {
         using var cnn = Registry.GetConnection();
-        var builder = Registry.GetBuilder(context, Command, GetParams(context), out var actions);
+        var builder = Registry.GetBuilder(context, Command, GetParams(context));
         var task = builder.QueryOneAsync<DynaObject>(cnn);
-        if (actions.Length > 0)
-            task = task.ExecuteDBActionsAsync(cnn, actions);
         return Results.Ok(await task);
     }
 }
@@ -46,12 +43,7 @@ public sealed class ExecuteScalarAction(string n, HttpMethod m, QueryCommand c) 
 public sealed class QueryAllAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
     public override Task<IResult> ExecuteAsync(HttpContext context) {
         using var cnn = Registry.GetConnection();
-        var builder = Registry.GetBuilder(context, Command, GetParams(context), out var actions);
-        if (actions.Length > 0) {
-            var task = builder.QueryAllBufferedAsync<DynaObject>(cnn);
-            task = task.ExecuteDBActionsAsync(cnn, actions);
-            return Task.FromResult(Results.Ok(task));
-        }
+        var builder = Registry.GetBuilder(context, Command, GetParams(context));
         var stream = builder.QueryAllAsync<DynaObject>(cnn);
         return Task.FromResult(Results.Ok(stream));
     }

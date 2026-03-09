@@ -255,6 +255,14 @@ public class CompleteTests {
         Assert.NotEmpty(c.Products);
     }
     [Fact]
+    public async Task ExecutingActions_Struct_Array_One() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories");
+        using var cnn = GetDbCnn();
+        var c = await query.QueryOneAsync<CategoryArray>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ["Products"], ct: TestContext.Current.CancellationToken);
+        Assert.NotEmpty(c.Products);
+    }
+    [Fact]
     public async Task ExecutingActions_Struct_Prod_Struct_One() {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
@@ -286,6 +294,20 @@ public class CompleteTests {
             Assert.Equal(2, prod.OwnedBy.Count);
         }
     }
+    [Fact]
+    public async Task ExecutingActions_Cascade_One_Array() {
+        var query = new QueryCommand("SELECT ID, Label FROM Categories WHERE ID = 1");
+        using var cnn = GetDbCnn();
+        var c = await query.QueryOneAsync<CategoryCascadeArray>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ["Products", "Products.OwnedBy"], ct: TestContext.Current.CancellationToken);
+        Assert.NotNull(c);
+        Assert.Equal(5, c.Products.Length);
+        foreach (var prod in c.Products) {
+            if (prod.ID != 1)
+                continue;
+            Assert.Equal(2, prod.OwnedBy.Length);
+        }
+    }
 }
 public record struct PersonParam(bool Active);
 public record Person(int ID, [Alt("Name")]string Username, string? Email) : IDbReadable {
@@ -298,26 +320,38 @@ public sealed class A2 {
     public int OtherID;
 }
 public record class Category(int ID, [Alt("Label")]string Name) : IDbReadable {
-    [PopulateList("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1}", "CategoryID")]
+    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
     public List<Product> Products = [];
 }
 public record class Product(int ID, string Name, Category? Category = null);
 public record struct CategoryStruct(int ID, [Alt("Label")] string Name) {
-    [PopulateList("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1}", "CategoryID")]
+    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
     public List<Product> Products = [];
 }
-public record struct CategoryStructS(int ID, [Alt("Label")] string Name) {
-    [PopulateList("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1}", "CategoryID")]
+public record struct CategoryStructS(int ID, [Alt("Label")] string Name) : IDbReadable {
+    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
     public List<ProductStruct> Products = [];
+}
+public record struct CategoryArray(int ID, [Alt("Label")] string Name) {
+    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
+    public ProductStruct[] Products = [];
 }
 public record struct ProductStruct(int ID, string Name, CategoryStructS? Category = null);
 public record class WithDefNullable(int ID, string Name, int? NotUsed = null);
 public record class CategoryCascade(int ID, [Alt("Label")] string Name) : IDbReadable {
-    [PopulateList("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1}", "CategoryID")]
+    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
     public List<ProductCascade> Products = [];
 }
 public record class ProductCascade(int ID, string Name, CategoryCascade? Category = null) {
-    [PopulateList("ID", "SELECT {0}ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID {1}", "ProductID")]
+    [ToMany("ID", "SELECT {0}ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID {1} ORDER BY ProductID", "ProductID")]
     public List<UserCascade> OwnedBy = [];
 }
 public record UserCascade(int ID, [Alt("Name")] string Username, string? Email = null);
+public record class CategoryCascadeArray(int ID, [Alt("Label")] string Name) : IDbReadable {
+    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
+    public ProductCascadeArray[] Products = [];
+}
+public record class ProductCascadeArray(int ID, string Name, CategoryCascadeArray? Category = null) {
+    [ToMany("ID", "SELECT {0}ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID {1} ORDER BY ProductID", "ProductID")]
+    public UserCascade[] OwnedBy = [];
+}

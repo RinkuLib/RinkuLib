@@ -1,8 +1,9 @@
 using RinkuDemo;
 
 var builder = WebApplication.CreateBuilder(args);
-Registry.Initialize(builder.Configuration);
-var dynaActions = builder.Configuration.LoadActions();
+var c = builder.Configuration;
+Registry.Initialize(c);
+var dynaActions = c.LoadActions();
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
@@ -15,14 +16,14 @@ if (app.Environment.IsDevelopment()) {
 }
 
 app.UseHttpsRedirection();
-app.MapModule<ArtistModule, Artist>();
-app.MapModule<AlbumModule, Album>();
-app.MapModule<TrackModule, Track>();
-app.MapModule<MediaTypeModule, Reference>();
-app.MapModule<GenreModule, KeyValuePair<int, string>>();
-app.MapModule<EmployeeModule, Employee>();
-app.MapModule<CustomerModule, Customer>();
-app.MapModule<InvoiceModule, Invoice>();
-app.MapModule<InvoiceLineModule, InvoiceLine>();
+app.MapController<Artist>(c, "Artist");
+app.MapController<Album>(c, "Album");
+app.MapController<Track>(c, "Track");
+app.MapController<Reference>(c, "Genre");
+app.MapController<Reference>(c, "MediaType");
+app.MapController<Employee>(c, "Employee");
+app.MapController<Customer>(c, "Customer");
+app.MapController<Invoice>(c, "Invoice");
+app.MapController<InvoiceLine>(c, "InvoiceLine");
 app.MapDynaApi(dynaActions);
 app.Run();

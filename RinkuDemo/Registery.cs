@@ -1,10 +1,7 @@
-﻿using System.Data;
-using System.Data.Common;
+﻿using System.Data.Common;
 using System.Globalization;
-using System.Transactions;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Primitives;
-using RinkuLib.Commands;
 using RinkuLib.DbParsing;
 using RinkuLib.DbRegister;
 using RinkuLib.Queries;
@@ -12,38 +9,37 @@ using RinkuLib.Queries;
 namespace RinkuDemo;
 
 public enum Role { User = 0, Employee = 1, Admin = 2 }
+public interface IHasID<TId> {
+    public TId ID { get; set; }
+}
 public static class Registry {
-    public const string GetAll = "GetAll";
     public static string ConnStr { get; private set; } = null!;
     public static DbConnection GetConnection() => new SqliteConnection(ConnStr);
-    public static CrudCommands<Artist> Artists { get; private set; } = null!;
-    public static CrudCommands<Album> Albums { get; private set; } = null!;
-    public static CrudCommands<Track> Tracks { get; private set; } = null!;
-    public static CrudCommands<KeyValuePair<int, string>> Genres { get; private set; } = null!;
-    public static CrudCommands<Reference> MediaTypes { get; private set; } = null!;
-    public static CrudCommands<Employee> Employees { get; private set; } = null!;
-    public static CrudCommands<Customer> Customers { get; private set; } = null!;
-    public static CrudCommands<Invoice> Invoices { get; private set; } = null!;
-    public static CrudCommands<InvoiceLine> InvoiceLines { get; private set; } = null!;
-    public static async IAsyncEnumerable<T> Stream<T>(HttpContext ctx, CrudCommands<T> commands) {
-        using var db = GetConnection();
-        var b = GetBuilder(ctx, commands.Read, ctx.Request.Query, out var actions);
-        b.Use(GetAll);
-        if (actions.Length <= 0) {
-            await foreach (var item in b.QueryAllAsync<T>(db))
-                yield return item;
-            yield break;
-        }
-        if (typeof(T).IsValueType) {
-            foreach (var item in await b.QueryAllBufferedAsync<T>(db).ExecuteDBActionsAsync(db, actions).ConfigureAwait(false))
-                yield return item;
-            yield break;
-        }
-        await foreach (var item in b.QueryAllAsync<T>(db)) {
-            foreach (var actionName in actions)
-                await item.ExecuteDBActionAsync(db, actionName).ConfigureAwait(false);
-            yield return item;
-        }
+    public static Controller<T, int> MapController<T>(this IEndpointRouteBuilder app, IConfiguration config, string key) where T : IHasID<int> {
+        var controller = new Controller<T, int>(config, key);
+        app.MapController(controller);
+        return controller;
+    }
+    public static void MapController<T>(this IEndpointRouteBuilder app, Controller<T, int> controller) where T : IHasID<int> {
+        TypeParsingInfo.GetOrAdd<T>();
+        var g = app.MapGroup($"/{controller.Name.ToLower()}");
+        g.MapGet("/", (HttpContext context) => controller.GetAll(context));
+        g.MapGet("/{id:int}", async (int id) => {
+            var result = await controller.GetOne(id);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        });
+        g.MapPost("/", async (T item) => {
+            var res = await controller.Create(item);
+            return Results.Created($"/{controller.Name.ToLower()}/{res.ID}", res);
+        });
+        g.MapPut("/{id:int}", async (int id, HttpContext context) => {
+            var success = await controller.Update(id, context);
+            return success ? Results.NoContent() : Results.NotFound();
+        });
+        g.MapDelete("/{id:int}", async (int id) => {
+            var success = await controller.Delete(id);
+            return success ? Results.NoContent() : Results.NotFound();
+        });
     }
 
     public static void Initialize(IConfiguration config) {
@@ -55,15 +51,6 @@ public static class Registry {
 
         var fileName = config["DbFile"] ?? throw new InvalidOperationException("DbFile is missing.");
         ConnStr = $"Data Source={Path.Combine(AppContext.BaseDirectory, fileName)}";
-        Artists = new(config, "Artist");
-        Albums = new(config, "Album");
-        Tracks = new(config, "Track");
-        Genres = new(config, "Genre");
-        MediaTypes = new(config, "MediaType");
-        Employees = new(config, "Employee");
-        Customers = new(config, "Customer");
-        Invoices = new(config, "Invoice");
-        InvoiceLines = new(config, "InvoiceLine");
         SQLitePCL.Batteries.Init();
     }
     public static object? ToInferredObject(this StringValues sv) {
@@ -102,7 +89,6 @@ public static class Registry {
     }
     public static QueryBuilder GetBuilder(HttpContext ctx, QueryCommand command, IEnumerable<KeyValuePair<string, StringValues>> parameters) {
         var b = command.StartBuilder();
-        b.Use(GetAll);
         UseRole(GetRole(ctx), b);
         foreach (var (k, v) in parameters) {
             if (string.IsNullOrEmpty(k) || k[0] == '#')
@@ -117,10 +103,8 @@ public static class Registry {
         }
         return b;
     }
-    public static QueryBuilder GetBuilder(HttpContext ctx, QueryCommand command, IEnumerable<KeyValuePair<string, StringValues>> parameters, out string[] actions) {
-        var b = command.StartBuilder();
-        b.Use(GetAll);
-        UseRole(GetRole(ctx), b);
+    public static void FillQueryBuilder(HttpContext ctx, QueryBuilder builder, IEnumerable<KeyValuePair<string, StringValues>> parameters, out string[] actions) {
+        UseRole(GetRole(ctx), builder);
         actions = [];
         foreach (var (k, v) in parameters) {
             if (string.IsNullOrEmpty(k) || k[0] == '#')
@@ -128,16 +112,15 @@ public static class Registry {
             if (k.Equals("Uses", StringComparison.InvariantCultureIgnoreCase)) {
                 foreach (var useValue in v)
                     if (!string.IsNullOrEmpty(useValue) && useValue[0] != '#')
-                        b.Use(useValue);
+                        builder.Use(useValue);
             }
             if (k.Equals("Actions", StringComparison.InvariantCultureIgnoreCase)) {
                 if (v.Count > 0)
                     actions = v.ToArray()!;
             }
             else
-                b.Use('@', k, v.ToInferredObject());
+                builder.Use('@', k, v.ToInferredObject());
         }
-        return b;
     }
     public static ValueTask ExecuteDBActionAsync<T>(this T instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
@@ -146,11 +129,4 @@ public static class Registry {
             return action.ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct);
         return action.FowardExecuteOnOneAsync(startNext, actionName, instance, cnn, transaction, timeout, ct);
     }
-}
-
-public class CrudCommands<T>(IConfiguration config, string key) {
-    public QueryCommand Create { get; } = new(config[$"SQLStrings:{key}:Create"] ?? throw new Exception($"{key} : Create does not exist"));
-    public QueryCommand Read { get; } = new(config[$"SQLStrings:{key}:Read"] ?? throw new Exception($"{key} : Read does not exist"));
-    public QueryCommand Update { get; } = new(config[$"SQLStrings:{key}:Update"] ?? throw new Exception($"{key} : Update does not exist"));
-    public QueryCommand Delete { get; } = new(config[$"SQLStrings:{key}:Delete"] ?? throw new Exception($"{key} : Delete does not exist"));
 }

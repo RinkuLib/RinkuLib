@@ -204,9 +204,9 @@ public static class DbActions {
             if (!DbActions<T>.TryGetAction(0, item, out var action, out var startNext))
                 continue;
             if (startNext == 0)
-                await action.ExecuteOnManyAsync(instances, cnn, transaction, timeout, ct).ConfigureAwait(false);
+                await action.ExecuteOnManyAsync(new ListAccess<T>(instances), cnn, transaction, timeout, ct).ConfigureAwait(false);
             else
-                await action.FowardExecuteOnManyAsync(startNext, item, instances, cnn, transaction, timeout, ct).ConfigureAwait(false);
+                await action.FowardExecuteOnManyAsync(startNext, item, new ListAccess<T>(instances), cnn, transaction, timeout, ct).ConfigureAwait(false);
         }
         return instances;
     }
@@ -217,10 +217,61 @@ public static class DbActions {
             if (!DbActions<T>.TryGetAction(0, item, out var action, out var startNext))
                 continue;
             if (startNext == 0)
-                await action.ExecuteOnManyAsync(instances, cnn, transaction, timeout, ct).ConfigureAwait(false);
+                await action.ExecuteOnManyAsync(new ListAccess<T>(instances), cnn, transaction, timeout, ct).ConfigureAwait(false);
             else
-                await action.FowardExecuteOnManyAsync(startNext, item, instances, cnn, transaction, timeout, ct).ConfigureAwait(false);
+                await action.FowardExecuteOnManyAsync(startNext, item, new ListAccess<T>(instances), cnn, transaction, timeout, ct).ConfigureAwait(false);
         }
         return instances;
+    }
+    /// <summary>Execute the set of actions using the instance. (Value types will act on copy only)</summary>
+    public static void ExecuteDBAction<T>(this T instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null) {
+        if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
+            return;
+        if (startNext == 0)
+            action.ExecuteOnOne(ref instance, cnn, transaction, timeout);
+        else
+            action.FowardExecuteOnOne(startNext, actionName, ref instance, cnn, transaction, timeout);
+    }
+    /// <summary>Execute the set of actions using the instance. (Value types will act on copy only)</summary>
+    public static ValueTask ExecuteDBActionAsync<T>(this T instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
+            return default;
+        if (startNext == 0)
+            return action.ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct);
+        return action.FowardExecuteOnOneAsync(startNext, actionName, instance, cnn, transaction, timeout, ct);
+    }
+    /// <summary>Execute the set of actions using the instance.</summary>
+    public static void ExecuteDBAction<T>(this List<T> instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null) {
+        if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
+            return;
+        if (startNext == 0)
+            action.ExecuteOnMany(new ListAccess<T>(instance), cnn, transaction, timeout);
+        else
+            action.FowardExecuteOnMany(startNext, actionName, new ListAccess<T>(instance), cnn, transaction, timeout);
+    }
+    /// <summary>Execute the set of actions using the instance.</summary>
+    public static ValueTask ExecuteDBActionAsync<T>(this List<T> instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
+            return default;
+        if (startNext == 0)
+            return action.ExecuteOnManyAsync(new ListAccess<T>(instance), cnn, transaction, timeout, ct);
+        return action.FowardExecuteOnManyAsync(startNext, actionName, new ListAccess<T>(instance), cnn, transaction, timeout, ct);
+    }
+    /// <summary>Execute the set of actions using the instance.</summary>
+    public static void ExecuteDBAction<T>(this T[] instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null) {
+        if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
+            return;
+        if (startNext == 0)
+            action.ExecuteOnMany(new ArrayAccess<T>(instance), cnn, transaction, timeout);
+        else
+            action.FowardExecuteOnMany(startNext, actionName, new ArrayAccess<T>(instance), cnn, transaction, timeout);
+    }
+    /// <summary>Execute the set of actions using the instance.</summary>
+    public static ValueTask ExecuteDBActionAsync<T>(this T[] instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
+            return default;
+        if (startNext == 0)
+            return action.ExecuteOnManyAsync(new ArrayAccess<T>(instance), cnn, transaction, timeout, ct);
+        return action.FowardExecuteOnManyAsync(startNext, actionName, new ArrayAccess<T>(instance), cnn, transaction, timeout, ct);
     }
 }
