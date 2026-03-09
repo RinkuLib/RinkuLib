@@ -1,9 +1,12 @@
-﻿using System.Data.Common;
+﻿using System.Data;
+using System.Data.Common;
 using System.Globalization;
+using System.Transactions;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Primitives;
 using RinkuLib.Commands;
 using RinkuLib.DbParsing;
+using RinkuLib.DbRegister;
 using RinkuLib.Queries;
 
 namespace RinkuDemo;
@@ -24,13 +27,23 @@ public static class Registry {
     public static CrudCommands<InvoiceLine> InvoiceLines { get; private set; } = null!;
     public static async IAsyncEnumerable<T> Stream<T>(HttpContext ctx, CrudCommands<T> commands) {
         using var db = GetConnection();
-        var b = commands.Read.StartBuilder();
+        var b = GetBuilder(ctx, commands.Read, ctx.Request.Query, out var actions);
         b.Use(GetAll);
-        UseRole(GetRole(ctx), b);
-        foreach (var (k, v) in ctx.Request.Query)
-            b.Use('@', k, v.ToInferredObject());
-        await foreach (var item in b.QueryAllAsync<T>(db))
+        if (actions.Length <= 0) {
+            await foreach (var item in b.QueryAllAsync<T>(db))
+                yield return item;
+            yield break;
+        }
+        if (typeof(T).IsValueType) {
+            foreach (var item in await b.QueryAllBufferedAsync<T>(db).ExecuteDBActionsAsync(db, actions).ConfigureAwait(false))
+                yield return item;
+            yield break;
+        }
+        await foreach (var item in b.QueryAllAsync<T>(db)) {
+            foreach (var actionName in actions)
+                await item.ExecuteDBActionAsync(db, actionName).ConfigureAwait(false);
             yield return item;
+        }
     }
 
     public static void Initialize(IConfiguration config) {
@@ -103,6 +116,35 @@ public static class Registry {
                 b.Use('@', k, v.ToInferredObject());
         }
         return b;
+    }
+    public static QueryBuilder GetBuilder(HttpContext ctx, QueryCommand command, IEnumerable<KeyValuePair<string, StringValues>> parameters, out string[] actions) {
+        var b = command.StartBuilder();
+        b.Use(GetAll);
+        UseRole(GetRole(ctx), b);
+        actions = [];
+        foreach (var (k, v) in parameters) {
+            if (string.IsNullOrEmpty(k) || k[0] == '#')
+                continue;
+            if (k.Equals("Uses", StringComparison.InvariantCultureIgnoreCase)) {
+                foreach (var useValue in v)
+                    if (!string.IsNullOrEmpty(useValue) && useValue[0] != '#')
+                        b.Use(useValue);
+            }
+            if (k.Equals("Actions", StringComparison.InvariantCultureIgnoreCase)) {
+                if (v.Count > 0)
+                    actions = v.ToArray()!;
+            }
+            else
+                b.Use('@', k, v.ToInferredObject());
+        }
+        return b;
+    }
+    public static ValueTask ExecuteDBActionAsync<T>(this T instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
+            return default;
+        if (startNext == 0)
+            return action.ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct);
+        return action.FowardExecuteOnOneAsync(startNext, actionName, instance, cnn, transaction, timeout, ct);
     }
 }
 
