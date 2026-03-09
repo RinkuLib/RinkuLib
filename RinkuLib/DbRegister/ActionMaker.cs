@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Diagnostics.Metrics;
-using System.Reflection;
+﻿using System.Reflection;
 
 namespace RinkuLib.DbRegister;
 
@@ -11,7 +9,7 @@ public abstract class ActionMaker : Attribute {
 }
 /// <summary></summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method)]
-public sealed class PopulateListAttribute(string idMemberName, string query, string keyColumnName) : ActionMaker {
+public sealed class ToManyAttribute(string idMemberName, string query, string keyColumnName) : ActionMaker {
     private readonly string _idMemberName = idMemberName;
     private readonly string _keyColumnName = keyColumnName;
     private readonly string _query = query;
@@ -23,6 +21,6 @@ public sealed class PopulateListAttribute(string idMemberName, string query, str
         ArgumentNullException.ThrowIfNull(member);
         MemberInfo idMember = tObj.GetMember(_idMemberName, flags).FirstOrDefault()
                                ?? throw new MissingMemberException(tObj.Name, _idMemberName);
-        return (member.Name, (DbAction<TObj>)PopulateListActionFactory.Build(tObj, member, idMember, _query, _keyColumnName));
+        return (member.Name, (DbAction<TObj>)CollectionRelationActionFactory.Build(tObj, member, idMember, _query, _keyColumnName));
     }
 }
