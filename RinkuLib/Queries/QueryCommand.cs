@@ -22,7 +22,7 @@ namespace RinkuLib.Queries;
 /// </remarks>
 public class QueryCommand : IQueryCommand, ICache {
     /// <inheritdoc/>
-    public Mapper Mapper;
+    public readonly Mapper Mapper;
     Mapper IQueryCommand.Mapper => Mapper;
     int IQueryCommand.StartBaseHandlers => StartBaseHandlers;
     int IQueryCommand.StartSpecialHandlers => StartSpecialHandlers;
@@ -375,9 +375,10 @@ public class QueryCommand : IQueryCommand, ICache {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TypeAccessorCache GetAccessorCache(IntPtr handle, Type type) {
         var hds = _handles;
+        var funcs = _funcs;
         for (int i = 0; i < hds.Length; i++)
             if (hds[i] == handle)
-                return _funcs[i];
+                return funcs[i];
         lock (TypeAccessorSharedLock) {
             for (int i = 0; i < _handles.Length; i++)
                 if (_handles[i] == handle)

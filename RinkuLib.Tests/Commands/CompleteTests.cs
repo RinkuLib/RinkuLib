@@ -218,6 +218,18 @@ public class CompleteTests {
         }
     }
     [Fact]
+    public async Task ExecutingActions_Manualy_AddMany() {
+        DbActions.AddOrUpdateToManyRelation<CategoryManualyAddMany>("Products", "ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID");
+
+        var query = new QueryCommand("SELECT ID, Label FROM Categories");
+        using var cnn = GetDbCnn();
+        var cats = await query.QueryAllBufferedAsync<CategoryManualyAddMany>(cnn, ct: TestContext.Current.CancellationToken)
+            .ExecuteDBActionsAsync(cnn, ["Products"], ct: TestContext.Current.CancellationToken);
+        foreach (var c in cats) {
+            Assert.NotEmpty(c.Products);
+        }
+    }
+    [Fact]
     public async Task ExecutingActions_Struct() {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
@@ -319,39 +331,42 @@ public sealed class A1 {
 public sealed class A2 {
     public int OtherID;
 }
-public record class Category(int ID, [Alt("Label")]string Name) : IDbReadable {
-    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
+public record class Category(int ID, [Alt("Label")] string Name) : IDbReadable {
+    [ToMany("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID")]
+    public List<Product> Products = [];
+}
+public record class CategoryManualyAddMany(int ID, [Alt("Label")] string Name) : IDbReadable {
     public List<Product> Products = [];
 }
 public record class Product(int ID, string Name, Category? Category = null);
 public record struct CategoryStruct(int ID, [Alt("Label")] string Name) {
-    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
+    [ToMany("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID")]
     public List<Product> Products = [];
 }
 public record struct CategoryStructS(int ID, [Alt("Label")] string Name) : IDbReadable {
-    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
+    [ToMany("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID")]
     public List<ProductStruct> Products = [];
 }
 public record struct CategoryArray(int ID, [Alt("Label")] string Name) {
-    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
+    [ToMany("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID")]
     public ProductStruct[] Products = [];
 }
 public record struct ProductStruct(int ID, string Name, CategoryStructS? Category = null);
 public record class WithDefNullable(int ID, string Name, int? NotUsed = null);
 public record class CategoryCascade(int ID, [Alt("Label")] string Name) : IDbReadable {
-    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
+    [ToMany("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID")]
     public List<ProductCascade> Products = [];
 }
 public record class ProductCascade(int ID, string Name, CategoryCascade? Category = null) {
-    [ToMany("ID", "SELECT {0}ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID {1} ORDER BY ProductID", "ProductID")]
+    [ToMany("ID", "SELECT ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID = @ID")]
     public List<UserCascade> OwnedBy = [];
 }
 public record UserCascade(int ID, [Alt("Name")] string Username, string? Email = null);
 public record class CategoryCascadeArray(int ID, [Alt("Label")] string Name) : IDbReadable {
-    [ToMany("ID", "SELECT {0}ID, Name FROM Products WHERE CategoryID {1} ORDER BY CategoryID", "CategoryID")]
+    [ToMany("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID")]
     public ProductCascadeArray[] Products = [];
 }
 public record class ProductCascadeArray(int ID, string Name, CategoryCascadeArray? Category = null) {
-    [ToMany("ID", "SELECT {0}ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID {1} ORDER BY ProductID", "ProductID")]
+    [ToMany("ID", "SELECT ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID = @ID")]
     public UserCascade[] OwnedBy = [];
 }

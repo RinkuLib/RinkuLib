@@ -2,10 +2,13 @@
 using System.Data.Common;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using RinkuLib.DbParsing;
 
 namespace RinkuLib.DbRegister;
 /// <summary>Wrap a collection and provide acces to the ref of the items</summary>
 public interface ICollectionRefAccessor<T> {
+    /// <summary>Getter to the underlying ennumerable</summary>
+    public IEnumerable<T> GetEnumerable { get; }
     /// <summary>Is the collection is not null and has at least one value</summary>
     public bool HasValues { get; }
     /// <summary>The length / count of the underlying item</summary>
@@ -15,9 +18,11 @@ public interface ICollectionRefAccessor<T> {
 }
 /// <summary>The ref accessor for a list</summary>
 public readonly struct ListAccess<T>(List<T> instances) : ICollectionRefAccessor<T> {
+    private readonly List<T> instances = instances;
+    /// <inheritdoc/>
+    public IEnumerable<T> GetEnumerable => instances;
     /// <inheritdoc/>
     public bool HasValues => instances is not null && instances.Count > 0;
-    private readonly List<T> instances = instances;
     /// <inheritdoc/>
     public int Length => instances.Count;
 
@@ -28,6 +33,8 @@ public readonly struct ListAccess<T>(List<T> instances) : ICollectionRefAccessor
 /// <summary>The ref accessor for a list</summary>
 public readonly struct ArrayAccess<T>(T[] instances) : ICollectionRefAccessor<T> {
     private readonly T[] instances = instances;
+    /// <inheritdoc/>
+    public IEnumerable<T> GetEnumerable => instances;
     /// <inheritdoc/>
     public bool HasValues => instances is not null && instances.Length > 0;
     /// <inheritdoc/>
@@ -46,20 +53,62 @@ public abstract class DbAction<T> {
     /// <summary>Execute the action for one instance in an async way, should probably not be called with a struct type since would only modify the copy</summary>
     public virtual ValueTask ExecuteOnOneAsync(T instance, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
         => ExecuteOnOneAsync(instance, (IDbConnection)cnn, transaction, timeout, ct);
-    /// <summary>Execute the action for many instances in a sync way</summary>
-    public virtual void ExecuteOnMany<TAccess>(TAccess instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) where TAccess : ICollectionRefAccessor<T>
-        => ExecuteOnMany(instances, (IDbConnection)cnn, transaction, timeout);
-    /// <summary>Execute the action for many instances in an async way</summary>
-    public virtual ValueTask ExecuteOnManyAsync<TAccess>(TAccess instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TAccess : ICollectionRefAccessor<T>
-        => ExecuteOnManyAsync(instances, (IDbConnection)cnn, transaction, timeout, ct);
     /// <summary>Execute the action for one instance in a sync way</summary>
     public abstract void ExecuteOnOne(ref T instance, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null);
     /// <summary>Execute the action for one instance in an async way, should probably not be called with a struct type since would only modify the copy</summary>
     public abstract ValueTask ExecuteOnOneAsync(T instance, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default);
     /// <summary>Execute the action for many instances in a sync way</summary>
-    public abstract void ExecuteOnMany<TAccess>(TAccess instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) where TAccess : ICollectionRefAccessor<T>;
+    public virtual void ExecuteOnMany<TAccess>(TAccess instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) where TAccess : ICollectionRefAccessor<T>
+        => ExecuteOnMany(instances.GetEnumerable, cnn, transaction, timeout);
     /// <summary>Execute the action for many instances in an async way</summary>
-    public abstract ValueTask ExecuteOnManyAsync<TAccess>(TAccess instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TAccess : ICollectionRefAccessor<T>;
+    public virtual ValueTask ExecuteOnManyAsync<TAccess>(TAccess instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TAccess : ICollectionRefAccessor<T>
+        => ExecuteOnManyAsync(instances.GetEnumerable, cnn, transaction, timeout, ct);
+    /// <summary>Execute the action for many instances in a sync way</summary>
+    public virtual void ExecuteOnMany<TAccess>(TAccess instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) where TAccess : ICollectionRefAccessor<T>
+        => ExecuteOnMany(instances.GetEnumerable, cnn, transaction, timeout);
+    /// <summary>Execute the action for many instances in an async way</summary>
+    public virtual ValueTask ExecuteOnManyAsync<TAccess>(TAccess instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TAccess : ICollectionRefAccessor<T>
+        => ExecuteOnManyAsync(instances.GetEnumerable, cnn, transaction, timeout, ct);
+    /// <summary>Execute the action for many instances in a sync way</summary>
+    public virtual void ExecuteOnMany(IEnumerable<T> instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
+        using var enumerator = instances.GetEnumerator();
+        if (!enumerator.MoveNext())
+            return;
+        while (enumerator.MoveNext()) {
+            var current = enumerator.Current;
+            ExecuteOnOne(ref current, cnn, transaction, timeout);
+        }
+    }
+    /// <summary>Execute the action for many instances in an async way</summary>
+    public async virtual ValueTask ExecuteOnManyAsync(IAsyncEnumerable<T> instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        await foreach (var instance in instances)
+            await ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
+    }
+    /// <summary>Execute the action for many instances in an async way</summary>
+    public async virtual ValueTask ExecuteOnManyAsync(IEnumerable<T> instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        foreach (var instance in instances)
+            await ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
+    }
+    /// <summary>Execute the action for many instances in a sync way</summary>
+    public virtual void ExecuteOnMany(IEnumerable<T> instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
+        using var enumerator = instances.GetEnumerator();
+        if (!enumerator.MoveNext())
+            return;
+        while (enumerator.MoveNext()) {
+            var current = enumerator.Current;
+            ExecuteOnOne(ref current, cnn, transaction, timeout);
+        }
+    }
+    /// <summary>Execute the action for many instances in an async way</summary>
+    public async virtual ValueTask ExecuteOnManyAsync(IEnumerable<T> instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        foreach (var instance in instances)
+            await ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
+    }
+    /// <summary>Execute the action for many instances in an async way</summary>
+    public async virtual ValueTask ExecuteOnManyAsync(IAsyncEnumerable<T> instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        await foreach (var instance in instances)
+            await ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
+    }
     /// <summary>Foward and execute the action for one instance in a sync way</summary>
     public virtual void FowardExecuteOnOne(int nameStart, string actionName, ref T instance, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null)
         => FowardExecuteOnOne(nameStart, actionName, ref instance, cnn, transaction, timeout);
@@ -72,12 +121,54 @@ public abstract class DbAction<T> {
     public abstract ValueTask FowardExecuteOnOneAsync(int nameStart, string actionName, T instance, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default);
     /// <summary>Foward and execute the action for many instances in a sync way</summary>
     public virtual void FowardExecuteOnMany<TAccess>(int nameStart, string actionName, TAccess instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) where TAccess : ICollectionRefAccessor<T>
-        => FowardExecuteOnMany(nameStart, actionName, instances, cnn, transaction, timeout);
+        => FowardExecuteOnMany(nameStart, actionName, instances.GetEnumerable, cnn, transaction, timeout);
     /// <summary>Foward and execute the action for many instances in an async way</summary>
     public virtual ValueTask FowardExecuteOnManyAsync<TAccess>(int nameStart, string actionName, TAccess instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TAccess : ICollectionRefAccessor<T>
-        => FowardExecuteOnManyAsync(nameStart, actionName, instances, cnn, transaction, timeout, ct);
+        => FowardExecuteOnManyAsync(nameStart, actionName, instances.GetEnumerable, cnn, transaction, timeout, ct);
     /// <summary>Foward and execute the action for many instances in a sync way</summary>
-    public abstract void FowardExecuteOnMany<TAccess>(int nameStart, string actionName, TAccess instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) where TAccess : ICollectionRefAccessor<T>;
+    public virtual void FowardExecuteOnMany<TAccess>(int nameStart, string actionName, TAccess instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) where TAccess : ICollectionRefAccessor<T>
+        => FowardExecuteOnMany(nameStart, actionName, instances.GetEnumerable, cnn, transaction, timeout);
     /// <summary>Foward and execute the action for many instances in an async way</summary>
-    public abstract ValueTask FowardExecuteOnManyAsync<TAccess>(int nameStart, string actionName, TAccess instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TAccess : ICollectionRefAccessor<T>;
+    public virtual ValueTask FowardExecuteOnManyAsync<TAccess>(int nameStart, string actionName, TAccess instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TAccess : ICollectionRefAccessor<T>
+        => FowardExecuteOnManyAsync(nameStart, actionName, instances.GetEnumerable, cnn, transaction, timeout, ct);
+    /// <summary>Foward and execute the action for many instances in a sync way</summary>
+    public virtual void FowardExecuteOnMany(int nameStart, string actionName, IEnumerable<T> instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
+        using var enumerator = instances.GetEnumerator();
+        if (!enumerator.MoveNext())
+            return;
+        while (enumerator.MoveNext()) {
+            var current = enumerator.Current;
+            FowardExecuteOnOne(nameStart, actionName, ref current, cnn, transaction, timeout);
+        }
+    }
+    /// <summary>Foward and execute the action for many instances in an async way</summary>
+    public async virtual ValueTask FowardExecuteOnManyAsync(int nameStart, string actionName, IEnumerable<T> instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        foreach (var instance in instances)
+            await FowardExecuteOnOneAsync(nameStart, actionName, instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
+    }
+    /// <summary>Foward and execute the action for many instances in a sync way</summary>
+    public virtual void FowardExecuteOnMany(int nameStart, string actionName, IEnumerable<T> instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
+        using var enumerator = instances.GetEnumerator();
+        if (!enumerator.MoveNext())
+            return;
+        while (enumerator.MoveNext()) {
+            var current = enumerator.Current;
+            FowardExecuteOnOne(nameStart, actionName, ref current, cnn, transaction, timeout);
+        }
+    }
+    /// <summary>Foward and execute the action for many instances in an async way</summary>
+    public async virtual ValueTask FowardExecuteOnManyAsync(int nameStart, string actionName, IEnumerable<T> instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        foreach (var instance in instances)
+            await FowardExecuteOnOneAsync(nameStart, actionName, instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
+    }
+    /// <summary>Foward and execute the action for many instances in an async way</summary>
+    public async virtual ValueTask FowardExecuteOnManyAsync(int nameStart, string actionName, IAsyncEnumerable<T> instances, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        await foreach (var instance in instances)
+            await FowardExecuteOnOneAsync(nameStart, actionName, instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
+    }
+    /// <summary>Foward and execute the action for many instances in an async way</summary>
+    public async virtual ValueTask FowardExecuteOnManyAsync(int nameStart, string actionName, IAsyncEnumerable<T> instances, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        await foreach (var instance in instances)
+            await FowardExecuteOnOneAsync(nameStart, actionName, instance, cnn, transaction, timeout, ct).ConfigureAwait(false);
+    }
 }

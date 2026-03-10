@@ -151,7 +151,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// Disposes the mapper and triggers unmanaged cleanup. 
     /// This operation is thread-safe and ensures <see cref="DisposeUnmanaged"/> is called exactly once.
     /// </summary>
-    public void Dispose() {
+    public virtual void Dispose() {
         string[] originalKeys = Interlocked.Exchange(ref _keys, DeadKeys);
         if (!ReferenceEquals(originalKeys, DeadKeys)) {
             DisposeUnmanaged();
@@ -300,6 +300,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         protected override void DisposeUnmanaged() { }
         public override int GetIndex(string _) => -1;
         public override int GetIndex(ReadOnlySpan<char> _) => -1;
+        public override void Dispose() { }
     }
     internal sealed class One(string Key) : Mapper([Key]) {
         public readonly string Key = Key;

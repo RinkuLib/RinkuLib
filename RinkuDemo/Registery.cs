@@ -51,6 +51,8 @@ public static class Registry {
         info.AddAltName("value", "name");
         info.SetInvalidOnNull("key", true);
         IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferedParamCache.GetInfoGetterMaker<SqliteCommand>);
+        // to change things a bit, the relation is added manualy
+        DbActions.AddOrUpdateToManyRelation<Employee>("ManagingEmployees", "ID", "SELECT EmployeeId AS ID, FirstName, LastName, Title, BirthDate, HireDate, Address, City, State, Country, PostalCode, Phone, Fax, Email FROM employees WHERE ReportsTo = @ID");
 
         var fileName = config["DbFile"] ?? throw new InvalidOperationException("DbFile is missing.");
         ConnStr = $"Data Source={Path.Combine(AppContext.BaseDirectory, fileName)}";
