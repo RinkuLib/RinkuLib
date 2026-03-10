@@ -639,6 +639,15 @@ public class QueryParsingTests {
         Verify(builder, "SELECT EmployeeId, FirstName, Salary, Year FROM Employees WHERE Salary >= @MinSalary AND Department = @DeptName ORDER BY Salary DESC",
             [("@MinSalary", 23), ("@DeptName", "Marketing")]);
     }
+    [Fact]
+    public void Testing_NotNullOrWhitespace_And_NotDefault() {
+        var query = new QueryCommand("SELECT EmployeeId, FirstName, Salary FROM Employees WHERE Salary >= ?@MinSalary AND Department = ?@DeptName AND Status = ?@EmployeeStatus ORDER BY Salary DESC");
+        var builder = query.StartBuilder();
+        var t = new TestDtoClassNotDefault(0, "Marketing", "  ");
+        builder.UseWith(t);
+        Verify(builder, "SELECT EmployeeId, FirstName, Salary FROM Employees WHERE Department = @DeptName ORDER BY Salary DESC",
+            [("@DeptName", "Marketing")]);
+    }
 }
 public record struct TestDtoStruct(int? MinSalary, string? DeptName, string? EmployeeStatus);
 
@@ -648,5 +657,8 @@ public record class TestDtoClass(int? MinSalary, string? DeptName, [property: No
 }
 [UsesBoolConds("Year")]
 public record class TestDtoClassUsesBoolCond(int? MinSalary, string? DeptName, [property: NotNullOrWhitespace] string? EmployeeStatus) {
+    public int OtherField = 32;
+}
+public record class TestDtoClassNotDefault([property: NotDefault] int MinSalary, string? DeptName, [property: NotNullOrWhitespace] string? EmployeeStatus) {
     public int OtherField = 32;
 }

@@ -141,7 +141,7 @@ public static class DbActions<T> {
     }
 }
 /// <summary>Provide extensions to execute actions an intance(s)</summary>
-public static class DbActions {
+public static partial class DbActions {
     internal static readonly
 #if NET9_0_OR_GREATER
         Lock
@@ -200,26 +200,28 @@ public static class DbActions {
     /// <summary>Execute the set of actions using the instance.</summary>
     public static async Task<List<T>> ExecuteDBActionsAsync<T>(this Task<List<T>> instancesTask, DbConnection cnn, string[] actionsToDo, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var instances = await instancesTask.ConfigureAwait(false);
+        var access = new ListAccess<T>(instances);
         foreach (var item in actionsToDo) {
             if (!DbActions<T>.TryGetAction(0, item, out var action, out var startNext))
                 continue;
             if (startNext == 0)
-                await action.ExecuteOnManyAsync(new ListAccess<T>(instances), cnn, transaction, timeout, ct).ConfigureAwait(false);
+                await action.ExecuteOnManyAsync(access, cnn, transaction, timeout, ct).ConfigureAwait(false);
             else
-                await action.FowardExecuteOnManyAsync(startNext, item, new ListAccess<T>(instances), cnn, transaction, timeout, ct).ConfigureAwait(false);
+                await action.FowardExecuteOnManyAsync(startNext, item, access, cnn, transaction, timeout, ct).ConfigureAwait(false);
         }
         return instances;
     }
     /// <summary>Execute the set of actions using the instance.</summary>
     public static async Task<List<T>> ExecuteDBActionsAsync<T>(this Task<List<T>> instancesTask, IDbConnection cnn, string[] actionsToDo, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
         var instances = await instancesTask.ConfigureAwait(false);
+        var access = new ListAccess<T>(instances);
         foreach (var item in actionsToDo) {
             if (!DbActions<T>.TryGetAction(0, item, out var action, out var startNext))
                 continue;
             if (startNext == 0)
-                await action.ExecuteOnManyAsync(new ListAccess<T>(instances), cnn, transaction, timeout, ct).ConfigureAwait(false);
+                await action.ExecuteOnManyAsync(access, cnn, transaction, timeout, ct).ConfigureAwait(false);
             else
-                await action.FowardExecuteOnManyAsync(startNext, item, new ListAccess<T>(instances), cnn, transaction, timeout, ct).ConfigureAwait(false);
+                await action.FowardExecuteOnManyAsync(startNext, item, access, cnn, transaction, timeout, ct).ConfigureAwait(false);
         }
         return instances;
     }

@@ -1,6 +1,9 @@
 ﻿using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.Metrics;
+using System.Runtime.InteropServices;
+using RinkuLib.DbRegister;
 
 namespace RinkuLib.Queries;
 
@@ -8,21 +11,6 @@ namespace RinkuLib.Queries;
 /// Delegate that tries to create a provider for parameter metadata using a specific implementation of <see cref="IDbCommand"/>.
 /// </summary>
 public delegate bool ParamInfoGetterMaker(IDbCommand cmd, [MaybeNullWhen(false)] out IDbParamInfoGetter getter);
-#if !NET8_0_OR_GREATER
-/// <summary>Static class to access <see cref="ParamGetterMakers"/>.</summary>
-public static class DbParamInfoGetter {
-    /// <summary>
-    /// The global discovery hub for metadata providers.
-    /// </summary>
-    /// <remarks>
-    /// This collection stores negotiation delegates that are evaluated via linear search. 
-    /// This design choice prioritizes versatility over strict type-mapping, allowing a 
-    /// single maker to match multiple related command types (e.g., legacy vs. modern 
-    /// drivers or inheritance) through pattern matching.
-    /// </remarks>
-    public static readonly List<ParamInfoGetterMaker> ParamGetterMakers = [];
-}
-#endif
 /// <summary>
 /// Defines a contract for accessing parameter metadata, used to transition from 
 /// inferred types to explicit database-specific definitions.
@@ -40,7 +28,6 @@ public static class DbParamInfoGetter {
 /// plan fragmentation and reducing driver overhead.</para>
 /// </remarks>
 public interface IDbParamInfoGetter {
-#if NET8_0_OR_GREATER
     /// <summary>
     /// The global discovery hub for metadata providers.
     /// </summary>
@@ -51,16 +38,37 @@ public interface IDbParamInfoGetter {
     /// drivers or inheritance) through pattern matching.
     /// </remarks>
     public static readonly List<ParamInfoGetterMaker> ParamGetterMakers = [];
-#endif
+    /// <summary>Try to find and make a single param info based on a name</summary>
+    public static bool TryGetParamInfo(IDbCommand cmd, string paramName, [MaybeNullWhen(false)] out DbParamInfo param) {
+        var makers = CollectionsMarshal.AsSpan(ParamGetterMakers);
+        for (int i = 0; i < makers.Length; i++) {
+            if (!makers[i](cmd, out var getter))
+                continue;
+            foreach (var item in getter.EnumerateParameters()) {
+                if (item.Key == paramName) {
+                    param = getter.MakeInfoAt(item.Value);
+                    return true;
+                }
+            }
+            param = null;
+            return false;
+        }
+        var parameters = cmd.Parameters;
+        var count = parameters.Count;
+        for (int i = 0; i < count; i++) {
+            if (parameters[i] is not IDbDataParameter pa || pa.ParameterName != paramName)
+                continue;
+            param = DefaultParamCache.MakeInfo(pa);
+            return true;
+        }
+        param = null;
+        return false;
+    }
     /// <summary>
     /// Attempts to resolve a <see cref="DbParamInfo"/> for a specific parameter name, 
     /// ideally leveraging provider-specific schema details.
     /// </summary>
-    public bool TryGetInfo(string paramName,
-#if NET8_0_OR_GREATER
-    [MaybeNullWhen(false)]
-# endif
-    out DbParamInfo info);
+    public bool TryGetInfo(string paramName, [MaybeNullWhen(false)] out DbParamInfo info);
     /// <summary>
     /// Enumerates all parameters in the source command to facilitate bulk cache updates.
     /// </summary>
