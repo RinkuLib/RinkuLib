@@ -60,8 +60,12 @@ public class Controller<T, TId> where T : IHasID<TId> {
     }
     private static async IAsyncEnumerable<T> GetAll(DbConnection db, QueryBuilder b, string[] actions) {
         if (typeof(T).IsValueType) {
-            foreach (var item in await b.QueryAllBufferedAsync<T>(db).ExecuteDBActionsAsync(db, actions).ConfigureAwait(false))
-                yield return item;
+            await foreach (var item in b.QueryAllAsync<T>(db)) {
+                var it = item;
+                foreach (var actionName in actions)
+                    Registry.ExecuteDBAction(ref it, db, actionName);
+                yield return it;
+            }
             yield break;
         }
         await foreach (var item in b.QueryAllAsync<T>(db)) {

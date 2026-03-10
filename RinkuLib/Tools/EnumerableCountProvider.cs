@@ -70,7 +70,7 @@ public static class EnumerableCountProvider {
     public static bool TryGetNonEnumeratedCount(this IEnumerable source, out int count) {
         var concreteType = source.GetType();
         if (_cache.TryGetValue(concreteType, out var getter)) {
-            count = getter.Invoke(source);
+            count = getter(source);
             return true;
         }
         return ResolveSlow(source, concreteType, out count);

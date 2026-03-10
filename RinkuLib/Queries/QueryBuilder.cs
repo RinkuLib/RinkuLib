@@ -153,8 +153,6 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     public bool Use(int variableIndex, object? value) {
         if (variableIndex < 0 || variableIndex >= QueryCommand.StartBoolCond)
             return false;
-        if (variableIndex >= QueryCommand.StartSpecialHandlers && value is IEnumerable && value is not string && !HasAny(ref Unsafe.As<object, IEnumerable>(ref value)))
-            return false;
         Variables[variableIndex] = value;
         return true;
     }
@@ -175,32 +173,6 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <inheritdoc/>
     public readonly string GetQueryText()
         => QueryCommand.QueryText.Parse(Variables);
-    internal static bool HasAny(ref IEnumerable value) {
-        if (value is not IEnumerable source)
-            return true;
-        if (source is IEnumerable<object> enu && enu.TryGetNonEnumeratedCount(out var nb)) {
-            if (nb <= 0)
-                return false;
-            return true;
-        }
-        if (source is ICollection col) {
-            if (col.Count <= 0)
-                return false;
-            return true;
-        }
-        if (source.TryGetNonEnumeratedCount(out nb)) {
-            if (nb <= 0)
-                return false;
-            return true;
-        }
-        var e = source.GetEnumerator();
-        if (e.MoveNext()) {
-            value = new PeekableWrapper(e.Current, e);
-            return true;
-        }
-        (e as IDisposable)?.Dispose();
-        return false;
-    }
     /// <inheritdoc/>
     public void UseWith(object parameterObj) {
         Type type = parameterObj.GetType();
@@ -257,31 +229,4 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
             Variables[i] = accessor.IsUsed(i) ? Used : null;
     }
 #endif
-}
-internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {
-    private object? _first = first;
-    private IEnumerator? _enumerator = enumerator;
-
-    public IEnumerator<object> GetEnumerator() {
-        if (_enumerator == null)
-            yield break;
-
-        yield return _first!;
-        _first = null;
-
-        while (_enumerator.MoveNext())
-            yield return _enumerator.Current;
-        Dispose();
-    }
-    public void Dispose() {
-        if (_enumerator is not null) {
-            (_enumerator as IDisposable)?.Dispose();
-            _enumerator = null;
-            _first = null;
-        }
-        GC.SuppressFinalize(this);
-    }
-    ~PeekableWrapper() => Dispose();
-
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }

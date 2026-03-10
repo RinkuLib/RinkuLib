@@ -2,16 +2,17 @@
 using System.Text.Json.Serialization;
 using RinkuLib.DbParsing;
 using RinkuLib.DbRegister;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuDemo;
 
-public record Artist(int ID, string Name) : IHasID<int> {
+public record Artist(int ID, [property: NotNullOrWhitespace] string Name) : IHasID<int> {
     public int ID { get; set; } = ID;
     [ToMany("ID", "SELECT {0}AlbumId AS ID, Title FROM albums WHERE ArtistId {1} ORDER BY ArtistId", "ArtistId")]
     public List<Album> Albums { get; set; } = [];
 }
 
-public record Album(int ID, string Title, Artist? Artist = null) : IHasID<int> {
+public record Album(int ID, [property: NotNullOrWhitespace] string Title, Artist? Artist = null) : IHasID<int> {
     public int ID { get; set; } = ID;
     public int? ArtistID => Artist?.ID;
 
@@ -19,7 +20,7 @@ public record Album(int ID, string Title, Artist? Artist = null) : IHasID<int> {
     public List<Track> Tracks { get; set; } = [];
 }
 
-public record Track(int ID, string Name, string Composer, int Milliseconds, int Bytes, decimal UnitPrice, Album? Album = null, Reference? MediaType = null, KeyValuePair<int, string>? Genre = null) : IHasID<int> {
+public record Track(int ID, [property: NotNullOrWhitespace] string Name, string Composer, int Milliseconds, int Bytes, decimal UnitPrice, Album? Album = null, Reference? MediaType = null, KeyValuePair<int, string>? Genre = null) : IHasID<int> {
     public int ID { get; set; } = ID;
     public int? AlbumID => Album?.ID;
     public int? ArtistID => Album?.Artist?.ID;
@@ -34,7 +35,7 @@ public record struct Reference([Alt("Key")][InvalidOnNull]int ID, [Alt("Name")]s
 }
 
 public record Employee([InvalidOnNull]int ID, string FirstName, string LastName,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Title,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), NotNullOrWhitespace] string? Title,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] DateTime BirthDate = default,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] DateTime HireDate = default,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Address = null,
@@ -55,7 +56,7 @@ public record Employee([InvalidOnNull]int ID, string FirstName, string LastName,
     public List<Employee> ManagingEmployees { get; set; } = [];
 }
 
-public record Customer([InvalidOnNull]int ID, [NotNull]string FirstName, [NotNull]string LastName, string? Company, string? Address, string? City, string? State, string? Country, string? PostalCode, string? Phone, string? Fax, string? Email, Employee? SupportRep = null) : IHasID<int> {
+public record Customer([InvalidOnNull]int ID, [NotNull][property: NotNullOrWhitespace] string FirstName, [NotNull][property: NotNullOrWhitespace] string LastName, string? Company, string? Address, string? City, string? State, string? Country, string? PostalCode, string? Phone, string? Fax, string? Email, Employee? SupportRep = null) : IHasID<int> {
     public int ID { get; set; } = ID;
     public int? SupportRepID => SupportRep?.ID;
     [ToMany("ID", "SELECT {0}InvoiceId AS ID, InvoiceDate, Total, BillingAddress, BillingCity, BillingState, BillingCountry, BillingPostalCode FROM invoices WHERE CustomerId {1} ORDER BY CustomerId", "CustomerId")]
