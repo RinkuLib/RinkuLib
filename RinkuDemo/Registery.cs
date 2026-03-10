@@ -32,9 +32,12 @@ public static class Registry {
             var res = await controller.Create(item);
             return Results.Created($"/{controller.Name.ToLower()}/{res.ID}", res);
         });
-        g.MapPut("/{id:int}", async (int id, HttpContext context) => {
+        g.MapPost("/{id:int}", async (int id, HttpContext context) => {
             var success = await controller.Update(id, context);
-            return success ? Results.NoContent() : Results.NotFound();
+            if (!success)
+                return Results.NotFound();
+            var result = await controller.GetOne(id);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
         });
         g.MapDelete("/{id:int}", async (int id) => {
             var success = await controller.Delete(id);
@@ -122,11 +125,13 @@ public static class Registry {
                 builder.Use('@', k, v.ToInferredObject());
         }
     }
-    public static ValueTask ExecuteDBActionAsync<T>(this T instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+    public static void ExecuteDBAction<T>(ref T instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null) {
         if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
-            return default;
-        if (startNext == 0)
-            return action.ExecuteOnOneAsync(instance, cnn, transaction, timeout, ct);
-        return action.FowardExecuteOnOneAsync(startNext, actionName, instance, cnn, transaction, timeout, ct);
+            return;
+        if (startNext == 0) {
+            action.ExecuteOnOne(ref instance, cnn, transaction, timeout);
+            return;
+        }
+        action.FowardExecuteOnOne(startNext, actionName, ref instance, cnn, transaction, timeout);
     }
 }

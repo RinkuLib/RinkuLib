@@ -1,4 +1,5 @@
-﻿using System.Data;
+﻿using System.Collections;
+using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Reflection;
@@ -265,13 +266,44 @@ public class QueryCommand : IQueryCommand, ICache {
         ref object? pSpecialVar = ref Unsafe.Add(ref pVar, varInfos.Length);
         for (int i = 0; i < handlers.Length; i++) {
             ref var currentVar = ref Unsafe.Add(ref pSpecialVar, i);
-            if (currentVar is not null)
-                handlers[i].Use(cmd, currentVar);
+            if (currentVar is null)
+                continue;
+            if (currentVar is IEnumerable && currentVar is not string && !HasAny(ref Unsafe.As<object, IEnumerable>(ref currentVar))) {
+                currentVar = null;
+                continue;
+            }
+            handlers[i].Use(cmd, currentVar);
         }
 
         cmd.CommandText = QueryText.Parse(variables);
 
         return true;
+    }
+    internal static bool HasAny(ref IEnumerable value) {
+        if (value is not IEnumerable source)
+            return true;
+        if (source is IEnumerable<object> enu && enu.TryGetNonEnumeratedCount(out var nb)) {
+            if (nb <= 0)
+                return false;
+            return true;
+        }
+        if (source is ICollection col) {
+            if (col.Count <= 0)
+                return false;
+            return true;
+        }
+        if (source.TryGetNonEnumeratedCount(out nb)) {
+            if (nb <= 0)
+                return false;
+            return true;
+        }
+        var e = source.GetEnumerator();
+        if (e.MoveNext()) {
+            value = new PeekableWrapper(e.Current, e);
+            return true;
+        }
+        (e as IDisposable)?.Dispose();
+        return false;
     }
 
     /// <inheritdoc/>
@@ -507,3 +539,31 @@ public class QueryCommand : IQueryCommand, ICache {
     }
 #endif
     }
+
+internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {
+    private object? _first = first;
+    private IEnumerator? _enumerator = enumerator;
+
+    public IEnumerator<object> GetEnumerator() {
+        if (_enumerator == null)
+            yield break;
+
+        yield return _first!;
+        _first = null;
+
+        while (_enumerator.MoveNext())
+            yield return _enumerator.Current;
+        Dispose();
+    }
+    public void Dispose() {
+        if (_enumerator is not null) {
+            (_enumerator as IDisposable)?.Dispose();
+            _enumerator = null;
+            _first = null;
+        }
+        GC.SuppressFinalize(this);
+    }
+    ~PeekableWrapper() => Dispose();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}

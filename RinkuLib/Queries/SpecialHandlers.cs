@@ -94,8 +94,7 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// </summary>
     /// <remarks>
     /// This method is intended for one-off bindings where no subsequent <see cref="Update"/> 
-    /// will be called on this command instance. It preserves only the minimal state 
-    /// required for string assembly.
+    /// will be called on this command instance.
     /// </remarks>
     /// <param name="cmd">The command to receive the parameters.</param>
     /// <param name="value">The raw value to bind.</param>
