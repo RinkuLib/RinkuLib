@@ -10,19 +10,44 @@ namespace RinkuLib.DbParsing;
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
 public class CanCompleteWithMembersAttribute : Attribute;
 /// <summary>
+/// Defines that all the parameters type should be registered if they aren't
+/// </summary>
+
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
+public sealed class AreReadableAttribute : Attribute;
+/// <summary>
 /// Represents a validated candidate for object instantiation, wrapping a 
 /// <see cref="ConstructorInfo"/> or static <see cref="MethodInfo"/>.
 /// </summary>
 public class MethodCtorInfo {
+    /// <summary>Flags for a mci instance</summary>
+    [Flags]
+    public enum AdditionalFlags : byte {
+        /// <summary>
+        /// Indicate that the engine can continue to map additional properties or fields 
+        /// after the primary method/constructor has been called.
+        /// </summary>
+        CanCompleteWithMembers = 0b1,
+        /// <summary>
+        /// Will automaticaly register the type of tha parameters if they are not allready registered
+        /// </summary>
+        ParametersAreReadable = 0b10
+    }
     /// <summary>The constructor or static method used for instantiation.</summary>
     public readonly MethodBase MethodBase;
     /// <summary>The matchers for each parameter in the method signature.</summary>
     public readonly ParamInfo[] Parameters;
+    /// <summary>Flags indicating additional info used in various situations</summary>
+    public readonly AdditionalFlags Flags;
     /// <summary>
-    /// If true, the engine can continue to map additional properties or fields 
+    /// Indicate that the engine can continue to map additional properties or fields 
     /// after the primary method/constructor has been called.
     /// </summary>
-    public readonly bool CanCompleteWithMembers;
+    public bool CanCompleteWithMembers => Flags.HasFlag(AdditionalFlags.CanCompleteWithMembers);
+    /// <summary>
+    /// Will automaticaly register the type of tha parameters if they are not allready registered
+    /// </summary>
+    public bool ParametersAreReadable => Flags.HasFlag(AdditionalFlags.ParametersAreReadable);
     /// <summary>
     /// Resolves the type that this method/constructor produces.
     /// </summary>
@@ -46,26 +71,29 @@ public class MethodCtorInfo {
             throw ex;
         this.MethodBase = MethodBase;
         this.Parameters = Parameters;
-        this.CanCompleteWithMembers = MethodBase.IsDefined(typeof(CanCompleteWithMembersAttribute));
+        if (MethodBase.IsDefined(typeof(CanCompleteWithMembersAttribute)))
+            this.Flags |= AdditionalFlags.CanCompleteWithMembers;
+        if (MethodBase.IsDefined(typeof(AreReadableAttribute)))
+            this.Flags |= AdditionalFlags.ParametersAreReadable;
     }
     /// <summary>
     /// Initializes a new instance of <see cref="MethodCtorInfo"/> with explicit member-completion control.
     /// </summary>
     /// <param name="MethodBase">The constructor or method to wrap.</param>
     /// <param name="Parameters">The matchers for the method parameters.</param>
-    /// <param name="CanCompleteWithPropOrField">Whether to allow post-creation member mapping.</param>
-    public MethodCtorInfo(MethodBase MethodBase, ParamInfo[] Parameters, bool CanCompleteWithPropOrField) {
+    /// <param name="Flags">The additional flags.</param>
+    public MethodCtorInfo(MethodBase MethodBase, ParamInfo[] Parameters, AdditionalFlags Flags) {
         var ex = Validate(MethodBase, Parameters);
         if (ex is not null)
             throw ex;
         this.MethodBase = MethodBase;
         this.Parameters = Parameters;
-        this.CanCompleteWithMembers = CanCompleteWithPropOrField;
+        this.Flags = Flags;
     }
-    private MethodCtorInfo(MethodBase MethodBase, ParamInfo[] Parameters, bool CanCompleteWithPropOrField, bool _) {
+    private MethodCtorInfo(MethodBase MethodBase, ParamInfo[] Parameters, AdditionalFlags Flags, bool _) {
         this.MethodBase = MethodBase;
         this.Parameters = Parameters;
-        this.CanCompleteWithMembers = CanCompleteWithPropOrField;
+        this.Flags = Flags;
     }
     /// <summary>
     /// Attempts to create a new <see cref="MethodCtorInfo"/>, returning false if validation fails.
@@ -80,19 +108,24 @@ public class MethodCtorInfo {
             mci = null;
             return false;
         }
-        mci = new(MethodBase, Parameters!, MethodBase.IsDefined(typeof(CanCompleteWithMembersAttribute)), true);
+        AdditionalFlags flags = default;
+        if (MethodBase.IsDefined(typeof(CanCompleteWithMembersAttribute)))
+            flags |= AdditionalFlags.CanCompleteWithMembers;
+        if (MethodBase.IsDefined(typeof(AreReadableAttribute)))
+            flags |= AdditionalFlags.ParametersAreReadable;
+        mci = new(MethodBase, Parameters!, flags, true);
         return true;
     }
     /// <summary>
     /// Attempts to create a new <see cref="MethodCtorInfo"/> with explicit member-completion control.
     /// </summary>
-    public static bool TryNew(MethodBase MethodBase, ParamInfo[]? Parameters, bool CanCompleteWithPropOrField, [MaybeNullWhen(false)] out MethodCtorInfo mci) {
+    public static bool TryNew(MethodBase MethodBase, ParamInfo[]? Parameters, AdditionalFlags Flags, [MaybeNullWhen(false)] out MethodCtorInfo mci) {
         var ex = Validate(MethodBase, Parameters);
         if (ex is not null) {
             mci = null;
             return false;
         }
-        mci = new(MethodBase, Parameters!, CanCompleteWithPropOrField, true);
+        mci = new(MethodBase, Parameters!, Flags, true);
         return true;
     }
     /// <summary>

@@ -1,12 +1,15 @@
 ﻿using System.Data.Common;
 using System.Text.Json;
+using System.Transactions;
 using Microsoft.Data.Sqlite;
 using RinkuLib.Commands;
 using RinkuLib.DbParsing;
 using RinkuLib.DbRegister;
 using RinkuLib.Queries;
 using RinkuLib.Tests.TestContainers;
+using RinkuLib.ToManyRelation;
 using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 using Xunit;
 
 namespace RinkuLib.Tests.Commands; 
@@ -208,6 +211,56 @@ public class CompleteTests {
         Assert.Equal(2, dObj4.Count);
     }
     [Fact]
+    public async Task ToManyRelation() {
+        var query = new QueryCommand("/*!.ToMany*/SELECT ID, Label /*.Products*/SELECT c.ID, p.ID, p.Name FROM Categories c /*.Products*/INNER JOIN Products p ON c.ID = p.CategoryID");
+        using var cnn = GetDbCnn();
+        var cats = await query.QueryAllBufferedAsync<CategoryCascade>(cnn, ct: TestContext.Current.CancellationToken);
+        MakeProductInit(cats, cnn, query);
+        foreach (var c in cats) {
+            Assert.NotEmpty(c.Products);
+        }
+    }
+    [Fact]
+    public async Task ToManyRelation_Cascade() {
+        var query = new QueryCommand("/*!.ToMany*/SELECT ID, Label /*.Products*/SELECT c.ID, p.ID, p.Name /*.Products.OwnedBy*/SELECT c.ID, p.ID, u.ID, u.Name, u.Email FROM Categories c /*.Products|.Products.OwnedBy*/INNER JOIN Products p ON c.ID = p.CategoryID /*.Products.OwnedBy*/INNER JOIN UserProducts up ON up.ProductID = p.ID /*.Products.OwnedBy*/INNER JOIN Users u ON u.ID = up.UserID");
+        using var cnn = GetDbCnn();
+        var cats = await query.QueryAllBufferedAsync<CategoryCascade>(cnn, ct: TestContext.Current.CancellationToken);
+        MakeProductInit(cats, cnn, query);
+        MakeProductUserInit(cats, cnn, query);
+        int[] counts = [5, 4, 2];
+        var ind = 0;
+        foreach (var c in cats) {
+            Assert.Equal(counts[ind++], c.Products.Count);
+            foreach (var prod in c.Products) {
+                if (prod.ID != 1)
+                    continue;
+                Assert.Equal(2, prod.OwnedBy.Count);
+            }
+        }
+    }
+    private void MakeProductInit(List<CategoryCascade> cats, DbConnection cnn, QueryCommand command) {
+        using var cmd = cnn.CreateCommand();
+        Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+        command.SetCommand(cmd, new RequestProducts(), usageMap);
+        if (command.TryGetCache<DBPair<int, ProductCascade>>(usageMap, out var cache)) {
+            ToManyRelation<ProductCascade>.Init(cmd, cache, c => c.ID, (c, arr) => c.Products = arr.ToList(), cats, false);
+            return;
+        }
+        var cacheMaker = new ParsingCacheToMake<DBPair<int, ProductCascade>>(command, cache, usageMap.ToArray());
+        ToManyRelation<ProductCascade>.Init(cmd, cacheMaker, c => c.ID, (c, arr) => c.Products = arr.ToList(), cats, false);
+    }
+    private void MakeProductUserInit(List<CategoryCascade> cats, DbConnection cnn, QueryCommand command) {
+        using var cmd = cnn.CreateCommand();
+        Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+        command.SetCommand(cmd, new RequestUsers(), usageMap);
+        if (command.TryGetCache<DBTrio<int, int, UserCascade>>(usageMap, out var cache)) {
+            ToManyRelation<UserCascade>.Init(cmd, cache, c => c.ID, c => c.Products, p => p.ID, (p, arr) => p.OwnedBy = arr.ToList(), cats, false);
+            return;
+        }
+        var cacheMaker = new ParsingCacheToMake<DBTrio<int, int, UserCascade>>(command, cache, usageMap.ToArray());
+        ToManyRelation<UserCascade>.Init(cmd, cacheMaker, c => c.ID, c => c.Products, p => p.ID, (p, arr) => p.OwnedBy = arr.ToList(), cats, false);
+    }
+    [Fact]
     public async Task ExecutingActions() {
         var query = new QueryCommand("SELECT ID, Label FROM Categories");
         using var cnn = GetDbCnn();
@@ -338,7 +391,7 @@ public record class Category(int ID, [Alt("Label")] string Name) : IDbReadable {
 public record class CategoryManualyAddMany(int ID, [Alt("Label")] string Name) : IDbReadable {
     public List<Product> Products = [];
 }
-public record class Product(int ID, string Name, Category? Category = null);
+public record class Product(int ID, string Name, Category? Category = null) : IDbReadable;
 public record struct CategoryStruct(int ID, [Alt("Label")] string Name) {
     [ToMany("ID", "SELECT ID, Name FROM Products WHERE CategoryID = @ID")]
     public List<Product> Products = [];
@@ -370,3 +423,7 @@ public record class ProductCascadeArray(int ID, string Name, CategoryCascadeArra
     [ToMany("ID", "SELECT ID, Name, Email FROM Users INNER JOIN UserProducts ON UserID = ID WHERE ProductID = @ID")]
     public UserCascade[] OwnedBy = [];
 }
+[UsesBoolConds(".ToMany", ".Products")]
+public struct RequestProducts;
+[UsesBoolConds(".ToMany", ".Products.OwnedBy")]
+public struct RequestUsers;

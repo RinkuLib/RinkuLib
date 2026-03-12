@@ -662,6 +662,111 @@ public class TypeParserTests {
         Assert.Null(emp.Get<DateTime?>("JoinedAt"));
     }
     [Fact]
+    public void DynaObject_InTuple() {
+        var badge = Guid.NewGuid();
+        var joinDate = new DateTime(2023, 05, 10);
+        ColumnInfo[] columns = [
+            new("ID", typeof(int), false),
+            new("BadgeId", typeof(Guid), false),
+            new("Department", typeof(string), false),
+            new("Salary", typeof(decimal), true),
+            new("JoinedAt", typeof(DateTime), true)
+        ];
+        using var reader = CreateReader(columns, [
+            [1, badge, "Engineering", 95000.50m, joinDate],
+            [2, badge, "Engineeringg", DBNull.Value, DBNull.Value]
+        ]);
+
+        var parser = TypeParser<(int, DynaObject)>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var (id, emp) = parser(reader);
+
+        Assert.Equal(1, id);
+        Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
+        Assert.Equal("Engineering", emp.Get<string>("Department"));
+        Assert.Equal(95000.50m, emp.Get<decimal>("Salary"));
+        Assert.Equal(joinDate, emp.Get<DateTime>("JoinedAt"));
+        reader.Read();
+        (id, emp) = parser(reader);
+
+        Assert.Equal(2, id);
+        Assert.Equal(badge, emp["BadgeId"]);
+        Assert.Equal("Engineeringg", emp.Get<object>("Department"));
+        Assert.Null(emp["Salary"]);
+        Assert.Null(emp.Get<DateTime?>("JoinedAt"));
+    }
+    [Fact]
+    public void DynaObject_NestedObj() {
+        var badge = Guid.NewGuid();
+        var joinDate = new DateTime(2023, 05, 10);
+        ColumnInfo[] columns = [
+            new("ID", typeof(int), false),
+            new("BadgeId", typeof(Guid), false),
+            new("Department", typeof(string), false),
+            new("Salary", typeof(decimal), true),
+            new("JoinedAt", typeof(DateTime), true)
+        ];
+        using var reader = CreateReader(columns, [
+            [1, badge, "Engineering", 95000.50m, joinDate],
+            [2, badge, "Engineeringg", DBNull.Value, DBNull.Value]
+        ]);
+
+        var parser = TypeParser<DynaPair<int>>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var (id, emp) = parser(reader);
+
+        Assert.Equal(1, id);
+        Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
+        Assert.Equal("Engineering", emp.Get<string>("Department"));
+        Assert.Equal(95000.50m, emp.Get<decimal>("Salary"));
+        Assert.Equal(joinDate, emp.Get<DateTime>("JoinedAt"));
+        reader.Read();
+        (id, emp) = parser(reader);
+
+        Assert.Equal(2, id);
+        Assert.Equal(badge, emp["BadgeId"]);
+        Assert.Equal("Engineeringg", emp.Get<object>("Department"));
+        Assert.Null(emp["Salary"]);
+        Assert.Null(emp.Get<DateTime?>("JoinedAt"));
+    }
+    [Fact]
+    public void DynaObject_NestedObj2() {
+        var badge = Guid.NewGuid();
+        var joinDate = new DateTime(2023, 05, 10);
+        ColumnInfo[] columns = [
+            new("BadgeId", typeof(Guid), false),
+            new("Department", typeof(string), false),
+            new("Salary", typeof(decimal), true),
+            new("IDAnywhere", typeof(int), false),
+            new("JoinedAt", typeof(DateTime), true)
+        ];
+        using var reader = CreateReader(columns, [
+            [badge, "Engineering", 95000.50m, 1, joinDate],
+            [badge, "Engineeringg", DBNull.Value, 2, DBNull.Value]
+        ]);
+
+        var parser = TypeParser<DynaPair2<int>>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var (id, emp) = parser(reader);
+
+        Assert.Equal(1, id);
+        Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
+        Assert.Equal("Engineering", emp.Get<string>("Department"));
+        Assert.Equal(95000.50m, emp.Get<decimal>("Salary"));
+        Assert.Equal(joinDate, emp.Get<DateTime>("JoinedAt"));
+        reader.Read();
+        (id, emp) = parser(reader);
+
+        Assert.Equal(2, id);
+        Assert.Equal(badge, emp["BadgeId"]);
+        Assert.Equal("Engineeringg", emp.Get<object>("Department"));
+        Assert.Null(emp["Salary"]);
+        Assert.Null(emp.Get<DateTime?>("JoinedAt"));
+    }
+    [Fact]
     public void DynaObject_Dup() {
         var badge = Guid.NewGuid();
         ColumnInfo[] columns = [
@@ -716,6 +821,8 @@ public class TypeParserTests {
         Assert.Equal(CurrencyCode.GBP, p3.Value.Currency);
     }
 }
+public record struct DynaPair<T>([CanNotLookAnywhere] T ID, [NoName] DynaObject Object);
+public record struct DynaPair2<T>(T IDAnywhere, [NoName] DynaObject Object);
 public record class TestStop(int ID, string Name, string? Other = null);
 public record class TestStop2(int ID, string Name, [CanLookAnywhere]string? Other = null);
 public record class TestStop3([CanLookAnywhere]int ID, string Name, string? Other = null);

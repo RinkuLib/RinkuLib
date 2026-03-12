@@ -57,7 +57,7 @@ public struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
         public readonly Span<T> AsSpan(int start) => RawArray.AsSpan(start, Length - start);
         /// <summary>Returns the rented array</summary>
         public void Dispose() {
-            if (_array != null) {
+            if (_array != null && _array.Length > 0) {
                 ArrayPool<T>.Shared.Return(
                     _array,
                     clearArray: RuntimeHelpers.IsReferenceOrContainsReferences<T>()
@@ -67,7 +67,7 @@ public struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
             }
         }
     }
-    private T[] _array = ArrayPool<T>.Shared.Rent(initialCapacity);
+    private T[] _array = initialCapacity == 0 ? [] : ArrayPool<T>.Shared.Rent(initialCapacity);
     private int _count = 0;
     /// <summary>
     /// Gets the underlying array rented from the pool.
@@ -152,7 +152,7 @@ public struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
     }
     /// <summary>Returns the rented array</summary>
     public void Dispose() {
-        if (_array != null) {
+        if (_array != null && _array.Length > 0) {
             ArrayPool<T>.Shared.Return(
                 _array,
                 clearArray: RuntimeHelpers.IsReferenceOrContainsReferences<T>()
@@ -160,5 +160,33 @@ public struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
             _array = null!;
             _count = 0;
         }
+    }
+    /// <summary>
+    /// Resets the count to zero without clearing the underlying array. 
+    /// Use this for performance when T is a value type.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Clear() {
+        _count = 0;
+    }
+    /// <summary>
+    /// Creates a new array containing the current elements in the buffer.
+    /// </summary>
+    /// <returns>A heap-allocated array copy of the active buffer.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly T[] ToArray() {
+        if (_count == 0)
+            return [];
+        return Span.ToArray();
+    }
+    /// <summary>
+    /// Creates a new <see cref="List{T}"/> containing the current elements.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly List<T> ToList() {
+        var list = new List<T>(_count);
+        System.Runtime.InteropServices.CollectionsMarshal.SetCount(list, _count);
+        Span.CopyTo(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(list));
+        return list;
     }
 }

@@ -107,10 +107,13 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         bool isInvalidOnNull = false;
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
         UsageFlags usageFlags = default;
+        bool hasNoName = false;
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
             if (attr is AltAttribute)
                 altCount++;
+            if (attr is NoNameAttribute)
+                hasNoName = true;
             if (attr is IParamInfoMaker mm)
                 maker = mm;
             if (attr is INullColHandler nch)
@@ -135,7 +138,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                     altNames[altIdx++] = alt.AlternativeName;
         }
         INameComparer comparer;
-        if (name is null) {
+        if (name is null || hasNoName) {
             if (altNames.Length == 0)
                 comparer = new NoNameComparer();
             else
