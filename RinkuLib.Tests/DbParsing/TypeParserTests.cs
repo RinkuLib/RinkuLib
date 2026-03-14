@@ -790,6 +790,46 @@ public class TypeParserTests {
         Assert.Equal(badge2, emp[0]);
     }
     [Fact]
+    public void DynaObject_ImplicitOP() {
+        var badge = Guid.NewGuid();
+        ColumnInfo[] columns = [
+            new("Nb1", typeof(int), false),
+            new("Nb2", typeof(long), true)
+        ];
+
+        using var reader = CreateReader(columns, [
+            [1, 1]
+        ]);
+
+        var parser = TypeParser<DynaObject>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var emp = parser(reader);
+
+        Assert.Equal(new MM(1), emp.Get<MM>("Nb1"));
+        Assert.Equal(new MM(1), emp.Get<MM>("Nb2"));
+    }
+    [Fact]
+    public void Tuple_ImplicitOP() {
+        var badge = Guid.NewGuid();
+        ColumnInfo[] columns = [
+            new("Nb1", typeof(int), false),
+            new("Nb2", typeof(long), true)
+        ];
+
+        using var reader = CreateReader(columns, [
+            [1, 1]
+        ]);
+
+        var parser = TypeParser<(MM, MM)>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var (nb1, nb2) = parser(reader);
+
+        Assert.Equal(new MM(1), nb1);
+        Assert.Equal(new MM(1), nb2);
+    }
+    [Fact]
     public void Test_Casting() {
         ColumnInfo[] columns = [
             new("Amount", typeof(decimal), true),
@@ -819,6 +859,52 @@ public class TypeParserTests {
         Assert.True(p3.HasValue);
         Assert.Equal(10.00m, p3.Value.Amount);
         Assert.Equal(CurrencyCode.GBP, p3.Value.Currency);
+    }
+    [Fact]
+    public void DynaObjectInfinite() {
+        var badge = Guid.NewGuid();
+        var joinDate = new DateTime(2023, 05, 10);
+        ColumnInfo[] columns = [
+            new("Col1", typeof(int), false),
+            new("Col2", typeof(int), false),
+            new("Col3", typeof(int), false),
+            new("Col4", typeof(int), true),
+            new("Col5", typeof(int), true),
+            new("Col6", typeof(int), false),
+            new("Col7", typeof(int), false),
+            new("Col8", typeof(int), false),
+            new("Col9", typeof(int), true),
+            new("Col10", typeof(int), true),
+            new("Col11", typeof(int), false),
+            new("Col12", typeof(int), false),
+            new("Col13", typeof(int), false),
+            new("Col14", typeof(int), true),
+            new("Col15", typeof(int), true),
+        ];
+        using var reader = CreateReader(columns, [
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        ]);
+
+        var parser = TypeParser<DynaObject>.GetParserFunc(ref columns);
+
+        reader.Read();
+        var dyna = parser(reader);
+
+        Assert.Equal(1, dyna.Get<int>(0));
+        Assert.Equal(2, dyna.Get<int>(1));
+        Assert.Equal(3, dyna.Get<int>(2));
+        Assert.Equal(4, dyna.Get<int>(3));
+        Assert.Equal(5, dyna.Get<int>(4));
+        Assert.Equal(6, dyna.Get<int>(5));
+        Assert.Equal(7, dyna.Get<int>(6));
+        Assert.Equal(8, dyna.Get<int>(7));
+        Assert.Equal(9, dyna.Get<int>(8));
+        Assert.Equal(10, dyna.Get<int>(9));
+        Assert.Equal(11, dyna.Get<int>(10));
+        Assert.Equal(12, dyna.Get<int>(11));
+        Assert.Equal(13, dyna.Get<int>(12));
+        Assert.Equal((sbyte)14, dyna.Get<sbyte>(13));
+        Assert.Equal((long)15, dyna.Get<long>(14));
     }
 }
 public record struct DynaPair<T>([CanNotLookAnywhere] T ID, [NoName] DynaObject Object);
@@ -914,3 +1000,8 @@ public record class TestMiddle2(int ID, TestBottom? Bottom) : IDbReadable;
 public record class TestTop3(int ID, TestMiddle3 Middle) : IDbReadable;
 public record class TestMiddle3(int ID, [InvalidOnNull] TestBottom Bottom) : IDbReadable;
 public record struct TestBottom([InvalidOnNull]int ID, string Name) : IDbReadable;
+
+public record struct MM(int Amount) {
+    public static implicit operator MM([NoName]int amount) => new(amount);
+    public static implicit operator MM([NoName]long amount) => new((int)amount);
+}

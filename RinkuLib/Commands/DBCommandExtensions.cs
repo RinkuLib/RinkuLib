@@ -26,51 +26,6 @@ public struct DefaultNoCache<T> : ISchemaParser<T> {
 }
 /// <summary>Extensions on DbCommand</summary>
 public static class DBCommandExtensions {
-    static DBCommandExtensions() {
-        AddTypeParser(v => Convert.ToSByte(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToInt16(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToInt32(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToInt64(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToByte(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToUInt16(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToUInt32(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToUInt64(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToSingle(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToDouble(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToDecimal(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToChar(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => v.ToString() ?? string.Empty);
-        AddTypeParser(v => Convert.ToBoolean(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToDateTime(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => DateTimeOffset.Parse(v.ToString()!, CultureInfo.InvariantCulture));
-        AddTypeParser(v => TimeSpan.Parse(v.ToString()!, CultureInfo.InvariantCulture));
-        AddTypeParser(v => v switch {
-            Guid g => g,
-            string s => Guid.Parse(s),
-            byte[] b => new Guid(b),
-            _ => Guid.Parse(v.ToString()!)
-        });
-    }
-    private static readonly Dictionary<Type, object> TypeParsers = [];
-    /// <summary>Add a value to parse from object to a type</summary>
-    public static void AddTypeParser<T>(Func<object, T> parser) => TypeParsers[typeof(T)] = parser;
-    private static T Parse<T>(object? value) {
-        if (value is null || value is DBNull)
-            return default!;
-        if (value is T t)
-            return t;
-        var type = typeof(T);
-        type = Nullable.GetUnderlyingType(type) ?? type;
-        if (type.IsEnum) {
-            if (value is float || value is double || value is decimal) {
-                value = Convert.ChangeType(value, Enum.GetUnderlyingType(type), CultureInfo.InvariantCulture);
-            }
-            return (T)Enum.ToObject(type, value);
-        }
-        if (TypeParsers.TryGetValue(type, out object? parser))
-            return Unsafe.As<object, Func<object, T>>(ref parser)(value);
-        return (T)Convert.ChangeType(value, type, CultureInfo.InvariantCulture);
-    }
     /// <summary>Return the parser of <typeparamref name="T"/> using the <paramref name="reader"/> current result schema</summary>
     public static Func<DbDataReader, T> GetParser<T>(this DbDataReader reader) {
         var schema = reader.GetColumnsFast();
@@ -139,7 +94,7 @@ public static class DBCommandExtensions {
                     cnn.Open();
                 var res = cmd.ExecuteScalar();
                 cache.UpdateCache(cmd);
-                return Parse<T>(res);
+                return res.Parse<T>();
             }
             finally {
                 if (disposeCommand) {
@@ -164,7 +119,7 @@ public static class DBCommandExtensions {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                 var res = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
                 cache.UpdateCache(cmd);
-                return Parse<T>(res);
+                return res.Parse<T>();
             }
             finally {
                 if (disposeCommand) {
@@ -670,7 +625,7 @@ public static class DBCommandExtensions {
                     cnn.Open();
                 var res = cmd.ExecuteScalar();
                 cache.UpdateCache(cmd);
-                return Parse<T>(res);
+                return res.Parse<T>();
             }
             finally {
                 if (disposeCommand) {
