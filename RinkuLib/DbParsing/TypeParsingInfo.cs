@@ -37,7 +37,6 @@ public abstract class TypeParsingInfo {
         AddOrSet(typeof(ValueTuple<,,,,,,,>), TupleTypeinfo.Instance);
         AddOrSet<DynaObject>(DynaObjectTypeInfo.Instance);
         AddOrSet(typeof(NotNull<>), WrapperTypeInfo<NotNull<bool>>.Instance);
-        AddOrSet(typeof(DBPair<,>), WrapperTypeInfo<DBPair<bool, bool>>.Instance);
     }
     /// <summary>
     /// Global cache of type metadata. Access is managed through static methods 

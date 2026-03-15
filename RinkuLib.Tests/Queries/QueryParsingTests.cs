@@ -1,4 +1,5 @@
-﻿using RinkuLib.DbParsing;
+﻿using RinkuLib.Commands;
+using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.TypeAccessing;
 using Xunit;

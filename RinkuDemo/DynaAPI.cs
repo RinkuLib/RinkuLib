@@ -20,31 +20,35 @@ public abstract class DynaAction(string name, HttpMethod method, QueryCommand co
 public sealed class QueryOneAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
     public override async Task<IResult> ExecuteAsync(HttpContext context) {
         using var cnn = Registry.GetConnection();
-        var builder = Registry.GetBuilder(context, Command, GetParams(context));
-        var task = builder.QueryOneAsync<DynaObject>(cnn);
+        var b = Command.StartBuilder();
+        Registry.FillQueryBuilder(context, b, GetParams(context));
+        var task = b.QueryOneAsync<DynaObject>(cnn);
         return Results.Ok(await task);
     }
 }
 public sealed class ExecuteAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
     public override async Task<IResult> ExecuteAsync(HttpContext context) {
         using var cnn = Registry.GetConnection();
-        var builder = Registry.GetBuilder(context, Command, GetParams(context));
-        return Results.Ok(await builder.ExecuteAsync(cnn));
+        var b = Command.StartBuilder();
+        Registry.FillQueryBuilder(context, b, GetParams(context));
+        return Results.Ok(await b.ExecuteAsync(cnn));
     }
 }
 public sealed class ExecuteScalarAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
     public override async Task<IResult> ExecuteAsync(HttpContext context) {
         using var cnn = Registry.GetConnection();
-        var builder = Registry.GetBuilder(context, Command, GetParams(context));
-        return Results.Ok(await builder.ExecuteScalarAsync<object>(cnn));
+        var b = Command.StartBuilder();
+        Registry.FillQueryBuilder(context, b, GetParams(context));
+        return Results.Ok(await b.ExecuteScalarAsync<object>(cnn));
     }
 }
 
 public sealed class QueryAllAction(string n, HttpMethod m, QueryCommand c) : DynaAction(n, m, c) {
     public override Task<IResult> ExecuteAsync(HttpContext context) {
         using var cnn = Registry.GetConnection();
-        var builder = Registry.GetBuilder(context, Command, GetParams(context));
-        var stream = builder.QueryAllAsync<DynaObject>(cnn);
+        var b = Command.StartBuilder();
+        Registry.FillQueryBuilder(context, b, GetParams(context));
+        var stream = b.QueryAllAsync<DynaObject>(cnn);
         return Task.FromResult(Results.Ok(stream));
     }
 }

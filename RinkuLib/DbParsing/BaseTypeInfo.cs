@@ -46,14 +46,6 @@ public class BaseTypeInfo : TypeParsingInfo {
         return new BasicParser(parentType, converter, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, i);
     }
 }
-
-/// <summary></summary>
-public readonly struct DBPair<TKey, TValue>(TKey Key, TValue Value) {
-    /// <summary></summary>
-    public readonly TKey Key = Key;
-    /// <summary></summary>
-    public readonly TValue Value = Value;
-}
 /// <summary>Handling for tuple that force usage of ite argument types</summary>
 public class WrapperTypeInfo<TWrapper> : TypeParsingInfo {
     private readonly static Type GenericDefinition = typeof(TWrapper).GetGenericTypeDefinition();
@@ -82,7 +74,7 @@ public class WrapperTypeInfo<TWrapper> : TypeParsingInfo {
         return new CustomClassParser(parentType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers);
     }
 }
-/// <summary>Handling for tuple that force usage of ite argument types</summary>
+/// <summary>Handling for tuple that force usage of its argument types</summary>
 public class TupleTypeinfo : TypeParsingInfo {
     /// <summary>Singleton</summary>
     public static readonly TupleTypeinfo Instance = new();

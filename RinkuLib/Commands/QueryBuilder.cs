@@ -1,64 +1,8 @@
-﻿using System.Collections;
-using System.Data;
-using System.Data.Common;
-using System.Runtime.CompilerServices;
-using RinkuLib.Tools;
+﻿using System.Runtime.CompilerServices;
+using RinkuLib.Queries;
 using RinkuLib.TypeAccessing;
 
-namespace RinkuLib.Queries;
-/// <summary>
-/// Provides extension methods to start and/or populate a <see cref="IQueryBuilder"/> 
-/// </summary>
-public static class BuilderStarter {
-    /// <summary>
-    /// Start a <see cref="QueryBuilder"/>.
-    /// </summary>
-    public static QueryBuilder StartBuilder(this QueryCommand command)
-        => new(command);
-    /// <summary>
-    /// Start a <see cref="QueryBuilderCommand{T}"/>.
-    /// </summary>
-    public static QueryBuilderCommand<DbCommand> StartBuilder(this QueryCommand command, DbCommand cmd)
-        => new(command, cmd);
-    /// <summary>
-    /// Start a <see cref="QueryBuilderCommand{T}"/>.
-    /// </summary>
-    public static QueryBuilderCommand<IDbCommand> StartBuilder(this QueryCommand command, IDbCommand cmd)
-        => new(command, cmd);
-    /// <summary>
-    /// Start a <see cref="QueryBuilder"/> and set usage with the <paramref name="values"/>
-    /// </summary>
-    public static QueryBuilder StartBuilder(this QueryCommand command, params Span<(string, object)> values) { 
-        var builder = new QueryBuilder(command);
-        for (int i = 0; i < values.Length; i++) {
-            var (key, value) = values[i];
-            builder.Use(key, value);
-        }
-        return builder;
-    }
-    /// <summary>
-    /// Start a <see cref="QueryBuilderCommand{T}"/> and set usage with the <paramref name="values"/>
-    /// </summary>
-    public static QueryBuilderCommand<DbCommand> StartBuilder(this QueryCommand command, DbCommand cmd, params Span<(string, object)> values) {
-        var builder = new QueryBuilderCommand<DbCommand>(command, cmd);
-        for (int i = 0; i < values.Length; i++) {
-            var (key, value) = values[i];
-            builder.Use(key, value);
-        }
-        return builder;
-    }
-    /// <summary>
-    /// Start a <see cref="QueryBuilderCommand{T}"/> and set usage with the <paramref name="values"/>
-    /// </summary>
-    public static QueryBuilderCommand<IDbCommand> StartBuilder(this QueryCommand command, IDbCommand cmd, params Span<(string, object)> values) {
-        var builder = new QueryBuilderCommand<IDbCommand>(command, cmd);
-        for (int i = 0; i < values.Length; i++) {
-            var (key, value) = values[i];
-            builder.Use(key, value);
-        }
-        return builder;
-    }
-}
+namespace RinkuLib.Commands;
 /// <summary>
 /// A stateful builder for configuring a specific query execution.
 /// </summary>

@@ -1,10 +1,10 @@
 ﻿using System.Data;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using RinkuLib.Queries;
 using RinkuLib.TypeAccessing;
 
-namespace RinkuLib.Queries;
-
+namespace RinkuLib.Commands;
 /// <summary>
 /// A stateful builder that actively synchronizes query state with a live database command.
 /// </summary>

@@ -11,6 +11,12 @@ public sealed class AltAttribute(string AlternativeName) : Attribute {
     public readonly string AlternativeName = AlternativeName;
 }
 /// <summary>
+/// Defines an alternative name for a parameter, property, or field during database column matching.
+/// </summary>
+
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class NoNameAttribute : Attribute;
+/// <summary>
 /// Defines the contract for comparing database column names against member identifiers.
 /// </summary>
 public interface INameComparer {

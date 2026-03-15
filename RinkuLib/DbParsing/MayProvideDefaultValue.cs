@@ -1,4 +1,5 @@
-﻿using RinkuLib.Tools;
+﻿using System.ComponentModel;
+using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
 /// <summary>

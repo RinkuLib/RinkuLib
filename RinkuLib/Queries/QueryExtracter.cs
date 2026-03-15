@@ -401,12 +401,16 @@ public unsafe ref struct QueryExtracter {
         }
         var type = CondInfo.AndComment;
         var nbCond = 0;
+        int ind;
         while (true) {
             var cond = GetCommentString(out var isNot);
             if (string.IsNullOrWhiteSpace(cond))
-                continue;
+                throw new Exception($"Cannot have a whitespace condition {new string(Builder)}");
             nbCond++;
-            Conditions.Add(CondInfo.NewOptional(cond, type, BuilderInd - 1, *CurrentStart, ParMap, *CurrentExcess, isNot));
+            ind = BuilderInd - 1;
+            if (ind < 0)
+                ind = 0;
+            Conditions.Add(CondInfo.NewOptional(cond, type, ind, *CurrentStart, ParMap, *CurrentExcess, isNot));
             if ((*CurrentChar == '*' && CurrentChar[1] == '/') || CurrentChar >= LastChar)
                 break;
             type = *CurrentChar == CondInfo.OrCommentChar ? CondInfo.OrComment : CondInfo.AndComment;
@@ -414,10 +418,19 @@ public unsafe ref struct QueryExtracter {
         }
         CurrentChar += 2;
         SkipWhiteSpace();
-        if (nbCond > 0 && MatchSection(CurrentChar, out var secLen)) {
-            LastCondSectionLength = (uint)nbCond << 16 | (uint)secLen;
-            for (; nbCond > 0; nbCond--)
-                Conditions[^nbCond].UpdateCommentAsSectionComment(BuilderInd - 1);
+        if (nbCond <= 0)
+            return true;
+        if (MatchSection(CurrentChar, out var secLen)) { }
+        else if (*CurrentChar == OptionalVariableIdentifier && IsSelect(CurrentChar + 1))
+            secLen = 6;
+        else
+            return true;
+        LastCondSectionLength = (uint)nbCond << 16 | (uint)secLen;
+        ind = BuilderInd - 1;
+        if (ind < 0)
+            ind = 0;
+        for (; nbCond > 0; nbCond--) {
+            Conditions[^nbCond].UpdateCommentAsSectionComment(ind);
         }
         return true;
     }
@@ -498,24 +511,24 @@ public unsafe ref struct QueryExtracter {
         }
         return i;
     }
-    private static unsafe bool IsInsert(char* ptr)
+    private static bool IsInsert(char* ptr)
         => (*ptr | 0x20) == 'i' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 's'
         && (ptr[3] | 0x20) == 'e' && (ptr[4] | 0x20) == 'r' && (ptr[5] | 0x20) == 't';
-    private static unsafe bool IsSelect(char* ptr)
+    private static bool IsSelect(char* ptr)
         => (*ptr | 0x20) == 's' && (ptr[1] | 0x20) == 'e' && (ptr[2] | 0x20) == 'l'
         && (ptr[3] | 0x20) == 'e' && (ptr[4] | 0x20) == 'c' && (ptr[5] | 0x20) == 't';
-    private static unsafe bool IsValues(char* ptr)
+    private static bool IsValues(char* ptr)
         => (*ptr | 0x20) == 'v' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 'l'
         && (ptr[3] | 0x20) == 'u' && (ptr[4] | 0x20) == 'e' && (ptr[5] | 0x20) == 's';
-    private static unsafe bool IsCase(char* ptr)
+    private static bool IsCase(char* ptr)
         => (*ptr | 0x20) == 'c' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 's' && (ptr[3] | 0x20) == 'e';
     private static bool IsEnd(char* ptr)
         => (*ptr | 0x20) == 'e' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 'd' && IsBoundary(ptr[3]);
-    private static unsafe bool IsOr(char* ptr)
+    private static bool IsOr(char* ptr)
         => (*ptr | 0x20) == 'o' && (ptr[1] | 0x20) == 'r' && IsBoundary(ptr[2]);
-    private static unsafe bool IsAnd(char* ptr)
+    private static bool IsAnd(char* ptr)
         => (*ptr | 0x20) == 'a' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 'd' && IsBoundary(ptr[3]);
-    private static unsafe bool IsOn(char* ptr)
+    private static bool IsOn(char* ptr)
         => (*ptr | 0x20) == 'o' && (ptr[1] | 0x20) == 'n' && IsBoundary(ptr[2]);
     private static readonly string[] SQLSections = [
         "with",

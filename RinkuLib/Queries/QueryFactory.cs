@@ -30,11 +30,11 @@ public struct QueryFactory {
     /// The global, mutable registry of base handlers. 
     /// Users can modify this map to add or change built-in type behaviors globally.
     /// </summary>
-    public static readonly LetterMap<HandlerGetter<IQuerySegmentHandler>> BaseHandlerMapper = new([
+    public static readonly LetterMap<HandlerGetter<IQuerySegmentHandler>> BaseHandlerMapper = new(
         ('S', StringVariableHandler.Build),
         ('R', RawVariableHandler.Build),
         ('N', NumberVariableHandler.Build)
-    ]);
+    );
 #pragma warning disable CA2211
     /// <summary>Identifier to indicate a SQL variable</summary>
     public static char DefaultVariableChar = '@';

@@ -1,10 +1,13 @@
 ﻿using System.Data.Common;
 using System.Globalization;
+using System.Reflection;
+using System.Reflection.Emit;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Primitives;
+using RinkuLib.DBActions;
 using RinkuLib.DbParsing;
-using RinkuLib.DbRegister;
 using RinkuLib.Queries;
+using RinkuLib.Tools;
 
 namespace RinkuDemo;
 
@@ -13,6 +16,9 @@ public interface IHasID<TId> {
     public TId ID { get; set; }
 }
 public static class Registry {
+    public const string UsingActionCondName = "...";
+    public const string BoolCondsRequestParameterName = "Uses";
+    public const string ActionRequestParameterName = "Actions";
     public static string ConnStr { get; private set; } = null!;
     public static DbConnection GetConnection() => new SqliteConnection(ConnStr);
     public static Controller<T, int> MapController<T>(this IEndpointRouteBuilder app, IConfiguration config, string key) where T : IHasID<int> {
@@ -23,7 +29,7 @@ public static class Registry {
     public static void MapController<T>(this IEndpointRouteBuilder app, Controller<T, int> controller) where T : IHasID<int> {
         TypeParsingInfo.GetOrAdd<T>();
         var g = app.MapGroup($"/{controller.Name.ToLower()}");
-        g.MapGet("/", (HttpContext context) => controller.GetAll(context));
+        g.MapGet("/", (Delegate)controller.GetAll);
         g.MapGet("/{id:int}", async (int id) => {
             var result = await controller.GetOne(id);
             return result is not null ? Results.Ok(result) : Results.NotFound();
@@ -51,8 +57,6 @@ public static class Registry {
         info.AddAltName("value", "name");
         info.SetInvalidOnNull("key", true);
         IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferedParamCache.GetInfoGetterMaker<SqliteCommand>);
-        // to change things a bit, the relation is added manualy
-        DbActions.AddOrUpdateToManyRelation<Employee>("ManagingEmployees", "ID", "SELECT EmployeeId AS ID, FirstName, LastName, Title, BirthDate, HireDate, Address, City, State, Country, PostalCode, Phone, Fax, Email FROM employees WHERE ReportsTo = @ID");
 
         var fileName = config["DbFile"] ?? throw new InvalidOperationException("DbFile is missing.");
         ConnStr = $"Data Source={Path.Combine(AppContext.BaseDirectory, fileName)}";
@@ -92,13 +96,12 @@ public static class Registry {
                 builder.Use("#Adm");
         }
     }
-    public static QueryBuilder GetBuilder(HttpContext ctx, QueryCommand command, IEnumerable<KeyValuePair<string, StringValues>> parameters) {
-        var b = command.StartBuilder();
+    public static void FillQueryBuilder<TBuilder>(HttpContext ctx, TBuilder b, IEnumerable<KeyValuePair<string, StringValues>> parameters) where TBuilder : IQueryBuilder {
         UseRole(GetRole(ctx), b);
         foreach (var (k, v) in parameters) {
-            if (string.IsNullOrEmpty(k) || k[0] == '#')
+            if (string.IsNullOrEmpty(k) ||  char.IsSymbol(k[0]))
                 continue;
-            if (k.Equals("Uses", StringComparison.InvariantCultureIgnoreCase)) {
+            if (k.Equals(BoolCondsRequestParameterName, StringComparison.InvariantCultureIgnoreCase)) {
                 foreach (var useValue in v)
                     if (!string.IsNullOrEmpty(useValue) && useValue[0] != '#')
                         b.Use(useValue);
@@ -106,34 +109,13 @@ public static class Registry {
             else
                 b.Use('@', k, v.ToInferredObject());
         }
-        return b;
     }
-    public static void FillQueryBuilder(HttpContext ctx, QueryBuilder builder, IEnumerable<KeyValuePair<string, StringValues>> parameters, out string[] actions) {
-        UseRole(GetRole(ctx), builder);
-        actions = [];
-        foreach (var (k, v) in parameters) {
-            if (string.IsNullOrEmpty(k) || k[0] == '#')
-                continue;
-            if (k.Equals("Uses", StringComparison.InvariantCultureIgnoreCase)) {
-                foreach (var useValue in v)
-                    if (!string.IsNullOrEmpty(useValue) && useValue[0] != '#')
-                        builder.Use(useValue);
-            }
-            if (k.Equals("Actions", StringComparison.InvariantCultureIgnoreCase)) {
-                if (v.Count > 0)
-                    actions = v.ToArray()!;
-            }
-            else
-                builder.Use('@', k, v.ToInferredObject());
-        }
+    public static void UseFrom<TBuilder>(this TBuilder builder, int[] indexesToUse) where TBuilder : IQueryBuilder {
+        foreach (var index in indexesToUse)
+            builder.Use(index);
     }
-    public static void ExecuteDBAction<T>(ref T instance, DbConnection cnn, string actionName, DbTransaction? transaction = null, int? timeout = null) {
-        if (!DbActions<T>.TryGetAction(0, actionName, out var action, out var startNext))
-            return;
-        if (startNext == 0) {
-            action.ExecuteOnOne(ref instance, cnn, transaction, timeout);
-            return;
-        }
-        action.FowardExecuteOnOne(startNext, actionName, ref instance, cnn, transaction, timeout);
+    public static void UnUseFrom<TBuilder>(this TBuilder builder, int[] indexesToUnUse) where TBuilder : IQueryBuilder {
+        foreach (var index in indexesToUnUse)
+            builder.UnUse(index);
     }
 }

@@ -215,6 +215,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo {
         bool canCompleteWithMembers = false;
         for (int i = 0; i < mcis.Length; i++) {
             var mci = mcis[i];
+            bool forcedRegister = mci.ParametersAreReadable;
             var parameters = mci.Parameters;
             for (int j = 0; j < parameters.Length; j++) {
                 var param = parameters[j];
@@ -223,8 +224,11 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo {
                 var paramClosedType = (t ?? param.Type).CloseType(genericArguments);
                 if (isNullableStruct)
                     paramClosedType = typeof(Nullable<>).MakeGenericType(paramClosedType);
-                if (!TryGetInfo(paramClosedType, out var typeInfo))
-                    throw new Exception("should not happend");
+                if (!TryGetInfo(paramClosedType, out var typeInfo)) {
+                    if (!forcedRegister)
+                        break;
+                    typeInfo = ForceGet(paramClosedType);
+                }
                 var node = typeInfo.TryGetParser(actualType, paramClosedType, param, columns, colModifier, ref colUsage);
                 if (node is null)
                     break;
