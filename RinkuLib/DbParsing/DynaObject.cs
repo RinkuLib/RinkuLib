@@ -6,28 +6,6 @@ using System.Text.Json.Serialization;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
-
-/// <summary></summary>
-public sealed class Converter : JsonConverter<DynaWrapper> {
-    /// <inheritdoc/>
-    public override void Write(Utf8JsonWriter writer, DynaWrapper value, JsonSerializerOptions options) {
-        writer.WriteStartObject();
-        value.DynaObject.WriteJsonProperties(writer, options);
-        var kvps = value.AdditionalValues;
-        for (int i = 0; i < kvps.Length; i++) {
-            ref var kvp = ref kvps[i];
-            writer.WritePropertyName(kvp.Key);
-            JsonSerializer.Serialize(writer, kvp.Value, options);
-        }
-        writer.WriteEndObject();
-    }
-
-    /// <inheritdoc/>
-    public override DynaWrapper Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => throw new NotSupportedException();
-}
-/// <summary>A simple wrapper that lets you extend a dyna object</summary>
-public sealed record class DynaWrapper(DynaObject DynaObject, KeyValuePair<string, object?>[] AdditionalValues);
 /// <summary></summary>
 public class DynaObjectConverter : JsonConverter<DynaObject> {
     /// <inheritdoc/>

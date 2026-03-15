@@ -16,7 +16,7 @@ public class Controller<T, TId> where T : IHasID<TId> {
     public string Name;
     public Controller(IConfiguration config, string key) {
         InsertQuery = new(config[$"SQLStrings:{key}:Insert"] ?? throw new Exception($"{key} : Insert does not exist"));
-        SelectQuery = new(GetFlatString(config, $"SQLStrings:{key}:Select"));
+        SelectQuery = new(config.GetFlatString($"SQLStrings:{key}:Select"));
         UpdateQuery = new(config[$"SQLStrings:{key}:Update"] ?? throw new Exception($"{key} : Update does not exist"));
         DeleteQuery = new(config[$"SQLStrings:{key}:Delete"] ?? throw new Exception($"{key} : Delete does not exist"));
         var mapper = SelectQuery.Mapper;
@@ -34,14 +34,6 @@ public class Controller<T, TId> where T : IHasID<TId> {
         if (!UpdateQuery.Mapper.ContainsKey("@ID"))
             throw new Exception($"The update should have a @ID variable");
         // When using a builder, when we use, we can check if the bind was successful
-    }
-
-    public static string GetFlatString(IConfiguration config, string key) {
-        var section = config.GetSection(key);
-        var parts = section.Get<string[]>();
-        if (parts is not null)
-            return string.Concat(parts);
-        return section.Value ?? throw new Exception($"{key} does not exist");
     }
     public async Task<T> Create(T item) {
         using var db = Registry.GetConnection();
@@ -62,8 +54,8 @@ public class Controller<T, TId> where T : IHasID<TId> {
     }
     public async Task<IResult> GetAll(HttpContext context) {
         using var db = Registry.GetConnection();
-        if (context.Request.Query.TryGetValue(Registry.ActionRequestParameterName, out StringValues actionNames))
-        if (actionNames.Count <= 0) {
+        if (!context.Request.Query.TryGetValue(Registry.ActionRequestParameterName, out StringValues actionNames) 
+            || actionNames.Count <= 0) {
             var b = SelectQuery.StartBuilder();
             Registry.FillQueryBuilder(context, b, context.Request.Query);
             using var cmd = db.CreateCommand();
