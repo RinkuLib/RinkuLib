@@ -118,4 +118,12 @@ public static class Registry {
         foreach (var index in indexesToUnUse)
             builder.UnUse(index);
     }
+
+    public static string GetFlatString(this IConfiguration config, string key) {
+        var section = config.GetSection(key);
+        var parts = section.Get<string[]>();
+        if (parts is not null)
+            return string.Concat(parts);
+        return section.Value ?? throw new Exception($"{key} does not exist");
+    }
 }

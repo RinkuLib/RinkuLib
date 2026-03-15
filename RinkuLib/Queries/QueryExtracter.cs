@@ -141,6 +141,8 @@ public unsafe ref struct QueryExtracter {
     public const char OptionalVariableIdentifier = '?';
     /// <summary>Identifier for joining two (or more) footprint together (default '&amp;'). e.g., (SELECT A&amp;, B) or (WHERE A &gt; @A &amp;AND B &lt; @B)</summary>
     public const char JoinAndOrChar = '&';
+    /// <summary>Identifier that indicate that a column in a dynamic projection is always used</summary>
+    public const char SelectColumnAlwaysUsed = '!';
     /// <summary>Identifier to indicate that a comment should not be a condition, but actualy a comment</summary>
     public const char CommentAsCommentChar = '~';
 #pragma warning disable CA2211
@@ -338,11 +340,16 @@ public unsafe ref struct QueryExtracter {
             BuilderInd--;
             Builder[BuilderInd - 1] = ',';
             return;
-        }
+        }/*
+        if (CurrentChar[-1] == SelectColumnAlwaysUsed) {
+            BuilderInd--;
+            Builder[BuilderInd - 1] = ',';
+        }*/
         UpdateConditionsEnd(BuilderInd, false, 1);
         UpdateCurrentStart(BuilderInd, 1);
-        if (SelectExtractionParMap == ParMap)
+        if (SelectExtractionParMap == ParMap) {
             Conditions.Add(CondInfo.NewSelect(BuilderInd, ParMap, 1));
+        }
     }
 
     private bool TryManageVariable(char variableChar) {
