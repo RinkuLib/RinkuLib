@@ -21,14 +21,6 @@ public interface IParserGetter {
 /// 
 /// </summary>
 public abstract class DbAction<TParent> {
-    /*
-    /// <summary></summary>
-    public void Handle<TParser, TAcc>(DbCommand cmd, TParser parser, TData data) where TParser : ISchemaParser<TParsed> {
-        var behavior = parser.Behavior | CommandBehavior.SingleResult;
-        using var reader = cmd.ExecuteReader(behavior);
-        parser.Init(reader, cmd);
-        Handle(data, reader, parser);
-    }*/
     /// <summary>
     /// 
     /// </summary>

@@ -1,7 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 using RinkuLib.DbParsing;
-using RinkuLib.DbRegister;
 using RinkuLib.TypeAccessing;
 
 namespace RinkuDemo;
@@ -9,7 +8,6 @@ namespace RinkuDemo;
 public record Artist(int ID, [property: NotNullOrWhitespace] string Name) : IHasID<int> {
     [NotDefault]
     public int ID { get; set; } = ID;
-    [ToMany("ID", "SELECT AlbumId AS ID, Title FROM albums WHERE ArtistId = @ID")]
     public List<Album> Albums { get; set; } = [];
 }
 
@@ -17,8 +15,6 @@ public record Album(int ID, [property: NotNullOrWhitespace] string Title, Artist
     [NotDefault]
     public int ID { get; set; } = ID;
     public int? ArtistID => Artist?.ID;
-
-    [ToMany("ID", "SELECT t.TrackId AS ID, t.Name, t.Composer, t.Milliseconds, t.Bytes, t.UnitPrice, t.MediaTypeId AS MediaTypeID, mt.Name AS MediaTypeName, t.GenreId AS GenreID, g.Name AS GenreName FROM tracks t INNER JOIN media_types mt ON t.MediaTypeId = mt.MediaTypeId INNER JOIN genres g ON t.GenreId = g.GenreId WHERE t.AlbumId = @ID")]
     public List<Track> Tracks { get; set; } = [];
 }
 
@@ -64,7 +60,6 @@ public record Customer([InvalidOnNull]int ID, [NotNull][property: NotNullOrWhite
     [NotDefault]
     public int ID { get; set; } = ID;
     public int? SupportRepID => SupportRep?.ID;
-    [ToMany("ID", "SELECT InvoiceId AS ID, InvoiceDate, Total, BillingAddress, BillingCity, BillingState, BillingCountry, BillingPostalCode FROM invoices WHERE CustomerId = @ID")]
     public List<Invoice> Invoices { get; set; } = [];
 }
 
@@ -72,7 +67,6 @@ public record Invoice(int ID, DateTime InvoiceDate, decimal Total, string Billin
     [NotDefault]
     public int ID { get; set; } = ID;
     public int? CustomerID => Customer?.ID;
-    [ToMany("ID", "SELECT ii.InvoiceLineId AS ID, ii.UnitPrice, ii.Quantity, ii.InvoiceId AS InvoiceID, ii.TrackId AS TrackID, t.Name AS TrackName FROM invoice_items ii INNER JOIN tracks t ON ii.TrackId = t.TrackId WHERE ii.InvoiceId = @ID")]
     public List<InvoiceLine> Lines { get; set; } = [];
 }
 

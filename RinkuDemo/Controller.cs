@@ -1,15 +1,14 @@
-﻿using System.Data.Common;
+﻿using System.Data;
+using System.Data.Common;
+using Microsoft.Extensions.Primitives;
 using RinkuLib.Commands;
-using RinkuLib.DbRegister;
+using RinkuLib.DBActions;
 using RinkuLib.Queries;
 
 namespace RinkuDemo;
 
-public delegate void SetID<T, TId>(ref T item, TId ID);
-public delegate TId GetID<T, TId>(ref T item);
-
 public class Controller<T, TId> where T : IHasID<TId> {
-    public string[] ActionsOnGetOne;
+    public (string, int[], DbAction<T>)[] Actions = [];
     public QueryCommand InsertQuery;
     public QueryCommand SelectQuery;
     public QueryCommand UpdateQuery;
@@ -17,18 +16,32 @@ public class Controller<T, TId> where T : IHasID<TId> {
     public string Name;
     public Controller(IConfiguration config, string key) {
         InsertQuery = new(config[$"SQLStrings:{key}:Insert"] ?? throw new Exception($"{key} : Insert does not exist"));
-        SelectQuery = new(config[$"SQLStrings:{key}:Select"] ?? throw new Exception($"{key} : Select does not exist"));
+        SelectQuery = new(GetFlatString(config, $"SQLStrings:{key}:Select"));
         UpdateQuery = new(config[$"SQLStrings:{key}:Update"] ?? throw new Exception($"{key} : Update does not exist"));
         DeleteQuery = new(config[$"SQLStrings:{key}:Delete"] ?? throw new Exception($"{key} : Delete does not exist"));
-        ActionsOnGetOne = config.GetSection($"SQLStrings:{key}:ActionsOnGetOne").Get<string[]>() ?? [];
+        var mapper = SelectQuery.Mapper;
+        var actionNames = DBActionHelper.GetStrippedActions(mapper);
+        if (actionNames.Length > 0) {
+            Actions = new (string, int[], DbAction<T>)[actionNames.Length];
+            for (int i = 0; i < actionNames.Length; i++)
+                Actions[i] = DBActionHelper.MakeAction<T>(mapper, actionNames[i]);
+        }
         this.Name = key;
-        if (!SelectQuery.Mapper.ContainsKey("@ID"))
+        if (!mapper.ContainsKey("@ID"))
             throw new Exception($"The select should have a @ID variable");
         if (!DeleteQuery.Mapper.ContainsKey("@ID"))
             throw new Exception($"The delete should have a @ID variable");
-        /* To change things up, we check when binding the ID in the update
         if (!UpdateQuery.Mapper.ContainsKey("@ID"))
-            throw new Exception($"The update should have a @ID variable");*/
+            throw new Exception($"The update should have a @ID variable");
+        // When using a builder, when we use, we can check if the bind was successful
+    }
+
+    public static string GetFlatString(IConfiguration config, string key) {
+        var section = config.GetSection(key);
+        var parts = section.Get<string[]>();
+        if (parts is not null)
+            return string.Concat(parts);
+        return section.Value ?? throw new Exception($"{key} does not exist");
     }
     public async Task<T> Create(T item) {
         using var db = Registry.GetConnection();
@@ -47,46 +60,73 @@ public class Controller<T, TId> where T : IHasID<TId> {
         }
         catch { tx.Rollback(); throw; }
     }
-    public IAsyncEnumerable<T> GetAll(HttpContext context) {
+    public async Task<IResult> GetAll(HttpContext context) {
         using var db = Registry.GetConnection();
-        return GetAll(db, context);
+        if (context.Request.Query.TryGetValue(Registry.ActionRequestParameterName, out StringValues actionNames))
+        if (actionNames.Count <= 0) {
+            var b = SelectQuery.StartBuilder();
+            Registry.FillQueryBuilder(context, b, context.Request.Query);
+            using var cmd = db.CreateCommand();
+            return Results.Ok(b.QueryAllAsync<T>(db));
+        }
+        return Results.Ok(await GetAll(context, db, actionNames).ConfigureAwait(false));
     }
-    private IAsyncEnumerable<T> GetAll(DbConnection db, HttpContext context) {
-        var b = SelectQuery.StartBuilder();
-        Registry.FillQueryBuilder(context, b, context.Request.Query, out var actions);
-        if (actions.Length <= 0)
-            return b.QueryAllAsync<T>(db);
-        return GetAll(db, b, actions);
-    }
-    private static async IAsyncEnumerable<T> GetAll(DbConnection db, QueryBuilder b, string[] actions) {
-        if (typeof(T).IsValueType) {
-            await foreach (var item in b.QueryAllAsync<T>(db)) {
-                var it = item;
-                foreach (var actionName in actions)
-                    Registry.ExecuteDBAction(ref it, db, actionName);
-                yield return it;
+    private async Task<List<T>> GetAll(HttpContext context, DbConnection db, StringValues actionNames) {
+        using var cmd = db.CreateCommand();
+        var b = SelectQuery.StartBuilder(cmd);
+        Registry.FillQueryBuilder(context, b, context.Request.Query);
+        var items = await b.QueryAllBufferedAsync<T>().ConfigureAwait(false);
+        if (items.Count > 0) {
+            b.Use(Registry.UsingActionCondName);
+            var access = new ListAccess<T>(items);
+            if (db.State != ConnectionState.Open)
+                await db.OpenAsync().ConfigureAwait(false);
+            QueryCommandBuilderCommand getter = new(b);
+            foreach (var an in actionNames) {
+                var actionName = an;
+                if (actionName is null)
+                    continue;
+                foreach (var (name, indexes, action) in Actions) {
+                    if (!string.Equals(name, actionName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    b.UseFrom(indexes);
+                    await action.HandleAsync(access, getter).ConfigureAwait(false);
+                    b.UnUseFrom(indexes);
+                    break;
+                }
             }
-            yield break;
         }
-        await foreach (var item in b.QueryAllAsync<T>(db)) {
-            foreach (var actionName in actions)
-                await item.ExecuteDBActionAsync(db, actionName).ConfigureAwait(false);
-            yield return item;
-        }
+        return items;
     }
     public async Task<T?> GetOne(TId id) {
         using var db = Registry.GetConnection();
-        var task = SelectQuery.QueryOneAsync<T>(db, new { ID = id });
-        if (ActionsOnGetOne.Length <= 0)
-            return await task;
-        return await task.ExecuteDBActionsAsync(db, ActionsOnGetOne);
+        var item = await SelectQuery.QueryOneAsync<T>(db, new { ID = id }).ConfigureAwait(false);
+        if (Actions.Length > 0 && item is not null) {
+            if (db.State != ConnectionState.Open)
+                await db.OpenAsync().ConfigureAwait(false);
+            using var cmd = db.CreateCommand();
+            var b = SelectQuery.StartBuilder(cmd);
+            b.Use(Registry.UsingActionCondName);
+            if (!b.Use("@ID", id))
+                throw new Exception();
+            QueryCommandBuilderCommand getter = new(b);
+            foreach (var (name, indexes, action) in Actions) {
+                b.UseFrom(indexes);
+                if (!typeof(T).IsValueType)
+                    await action.HandleAsync(item, getter).ConfigureAwait(false);
+                else
+                    action.Handle(ref item, getter);
+                b.UnUseFrom(indexes);
+            }
+        }
+        return item;
     }
     public async Task<bool> Update(TId id, HttpContext context) {
         using var db = Registry.GetConnection();
         var b = UpdateQuery.StartBuilder();
         if (!b.Use("@ID", id))
             throw new Exception("Could not bind the ID");
-        Registry.FillQueryBuilder(context, b, context.Request.Form, out var actions);
+        Registry.FillQueryBuilder(context, b, context.Request.Form);
         return await b.ExecuteAsync(db) > 0;
     }
 }
