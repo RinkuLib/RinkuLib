@@ -611,6 +611,23 @@ public class TemplatingTests {
         Verify(factory, expectedSegments, expectedConditions, ["ID", "Username", "Test"]);
     }
     [Fact]
+    public void Extract_Select_Forced() {
+        var sql = "?SELECT ID!, Username, Email&, Test FROM Users WHERE IsActive = 1";
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+        var expectedSegments = new[] {
+            new SegmentVerify("SELECT ID,", 1, false),
+            new SegmentVerify(" Username,", 1, false),
+            new SegmentVerify(" Email, Test", 0, false),
+            new SegmentVerify(" FROM Users WHERE IsActive = 1", 0, true),
+        };
+
+        var expectedConditions = new[] {
+            new ConditionVerify("Username", " Username,", 1),
+            new ConditionVerify("Test", " Email, Test", 1),
+        };
+        Verify(factory, expectedSegments, expectedConditions, ["Username", "Test"]);
+    }
+    [Fact]
     public void Extract_Select_Union() {
         var sql = "?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1 UNION ALL ?SELECT ID, Username, Email&, Test FROM Other";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);

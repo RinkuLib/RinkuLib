@@ -1,5 +1,6 @@
 ﻿using System.Buffers;
 using RinkuLib.Tools;
+using static System.Collections.Specialized.BitVector32;
 
 namespace RinkuLib.Queries;
 
@@ -340,11 +341,27 @@ public unsafe ref struct QueryExtracter {
             BuilderInd--;
             Builder[BuilderInd - 1] = ',';
             return;
-        }/*
+        }
         if (CurrentChar[-1] == SelectColumnAlwaysUsed) {
             BuilderInd--;
             Builder[BuilderInd - 1] = ',';
-        }*/
+            int i = Conditions.Length - 1;
+            for (; i >= LastUnfinishedSection; i--) {
+                ref var cond = ref Conditions[i];
+                if (cond.IsFinished || cond.ParMapOrExcesses != ParMap || cond.NeedSectionToFinish || cond.Cond is not null)
+                    continue;
+                break;
+            }
+            if (i < LastUnfinishedSection)
+                throw new Exception();
+            Conditions.RemoveAt(i);
+            if (i == LastUnfinishedSection) {
+                for (; i < Conditions.Length; i++)
+                    if (!Conditions[i].IsFinished)
+                        break;
+                LastUnfinishedSection = i;
+            }
+        }
         UpdateConditionsEnd(BuilderInd, false, 1);
         UpdateCurrentStart(BuilderInd, 1);
         if (SelectExtractionParMap == ParMap) {

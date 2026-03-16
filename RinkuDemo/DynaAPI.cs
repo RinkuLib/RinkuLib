@@ -2,6 +2,7 @@
 using System.Data.Common;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.FileSystemGlobbing.Internal;
 using Microsoft.Extensions.Primitives;
 using RinkuLib.Commands;
 using RinkuLib.DBActions;
@@ -82,15 +83,14 @@ public sealed class QueryAllWithDBActionsEndpoint : DynaEndpoint {
         }
         return Results.Ok(await GetAll(context, db, actionNames).ConfigureAwait(false));
     }
-    private async Task<DynaCollectionWrapper> GetAll(HttpContext context, DbConnection db, StringValues actionNames) {
+    private async Task<DynaListWrapper> GetAll(HttpContext context, DbConnection db, StringValues actionNames) {
         using var cmd = db.CreateCommand();
         var b = Command.StartBuilder(cmd);
         Registry.FillQueryBuilder(context, b, context.Request.Query);
         var items = await b.QueryAllBufferedAsync<DynaObject>().ConfigureAwait(false);
-        List<KeyValuePair<string, object[]>> additionalProps = [];
+        DynaListWrapper res = new(items, []);
         if (items.Count > 0) {
             b.Use(Registry.UsingActionCondName);
-            var access = new ListAccess<DynaObject>(items);
             if (db.State != ConnectionState.Open)
                 await db.OpenAsync().ConfigureAwait(false);
             QueryCommandBuilderCommand getter = new(b);
@@ -101,11 +101,11 @@ public sealed class QueryAllWithDBActionsEndpoint : DynaEndpoint {
                 foreach (var action in Actions) {
                     if (!action.Matches(actionName))
                         continue;
-                    await action.DynaExecute(access, additionalProps, b).ConfigureAwait(false);
+                    await action.DynaExecute(res, b).ConfigureAwait(false);
                 }
             }
         }
-        return new(items, additionalProps);
+        return res;
     }
 }
 
@@ -156,49 +156,33 @@ public class DynaAction(string Name, int[] IndexesToUse) {
     public int[] IndexesToUse = IndexesToUse;
     public IDynaRelation? Relation = null!;
     public bool Matches(string name) => string.Equals(name, Name, StringComparison.OrdinalIgnoreCase);
-    public async ValueTask DynaExecute<TAccess>(TAccess parents, List<KeyValuePair<string, object[]>> additionalProps, QueryBuilderCommand<DbCommand> builder, CancellationToken ct = default)
-        where TAccess : notnull, ICollectionRefAccessor<DynaObject> {
-        var items = new object[parents.Length];
-        additionalProps.Add(new(Name, items));
+    public async ValueTask DynaExecute(DynaListWrapper parents, QueryBuilderCommand<DbCommand> builder, CancellationToken ct = default) {
         builder.Use(Registry.UsingActionCondName);
         builder.UseFrom(IndexesToUse);
         if (Relation is null) {
             builder.Command.CommandText = builder.QueryCommand.QueryText.Parse(builder.Variables);
             var reader = await builder.Command.ExecuteReaderAsync(CommandBehavior.SingleResult, ct).ConfigureAwait(false);
-
-            Type dynaType = typeof(DynaRelation<>).MakeGenericType(reader.GetFieldType(0));
-            Relation = (IDynaRelation)Activator.CreateInstance(dynaType, reader.GetName(0))!;
-            await Relation.InitHandleAsync(parents, items, reader, builder.QueryCommand, builder.Variables, builder.Command, ct).ConfigureAwait(false);
+            Relation = InitRelation(reader);
+            await Relation.InitHandleAsync(parents, reader, builder.QueryCommand, builder.Variables, builder.Command, ct).ConfigureAwait(false);
             return;
         }
-        await Relation.HandleAsync(parents, new QueryCommandBuilderCommand(builder), items, ct).ConfigureAwait(false);
+        await Relation.HandleAsync(parents, new QueryCommandBuilderCommand(builder), ct).ConfigureAwait(false);
         builder.UnUseFrom(IndexesToUse);
     }
-}
-[JsonConverter(typeof(DynaCollectionConverter))]
-public sealed class DynaCollectionWrapper(List<DynaObject> items, List<KeyValuePair<string, object[]>> additionalProps) {
-    public List<DynaObject> Items = items;
-    public List<KeyValuePair<string, object[]>> AdditionalProps = additionalProps;
-}
-/// <summary></summary>
-public sealed class DynaCollectionConverter : JsonConverter<DynaCollectionWrapper> {
-    /// <inheritdoc/>
-    public override void Write(Utf8JsonWriter writer, DynaCollectionWrapper value, JsonSerializerOptions options) {
-        writer.WriteStartArray();
-        for (int i = 0; i < value.Items.Count; i++) {
-            writer.WriteStartObject();
-            value.Items[i].WriteJsonProperties(writer, options!);
-            for (int j = 0; j < value.AdditionalProps.Count; j++) {
-                var kvp = value.AdditionalProps[j];
-                writer.WritePropertyName(kvp.Key);
-                JsonSerializer.Serialize(writer, kvp.Value[i], options);
-            }
-            writer.WriteEndObject();
+    private IDynaRelation InitRelation(DbDataReader reader) {
+        ReadOnlySpan<char> nameSpan = Name.AsSpan();
+        int dotIndex = nameSpan.IndexOf('.');
+        if (dotIndex == -1) {
+            Type dynaType = typeof(DynaRelation<>).MakeGenericType(reader.GetFieldType(0));
+            return (IDynaRelation)Activator.CreateInstance(dynaType, Name, reader.GetName(0))!;
         }
-        writer.WriteEndArray();
-    }
+        if (nameSpan[(dotIndex + 1)..].Contains('.'))
+            throw new Exception("Only supports 2 level");
 
-    /// <inheritdoc/>
-    public override DynaCollectionWrapper Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => throw new NotSupportedException();
+        string parentProp = nameSpan[..dotIndex].ToString();
+        string transientProp = nameSpan[(dotIndex + 1)..].ToString();
+        Type twoLevelType = typeof(DynaRelationTwoLevel<,>).MakeGenericType(reader.GetFieldType(0), reader.GetFieldType(1));
+
+        return (IDynaRelation)Activator.CreateInstance(twoLevelType, parentProp, reader.GetName(0), transientProp, reader.GetName(1))!;
+    }
 }

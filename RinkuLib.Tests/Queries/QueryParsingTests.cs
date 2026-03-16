@@ -497,6 +497,38 @@ public class QueryParsingTests {
         Verify(builder, " FROM Users WHERE IsActive = 1", []);
     }
     [Fact]
+    public void Extract_Select_None_ForcedID() {
+        var query = new QueryCommand("?SELECT ID!, Username, Email&, Test FROM Users WHERE IsActive = 1");
+        var builder = query.StartBuilder();
+        Verify(builder, "SELECT ID FROM Users WHERE IsActive = 1", []);
+    }
+    [Fact]
+    public void Extract_Select_None_ForcedID_Nested() {
+        var query = new QueryCommand("/*Wrapping*/?SELECT ID!, Username, Email&, Test FROM Users WHERE IsActive = 1");
+        var builder = query.StartBuilder();
+        Verify(builder, " FROM Users WHERE IsActive = 1", []);
+    }
+    [Fact]
+    public void Extract_Select_None_ForcedID_Nested_2() {
+        var query = new QueryCommand("/*Wrapping*/?SELECT ID!, Username, Email&, Test FROM Users WHERE IsActive = 1");
+        var builder = query.StartBuilder();
+        builder.Use("Wrapping");
+        Verify(builder, "SELECT ID FROM Users WHERE IsActive = 1", []);
+    }
+    [Fact]
+    public void Extract_Select_None_ForcedID_ButManualCond() {
+        var query = new QueryCommand("?SELECT /*Manual*/ID!, Username, Email&, Test FROM Users WHERE IsActive = 1");
+        var builder = query.StartBuilder();
+        Verify(builder, " FROM Users WHERE IsActive = 1", []);
+    }
+    [Fact]
+    public void Extract_Select_None_ForcedID_ButManualCond2() {
+        var query = new QueryCommand("?SELECT /*Manual*/ID!, Username, Email&, Test FROM Users WHERE IsActive = 1");
+        var builder = query.StartBuilder();
+        builder.Use("Manual");
+        Verify(builder, "SELECT ID FROM Users WHERE IsActive = 1", []);
+    }
+    [Fact]
     public void Extract_Select_None_Union() {
         var query = new QueryCommand("?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1 UNION ALL ?SELECT ID, Username, Email&, Test FROM Other");
         var builder = query.StartBuilder();
