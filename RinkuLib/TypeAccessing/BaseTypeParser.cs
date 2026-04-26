@@ -8,6 +8,7 @@ namespace RinkuLib.TypeAccessing;
 /// Class that parse a <typeparamref name="T"/> object from the db
 /// </summary>
 public abstract class BaseTypeParser<T> : ITypeParser<T> {
+    bool ITypeParser<T>.InternalProtect => true;
     /// <inheritdoc/>
     public abstract CommandBehavior Behavior { get; }
     /// <inheritdoc/>

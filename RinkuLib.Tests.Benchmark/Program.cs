@@ -4,6 +4,3 @@ using RinkuLib.Tests.Benchmark;
 //await new BaseBenchmark().Setup();
 BenchmarkRunner.Run<BaseBenchmark>();
 //await BaseBenchmark._fixture.DisposeAsync();
-/*var b = new BaseBenchmark();
-await b.Setup();
-*/

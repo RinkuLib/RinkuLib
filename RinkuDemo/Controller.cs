@@ -1,14 +1,9 @@
-﻿using System.Data;
-using System.Data.Common;
-using Microsoft.Extensions.Primitives;
-using RinkuLib.Commands;
-using RinkuLib.DBActions;
+﻿using RinkuLib.Commands;
 using RinkuLib.Queries;
 
 namespace RinkuDemo;
 
 public class Controller<T, TId> where T : IHasID<TId> {
-    public (string, int[], DbAction<T>)[] Actions = [];
     public QueryCommand InsertQuery;
     public QueryCommand SelectQuery;
     public QueryCommand UpdateQuery;
@@ -20,12 +15,6 @@ public class Controller<T, TId> where T : IHasID<TId> {
         UpdateQuery = new(config[$"SQLStrings:{key}:Update"] ?? throw new Exception($"{key} : Update does not exist"));
         DeleteQuery = new(config[$"SQLStrings:{key}:Delete"] ?? throw new Exception($"{key} : Delete does not exist"));
         var mapper = SelectQuery.Mapper;
-        var actionNames = DBActionHelper.GetStrippedActions(mapper);
-        if (actionNames.Length > 0) {
-            Actions = new (string, int[], DbAction<T>)[actionNames.Length];
-            for (int i = 0; i < actionNames.Length; i++)
-                Actions[i] = DBActionHelper.MakeAction<T>(mapper, actionNames[i]);
-        }
         this.Name = key;
         if (!mapper.ContainsKey("@ID"))
             throw new Exception($"The select should have a @ID variable");
@@ -54,63 +43,14 @@ public class Controller<T, TId> where T : IHasID<TId> {
     }
     public async Task<IResult> GetAll(HttpContext context) {
         using var db = Registry.GetConnection();
-        if (!context.Request.Query.TryGetValue(Registry.ActionRequestParameterName, out StringValues actionNames) 
-            || actionNames.Count <= 0) {
-            var b = SelectQuery.StartBuilder();
-            Registry.FillQueryBuilder(context, b, context.Request.Query);
-            using var cmd = db.CreateCommand();
-            return Results.Ok(b.QueryAllAsync<T>(db));
-        }
-        return Results.Ok(await GetAll(context, db, actionNames).ConfigureAwait(false));
-    }
-    private async Task<List<T>> GetAll(HttpContext context, DbConnection db, StringValues actionNames) {
-        using var cmd = db.CreateCommand();
-        var b = SelectQuery.StartBuilder(cmd);
+        var b = SelectQuery.StartBuilder();
         Registry.FillQueryBuilder(context, b, context.Request.Query);
-        var items = await b.QueryAllBufferedAsync<T>().ConfigureAwait(false);
-        if (items.Count > 0) {
-            b.Use(Registry.UsingActionCondName);
-            var access = new ListAccess<T>(items);
-            if (db.State != ConnectionState.Open)
-                await db.OpenAsync().ConfigureAwait(false);
-            QueryCommandBuilderCommand getter = new(b);
-            foreach (var an in actionNames) {
-                var actionName = an;
-                if (actionName is null)
-                    continue;
-                foreach (var (name, indexes, action) in Actions) {
-                    if (!string.Equals(name, actionName, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    b.UseFrom(indexes);
-                    await action.HandleAsync(access, getter).ConfigureAwait(false);
-                    b.UnUseFrom(indexes);
-                    break;
-                }
-            }
-        }
-        return items;
+        using var cmd = db.CreateCommand();
+        return Results.Ok(b.StreamQueryAsync<T>(db));
     }
     public async Task<T?> GetOne(TId id) {
         using var db = Registry.GetConnection();
-        var item = await SelectQuery.QueryOneAsync<T>(db, new { ID = id }).ConfigureAwait(false);
-        if (Actions.Length > 0 && item is not null) {
-            if (db.State != ConnectionState.Open)
-                await db.OpenAsync().ConfigureAwait(false);
-            using var cmd = db.CreateCommand();
-            var b = SelectQuery.StartBuilder(cmd);
-            b.Use(Registry.UsingActionCondName);
-            if (!b.Use("@ID", id))
-                throw new Exception();
-            QueryCommandBuilderCommand getter = new(b);
-            foreach (var (name, indexes, action) in Actions) {
-                b.UseFrom(indexes);
-                if (!typeof(T).IsValueType)
-                    await action.HandleAsync(item, getter).ConfigureAwait(false);
-                else
-                    action.Handle(ref item, getter);
-                b.UnUseFrom(indexes);
-            }
-        }
+        var item = await SelectQuery.QueryAsync<T>(db, new { ID = id }).ConfigureAwait(false);
         return item;
     }
     public async Task<bool> Update(TId id, HttpContext context) {

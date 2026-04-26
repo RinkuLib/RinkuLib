@@ -70,8 +70,8 @@ In truth, originaly it was meant as an extensions to `Dapper`, but the blueprint
 | Dapper_QueryBuffered              |   626.8 us |  1.00 |  22.98 KB |        1.00 |
 | Rinku_QueryList                   |   623.2 us |  0.99 |  17.52 KB |        0.76 |
 | **5. Streaming (Async)**          |            |       |           |             |
-| Dapper_QueryUnbufferedAsync       |   674.9 us |  1.00 |  22.87 KB |        1.00 |
-| Rinku_StreamQueryAsync            |   645.9 us |  0.96 |    4.2 KB |        0.18 |
+| Dapper_QueryUnbufferedAsync       |   688.4 us |  1.00 |  22.87 KB |        1.00 |
+| Rinku_StreamQueryAsync            |   691.4 us |  1.00 |  24.51 KB |        1.07 |
 | **6. Buffered (Async)**           |            |       |           |             |
 | Dapper_QueryAsyncBuffered         |   691.6 us |  1.00 |  24.79 KB |        1.00 |
 | Rinku_QueryAsyncList              |   656.9 us |  0.95 |  19.36 KB |        0.78 |

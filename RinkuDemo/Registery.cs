@@ -1,13 +1,9 @@
 ﻿using System.Data.Common;
 using System.Globalization;
-using System.Reflection;
-using System.Reflection.Emit;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Primitives;
-using RinkuLib.DBActions;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
-using RinkuLib.Tools;
 
 namespace RinkuDemo;
 
@@ -18,7 +14,6 @@ public interface IHasID<TId> {
 public static class Registry {
     public const string UsingActionCondName = "...";
     public const string BoolCondsRequestParameterName = "Uses";
-    public const string ActionRequestParameterName = "Actions";
     public static string ConnStr { get; private set; } = null!;
     public static DbConnection GetConnection() => new SqliteConnection(ConnStr);
     public static Controller<T, int> MapController<T>(this IEndpointRouteBuilder app, IConfiguration config, string key) where T : IHasID<int> {
