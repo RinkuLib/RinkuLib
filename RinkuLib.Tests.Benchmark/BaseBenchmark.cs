@@ -279,7 +279,6 @@ public class BaseBenchmark : IAsyncDisposable {
     }
 }
 
-// --- MODELS ---
 
 public record User(int Id, string Name, string Email, int Age) {
     public User(int Id, string Name) : this(Id, Name, "Default", 0) { }

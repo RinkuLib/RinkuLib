@@ -8,6 +8,7 @@ namespace RinkuLib.TypeAccessing;
 /// Parses an IEnumerable of <typeparamref name="T"/> lazily using yield return.
 /// </summary>
 public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>, ILazyTypeParser<IEnumerable<T>> {
+    bool ITypeParser<IEnumerable<T>>.InternalProtect => true;
     /// <summary>
     /// Used to parse a single item
     /// </summary>

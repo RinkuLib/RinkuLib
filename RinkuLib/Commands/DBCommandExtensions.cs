@@ -287,7 +287,9 @@ public static class DBCommandExtensions {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
-                var behavior = parser?.Behavior ?? CommandBehavior.SingleResult;
+                CommandBehavior behavior = parser is null
+                    ? CommandBehavior.SingleResult
+                    : parser.Behavior & ~CommandBehavior.SingleRow;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -322,7 +324,9 @@ public static class DBCommandExtensions {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
-                var behavior = parser?.Behavior ?? CommandBehavior.SingleResult;
+                CommandBehavior behavior = parser is null
+                    ? CommandBehavior.SingleResult
+                    : parser.Behavior & ~CommandBehavior.SingleRow;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;

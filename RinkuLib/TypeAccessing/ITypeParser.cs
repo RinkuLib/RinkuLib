@@ -47,6 +47,7 @@ public interface ILazyTypeParser<T> : ITypeParser<T> {
 /// The basic interface that parses a type from a db command
 /// </summary>
 public interface ITypeParser<T> : ITypeParser {
+    internal bool InternalProtect { get; }
     /// <summary></summary>
     public T? Default();
     /// <summary></summary>
