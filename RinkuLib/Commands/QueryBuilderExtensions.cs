@@ -172,9 +172,9 @@ public static class QueryBuilderExtensions {
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return parser.Parse(cmd, true);
+                return parser.Query(cmd, true);
             else if (parser is not null)
-                return parser.Parse(cmd, command, true);
+                return parser.Query(cmd, command, true);
             return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
         }
         /// <summary>
@@ -189,9 +189,9 @@ public static class QueryBuilderExtensions {
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return parser.ParseAsync(cmd, true, ct);
+                return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, true, ct);
+                return parser.QueryAsync(cmd, command, true, ct);
             return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
         /// <summary>
@@ -336,9 +336,9 @@ public static class QueryBuilderExtensions {
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return parser.Parse(cmd, true);
+                return parser.Query(cmd, true);
             else if (parser is not null)
-                return parser.Parse(cmd, command, true);
+                return parser.Query(cmd, command, true);
             return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
         }
         /// <summary>
@@ -353,9 +353,9 @@ public static class QueryBuilderExtensions {
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return parser.ParseAsync(cmd, true, ct);
+                return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, true, ct);
+                return parser.QueryAsync(cmd, command, true, ct);
             return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
     }

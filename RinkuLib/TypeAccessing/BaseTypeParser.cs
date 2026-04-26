@@ -7,7 +7,7 @@ namespace RinkuLib.TypeAccessing;
 /// <summary>
 /// Class that parse a <typeparamref name="T"/> object from the db
 /// </summary>
-public abstract class BaseTypeParser<T> : ITypeParser<T>, IHasBehavior {
+public abstract class BaseTypeParser<T> : ITypeParser<T> {
     /// <inheritdoc/>
     public abstract CommandBehavior Behavior { get; }
     /// <inheritdoc/>
@@ -21,7 +21,7 @@ public abstract class BaseTypeParser<T> : ITypeParser<T>, IHasBehavior {
     public abstract Task<T> ParseAsync(DbDataReader reader, CancellationToken ct = default);
 
     /// <inheritdoc/>
-    public T? Parse(DbCommand command, bool disposeCommand = false) {
+    public T? Query(DbCommand command, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -46,7 +46,7 @@ public abstract class BaseTypeParser<T> : ITypeParser<T>, IHasBehavior {
         }
     }
     /// <inheritdoc/>
-    public T? Parse(IDbCommand command, bool disposeCommand = false) {
+    public T? Query(IDbCommand command, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -72,7 +72,7 @@ public abstract class BaseTypeParser<T> : ITypeParser<T>, IHasBehavior {
         }
     }
     /// <inheritdoc/>
-    public async Task<T?> ParseAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+    public async Task<T?> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -97,15 +97,15 @@ public abstract class BaseTypeParser<T> : ITypeParser<T>, IHasBehavior {
         }
     }
     /// <inheritdoc/>
-    public Task<T?> ParseAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<T?> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
-            return ParseAsync(c, disposeCommand, ct);
-        return Task.FromResult(Parse(command, disposeCommand));
+            return QueryAsync(c, disposeCommand, ct);
+        return Task.FromResult(Query(command, disposeCommand));
     }
 
 
     /// <inheritdoc/>
-    public T? Parse(DbCommand command, ICache cache, bool disposeCommand = false) {
+    public T? Query(DbCommand command, ICache cache, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -131,7 +131,7 @@ public abstract class BaseTypeParser<T> : ITypeParser<T>, IHasBehavior {
         }
     }
     /// <inheritdoc/>
-    public T? Parse(IDbCommand command, ICache cache, bool disposeCommand = false) {
+    public T? Query(IDbCommand command, ICache cache, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -158,7 +158,7 @@ public abstract class BaseTypeParser<T> : ITypeParser<T>, IHasBehavior {
         }
     }
     /// <inheritdoc/>
-    public async Task<T?> ParseAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+    public async Task<T?> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -184,9 +184,9 @@ public abstract class BaseTypeParser<T> : ITypeParser<T>, IHasBehavior {
         }
     }
     /// <inheritdoc/>
-    public Task<T?> ParseAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<T?> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
-            return ParseAsync(c, cache, disposeCommand, ct);
-        return Task.FromResult(Parse(command, cache, disposeCommand));
+            return QueryAsync(c, cache, disposeCommand, ct);
+        return Task.FromResult(Query(command, cache, disposeCommand));
     }
 }

@@ -113,9 +113,9 @@ public static class QueryBuilderCommandExtensions {
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return parser.Parse(cmd, false);
+                return parser.Query(cmd, false);
             else if (parser is not null)
-                return parser.Parse(cmd, command, false);
+                return parser.Query(cmd, command, false);
             return cmd.Query(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
         }
         /// <summary>
@@ -128,9 +128,9 @@ public static class QueryBuilderCommandExtensions {
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return parser.ParseAsync(cmd, false, ct);
+                return parser.QueryAsync(cmd, false, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, false, ct);
+                return parser.QueryAsync(cmd, command, false, ct);
             return cmd.QueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
 
@@ -249,9 +249,9 @@ public static class QueryBuilderCommandExtensions {
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return parser.Parse(cmd, false);
+                return parser.Query(cmd, false);
             else if (parser is not null)
-                return parser.Parse(cmd, command, false);
+                return parser.Query(cmd, command, false);
             return cmd.Query(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
         }
         /// <summary>
@@ -264,9 +264,9 @@ public static class QueryBuilderCommandExtensions {
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return parser.ParseAsync(cmd, false, ct);
+                return parser.QueryAsync(cmd, false, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, false, ct);
+                return parser.QueryAsync(cmd, command, false, ct);
             return cmd.QueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
     }

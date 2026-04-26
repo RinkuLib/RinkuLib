@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Data;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
@@ -32,13 +33,31 @@ public class CollectionTypeParserMaker : ITypeParserMaker {
 
         if (itemParser is null)
             return false;
+        var itemParserType = itemParser.GetType();
+        bool isSimple = itemParserType.IsGenericType && itemParserType.GetGenericTypeDefinition() == typeof(SimpleTypeParser<>);
 
-        Type collectionParserType = def == typeof(IEnumerable<>)
-            ? typeof(EnumerableTypeParser<>).MakeGenericType(itemType)
-            : typeof(ListTypeParser<>).MakeGenericType(itemType);
+        Type collectionParserType;
+        object[] constructorArgs;
 
-        parser = (ITypeParser<T>)Activator.CreateInstance(collectionParserType, itemParser)!;
+        if (isSimple) {
+            var behavior = (CommandBehavior)itemParserType.GetProperty(nameof(SimpleTypeParser<>.Behavior))!.GetValue(itemParser)!;
+            var func = itemParserType.GetField(nameof(SimpleTypeParser<>.Parser))!.GetValue(itemParser)!;
 
+            collectionParserType = (def == typeof(IEnumerable<>))
+                ? typeof(FastEnumerableTypeParser<>).MakeGenericType(itemType)
+                : typeof(FastListTypeParser<>).MakeGenericType(itemType);
+
+            constructorArgs = [behavior, func];
+        }
+        else {
+            collectionParserType = (def == typeof(IEnumerable<>))
+                ? typeof(EnumerableTypeParser<>).MakeGenericType(itemType)
+                : typeof(ListTypeParser<>).MakeGenericType(itemType);
+
+            constructorArgs = [itemParser];
+        }
+
+        parser = (ITypeParser<T>)Activator.CreateInstance(collectionParserType, constructorArgs)!;
         return parser != null;
     }
 }

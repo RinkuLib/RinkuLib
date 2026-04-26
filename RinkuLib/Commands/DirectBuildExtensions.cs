@@ -147,9 +147,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Parse(cmd, true);
+                return parser.Query(cmd, true);
             else if (parser is not null)
-                return parser.Parse(cmd, command, true);
+                return parser.Query(cmd, command, true);
             return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
         }
         /// <summary>
@@ -165,9 +165,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.ParseAsync(cmd, true, ct);
+                return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, true, ct);
+                return parser.QueryAsync(cmd, command, true, ct);
             return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
         }
         /// <summary>
@@ -319,9 +319,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Parse(cmd, true);
+                return parser.Query(cmd, true);
             else if (parser is not null)
-                return parser.Parse(cmd, command, true);
+                return parser.Query(cmd, command, true);
             return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
         }
         /// <summary>
@@ -337,9 +337,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.ParseAsync(cmd, true, ct);
+                return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, true, ct);
+                return parser.QueryAsync(cmd, command, true, ct);
             return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
         }
         #endregion
@@ -473,9 +473,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Parse(cmd, true);
+                return parser.Query(cmd, true);
             else if (parser is not null)
-                return parser.Parse(cmd, command, true);
+                return parser.Query(cmd, command, true);
             return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
         }
         /// <summary>
@@ -491,9 +491,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.ParseAsync(cmd, true, ct);
+                return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, true, ct);
+                return parser.QueryAsync(cmd, command, true, ct);
             return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
         }
         /// <summary>
@@ -645,9 +645,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Parse(cmd, true);
+                return parser.Query(cmd, true);
             else if (parser is not null)
-                return parser.Parse(cmd, command, true);
+                return parser.Query(cmd, command, true);
             return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
         }
         /// <summary>
@@ -663,9 +663,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.ParseAsync(cmd, true, ct);
+                return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, true, ct);
+                return parser.QueryAsync(cmd, command, true, ct);
             return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
         }
         #endregion
@@ -799,9 +799,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Parse(cmd, true);
+                return parser.Query(cmd, true);
             else if (parser is not null)
-                return parser.Parse(cmd, command, true);
+                return parser.Query(cmd, command, true);
             return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
         }
         /// <summary>
@@ -817,9 +817,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.ParseAsync(cmd, true, ct);
+                return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, true, ct);
+                return parser.QueryAsync(cmd, command, true, ct);
             return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
         }
         /// <summary>
@@ -971,9 +971,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Parse(cmd, true);
+                return parser.Query(cmd, true);
             else if (parser is not null)
-                return parser.Parse(cmd, command, true);
+                return parser.Query(cmd, command, true);
             return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
         }
         /// <summary>
@@ -989,9 +989,9 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
             if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.ParseAsync(cmd, true, ct);
+                return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
-                return parser.ParseAsync(cmd, command, true, ct);
+                return parser.QueryAsync(cmd, command, true, ct);
             return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
         }
         #endregion

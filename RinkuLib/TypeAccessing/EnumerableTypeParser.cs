@@ -7,15 +7,17 @@ namespace RinkuLib.TypeAccessing;
 /// <summary>
 /// Parses an IEnumerable of <typeparamref name="T"/> lazily using yield return.
 /// </summary>
-public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITypeParser<IEnumerable<T>>, IHasBehavior, ILazyTypeParser<IEnumerable<T>> {
-    private readonly ITypeParser<T> _elementParser = elementParser;
-
+public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>, ILazyTypeParser<IEnumerable<T>> {
+    /// <summary>
+    /// Used to parse a single item
+    /// </summary>
+    protected abstract T ParseOne(DbDataReader reader);
 
     /// <inheritdoc/>
     public IEnumerable<T> ParseAndOwn(DbDataReader reader, IDbCommand command, bool wasClosed, bool disposeCommand) {
         try {
             do {
-                yield return _elementParser.Parse(reader);
+                yield return ParseOne(reader);
             } while (reader.Read());
         }
         finally {
@@ -29,7 +31,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
         }
     }
     /// <inheritdoc/>
-    public CommandBehavior Behavior { get; } = (elementParser as IHasBehavior)?.Behavior ?? CommandBehavior.Default;
+    public abstract CommandBehavior Behavior { get; }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -38,7 +40,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
     /// <inheritdoc/>
     public IEnumerable<T> Parse(DbDataReader reader) {
         do {
-            yield return _elementParser.Parse(reader);
+            yield return ParseOne(reader);
         } while (reader.Read());
     }
     /// <inheritdoc/>
@@ -46,7 +48,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
         => Task.FromResult(Parse(reader));
 
     /// <inheritdoc/>
-    public IEnumerable<T>? Parse(DbCommand command, bool disposeCommand = false) {
+    public IEnumerable<T>? Query(DbCommand command, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -58,7 +60,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
             }
             using var reader = command.ExecuteReader(behavior);
             while (reader.Read())
-                yield return _elementParser.Parse(reader);
+                yield return ParseOne(reader);
         }
         finally {
             if (wasClosed)
@@ -70,7 +72,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
         }
     }
     /// <inheritdoc/>
-    public IEnumerable<T>? Parse(IDbCommand command, bool disposeCommand = false) {
+    public IEnumerable<T>? Query(IDbCommand command, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -83,7 +85,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
             var r = command.ExecuteReader(behavior);
             using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
             while (reader.Read())
-                yield return _elementParser.Parse(reader);
+                yield return ParseOne(reader);
         }
         finally {
             if (disposeCommand) {
@@ -96,18 +98,18 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
     }
 
     /// <inheritdoc/>
-    public Task<IEnumerable<T>?> ParseAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default)
-        => Task.FromResult(Parse(command, disposeCommand));
+    public Task<IEnumerable<T>?> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default)
+        => Task.FromResult(Query(command, disposeCommand));
     /// <inheritdoc/>
-    public Task<IEnumerable<T>?> ParseAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<IEnumerable<T>?> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
-            return ParseAsync(c, disposeCommand, ct);
-        return Task.FromResult(Parse(command, disposeCommand));
+            return QueryAsync(c, disposeCommand, ct);
+        return Task.FromResult(Query(command, disposeCommand));
     }
 
 
     /// <inheritdoc/>
-    public IEnumerable<T>? Parse(DbCommand command, ICache cache, bool disposeCommand = false) {
+    public IEnumerable<T>? Query(DbCommand command, ICache cache, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -120,7 +122,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
             using var reader = command.ExecuteReader(behavior);
             cache.UpdateCache(command);
             while (reader.Read())
-                yield return _elementParser.Parse(reader);
+                yield return ParseOne(reader);
         }
         finally {
             if (wasClosed)
@@ -132,7 +134,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
         }
     }
     /// <inheritdoc/>
-    public IEnumerable<T>? Parse(IDbCommand command, ICache cache, bool disposeCommand = false) {
+    public IEnumerable<T>? Query(IDbCommand command, ICache cache, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -146,7 +148,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
             using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
             cache.UpdateCache(command);
             while (reader.Read())
-                yield return _elementParser.Parse(reader);
+                yield return ParseOne(reader);
         }
         finally {
             if (disposeCommand) {
@@ -158,12 +160,34 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : ITyp
         }
     }
     /// <inheritdoc/>
-    public Task<IEnumerable<T>?> ParseAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
-        => Task.FromResult(Parse(command, cache, disposeCommand));
+    public Task<IEnumerable<T>?> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
+        => Task.FromResult(Query(command, cache, disposeCommand));
     /// <inheritdoc/>
-    public Task<IEnumerable<T>?> ParseAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<IEnumerable<T>?> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
-            return ParseAsync(c, cache, disposeCommand, ct);
-        return Task.FromResult(Parse(command, cache, disposeCommand));
+            return QueryAsync(c, cache, disposeCommand, ct);
+        return Task.FromResult(Query(command, cache, disposeCommand));
     }
+}
+
+/// <summary>
+/// Parses an IEnumerable of <typeparamref name="T"/> lazily using yield return.
+/// </summary>
+public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : BaseEnumerableTypeParser<T> {
+    private readonly ITypeParser<T> ElementParser = elementParser;
+    /// <inheritdoc/>
+    public override CommandBehavior Behavior => ElementParser.Behavior & ~CommandBehavior.SingleRow;
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected override T ParseOne(DbDataReader reader) => ElementParser.Parse(reader);
+}
+
+/// <summary>Optimized Enumerable parser that uses a direct delegate.</summary>
+public sealed class FastEnumerableTypeParser<T>(CommandBehavior behavior, Func<DbDataReader, T> parser) : BaseEnumerableTypeParser<T> {
+    private readonly Func<DbDataReader, T> Parser = parser;
+    /// <inheritdoc/>
+    public override CommandBehavior Behavior { get; } = behavior & ~CommandBehavior.SingleRow;
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected override T ParseOne(DbDataReader reader) => Parser(reader);
 }

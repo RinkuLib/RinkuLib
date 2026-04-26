@@ -56,7 +56,7 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
         gen.Emit(OpCodes.Ret);
         dm.DefineParameter(1, ParameterAttributes.In, "reader");
         var prevIndex = -1;
-        var defaultBehavior = CommandBehavior.Default;
+        var defaultBehavior = CommandBehavior.SingleRow | CommandBehavior.SingleResult;
         if (rd.IsSequencial(ref prevIndex))
             defaultBehavior |= CommandBehavior.SequentialAccess;
         parser = new SimpleTypeParser<T>(defaultBehavior, dm.CreateDelegate<Func<DbDataReader, T>>(targetObj));

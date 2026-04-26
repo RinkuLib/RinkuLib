@@ -30,10 +30,11 @@ public IEnumerable<User> GetUsers(QueryBuilder builder) {
     // 3. EXECUTION: DB call (SQL Generation + Type Parsing Negotiation)
     using DbConnection cnn = GetConnection();
     // Uses the QueryCommand and the values in the builder to create the DbCommand and parse the result
-    IEnumerable<User> users = builder.QueryAll<User>(cnn);
+    IEnumerable<User> users = builder.Query<IEnumerable<User>>(cnn);
     return users;
 }
-
+// builder.Query<User> for a single user
+// builder.Query<List<User>> for all users buffered
 // Resulting SQL: SELECT ID, Name FROM Users WHERE Group = @Grp AND Age > @MinAge
 ```
 
@@ -49,6 +50,6 @@ When mapping to a type, you rearely need a flat object as the logic item, has a 
 
 2.  **State Definition (`QueryBuilder`):** A temporary struct. You create this for every database call to hold your specific parameters and true conditions. It acts as the bridge between your C# data and the command's blueprint.
 
-3.  **Execution (`QueryX` / `ExecuteX` methods):** The DB call using methods (such as `QueryAllAsync`, `QueryOne`, `Execute`, etc.). The engine takes the blueprint from Step 1 and the data from Step 2 to generate the finalized SQL and create the complete `DbCommand`. It then find the mots apropriate mapping function between the schema and the type.
+3.  **Execution (`Query` / `ExecuteX` methods):** The DB call using methods (such as `QueryAsync`, `Query`, `Execute`, `ExecuteReader`, etc.). The engine takes the blueprint from Step 1 and the data from Step 2 to generate the finalized SQL and create the complete `DbCommand`. It then find the mots apropriate mapping function between the schema and the type.
 
 GitHub : https://github.com/RinkuLib/RinkuLib

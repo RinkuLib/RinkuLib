@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
+using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
@@ -185,6 +186,8 @@ public static class DBCommandExtensions {
         public T? Query<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
+            bool suppressCleanup = false;
+            DbDataReader? reader = null;
             try {
                 var behavior = CommandBehavior.SingleResult;
                 if (wasClosed) {
@@ -192,7 +195,7 @@ public static class DBCommandExtensions {
                     behavior |= CommandBehavior.CloseConnection;
                     wasClosed = false;
                 }
-                using var reader = cmd.ExecuteReader(behavior);
+                reader = cmd.ExecuteReader(behavior);
                 if (cache is not null) {
                     cache.UpdateCache(cmd, reader, ref parser);
                 }
@@ -204,17 +207,22 @@ public static class DBCommandExtensions {
                     return parser.Default();
                 if (parser is ILazyTypeParser<T> lazyParser) {
                     var res = lazyParser.ParseAndOwn(reader, cmd, wasClosed, disposeCommand);
-                    disposeCommand = wasClosed = false;
+                    suppressCleanup = true;
                     return res;
                 }
                 return parser.Parse(reader);
             }
             finally {
-                if (wasClosed)
-                    cnn.Close();
-                if (disposeCommand) {
-                    cmd.Parameters.Clear();
-                    cmd.Dispose();
+                if (!suppressCleanup) {
+                    reader?.Dispose();
+
+                    if (wasClosed && cnn.State != ConnectionState.Closed)
+                        cnn.Close();
+
+                    if (disposeCommand) {
+                        cmd.Parameters.Clear();
+                        cmd.Dispose();
+                    }
                 }
             }
         }
@@ -228,6 +236,8 @@ public static class DBCommandExtensions {
         public async Task<T?> QueryAsync<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null, CancellationToken ct = default) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
+            bool suppressCleanup = false;
+            DbDataReader? reader = null;
             try {
                 var behavior = CommandBehavior.SingleResult;
                 if (wasClosed) {
@@ -235,7 +245,7 @@ public static class DBCommandExtensions {
                     behavior |= CommandBehavior.CloseConnection;
                     wasClosed = false;
                 }
-                using var reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
                 if (cache is not null) {
                     cache.UpdateCache(cmd, reader, ref parser);
                 }
@@ -247,18 +257,23 @@ public static class DBCommandExtensions {
                     return parser.Default();
                 if (parser is ILazyTypeParser<T> lazyParser) {
                     var res = lazyParser.ParseAndOwn(reader, cmd, wasClosed, disposeCommand);
-                    disposeCommand = wasClosed = false;
+                    suppressCleanup = true;
                     return res;
                 }
                 return await parser.ParseAsync(reader, ct);
             }
             finally {
-                if (disposeCommand) {
-                    cmd.Parameters.Clear();
-                    cmd.Dispose();
+                if (!suppressCleanup) {
+                    reader?.Dispose();
+
+                    if (wasClosed && cnn.State != ConnectionState.Closed)
+                        cnn.Close();
+
+                    if (disposeCommand) {
+                        cmd.Parameters.Clear();
+                        cmd.Dispose();
+                    }
                 }
-                if (wasClosed)
-                    await cnn.CloseAsync().ConfigureAwait(false);
             }
         }
         /// <summary>
@@ -272,9 +287,7 @@ public static class DBCommandExtensions {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
-                var behavior = CommandBehavior.SingleResult;
-                if (parser is IHasBehavior b)
-                    behavior |= b.Behavior;
+                var behavior = parser?.Behavior ?? CommandBehavior.SingleResult;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -309,9 +322,7 @@ public static class DBCommandExtensions {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
-                var behavior = CommandBehavior.SingleResult;
-                if (parser is IHasBehavior b)
-                    behavior |= b.Behavior;
+                var behavior = parser?.Behavior ?? CommandBehavior.SingleResult;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -471,6 +482,8 @@ public static class DBCommandExtensions {
         public T? Query<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
+            bool suppressCleanup = false;
+            DbDataReader? reader = null;
             try {
                 var behavior = CommandBehavior.SingleResult;
                 if (wasClosed) {
@@ -479,7 +492,7 @@ public static class DBCommandExtensions {
                     wasClosed = false;
                 }
                 var r = cmd.ExecuteReader(behavior);
-                using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+                reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
                 if (cache is not null) {
                     cache.UpdateCache(cmd, reader, ref parser);
                 }
@@ -491,17 +504,22 @@ public static class DBCommandExtensions {
                     return parser.Default();
                 if (parser is ILazyTypeParser<T> lazyParser) {
                     var res = lazyParser.ParseAndOwn(reader, cmd, wasClosed, disposeCommand);
-                    disposeCommand = wasClosed = false;
+                    suppressCleanup = true;
                     return res;
                 }
                 return parser.Parse(reader);
             }
             finally {
-                if (wasClosed)
-                    cnn.Close();
-                if (disposeCommand) {
-                    cmd.Parameters.Clear();
-                    cmd.Dispose();
+                if (!suppressCleanup) {
+                    reader?.Dispose();
+
+                    if (wasClosed && cnn.State != ConnectionState.Closed)
+                        cnn.Close();
+
+                    if (disposeCommand) {
+                        cmd.Parameters.Clear();
+                        cmd.Dispose();
+                    }
                 }
             }
         }
