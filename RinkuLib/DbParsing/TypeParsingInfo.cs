@@ -22,6 +22,7 @@ namespace RinkuLib.DbParsing;
 /// 
 /// </remarks>
 public abstract class TypeParsingInfo {
+    internal static TypeParsingInfo ArrayParsing;
     internal static readonly ParamInfo NullableTransientParamInfo = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo NotNullTransientParamInfo = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
     /// <summary>Identify if the instance can actualy handle the <see cref="Type"/> of <paramref name="TargetType"/></summary>
@@ -37,28 +38,13 @@ public abstract class TypeParsingInfo {
         AddOrSet(typeof(ValueTuple<,,,,,,,>), TupleTypeinfo.Instance);
         AddOrSet<DynaObject>(DynaObjectTypeInfo.Instance);
         AddOrSet(typeof(NotNull<>), WrapperTypeInfo<NotNull<bool>>.Instance);
+        ArrayParsing = CollectionParsingInfo.Instance;
     }
     /// <summary>
     /// Global cache of type metadata. Access is managed through static methods 
     /// to ensure thread-safety and proper initialization.
     /// </summary>
     private static readonly ConcurrentDictionary<Type, TypeParsingInfo> TypeInfos = [];
-    //private IDbTypeParserInfoMatcher? _matcher;
-    /*
-    /// <summary>
-    /// A custom injection point that allows developers to replace the default matching logic.
-    /// If provided, this implementation takes full control over the Negotiation Phase for this type.
-    /// </summary>
-    public IDbTypeParserInfoMatcher? Matcher { get {
-            if (!IsInit)
-                Init();
-            return _matcher;
-        } set {
-            if (value is null || !value.CanUseType(Type))
-                throw new InvalidOperationException($"the Matcher must be of type {Type}");
-            Interlocked.Exchange(ref _matcher, value);
-        }
-    }*/
     /// <summary>
     /// Checks if a type is supported for mapping. 
     /// Automatically unwraps <see cref="Nullable{T}"/> to evaluate the underlying type.
@@ -67,6 +53,8 @@ public abstract class TypeParsingInfo {
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (type.IsGenericParameter || type.IsBaseType() || type.IsEnum)
             return true;
+        if (type.IsArray)
+            return IsUsableType(type.GetElementType()!);
         if (TypeInfos.ContainsKey(type))
             return true;
         if (type.IsGenericType && TypeInfos.ContainsKey(type.GetGenericTypeDefinition()))
@@ -103,6 +91,10 @@ public abstract class TypeParsingInfo {
             if (TypeInfos.TryGetValue(type, out typeInfo))
                 return true;
         }
+        if (type.IsArray) {
+            typeInfo = ArrayParsing;
+            return TryGetInfo(type.GetElementType()!, out _);
+        }
         if (!type.IsAssignableTo(typeof(IDbReadable)))
             return false;
         typeInfo = new DefaultTypeParsingInfo(type);
@@ -125,6 +117,10 @@ public abstract class TypeParsingInfo {
         type = type.GetGenericTypeDefinition();
         if (TypeInfos.TryGetValue(type, out infos))
             return infos;
+        if (type.IsArray) {
+            _ = ForceGet(type.GetElementType()!);
+            return ArrayParsing;
+        }
         infos = new DefaultTypeParsingInfo(type);
         TypeInfos[type] = infos;
         return infos;
@@ -144,6 +140,8 @@ public abstract class TypeParsingInfo {
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (TypeInfos.TryGetValue(type, out var infos))
             return infos;
+        if (type.IsArray)
+            return ArrayParsing;
         if (!type.IsGenericType)
             return null;
         type = type.GetGenericTypeDefinition();
@@ -158,6 +156,8 @@ public abstract class TypeParsingInfo {
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (TypeInfos.TryGetValue(type, out var infos))
             return infos;
+        if (type.IsArray)
+            return ArrayParsing;
         if (!type.IsGenericType || !saveAsGenericDefinitionWhenGeneric) {
             toUseIfNotPresent?.ValidateCanUseType(type);
             infos = toUseIfNotPresent ?? (type.IsBaseType() || type.IsEnum

@@ -40,7 +40,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Repeat(2)]
     public async Task TestBasicStringUsageAsync(int _) {
         using var cnn = Fixture.GetConnection();
-        var query = Fixture.BasicStringUsage.QueryAllAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        var query = Fixture.BasicStringUsage.StreamQueryAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         var i = 0;
         string[] expecteds = ["abc", "def"];
         await foreach (var item in query)
@@ -50,7 +50,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Repeat(2)]
     public async Task TestBasicStringUsageDynaAsync(int _) {
         using var cnn = Fixture.GetConnection();
-        var query = Fixture.BasicStringUsage.QueryAllAsync<DynaObject>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        var query = Fixture.BasicStringUsage.StreamQueryAsync<DynaObject>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         var i = 0;
         string[] expecteds = ["abc", "def"];
         await foreach (var item in query)
@@ -64,7 +64,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         var results = new List<string>();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => {
-            var query = Fixture.BasicStringUsage.QueryAllAsync<string>(cnn, new { txt = "def" }, ct: cts.Token);
+            var query = Fixture.BasicStringUsage.StreamQueryAsync<string>(cnn, new { txt = "def" }, ct: cts.Token);
 
             await foreach (var value in query) {
                 results.Add(value);
@@ -79,14 +79,14 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync() {
         using var cnn = Fixture.GetConnection();
-        var str = await Fixture.BasicStringUsage.QueryOneAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        var str = await Fixture.BasicStringUsage.QueryAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         Assert.Equal("abc", str);
     }
     
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsyncDynamic() {
         using var cnn = Fixture.GetConnection();
-        var obj = await Fixture.BasicStringUsage.QueryOneAsync<DynaObject>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        var obj = await Fixture.BasicStringUsage.QueryAsync<DynaObject>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         Assert.NotNull(obj);
         Assert.Equal("abc", obj["value"]);
     }
@@ -94,26 +94,26 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Null() {
         using var cnn = Fixture.GetConnection();
-        var str = await Fixture.BasicStringUsageNULL.QueryOneAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        var str = await Fixture.BasicStringUsageNULL.QueryAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         Assert.Null(str);
     }
 
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Null_Prevented() {
         using var cnn = Fixture.GetConnection();
-        await Assert.ThrowsAnyAsync<NullValueAssignmentException>(async () => await Fixture.BasicStringUsageNULL.QueryOneAsync<NotNull<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAnyAsync<NullValueAssignmentException>(async () => await Fixture.BasicStringUsageNULL.QueryAsync<NotNull<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken));
     }
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Prevented() {
         using var cnn = Fixture.GetConnection();
-        string str = await Fixture.BasicStringUsage.QueryOneAsync<NotNull<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        string str = await Fixture.BasicStringUsage.QueryAsync<NotNull<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         Assert.Equal("abc", str);
     }
 
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsyncDynamic_Null() {
         using var cnn = Fixture.GetConnection();
-        var obj = await Fixture.BasicStringUsageNULL.QueryOneAsync<DynaObject>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        var obj = await Fixture.BasicStringUsageNULL.QueryAsync<DynaObject>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         Assert.NotNull(obj);
         Assert.Null(obj["value"]);
     }
@@ -121,7 +121,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_NoParam() {
         using var cnn = Fixture.GetConnection();
-        var str = await Fixture.BasicStringUsageSingle.QueryOneAsync<string>(cnn, ct: TestContext.Current.CancellationToken);
+        var str = await Fixture.BasicStringUsageSingle.QueryAsync<string>(cnn, ct: TestContext.Current.CancellationToken);
         Assert.Equal("abc", str);
     }
 
@@ -129,7 +129,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     public void TestLongOperationWithCancellation() {
         CancellationTokenSource cancel = new(TimeSpan.FromSeconds(5));
         using var cnn = Fixture.GetConnection();
-        var task = Fixture.QueryWithDelay.QueryOneAsync<string>(cnn, ct: cancel.Token);
+        var task = Fixture.QueryWithDelay.QueryAsync<string>(cnn, ct: cancel.Token);
         try {
             if (!task.Wait(TimeSpan.FromSeconds(7))) {
                 throw new TimeoutException(); // should have cancelled
@@ -143,7 +143,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestQueryDynamicAsync() {
         using var cnn = Fixture.GetConnection();
-        var res = Fixture.BasicStringUsageSingle.QueryAllAsync<string>(cnn, ct: TestContext.Current.CancellationToken);
+        var res = Fixture.BasicStringUsageSingle.StreamQueryAsync<string>(cnn, ct: TestContext.Current.CancellationToken);
 
         await using var enumerator = res.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
@@ -155,7 +155,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestClassWithStringUsageAsync() {
         using var cnn = Fixture.GetConnection();
-        var query = Fixture.BasicStringUsage.QueryAllAsync<BasicType>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        var query = Fixture.BasicStringUsage.StreamQueryAsync<BasicType>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         var i = 0;
         string[] expecteds = ["abc", "def"];
         await foreach (var item in query)
@@ -172,7 +172,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestWithSplitAsync() {
         using var cnn = Fixture.GetConnection();
-        var res = Fixture.IdNameIdName.QueryAllAsync<(Product, Category)>(cnn, new { id = 1 }, ct: TestContext.Current.CancellationToken);
+        var res = Fixture.IdNameIdName.StreamQueryAsync<(Product, Category)>(cnn, new { id = 1 }, ct: TestContext.Current.CancellationToken);
 
 
         await using var enumerator = res.GetAsyncEnumerator(TestContext.Current.CancellationToken);
@@ -190,7 +190,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestMultiMapWithSplitAsync() {
         using var cnn = Fixture.GetConnection();
-        var res = Fixture.IdNameCategoryIdName.QueryAllAsync<Product>(cnn, new { id = 1 }, ct: TestContext.Current.CancellationToken);
+        var res = Fixture.IdNameCategoryIdName.StreamQueryAsync<Product>(cnn, new { id = 1 }, ct: TestContext.Current.CancellationToken);
 
         await using var enumerator = res.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
@@ -208,7 +208,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     public async Task TestMultiAsync() {
         using var cnn = Fixture.GetConnection();
         await cnn.OpenAsync(TestContext.Current.CancellationToken);
-        using var multi = await Fixture.Select_1_2.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        using var multi = await Fixture.Select_1_2.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
         var res1 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
         await using var enumerator = res1.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
@@ -218,13 +218,14 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         Assert.False(await enumerator.MoveNextAsync());
         var item2 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(2, item2);
+        cmd.Dispose();
     }
 
     [Fact]
     public async Task TestMultiConversionAsync() {
         using var cnn = Fixture.GetConnection();
         await cnn.OpenAsync(TestContext.Current.CancellationToken);
-        using var multi = await Fixture.SelectCol1Col2.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        using var multi = await Fixture.SelectCol1Col2.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
         var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(1, item1);
         var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
@@ -234,13 +235,14 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         var item2 = enumerator.Current;
         Assert.Equal(2, item2);
         Assert.False(await enumerator.MoveNextAsync());
+        cmd.Dispose();
     }
 
     [Fact]
     public async Task TestMultiAsyncViaFirstOrDefault() {
         using var cnn = Fixture.GetConnection();
         await cnn.OpenAsync(TestContext.Current.CancellationToken);
-        using var multi = await Fixture.Select_1_2_3_4_5.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        using var multi = await Fixture.Select_1_2_3_4_5.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
         var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(1, item1);
         var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
@@ -261,12 +263,13 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         Assert.False(await enumerator4.MoveNextAsync());
         var item5 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(5, item5);
+        cmd.Dispose();
     }
 
     [Fact]
     public async Task TestMultiClosedConnAsync() {
         using var cnn = Fixture.GetConnection();
-        using var multi = await Fixture.Select_1_2.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        using var multi = await Fixture.Select_1_2.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
         var res1 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
         await using var enumerator = res1.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
@@ -276,12 +279,13 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         Assert.False(await enumerator.MoveNextAsync());
         var item2 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(2, item2);
+        cmd.Dispose();
     }
 
     [Fact]
     public async Task TestMultiClosedConnAsyncViaFirstOrDefault() {
         using var cnn = Fixture.GetConnection();
-        using var multi = await Fixture.Select_1_2_3_4_5.ExecuteMultiReaderAsync(cnn, ct: TestContext.Current.CancellationToken);
+        using var multi = await Fixture.Select_1_2_3_4_5.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
         var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(1, item1);
         var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
@@ -302,19 +306,21 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         Assert.False(await enumerator4.MoveNextAsync());
         var item5 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(5, item5);
+        cmd.Dispose();
     }
     [Fact]
     public async Task ExecuteReaderOpenAsync() {
         var dt = new DataTable();
         using var cnn = Fixture.GetConnection();
         cnn.Open();
-        dt.Load(await Fixture.Select_3_4.ExecuteReaderAsync(cnn, ct: TestContext.Current.CancellationToken));
+        dt.Load(await Fixture.Select_3_4.ExecuteReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken));
         Assert.Equal(2, dt.Columns.Count);
         Assert.Equal("three", dt.Columns[0].ColumnName);
         Assert.Equal("four", dt.Columns[1].ColumnName);
         Assert.Equal(1, dt.Rows.Count);
         Assert.Equal(3, (int)dt.Rows[0][0]);
         Assert.Equal(4, (int)dt.Rows[0][1]);
+        cmd.Dispose();
     }
 
     [Fact]
@@ -322,13 +328,14 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         var dt = new DataTable();
         using var cnn = Fixture.GetConnection();
         cnn.Close();
-        dt.Load(await Fixture.Select_3_4.ExecuteReaderAsync(cnn, ct: TestContext.Current.CancellationToken));
+        dt.Load(await Fixture.Select_3_4.ExecuteReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken));
         Assert.Equal(2, dt.Columns.Count);
         Assert.Equal("three", dt.Columns[0].ColumnName);
         Assert.Equal("four", dt.Columns[1].ColumnName);
         Assert.Equal(1, dt.Rows.Count);
         Assert.Equal(3, (int)dt.Rows[0][0]);
         Assert.Equal(4, (int)dt.Rows[0][1]);
+        cmd.Dispose();
     }
     
     [Fact]
@@ -359,9 +366,9 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         await builder.ExecuteAsync(ct: TestContext.Current.CancellationToken);
         builder.UseWith(new { id = 3, foo = 4 });
         await builder.ExecuteAsync(ct: TestContext.Current.CancellationToken);
-        var count = (await Fixture.SelectCountLiteral.QueryAllBufferedAsync<int>(conn, new { foo = 123 }, ct: TestContext.Current.CancellationToken)).Single();
+        var count = (await Fixture.SelectCountLiteral.QueryAsync<List<int>>(conn, new { foo = 123 }, ct: TestContext.Current.CancellationToken))!.Single();
         Assert.Equal(1, count);
-        var sum = (await Fixture.SelectSumLiteral.QueryAllBufferedAsync<int>(conn, ct: TestContext.Current.CancellationToken)).Single();
+        var sum = (await Fixture.SelectSumLiteral.QueryAsync<List<int>>(conn, ct: TestContext.Current.CancellationToken))!.Single();
         Assert.Equal(123 + 456 + 1 + 2 + 3 + 4, sum);
     }
     private static readonly int[] IDs = [1, 3, 4];
@@ -379,8 +386,8 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         await builder.ExecuteAsync(ct: TestContext.Current.CancellationToken);
         builder.Use("@id", 3);
         await builder.ExecuteAsync(ct: TestContext.Current.CancellationToken);
-        var count = (await Fixture.SelectCountLiteralWithIn.QueryAllBufferedAsync<int>(cnn,
-            new { ids = IDs }, ct: TestContext.Current.CancellationToken)).Single();
+        var count = (await Fixture.SelectCountLiteralWithIn.QueryAsync<List<int>>(cnn,
+            new { ids = IDs }, ct: TestContext.Current.CancellationToken))!.Single();
         Assert.Equal(2, count);
     }
     /*

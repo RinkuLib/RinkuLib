@@ -7,7 +7,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
-namespace RinkuLib.Commands;
+namespace RinkuLib.TypeAccessing;
 
 internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerator {
     private IDataReader _reader;

@@ -3,16 +3,17 @@ using System.Data.Common;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Queries;
 /// <summary>
 /// Represent an cached item used for parsing a <see cref="DbDataReader"/>
 /// </summary>
-public struct ParsingCacheItem(object Parser, int[] CondStates, ColumnInfo[] Schema, CommandBehavior CommandBehavior, int ResultSetIndex) {
+public struct ParsingCacheItem(ITypeParser Parser, int[] CondStates, ColumnInfo[] Schema, int ResultSetIndex) {
     /// <summary>
     /// The actual parser func
     /// </summary>
-    public object Parser  = Parser;
+    public ITypeParser Parser  = Parser;
     /// <summary>
     /// The indexes at which the condition muts be false
     /// </summary>
@@ -21,10 +22,6 @@ public struct ParsingCacheItem(object Parser, int[] CondStates, ColumnInfo[] Sch
     /// The schema for which the <see cref="Parser"/> is for
     /// </summary>
     public ColumnInfo[] Schema = Schema;
-    /// <summary>
-    /// The default behavior of the reader
-    /// </summary>
-    public CommandBehavior CommandBehavior = CommandBehavior;
     /// <summary>
     /// The index of the corresponding result set, (non returning set (FieldCount == 0) are not taken into consideration)
     /// </summary>
@@ -35,7 +32,7 @@ public static class ParsingCacheExtensions {
     /// <summary>
     /// Update the parsing cache for a given schema
     /// </summary>
-    public static ParsingCacheItem[] GetUpdatedCache<T>(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ColumnInfo[] schema, SchemaParser<T> cache, int resultSetIndex = 0) {
+    public static ParsingCacheItem[] GetUpdatedCache<T>(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ColumnInfo[] schema, ITypeParser<T> cache, int resultSetIndex = 0) {
         for (var i = 0; i < parsingCache.Length; i++) {
             ref var item = ref parsingCache[i];
             if (item.ResultSetIndex == resultSetIndex && item.Parser is Func<DbDataReader, T> && schema.EquivalentTo(item.Schema)) {
@@ -58,7 +55,7 @@ public static class ParsingCacheExtensions {
 
         var newCache = new ParsingCacheItem[parsingCache.Length + 1];
         Array.Copy(parsingCache, 0, newCache, 1, parsingCache.Length);
-        newCache[0] = new(cache.parser, condStates[..count].ToArray(), schema, cache.Behavior, resultSetIndex);
+        newCache[0] = new(cache, condStates[..count].ToArray(), schema, resultSetIndex);
         return newCache;
     }
     private static int EncodeState(int index, bool state) => (index << 1) | (state ? 1 : 0);

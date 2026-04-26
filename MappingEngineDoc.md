@@ -1,10 +1,10 @@
 # The Mapping Engine
 
-The Mapping Engine is a system for defining how C# types should be interpreted. Its sole purpose is to produce an optimized `Func<DbDataReader, T>` based on a specific database schema.
+The Mapping Engine is a system for defining how C# types should be interpreted. Its sole purpose is to produce an optimized `ITypeParser<T>` (using a `Func<DbDataReader, T>`) based on a specific database schema.
 
 The interaction is with the **Metadata Cache**, a registry of rules that the engine builds as it encounters types which is used to **Negotiate** with the database to generate the final function.
 
-## The Goal: `GetParser`
+## The Goal: `GetTypeParser`
 
 To get the compiled function, a `ColumnInfo[]` is required.
 A `ColumnInfo` is a simple `struct` that save the `Type`, the `Name` and the nullability of a column.
@@ -14,17 +14,24 @@ A `ColumnInfo` is a simple `struct` that save the `Type`, the `Name` and the nul
 ColumnInfo[] cols = reader.GetColumns();
 
 // 2. Obtain the parser and the execution behavior
-var parser = TypeParser<User>.GetParser(cols, out var behavior);
+var parser = TypeParser<User>.GetTypeParser(cols);
 
 ```
 
 ### Caching for Performance
 
-While `TypeParser<T>` internally caches the generated function for a given schema, the `defaultBehavior` is returned so that you can implement your own high-level cache. 
+`TypeParser<T>` internally caches the `ITypeParser<T>` (the compiled IL) alongside the schema so it doesn't have to recreate it each time. 
+However, it is still faster to **store the parser directly** in your own code when possible, this lets you bypass the internal lookup and schema checks entirely.
 
-By storing the `parser` alongside the `behavior`, you can bypass the need for the schema and optimize futur reader execution.
-> The `defaultBehavior` may indicate `SequentialAccess` or `SingleResult`
+### Customizing the Parser (Makers)
 
+The system uses a pipeline to decide how a type is parsed. You can manually change or intercept this process by adding your own logic to the `TypeParser.TypeParserMakers` collection.
+
+1. When a type parser is requested, the system loops through the `TypeParserMakers` list.
+2. The first maker that returns `true` for `CanHandle<T>()` gets to build the parser.
+3. If no custom makers match, it defaults to the `DefaultTypeParserMaker`.
+
+> **Note:** The resulting `ITypeParser<T>` now dictates the result shape and `CommandBehavior` (like `SequentialAccess`) automatically based on its implementation.
 ---
 
 ### **Dynamic Mapping with ValueTuple**
@@ -40,7 +47,7 @@ Mapping is strictly sequential based on the SQL column order.
 ```csharp
 // Index 0 -> int
 // Index 1 -> string
-var (id, name) = await builder.QueryOneAsync<(int, string)>(cnn, ct);
+var (id, name) = await builder.QueryAsync<(int, string)>(cnn, ct);
 ```
 
 #### **Mixed Types**
@@ -50,7 +57,7 @@ A basic type consumes the next available column, then the complex type begins it
 ```csharp
 // Index 0 -> int
 // Index 1+ -> Location Negociate as is Query<Location> directly but now the first col is allready used
-var (id, employee) = await builder.QueryOneAsync<(int, Location)>(cnn, ct);
+var (id, employee) = await builder.QueryAsync<(int, Location)>(cnn, ct);
 ```
 
 #### **Complex Types**
@@ -61,7 +68,7 @@ The engine ignores the tuple's "Item" name and matches the object's internal pro
 public record struct Person(int ID, string Name);
 // Matches 'ID' and 'Name' directly (no 'Item1' prefix used)
 // Then matches the next available 'ID' and 'Name' for the second person
-var (p1, p2) = await builder.QueryOneAsync<(Person, Person)>(cnn, ct);
+var (p1, p2) = await builder.QueryAsync<(Person, Person)>(cnn, ct);
 ```
 
 #### **Unexpected Consumption**
@@ -77,7 +84,7 @@ public struct Person { int ID; string Name; string Email}
 // 1. Person 1 new() then maps ID(0) and Name(1) but also finds Email(4).
 // 2. Person 2 new() then maps ID(2) and Name(3).
 // Result: Person 2 has no Email because Person 1 already consumed it.
-var (p1, p2) = await builder.QueryOneAsync<(Person, Person)>(cnn, ct);
+var (p1, p2) = await builder.QueryAsync<(Person, Person)>(cnn, ct);
 ```
 
 #### **Unexpected sequence**
@@ -91,7 +98,7 @@ Simple types always look at the column immediately following the **last used ind
 // 2. The cursor is now at Index 3.
 // 3. The following 'int' looks at Index 4 (Next-in-Line).
 // Result: Fails to match the schema since 'int' could not be mapped"
-var (person, roleId) = await builder.QueryOneAsync<(Person, int)>(cnn, ct);
+var (person, roleId) = await builder.QueryAsync<(Person, int)>(cnn, ct);
 ```
 ---
 ### **Dynamic Mapping with DynaObject**
@@ -103,7 +110,7 @@ Access columns using the indexer (which returns `object?`) or the `Get<T>` metho
 
 ```csharp
 // Schema: | ID | Name | Email |
-var row = await builder.QueryOneAsync<DynaObject>(cnn, ct);
+var row = await builder.QueryAsync<DynaObject>(cnn, ct);
 
 // Using string keys
 int id = row.Get<int>("ID");
@@ -123,7 +130,7 @@ If the result set contains duplicate column names, the engine ensures every key 
 **Schema:** `| ID | Name | ID | Name |`
 
 ```csharp
-var row = await builder.QueryOneAsync<DynaObject>(cnn, ct);
+var row = await builder.QueryAsync<DynaObject>(cnn, ct);
 
 // First occurrence
 int id1 = row.Get<int>("ID");

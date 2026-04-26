@@ -1,6 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
-using RinkuLib.Queries;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Commands;
 
@@ -24,9 +24,7 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.Execute(command, false);
-            return cmd.Execute<NoNeedToCache>(default, false);
+            return cmd.Execute(false, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and return the nb of affected rows.
@@ -37,9 +35,7 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteAsync(command, false, ct);
-            return cmd.ExecuteAsync<NoNeedToCache>(default, false, ct);
+            return cmd.ExecuteAsync(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and return the scalar value.
@@ -49,9 +45,7 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteScalar<T, QueryCommand>(command, false);
-            return cmd.ExecuteScalar<T, NoNeedToCache>(default, false);
+            return cmd.ExecuteScalar<T>(false, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and return the scalar value.
@@ -62,9 +56,7 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, false, ct);
-            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, false, ct);
+            return cmd.ExecuteScalarAsync<T>(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
@@ -75,9 +67,7 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReader(command, behavior);
-            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+            return cmd.ExecuteReader(behavior, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and return the nb of affected rows.
@@ -89,9 +79,7 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReaderAsync(command, behavior, ct);
-            return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
+            return cmd.ExecuteReaderAsync(behavior, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
@@ -119,96 +107,63 @@ public static class QueryBuilderCommandExtensions {
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
-        public T? QueryOne<T>() {
+        public T? Query<T>() {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryOne<SchemaParser<T>, T>(cache, false);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return parser.Query(cmd, false);
+            else if (parser is not null)
+                return parser.Query(cmd, command, false);
+            return cmd.Query(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
         }
-        /// <summary>
-        /// Executes the managed <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
-        /// </summary>
-        public IEnumerable<T> QueryAll<T>() {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAll<SchemaParser<T>, T>(cache, false);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false);
-        }
-        /// <summary>
-        /// Executes the managed <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
-        /// </summary>
-        public List<T> QueryAllBuffered<T>() {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, false);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false);
-        }
-
         /// <summary>
         /// Asynchronously executes the managed <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QueryOneAsync<T>(CancellationToken ct = default) {
+        public Task<T?> QueryAsync<T>(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, false, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false, ct);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return parser.QueryAsync(cmd, false, ct);
+            else if (parser is not null)
+                return parser.QueryAsync(cmd, command, false, ct);
+            return cmd.QueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
+
         /// <summary>
-        /// Asynchronously executes the managed <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryAllAsync<T>(CancellationToken ct = default) {
+        public IAsyncEnumerable<T> StreamQueryAsync<T>(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, false, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false, ct);
-        }
-        /// <summary>
-        /// Asynchronously executes the managed <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="ct">The fowarded cancellation token</param>
-        public Task<List<T>> QueryAllBufferedAsync<T>(CancellationToken ct = default) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, false, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false, ct);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return cmd.StreamQueryAsync(false, parser, (ICache?)null, ct);
+            else if (parser is not null)
+                return cmd.StreamQueryAsync(false, parser, command, ct);
+            return cmd.StreamQueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
     }
 
     extension(QueryBuilderCommand<IDbCommand> builder) {
         /// <summary>
-        /// Executes the managed <see cref="IDbCommand"/> and return the nb of affected rows.
+        /// Executes the managed <see cref="DbCommand"/> and return the nb of affected rows.
         /// </summary>
         public int Execute() {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.Execute(command, false);
-            return cmd.Execute<NoNeedToCache>(default, false);
+            return cmd.Execute(false, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
-        /// Executes the managed <see cref="IDbCommand"/> and return the nb of affected rows.
+        /// Executes the managed <see cref="DbCommand"/> and return the nb of affected rows.
         /// </summary>
         /// <param name="ct">The fowarded cancellation token</param>
         public Task<int> ExecuteAsync(CancellationToken ct = default) {
@@ -216,24 +171,20 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteAsync(command, false, ct);
-            return cmd.ExecuteAsync<NoNeedToCache>(default, false, ct);
+            return cmd.ExecuteAsync(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
-        /// Executes the managed <see cref="IDbCommand"/> and return the scalar value.
+        /// Executes the managed <see cref="DbCommand"/> and return the scalar value.
         /// </summary>
         public T ExecuteScalar<T>() {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteScalar<T, QueryCommand>(command, false);
-            return cmd.ExecuteScalar<T, NoNeedToCache>(default, false);
+            return cmd.ExecuteScalar<T>(false, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
-        /// Executes the managed <see cref="IDbCommand"/> and return the scalar value.
+        /// Executes the managed <see cref="DbCommand"/> and return the scalar value.
         /// </summary>
         /// <param name="ct">The fowarded cancellation token</param>
         public Task<T> ExecuteScalarAsync<T>(CancellationToken ct = default) {
@@ -241,12 +192,10 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, false, ct);
-            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, false, ct);
+            return cmd.ExecuteScalarAsync<T>(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
-        /// Executes the reader of the <see cref="IDbCommand"/>.
+        /// Executes the reader of the <see cref="DbCommand"/>.
         /// </summary>
         /// <param name="behavior">The behavior to use for the reader</param>
         public DbDataReader ExecuteReader(CommandBehavior behavior = default) {
@@ -254,12 +203,22 @@ public static class QueryBuilderCommandExtensions {
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReader(command, behavior);
-            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+            return cmd.ExecuteReader(behavior, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
-        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
+        /// Executes the managed <see cref="DbCommand"/> and return the nb of affected rows.
+        /// </summary>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<DbDataReader> ExecuteReaderAsync(CommandBehavior behavior = default, CancellationToken ct = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            var cmd = builder.Command;
+            cmd.CommandText = command.QueryText.Parse(vars);
+            return cmd.ExecuteReaderAsync(behavior, command.NeedToCache(vars) ? command : null, ct);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
         /// </summary>
         /// <param name="behavior">The behavior to use for the reader</param>
         public MultiReader ExecuteMultiReader(CommandBehavior behavior = default) {
@@ -269,82 +228,46 @@ public static class QueryBuilderCommandExtensions {
             cmd.CommandText = command.QueryText.Parse(vars);
             return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
-
         /// <summary>
-        /// Executes the managed <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
         /// </summary>
-        public T? QueryOne<T>() {
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<MultiReader> ExecuteMultiReaderAsync(CommandBehavior behavior = default, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryOne<SchemaParser<T>, T>(cache, false);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false);
+            return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
         }
         /// <summary>
-        /// Executes the managed <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// Executes the managed <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
-        public IEnumerable<T> QueryAll<T>() {
+        public T? Query<T>() {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAll<SchemaParser<T>, T>(cache, false);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return parser.Query(cmd, false);
+            else if (parser is not null)
+                return parser.Query(cmd, command, false);
+            return cmd.Query(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
         }
         /// <summary>
-        /// Executes the managed <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
-        /// </summary>
-        public List<T> QueryAllBuffered<T>() {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, false);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false);
-        }
-
-        /// <summary>
-        /// Asynchronously executes the managed <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+        /// Asynchronously executes the managed <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QueryOneAsync<T>(CancellationToken ct = default) {
+        public Task<T?> QueryAsync<T>(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, false, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false, ct);
-        }
-        /// <summary>
-        /// Asynchronously executes the managed <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryAllAsync<T>(CancellationToken ct = default) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, false, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false, ct);
-        }
-        /// <summary>
-        /// Asynchronously executes the managed <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="ct">The fowarded cancellation token</param>
-        public Task<List<T>> QueryAllBufferedAsync<T>(CancellationToken ct = default) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, false, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), false, ct);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return parser.QueryAsync(cmd, false, ct);
+            else if (parser is not null)
+                return parser.QueryAsync(cmd, command, false, ct);
+            return cmd.QueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
     }
 }

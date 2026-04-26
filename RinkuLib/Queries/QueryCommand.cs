@@ -2,6 +2,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -79,9 +80,8 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <summary>
     /// Try getting the parsing cache without the schema
     /// </summary>
-    public bool TryGetCache<T>(Span<bool> usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
+    public bool TryGetCachedParser<T>(Span<bool> usageMap, [MaybeNullWhen(false)] out ITypeParser<T> parser, int resultSetIndex = 0) {
         ref bool pUsage = ref MemoryMarshal.GetReference(usageMap);
-        uint mapLen = (uint)usageMap.Length;
         var cacheArray = ParsingCache;
         int cacheLen = cacheArray.Length;
 
@@ -94,25 +94,21 @@ public class QueryCommand : IQueryCommand, ICache {
                 if (Unsafe.Add(ref pUsage, packed >> 1) != ((packed & 1) != 0))
                     goto NextEntry;
             }
-            object parserObj = entry.Parser;
-            if (parserObj is null || entry.ResultSetIndex != resultSetIndex) {
-                cache = default;
+            parser = entry.Parser as ITypeParser<T>;
+            if (entry.ResultSetIndex != resultSetIndex)
                 return false;
-            }
-            if (parserObj is Func<DbDataReader, T> p) {
-                cache = new SchemaParser<T>(p, entry.CommandBehavior);
+            if (parser is not null)
                 return !NeedToCache(usageMap);
-            }
         NextEntry:
             ;
         }
-        cache = default;
+        parser = default;
         return false;
     }
     /// <summary>
     /// Try getting the parsing cache without the schema
     /// </summary>
-    public bool TryGetCache<T>(object?[] usageMap, out SchemaParser<T> cache, int resultSetIndex = 0) {
+    public bool TryGetCachedParser<T>(object?[] usageMap, [MaybeNullWhen(false)] out ITypeParser<T> parser, int resultSetIndex = 0) {
         ref object? usageBase = ref MemoryMarshal.GetArrayDataReference(usageMap);
 
         var cacheArray = ParsingCache;
@@ -128,28 +124,23 @@ public class QueryCommand : IQueryCommand, ICache {
                     goto NextEntry;
             }
 
-            object pObj = entry.Parser;
-            if (pObj is null || entry.ResultSetIndex != resultSetIndex) {
-                cache = default;
+            parser = entry.Parser as ITypeParser<T>;
+            if (entry.ResultSetIndex != resultSetIndex)
                 return false;
-            }
-
-            if (pObj is Func<DbDataReader, T> p) {
-                cache = new SchemaParser<T>(p, entry.CommandBehavior);
+            if (parser is not null)
                 return !NeedToCache(usageMap);
-            }
 
         NextEntry:
             ;
         }
 
-        cache = default;
+        parser = default;
         return false;
     }
     /// <summary>
     /// Update the parsing cache for a given schema
     /// </summary>
-    public void UpdateParseCache<T>(bool[] usageMap, ColumnInfo[] schema, SchemaParser<T> cache, int resultSetIndex = 0) {
+    public void UpdateParseCache<T>(bool[] usageMap, ColumnInfo[] schema, ITypeParser<T> cache, int resultSetIndex = 0) {
         lock (ParsingCacheSharedLock) { 
             ParsingCache = ParsingCache.GetUpdatedCache(QueryText, usageMap, schema, cache, resultSetIndex);
         }

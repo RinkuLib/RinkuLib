@@ -162,6 +162,20 @@ public struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
         }
     }
     /// <summary>
+    /// Removes the element at the specified index by shifting subsequent elements.
+    /// </summary>
+    /// <param name="index">The zero-based index of the element to remove.</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void RemoveAt(int index) {
+        int remaining = --_count - index;
+        if (remaining > 0) {
+            Span<T> arraySpan = _array.AsSpan();
+            arraySpan.Slice(index + 1, remaining).CopyTo(arraySpan[index..]);
+        }
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+            _array[_count] = default!;
+    }
+    /// <summary>
     /// Resets the count to zero without clearing the underlying array. 
     /// Use this for performance when T is a value type.
     /// </summary>
