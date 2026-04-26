@@ -168,14 +168,14 @@ public class BaseBenchmark : IAsyncDisposable {
     public User? Dapper_QueryOne() => cnn.QueryFirstOrDefault<User>(SelectUserSql, new { id = 1 });
 
     [Benchmark, BenchmarkCategory("1. QueryOne Sync")]
-    public User? Rinku_QueryOne() => QueryUserCmd.QueryOne<User>(cnn, new { id = 1 });
+    public User? Rinku_QueryOne() => QueryUserCmd.Query<User>(cnn, new { id = 1 });
     
 
     [Benchmark(Baseline = true), BenchmarkCategory("2. QueryOne Async")]
     public Task<User?> Dapper_QueryOneAsync() => cnn.QueryFirstOrDefaultAsync<User>(SelectUserSql, new { id = 1 });
 
     [Benchmark, BenchmarkCategory("2. QueryOne Async")]
-    public Task<User?> Rinku_QueryOneAsync() => QueryUserCmd.QueryOneAsync<User>(cnn, new { id = 1 });
+    public Task<User?> Rinku_QueryOneAsync() => QueryUserCmd.QueryAsync<User?>(cnn, new { id = 1 });
 
 
     [Benchmark(Baseline = true), BenchmarkCategory("3. QueryAll Sync (Stream)")]
@@ -189,7 +189,7 @@ public class BaseBenchmark : IAsyncDisposable {
 
     [Benchmark, BenchmarkCategory("3. QueryAll Sync (Stream)")]
     public int Rinku_QueryAll() {
-        var items = QueryAllUsersCmd.QueryAll<User>(cnn);
+        var items = QueryAllUsersCmd.Query<IEnumerable<User>>(cnn)!;
         var sum = 0;
         foreach (var item in items)
             sum += item.Sum();
@@ -201,7 +201,7 @@ public class BaseBenchmark : IAsyncDisposable {
     public List<User> Dapper_QueryAllBuffered() => cnn.Query<User>(SelectAllUsersSql).AsList();
 
     [Benchmark, BenchmarkCategory("4. QueryAll Buffered Sync")]
-    public List<User> Rinku_QueryAllBuffered() => QueryAllUsersCmd.QueryAllBuffered<User>(cnn);
+    public List<User> Rinku_QueryAllBuffered() => QueryAllUsersCmd.Query<List<User>>(cnn)!;
 
 
     [Benchmark(Baseline = true), BenchmarkCategory("5. QueryAll Async (Stream)")]
@@ -215,7 +215,7 @@ public class BaseBenchmark : IAsyncDisposable {
 
     [Benchmark, BenchmarkCategory("5. QueryAll Async (Stream)")]
     public async Task<int> Rinku_QueryAllAsync() {
-        var items = QueryAllUsersCmd.QueryAllAsync<User>(cnn);
+        var items = QueryAllUsersCmd.StreamQueryAsync<User>(cnn);
         var sum = 0;
         await foreach (var item in items)
             sum += item.Sum();
@@ -227,7 +227,7 @@ public class BaseBenchmark : IAsyncDisposable {
     public async Task<List<User>> Dapper_QueryAllBufferedAsync() => (await cnn.QueryAsync<User>(SelectAllUsersSql)).AsList();
 
     [Benchmark, BenchmarkCategory("6. QueryAll Buffered Async")]
-    public Task<List<User>> Rinku_QueryAllBufferedAsync() => QueryAllUsersCmd.QueryAllBufferedAsync<User>(cnn);
+    public Task<List<User>> Rinku_QueryAllBufferedAsync() => QueryAllUsersCmd.QueryAsync<List<User>>(cnn)!;
 
 
     [Benchmark(Baseline = true), BenchmarkCategory("7. Dynamic Async")]
@@ -240,7 +240,7 @@ public class BaseBenchmark : IAsyncDisposable {
 
     [Benchmark, BenchmarkCategory("7. Dynamic Async")]
     public async Task<(int, string?, string?, int)> Rinku_DynaObject() {
-        var row = await QueryUserCmd.QueryOneAsync<DynaObject>(cnn, new { id = 1 });
+        var row = await QueryUserCmd.QueryAsync<DynaObject>(cnn, new { id = 1 });
         if (row is null)
             return default;
         return (row.Get<int>("Id"), row.Get<string>("Name"), row.Get<string>("Email"), row.Get<int>("Age"));
@@ -251,7 +251,7 @@ public class BaseBenchmark : IAsyncDisposable {
     public async Task<List<Product>> Dapper_Complex() => (await cnn.QueryAsync<Product, Category, Product>(SelectComplexSql, (p, c) => { p.Category = c; return p; }, new { id = 1 })).AsList();
 
     [Benchmark, BenchmarkCategory("8. Complex Mapping")]
-    public Task<List<Product>> Rinku_Complex() => QueryComplexCmd.QueryAllBufferedAsync<Product>(cnn, new { id = 1 });
+    public Task<List<Product>> Rinku_Complex() => QueryComplexCmd.QueryAsync<List<Product>>(cnn, new { id = 1 })!;
 
     // --- Execute ---
     [Benchmark(Baseline = true), BenchmarkCategory("9. Execute Sync")]
@@ -279,7 +279,7 @@ public class BaseBenchmark : IAsyncDisposable {
 
     [Benchmark, BenchmarkCategory("11. IN Clause")]
     public async Task<int> Rinku_InClause() {
-        var items = InClauseCmd.QueryAllAsync<User>(cnn, new { ids = Enumerable.Range(1, 5) });
+        var items = InClauseCmd.StreamQueryAsync<User>(cnn, new { ids = Enumerable.Range(1, 5) });
         var sum = 0;
         await foreach (var item in items)
             sum += item.Sum();

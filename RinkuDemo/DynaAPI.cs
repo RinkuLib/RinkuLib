@@ -84,6 +84,8 @@ public sealed class QueryAllWithDBActionsEndpoint : DynaEndpoint {
         return Results.Ok(await GetAll(context, db, actionNames).ConfigureAwait(false));
     }
     private async Task<DynaListWrapper> GetAll(HttpContext context, DbConnection db, StringValues actionNames) {
+        if (db.State != ConnectionState.Open)
+            await db.OpenAsync().ConfigureAwait(false);
         using var cmd = db.CreateCommand();
         var b = Command.StartBuilder(cmd);
         Registry.FillQueryBuilder(context, b, context.Request.Query);
@@ -91,8 +93,6 @@ public sealed class QueryAllWithDBActionsEndpoint : DynaEndpoint {
         DynaListWrapper res = new(items, []);
         if (items.Count > 0) {
             b.Use(Registry.UsingActionCondName);
-            if (db.State != ConnectionState.Open)
-                await db.OpenAsync().ConfigureAwait(false);
             QueryCommandBuilderCommand getter = new(b);
             foreach (var an in actionNames) {
                 var actionName = an;
@@ -157,13 +157,13 @@ public class DynaAction(string Name, int[] IndexesToUse) {
     public IDynaRelation? Relation = null!;
     public bool Matches(string name) => string.Equals(name, Name, StringComparison.OrdinalIgnoreCase);
     public async ValueTask DynaExecute(DynaListWrapper parents, QueryBuilderCommand<DbCommand> builder, CancellationToken ct = default) {
-        builder.Use(Registry.UsingActionCondName);
         builder.UseFrom(IndexesToUse);
         if (Relation is null) {
             builder.Command.CommandText = builder.QueryCommand.QueryText.Parse(builder.Variables);
             var reader = await builder.Command.ExecuteReaderAsync(CommandBehavior.SingleResult, ct).ConfigureAwait(false);
             Relation = InitRelation(reader);
             await Relation.InitHandleAsync(parents, reader, builder.QueryCommand, builder.Variables, builder.Command, ct).ConfigureAwait(false);
+            builder.UnUseFrom(IndexesToUse);
             return;
         }
         await Relation.HandleAsync(parents, new QueryCommandBuilderCommand(builder), ct).ConfigureAwait(false);

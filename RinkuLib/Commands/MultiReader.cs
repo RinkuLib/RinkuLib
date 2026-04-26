@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Commands;
 
@@ -24,11 +25,11 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
     /// <summary>Parse the current row in the current result set, does not read or change result set</summary>
     public T? Get<T>() => GetCache<T>().Parse(reader);
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal SchemaParser<T> GetCache<T>() {
-        if (command.TryGetCache<T>(usage, out var cache, nbResultSetPassedMinusOne))
+    internal ITypeParser<T> GetCache<T>() {
+        if (command.TryGetCachedParser<T>(usage, out var cache, nbResultSetPassedMinusOne))
             return cache;
         var schema = reader.GetColumns();
-        cache = new(TypeParser<T>.GetParserFunc(ref schema, out var behavior), behavior);
+        cache = TypeParser<T>.GetTypeParser(ref schema);
         command.UpdateParseCache(usage, schema, cache, nbResultSetPassedMinusOne);
         return cache;
     }

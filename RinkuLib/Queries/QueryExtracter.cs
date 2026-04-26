@@ -353,7 +353,7 @@ public unsafe ref struct QueryExtracter {
                 break;
             }
             if (i < LastUnfinishedSection)
-                throw new Exception();
+                throw new Exception($"The {SelectColumnAlwaysUsed} may only be used in a dynamic projection context {new string(Builder.AsSpan(0, BuilderInd))}");
             Conditions.RemoveAt(i);
             if (i == LastUnfinishedSection) {
                 for (; i < Conditions.Length; i++)
@@ -482,7 +482,7 @@ public unsafe ref struct QueryExtracter {
         if (isNot)
             start++;
         var i = (int)(CurrentChar - start);
-        while (char.IsWhiteSpace(start[i]))
+        while (char.IsWhiteSpace(start[i - 1]))
             i--;
         return new string(start, 0, i);
     }

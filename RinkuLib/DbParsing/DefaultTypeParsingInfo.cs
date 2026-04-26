@@ -248,26 +248,27 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo {
                 return paramInfo.FallbackTryGetParser(currentClosedType);
             canCompleteWithMembers = true;
         }
-        if (!canCompleteWithMembers)
-            return new CustomClassParser(parentType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers);
-        List<(MemberInfo, DbItemParser)> memberReaders = [];
-        var members = Members;
+        List<(MemberInfo, DbItemParser)>? memberReaders = null;
         colModifier.Flags &= ~UsageFlags.SequentialRead;
-        for (int i = 0; i < members.Length; i++) {
-            var param = members[i].Param;
-            var t = Nullable.GetUnderlyingType(param.Type);
-            var isNullableStruct = t is not null;
-            var paramClosedType = (t ?? param.Type).CloseType(genericArguments);
-            if (isNullableStruct)
-                paramClosedType = typeof(Nullable<>).MakeGenericType(paramClosedType);
-            if (!TryGetInfo(paramClosedType, out var typeInfo))
-                throw new Exception("should not happend");
-            var node = typeInfo.TryGetParser(actualType, paramClosedType, param, columns, colModifier, ref colUsage);
-            if (node is not null)
-                memberReaders.Add((members[i].Member.GetClosedMember(currentClosedType), node));
+        if (canCompleteWithMembers) {
+            memberReaders = [];
+            var members = Members;
+            for (int i = 0; i < members.Length; i++) {
+                var param = members[i].Param;
+                var t = Nullable.GetUnderlyingType(param.Type);
+                var isNullableStruct = t is not null;
+                var paramClosedType = (t ?? param.Type).CloseType(genericArguments);
+                if (isNullableStruct)
+                    paramClosedType = typeof(Nullable<>).MakeGenericType(paramClosedType);
+                if (!TryGetInfo(paramClosedType, out var typeInfo))
+                    throw new Exception("should not happend");
+                var node = typeInfo.TryGetParser(actualType, paramClosedType, param, columns, colModifier, ref colUsage);
+                if (node is not null)
+                    memberReaders.Add((members[i].Member.GetClosedMember(currentClosedType), node));
+            }
+            if (memberReaders.Count == 0 && readers.Count == 0)
+                return null;
         }
-        if (memberReaders.Count == 0 && readers.Count == 0)
-            return null;
         return new CustomClassParser(parentType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders);
     }
 }

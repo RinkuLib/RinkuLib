@@ -268,8 +268,27 @@ public static class TypeExtensions {
         }
         if (target.IsArray) {
             Type elementType = target.GetElementType()!;
+            Type resolvedElement = Resolve(elementType, parentArgs);
+
+            if (resolvedElement != elementType) {
+                int rank = target.GetArrayRank();
+                return rank > 1
+                    ? resolvedElement.MakeArrayType(rank)
+                    : resolvedElement.MakeArrayType();
+            }
+            return target;
+        }
+
+        if (target.IsPointer) {
+            Type elementType = target.GetElementType()!;
             Type resolved = Resolve(elementType, parentArgs);
-            return resolved != elementType ? resolved.MakeArrayType() : target;
+            return resolved != elementType ? resolved.MakePointerType() : target;
+        }
+
+        if (target.IsByRef) {
+            Type elementType = target.GetElementType()!;
+            Type resolved = Resolve(elementType, parentArgs);
+            return resolved != elementType ? resolved.MakeByRefType() : target;
         }
 
         return target;

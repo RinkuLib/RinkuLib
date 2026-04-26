@@ -33,7 +33,6 @@ public sealed class DynaWrapper(DynaObject item, List<Pair> additionalProps) {
         return ref CollectionsMarshal.AsSpan(AdditionalProps)[^1].Value;
     }
 }
-/// <summary></summary>
 public sealed class DynaWrapperConverter : JsonConverter<DynaWrapper> {
     /// <inheritdoc/>
     public override void Write(Utf8JsonWriter writer, DynaWrapper value, JsonSerializerOptions options) {
@@ -51,9 +50,18 @@ public sealed class DynaWrapperConverter : JsonConverter<DynaWrapper> {
     public override DynaWrapper Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         => throw new NotSupportedException();
 }
-[JsonConverter(typeof(DynaListConverter))]
-public sealed class DynaListWrapper(List<DynaObject> items, List<KeyValuePair<string, object[]>> additionalProps) {
-    public List<DynaObject> Items = items;
+
+[JsonConverter(typeof(DynaCollectionConverter<DynaListWrapper, List<DynaObject>>))]
+public sealed class DynaListWrapper(List<DynaObject> items, List<KeyValuePair<string, object[]>> additionalProps = null!) : DynaCollectionWrapper<List<DynaObject>>(items, additionalProps ?? []) {
+    public override DynaObject this[int index] => Items[index];
+}
+[JsonConverter(typeof(DynaCollectionConverter<DynaArrayWrapper, DynaObject[]>))]
+public sealed class DynaArrayWrapper(DynaObject[] items, List<KeyValuePair<string, object[]>> additionalProps = null!) : DynaCollectionWrapper<DynaObject[]>(items, additionalProps ?? []) {
+    public override DynaObject this[int index] => Items[index];
+}
+
+public abstract class DynaCollectionWrapper<T>(T items, List<KeyValuePair<string, object[]>> additionalProps) where T : ICollection<DynaObject> {
+    public T Items = items;
     public List<KeyValuePair<string, object[]>> AdditionalProps = additionalProps; 
     public object[] GetOrAdd(string key) {
         var span = CollectionsMarshal.AsSpan(AdditionalProps);
@@ -64,15 +72,16 @@ public sealed class DynaListWrapper(List<DynaObject> items, List<KeyValuePair<st
         AdditionalProps.Add(new(key, newValue));
         return newValue;
     }
+    public abstract DynaObject this[int index] { get; }
 }
 /// <summary></summary>
-public sealed class DynaListConverter : JsonConverter<DynaListWrapper> {
+public class DynaCollectionConverter<TWrapper, T> : JsonConverter<TWrapper> where TWrapper : DynaCollectionWrapper<T> where T : ICollection<DynaObject> {
     /// <inheritdoc/>
-    public override void Write(Utf8JsonWriter writer, DynaListWrapper value, JsonSerializerOptions options) {
+    public override void Write(Utf8JsonWriter writer, TWrapper value, JsonSerializerOptions options) {
         writer.WriteStartArray();
         for (int i = 0; i < value.Items.Count; i++) {
             writer.WriteStartObject();
-            value.Items[i].WriteJsonProperties(writer, options!);
+            value[i].WriteJsonProperties(writer, options!);
             for (int j = 0; j < value.AdditionalProps.Count; j++) {
                 var kvp = value.AdditionalProps[j];
                 writer.WritePropertyName(kvp.Key);
@@ -84,43 +93,7 @@ public sealed class DynaListConverter : JsonConverter<DynaListWrapper> {
     }
 
     /// <inheritdoc/>
-    public override DynaListWrapper Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => throw new NotSupportedException();
-}
-[JsonConverter(typeof(DynaArrayConverter))]
-public sealed class DynaArrayWrapper(DynaObject[] items, List<KeyValuePair<string, object[]>> additionalProps) {
-    public DynaObject[] Items = items;
-    public List<KeyValuePair<string, object[]>> AdditionalProps = additionalProps;
-    public object[] GetOrAdd(string key) {
-        var span = CollectionsMarshal.AsSpan(AdditionalProps);
-        for (int i = 0; i < span.Length; i++)
-            if (span[i].Key == key)
-                return span[i].Value;
-        var newValue = new object[Items.Length];
-        AdditionalProps.Add(new(key, newValue));
-        return newValue;
-    }
-}
-/// <summary></summary>
-public sealed class DynaArrayConverter : JsonConverter<DynaArrayWrapper> {
-    /// <inheritdoc/>
-    public override void Write(Utf8JsonWriter writer, DynaArrayWrapper value, JsonSerializerOptions options) {
-        writer.WriteStartArray();
-        for (int i = 0; i < value.Items.Length; i++) {
-            writer.WriteStartObject();
-            value.Items[i].WriteJsonProperties(writer, options!);
-            for (int j = 0; j < value.AdditionalProps.Count; j++) {
-                var kvp = value.AdditionalProps[j];
-                writer.WritePropertyName(kvp.Key);
-                JsonSerializer.Serialize(writer, kvp.Value[i], options);
-            }
-            writer.WriteEndObject();
-        }
-        writer.WriteEndArray();
-    }
-
-    /// <inheritdoc/>
-    public override DynaArrayWrapper Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override TWrapper Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         => throw new NotSupportedException();
 }
 /// <summary></summary>

@@ -37,15 +37,15 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         ]);
 
-        var parser = TypeParser<SimpleUser>.GetParserFunc(ref columns);
+        var parser = TypeParser<SimpleUser>.GetTypeParser(ref columns);
 
         reader.Read();
-        var user1 = parser(reader);
+        var user1 = parser.Parse(reader);
         Assert.Equal(1, user1.Id);
         Assert.Equal("John Doe", user1.Name);
 
         reader.Read();
-        var user2 = parser(reader);
+        var user2 = parser.Parse(reader);
         Assert.Equal(3, user2.Id);
         Assert.Equal("Jane Smith", user2.Name);
     }
@@ -61,15 +61,15 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         ]);
 
-        var parser = TypeParser<(int ID, string Name)>.GetParserFunc(ref columns);
+        var parser = TypeParser<(int ID, string Name)>.GetTypeParser(ref columns);
 
         reader.Read();
-        var (ID, Name) = parser(reader);
+        var (ID, Name) = parser.Parse(reader);
         Assert.Equal(1, ID);
         Assert.Equal("John Doe", Name);
 
         reader.Read();
-        var user2 = parser(reader);
+        var user2 = parser.Parse(reader);
         Assert.Equal(3, user2.ID);
         Assert.Equal("Jane Smith", user2.Name);
     }
@@ -84,10 +84,10 @@ public class TypeParserTests {
             [1, 2]
         ]);
 
-        var parser = TypeParser<(int ID, int ID2)>.GetParserFunc(ref columns);
+        var parser = TypeParser<(int ID, int ID2)>.GetTypeParser(ref columns);
 
         reader.Read();
-        var (ID, ID2) = parser(reader);
+        var (ID, ID2) = parser.Parse(reader);
         Assert.Equal(1, ID);
         Assert.Equal(2, ID2);
 
@@ -106,10 +106,10 @@ public class TypeParserTests {
             [1, "Test1", 2, "Test2", "Stop2"]
         ]);
 
-        var parser = TypeParser<(TestStop, TestStop)>.GetParserFunc(ref columns);
+        var parser = TypeParser<(TestStop, TestStop)>.GetTypeParser(ref columns);
 
         reader.Read();
-        var (stop1, stop2) = parser(reader);
+        var (stop1, stop2) = parser.Parse(reader);
         Assert.Equal(1, stop1.ID);
         Assert.Equal("Test1", stop1.Name);
         Assert.Null(stop1.Other);
@@ -131,10 +131,10 @@ public class TypeParserTests {
             [1, "Test1", 2, "Test2", "Stop1"]
         ]);
 
-        var parser = TypeParser<(TestStop2, TestStop3)>.GetParserFunc(ref columns);
+        var parser = TypeParser<(TestStop2, TestStop3)>.GetTypeParser(ref columns);
 
         reader.Read();
-        var (stop1, stop2) = parser(reader);
+        var (stop1, stop2) = parser.Parse(reader);
         Assert.Equal(1, stop1.ID);
         Assert.Equal("Test1", stop1.Name);
         Assert.Equal("Stop1", stop1.Other);
@@ -154,14 +154,14 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         ]);
 
-        var parser = TypeParser<int>.GetParserFunc(ref columns);
+        var parser = TypeParser<int>.GetTypeParser(ref columns);
 
         reader.Read();
-        var id1 = parser(reader);
+        var id1 = parser.Parse(reader);
         Assert.Equal(1, id1);
 
         reader.Read();
-        var id2 = parser(reader);
+        var id2 = parser.Parse(reader);
         Assert.Equal(3, id2);
     }
 
@@ -180,10 +180,10 @@ public class TypeParserTests {
             [badge, "Engineering", 95000.50m, joinDate]
         ]);
 
-        var parser = TypeParser<EmployeeRecord>.GetParserFunc(ref columns);
+        var parser = TypeParser<EmployeeRecord>.GetTypeParser(ref columns);
 
         reader.Read();
-        var emp = parser(reader);
+        var emp = parser.Parse(reader);
 
         Assert.Equal(badge, emp.BadgeId);
         Assert.Equal("Engineering", emp.Department);
@@ -206,14 +206,14 @@ public class TypeParserTests {
             [501, DBNull.Value, false, 'B']
         ]);
 
-        var parser = TypeParser<ProductStatus>.GetParserFunc(ref columns);
+        var parser = TypeParser<ProductStatus>.GetTypeParser(ref columns);
 
         reader.Read();
-        var p1 = parser(reader);
+        var p1 = parser.Parse(reader);
         Assert.Equal(12.5, p1.Weight);
 
         reader.Read();
-        var p2 = parser(reader);
+        var p2 = parser.Parse(reader);
         Assert.Null(p2.Weight);
         Assert.False(p2.IsInStock);
         Assert.Equal('B', p2.WarehouseZone);
@@ -237,11 +237,11 @@ public class TypeParserTests {
             [200, DBNull.Value, 0.0, "Ground", DBNull.Value]
         ]);
 
-        var parser = TypeParser<Shipment>.GetParserFunc(ref columns);
+        var parser = TypeParser<Shipment>.GetTypeParser(ref columns);
 
         // --- Execute Row 1 ---
         reader.Read();
-        var s1 = parser(reader);
+        var s1 = parser.Parse(reader);
         Assert.Equal(100, s1.ShipmentId);
         Assert.Equal(555, s1.Contents!.Value.TrackingId);
         Assert.Equal(1.5, s1.Contents!.Value.Weight);
@@ -251,7 +251,7 @@ public class TypeParserTests {
 
         // --- Execute Row 2 (JumpIfNull Test) ---
         reader.Read();
-        var s2 = parser(reader);
+        var s2 = parser.Parse(reader);
         Assert.Equal(200, s2.ShipmentId);
         // TrackingId was null, so the Package struct should be null in the parent
         Assert.Null(s2.Contents);
@@ -270,10 +270,10 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [[99, "DE123456789", "GENEDEBK"]]);
 
-        var parser = TypeParser<Order>.GetParserFunc(ref columns);
+        var parser = TypeParser<Order>.GetTypeParser(ref columns);
 
         reader.Read();
-        var result = parser(reader);
+        var result = parser.Parse(reader);
 
         // ASSERT
         Assert.Equal(99, result.OrderId);
@@ -296,10 +296,10 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [[99, 14532]]);
 
-        var parser = TypeParser<Order>.GetParserFunc(ref columns);
+        var parser = TypeParser<Order>.GetTypeParser(ref columns);
 
         reader.Read();
-        var result = parser(reader);
+        var result = parser.Parse(reader);
 
         // ASSERT
         Assert.Equal(99, result.OrderId);
@@ -317,10 +317,10 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [[321, "1234 5678 9012 3456", "John Smith"]]);
 
-        var parser = TypeParser<Order>.GetParserFunc(ref columns);
+        var parser = TypeParser<Order>.GetTypeParser(ref columns);
 
         reader.Read();
-        var result = parser(reader);
+        var result = parser.Parse(reader);
 
         // ASSERT
         Assert.Equal(321, result.OrderId);
@@ -343,10 +343,10 @@ public class TypeParserTests {
             [100, "1234 5678 9012 3456", DBNull.Value]
         ]);
 
-        var parser = TypeParser<Order>.GetParserFunc(ref columns);
+        var parser = TypeParser<Order>.GetTypeParser(ref columns);
 
         reader.Read();
-        var result = parser(reader);
+        var result = parser.Parse(reader);
 
         // ASSERT
         Assert.Equal(99, result.OrderId);
@@ -355,7 +355,7 @@ public class TypeParserTests {
         Assert.Equal("DE123456789", transfer.Iban);
         Assert.Equal("GENEDEBK", transfer.Bic);
         reader.Read();
-        result = parser(reader);
+        result = parser.Parse(reader);
 
         // ASSERT
         Assert.Equal(100, result.OrderId);
@@ -384,11 +384,11 @@ public class TypeParserTests {
         ]);
 
         // Testing BoxedProduct with <decimal, string>
-        var parser = TypeParser<BoxedProduct<decimal, string>>.GetParserFunc(ref columns);
+        var parser = TypeParser<BoxedProduct<decimal, string>>.GetTypeParser(ref columns);
 
         // --- Row 1 ---
         reader.Read();
-        Assert.Throws<NullValueAssignmentException>(() => parser(reader));
+        Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
     }
 
     [Fact]
@@ -406,10 +406,10 @@ public class TypeParserTests {
             [500, 12.50, CurrencyCode.CAD, 42, "API"]
         ]);
 
-        var parser = TypeParser<BoxedProduct<double, int>>.GetParserFunc(ref columns);
+        var parser = TypeParser<BoxedProduct<double, int>>.GetTypeParser(ref columns);
 
         reader.Read();
-        var result = parser(reader);
+        var result = parser.Parse(reader);
 
         Assert.IsType<double>(result.ListingPrice!.Value.Amount);
         Assert.IsType<int>(result.Info.Value);
@@ -440,11 +440,11 @@ public class TypeParserTests {
         ]);
 
         // Closing with <decimal, int>
-        var parser = TypeParser<BoxedProduct<decimal, int>>.GetParserFunc(ref columns);
+        var parser = TypeParser<BoxedProduct<decimal, int>>.GetTypeParser(ref columns);
 
         // --- VALIDATE ROW 1: Normal Operation ---
         reader.Read();
-        var p1 = parser(reader);
+        var p1 = parser.Parse(reader);
         Assert.Equal(101, p1.ProductId);
         Assert.Equal(99.50m, p1.ListingPrice!.Value.Amount);
         Assert.Equal(CurrencyCode.CAD, p1.ListingPrice.Value.Currency);
@@ -453,7 +453,7 @@ public class TypeParserTests {
 
         // --- VALIDATE ROW 2: JumpIfNull in Generic Price ---
         reader.Read();
-        var p2 = parser(reader);
+        var p2 = parser.Parse(reader);
         Assert.Equal(102, p2.ProductId);
         Assert.Null(p2.ListingPrice);
         Assert.Equal(600, p2.Info.Value);
@@ -461,7 +461,7 @@ public class TypeParserTests {
 
         // --- VALIDATE ROW 3: Hybrid Hydration (Property is Null) ---
         reader.Read();
-        var p3 = parser(reader);
+        var p3 = parser.Parse(reader);
         Assert.Equal(103, p3.ProductId);
         Assert.Equal(10.00m, p3.ListingPrice!.Value.Amount);
         Assert.Equal(CurrencyCode.GBP, p3.ListingPrice.Value.Currency);
@@ -481,10 +481,10 @@ public class TypeParserTests {
         // Metadata.Value is [NotNull] T. If DB gives us NULL, it must fail.
         using var reader = CreateReader(columns, [[201, 15.0d, 2, "Trusted"], [202, 15.0, 1, DBNull.Value]]);
 
-        var parser = TypeParser<BoxedProduct<double, string>>.GetParserFunc(ref columns);
+        var parser = TypeParser<BoxedProduct<double, string>>.GetTypeParser(ref columns);
 
         reader.Read();
-        var p1 = parser(reader);
+        var p1 = parser.Parse(reader);
         Assert.Equal(201, p1.ProductId);
         Assert.Equal(15.0d, p1.ListingPrice!.Value.Amount);
         Assert.Equal(CurrencyCode.EUR, p1.ListingPrice.Value.Currency);
@@ -492,7 +492,7 @@ public class TypeParserTests {
         Assert.Null(p1.Info.Source);
         reader.Read();
         // Should throw because Metadata.Value is marked [NotNull]
-        Assert.ThrowsAny<Exception>(() => parser(reader));
+        Assert.ThrowsAny<Exception>(() => parser.Parse(reader));
     }
 
     [Fact]
@@ -511,10 +511,10 @@ public class TypeParserTests {
             [3, "Roger", 2, "Victor", 1, "Albert"]
         ]);
 
-        var parser = TypeParser<User>.GetParserFunc(ref columns);
+        var parser = TypeParser<User>.GetTypeParser(ref columns);
 
         reader.Read();
-        var result = parser(reader);
+        var result = parser.Parse(reader);
         Assert.Equal(3, result.ID);
         Assert.Equal("Roger", result.Name);
         var sup = result.Supervisor;
@@ -542,10 +542,10 @@ public class TypeParserTests {
             [3, "Roger", 2, "Victor", DBNull.Value, DBNull.Value]
         ]);
 
-        var parser = TypeParser<User2>.GetParserFunc(ref columns);
+        var parser = TypeParser<User2>.GetTypeParser(ref columns);
 
         reader.Read();
-        var result = parser(reader);
+        var result = parser.Parse(reader);
         Assert.Equal(3, result.ID);
         Assert.Equal("Roger", result.Name);
         var sup = result.Supervisor;
@@ -570,10 +570,10 @@ public class TypeParserTests {
             [500, 400, DBNull.Value, "Name"]
         ]);
 
-        var parser = TypeParser<TestTop>.GetParserFunc(ref columns);
+        var parser = TypeParser<TestTop>.GetTypeParser(ref columns);
 
         reader.Read();
-        var top = parser(reader);
+        var top = parser.Parse(reader);
 
         Assert.Equal(500, top.ID);
         Assert.Equal(400, top.Middle.ID);
@@ -581,7 +581,7 @@ public class TypeParserTests {
         Assert.Equal("Name", top.Middle.Bottom.Name);
 
         reader.Read();
-        Assert.Throws<NullValueAssignmentException>(() => parser(reader));
+        Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
     }
     [Fact]
     public void Multi_Level_Jump_Alt2() {
@@ -597,10 +597,10 @@ public class TypeParserTests {
             [500, 400, DBNull.Value, "Name"]
         ]);
 
-        var parser = TypeParser<TestTop2>.GetParserFunc(ref columns);
+        var parser = TypeParser<TestTop2>.GetTypeParser(ref columns);
 
         reader.Read();
-        var top = parser(reader);
+        var top = parser.Parse(reader);
 
         Assert.Equal(500, top.ID);
         Assert.Equal(400, top.Middle.ID);
@@ -620,10 +620,10 @@ public class TypeParserTests {
             [500, 400, DBNull.Value, "Name"]
         ]);
 
-        var parser = TypeParser<TestTop3>.GetParserFunc(ref columns);
+        var parser = TypeParser<TestTop3>.GetTypeParser(ref columns);
 
         reader.Read();
-        var top = parser(reader);
+        var top = parser.Parse(reader);
 
         Assert.Equal(500, top.ID);
         Assert.Null(top.Middle);
@@ -644,17 +644,17 @@ public class TypeParserTests {
             [badge, "Engineeringg", DBNull.Value, DBNull.Value]
         ]);
 
-        var parser = TypeParser<DynaObject>.GetParserFunc(ref columns);
+        var parser = TypeParser<DynaObject>.GetTypeParser(ref columns);
 
         reader.Read();
-        var emp = parser(reader);
+        var emp = parser.Parse(reader);
 
         Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
         Assert.Equal("Engineering", emp.Get<string>("Department"));
         Assert.Equal(95000.50m, emp.Get<decimal>("Salary"));
         Assert.Equal(joinDate, emp.Get<DateTime>("JoinedAt"));
         reader.Read();
-        emp = parser(reader);
+        emp = parser.Parse(reader);
 
         Assert.Equal(badge, emp["BadgeId"]);
         Assert.Equal("Engineeringg", emp.Get<object>("Department"));
@@ -677,10 +677,10 @@ public class TypeParserTests {
             [2, badge, "Engineeringg", DBNull.Value, DBNull.Value]
         ]);
 
-        var parser = TypeParser<(int, DynaObject)>.GetParserFunc(ref columns);
+        var parser = TypeParser<(int, DynaObject)>.GetTypeParser(ref columns);
 
         reader.Read();
-        var (id, emp) = parser(reader);
+        var (id, emp) = parser.Parse(reader);
 
         Assert.Equal(1, id);
         Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
@@ -688,7 +688,7 @@ public class TypeParserTests {
         Assert.Equal(95000.50m, emp.Get<decimal>("Salary"));
         Assert.Equal(joinDate, emp.Get<DateTime>("JoinedAt"));
         reader.Read();
-        (id, emp) = parser(reader);
+        (id, emp) = parser.Parse(reader);
 
         Assert.Equal(2, id);
         Assert.Equal(badge, emp["BadgeId"]);
@@ -712,10 +712,10 @@ public class TypeParserTests {
             [2, badge, "Engineeringg", DBNull.Value, DBNull.Value]
         ]);
 
-        var parser = TypeParser<DynaPair<int>>.GetParserFunc(ref columns);
+        var parser = TypeParser<DynaPair<int>>.GetTypeParser(ref columns);
 
         reader.Read();
-        var (id, emp) = parser(reader);
+        var (id, emp) = parser.Parse(reader);
 
         Assert.Equal(1, id);
         Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
@@ -723,7 +723,7 @@ public class TypeParserTests {
         Assert.Equal(95000.50m, emp.Get<decimal>("Salary"));
         Assert.Equal(joinDate, emp.Get<DateTime>("JoinedAt"));
         reader.Read();
-        (id, emp) = parser(reader);
+        (id, emp) = parser.Parse(reader);
 
         Assert.Equal(2, id);
         Assert.Equal(badge, emp["BadgeId"]);
@@ -747,10 +747,10 @@ public class TypeParserTests {
             [badge, "Engineeringg", DBNull.Value, 2, DBNull.Value]
         ]);
 
-        var parser = TypeParser<DynaPair2<int>>.GetParserFunc(ref columns);
+        var parser = TypeParser<DynaPair2<int>>.GetTypeParser(ref columns);
 
         reader.Read();
-        var (id, emp) = parser(reader);
+        var (id, emp) = parser.Parse(reader);
 
         Assert.Equal(1, id);
         Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
@@ -758,7 +758,7 @@ public class TypeParserTests {
         Assert.Equal(95000.50m, emp.Get<decimal>("Salary"));
         Assert.Equal(joinDate, emp.Get<DateTime>("JoinedAt"));
         reader.Read();
-        (id, emp) = parser(reader);
+        (id, emp) = parser.Parse(reader);
 
         Assert.Equal(2, id);
         Assert.Equal(badge, emp["BadgeId"]);
@@ -778,10 +778,10 @@ public class TypeParserTests {
             [badge, DBNull.Value]
         ]);
 
-        var parser = TypeParser<DynaObject>.GetParserFunc(ref columns);
+        var parser = TypeParser<DynaObject>.GetTypeParser(ref columns);
 
         reader.Read();
-        var emp = parser(reader);
+        var emp = parser.Parse(reader);
 
         Assert.Equal(badge, emp.Get<Guid>("BadgeId"));
         Assert.Null(emp.Get<Guid?>("BadgeID#2"));
@@ -791,7 +791,6 @@ public class TypeParserTests {
     }
     [Fact]
     public void DynaObject_ImplicitOP() {
-        var badge = Guid.NewGuid();
         ColumnInfo[] columns = [
             new("Nb1", typeof(int), false),
             new("Nb2", typeof(long), true)
@@ -801,17 +800,16 @@ public class TypeParserTests {
             [1, 1]
         ]);
 
-        var parser = TypeParser<DynaObject>.GetParserFunc(ref columns);
+        var parser = TypeParser<DynaObject>.GetTypeParser(ref columns);
 
         reader.Read();
-        var emp = parser(reader);
+        var emp = parser.Parse(reader);
 
         Assert.Equal(new MM(1), emp.Get<MM>("Nb1"));
         Assert.Equal(new MM(1), emp.Get<MM>("Nb2"));
     }
     [Fact]
     public void Tuple_ImplicitOP() {
-        var badge = Guid.NewGuid();
         ColumnInfo[] columns = [
             new("Nb1", typeof(int), false),
             new("Nb2", typeof(long), true)
@@ -821,10 +819,10 @@ public class TypeParserTests {
             [1, 1]
         ]);
 
-        var parser = TypeParser<(MM, MM)>.GetParserFunc(ref columns);
+        var parser = TypeParser<(MM, MM)>.GetTypeParser(ref columns);
 
         reader.Read();
-        var (nb1, nb2) = parser(reader);
+        var (nb1, nb2) = parser.Parse(reader);
 
         Assert.Equal(new MM(1), nb1);
         Assert.Equal(new MM(1), nb2);
@@ -842,28 +840,26 @@ public class TypeParserTests {
             [10.00m, 3]
         ]);
 
-        var parser = TypeParser<Price<decimal>?>.GetParserFunc(ref columns);
+        var parser = TypeParser<Price<decimal>?>.GetTypeParser(ref columns);
 
         reader.Read();
-        var p1 = parser(reader);
+        var p1 = parser.Parse(reader);
         Assert.True(p1.HasValue);
         Assert.Equal(99.50m, p1.Value.Amount);
         Assert.Equal(CurrencyCode.CAD, p1.Value.Currency);
 
         reader.Read();
-        var p2 = parser(reader);
+        var p2 = parser.Parse(reader);
         Assert.False(p2.HasValue);
 
         reader.Read();
-        var p3 = parser(reader);
+        var p3 = parser.Parse(reader);
         Assert.True(p3.HasValue);
         Assert.Equal(10.00m, p3.Value.Amount);
         Assert.Equal(CurrencyCode.GBP, p3.Value.Currency);
     }
     [Fact]
     public void DynaObjectInfinite() {
-        var badge = Guid.NewGuid();
-        var joinDate = new DateTime(2023, 05, 10);
         ColumnInfo[] columns = [
             new("Col1", typeof(int), false),
             new("Col2", typeof(int), false),
@@ -885,10 +881,10 @@ public class TypeParserTests {
             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         ]);
 
-        var parser = TypeParser<DynaObject>.GetParserFunc(ref columns);
+        var parser = TypeParser<DynaObject>.GetTypeParser(ref columns);
 
         reader.Read();
-        var dyna = parser(reader);
+        var dyna = parser.Parse(reader);
 
         Assert.Equal(1, dyna.Get<int>(0));
         Assert.Equal(2, dyna.Get<int>(1));

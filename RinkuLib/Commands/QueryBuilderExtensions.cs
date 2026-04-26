@@ -1,41 +1,9 @@
 ﻿using System.Data;
 using System.Data.Common;
-using RinkuLib.DbParsing;
 using RinkuLib.Queries;
-using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Commands;
-/// <summary>
-/// Uses the <see cref="TypeParser{T}"/> to retrieve or make the complied parser function and cache both the parser and any used parameters
-/// </summary>
-public struct ParsingCacheToMake<T>(QueryCommand command, SchemaParser<T> cache, bool[] usageMap) : ISchemaParser<T> {
-    private readonly QueryCommand Command = command;
-    private Func<DbDataReader, T> parser = cache.parser;
-    /// <inheritdoc/>
-    public CommandBehavior Behavior { get; } = cache.Behavior;
-    private readonly bool[] UsageMap = usageMap;
-    /// <inheritdoc/>
-    public readonly bool IsInit => false;
-    /// <inheritdoc/>
-    public void Init(DbDataReader reader, IDbCommand cmd) {
-        if (parser == null) {
-            var schema = reader.GetColumns();
-            var p = TypeParser<T>.GetParserFunc(ref schema, out var defaultBehavior);
-            parser = p;
-            Command.UpdateParseCache(UsageMap, schema, new SchemaParser<T>(parser, defaultBehavior));
-        }
-        Command.UpdateCache(cmd);
-    }
-    /// <inheritdoc/>
-    public readonly T Parse(DbDataReader reader) => parser(reader);
-}
-/// <summary>
-/// No cache are actualy associated with this struct
-/// </summary>
-public struct NoNeedToCache : ICache {
-    /// <inheritdoc/>
-    public readonly void UpdateCache(IDbCommand cmd) { }
-}
 /// <summary>
 /// Extensions on <see cref="QueryBuilder"/>
 /// </summary>
@@ -93,9 +61,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.Execute(command, true);
-            return cmd.Execute<NoNeedToCache>(default, true);
+            return cmd.Execute(true, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and return the nb of affected rows.
@@ -108,9 +74,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteAsync(command, true, ct);
-            return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
+            return cmd.ExecuteAsync(true, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and return the scalar value.
@@ -122,9 +86,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
-            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+            return cmd.ExecuteScalar<T>(true, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and return the scalar value.
@@ -137,9 +99,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
-            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
+            return cmd.ExecuteScalarAsync<T>(true, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
@@ -153,24 +113,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReader(command, behavior);
-            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
-        }
-        /// <summary>
-        /// Executes the reader of the <see cref="DbCommand"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        public DbDataReader ExecuteReader(DbConnection cnn, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReader(command, behavior);
-            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+            return cmd.ExecuteReader(behavior, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
@@ -185,37 +128,20 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReaderAsync(command, behavior, ct);
-            return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
-        }
-        /// <summary>
-        /// Executes the reader of the <see cref="DbCommand"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
-        public Task<DbDataReader> ExecuteReaderAsync(DbConnection cnn, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReaderAsync(command, behavior, ct);
-            return cmd.ExecuteReaderAsync<NoNeedToCache>(default, behavior, ct);
+            return cmd.ExecuteReaderAsync(behavior, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command associated with the reader</param>
         /// <param name="behavior">The behavior to use for the reader</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public MultiReader ExecuteMultiReader(DbConnection cnn, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
+        public MultiReader ExecuteMultiReader(DbConnection cnn, out DbCommand cmd, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            cmd = GetCommand(command, vars, cnn, transaction, timeout);
             cmd.CommandText = command.QueryText.Parse(vars);
             return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
@@ -223,61 +149,34 @@ public static class QueryBuilderExtensions {
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command associated with the reader</param>
         /// <param name="behavior">The behavior to use for the reader</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<MultiReader> ExecuteMultiReaderAsync(DbConnection cnn, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public Task<MultiReader> ExecuteMultiReaderAsync(DbConnection cnn, out DbCommand cmd, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            cmd = GetCommand(command, vars, cnn, transaction, timeout);
             cmd.CommandText = command.QueryText.Parse(vars);
             return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
         }
-
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T? QueryOne<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
+        public T? Query<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return parser.Parse(cmd, true);
+            else if (parser is not null)
+                return parser.Parse(cmd, command, true);
+            return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
         }
-        /// <summary>
-        /// Executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        public IEnumerable<T> QueryAll<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
-        }
-        /// <summary>
-        /// Executes a <see cref="DbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        public List<T> QueryAllBuffered<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
-        }
-
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
@@ -285,44 +184,36 @@ public static class QueryBuilderExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QueryOneAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public Task<T?> QueryAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return parser.ParseAsync(cmd, true, ct);
+            else if (parser is not null)
+                return parser.ParseAsync(cmd, command, true, ct);
+            return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
         /// <summary>
-        /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
+        /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryAllAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public IAsyncEnumerable<T> StreamQueryAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
+            cmd.CommandText = command.QueryText.Parse(vars);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return cmd.StreamQueryAsync(false, parser, (ICache?)null, ct);
+            else if (parser is not null)
+                return cmd.StreamQueryAsync(false, parser, command, ct);
+            return cmd.StreamQueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
-        /// <summary>
-        /// Asynchronously executes a <see cref="DbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
-        public Task<List<T>> QueryAllBufferedAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
-        }
+
+
 
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and return the nb of affected rows.
@@ -334,9 +225,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.Execute(command, true);
-            return cmd.Execute<NoNeedToCache>(default, true);
+            return cmd.Execute(true, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and return the nb of affected rows.
@@ -349,9 +238,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteAsync(command, true, ct);
-            return cmd.ExecuteAsync<NoNeedToCache>(default, true, ct);
+            return cmd.ExecuteAsync(true, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and return the scalar value.
@@ -363,9 +250,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteScalar<T, QueryCommand>(command, true);
-            return cmd.ExecuteScalar<T, NoNeedToCache>(default, true);
+            return cmd.ExecuteScalar<T>(true, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and return the scalar value.
@@ -378,9 +263,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteScalarAsync<T, QueryCommand>(command, true, ct);
-            return cmd.ExecuteScalarAsync<T, NoNeedToCache>(default, true, ct);
+            return cmd.ExecuteScalarAsync<T>(true, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes the reader of the <see cref="IDbCommand"/>.
@@ -394,83 +277,70 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReader(command, behavior);
-            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+            return cmd.ExecuteReader(behavior, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes the reader of the <see cref="IDbCommand"/>.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command associated with the reader</param>
         /// <param name="behavior">The behavior to use for the reader</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public DbDataReader ExecuteReader(IDbConnection cnn, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<DbDataReader> ExecuteReaderAsync(IDbConnection cnn, out IDbCommand cmd, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.NeedToCache(vars))
-                return cmd.ExecuteReader(command, behavior);
-            return cmd.ExecuteReader<NoNeedToCache>(default, behavior);
+            cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            return cmd.ExecuteReaderAsync(behavior, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command associated with the reader</param>
         /// <param name="behavior">The behavior to use for the reader</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public MultiReader ExecuteMultiReader(IDbConnection cnn, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
+        public MultiReader ExecuteMultiReader(IDbConnection cnn, out IDbCommand cmd, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            cmd = GetCommand(command, vars, cnn, transaction, timeout);
             cmd.CommandText = command.QueryText.Parse(vars);
             return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
-
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command associated with the reader</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<MultiReader> ExecuteMultiReaderAsync(IDbConnection cnn, out IDbCommand cmd, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var vars = builder.Variables;
+            var command = builder.QueryCommand;
+            cmd = GetCommand(command, vars, cnn, transaction, timeout);
+            cmd.CommandText = command.QueryText.Parse(vars);
+            return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
+        }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T? QueryOne<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
+        public T? Query<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryOne<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryOne<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return parser.Parse(cmd, true);
+            else if (parser is not null)
+                return parser.Parse(cmd, command, true);
+            return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
         }
-        /// <summary>
-        /// Executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        public IEnumerable<T> QueryAll<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAll<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAll<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
-        }
-        /// <summary>
-        /// Executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        public List<T> QueryAllBuffered<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllBuffered<SchemaParser<T>, T>(cache, true);
-            return cmd.QueryAllBuffered<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true);
-        }
-
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
         /// </summary>
@@ -478,43 +348,15 @@ public static class QueryBuilderExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QueryOneAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public Task<T?> QueryAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryOneAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryOneAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
-        }
-        /// <summary>
-        /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
-        public IAsyncEnumerable<T> QueryAllAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
-        }
-        /// <summary>
-        /// Asynchronously executes a <see cref="IDbCommand"/> and parse each rows to return a buffered collection of <typeparamref name="T"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
-        public Task<List<T>> QueryAllBufferedAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
-            var vars = builder.Variables;
-            var command = builder.QueryCommand;
-            var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            if (command.TryGetCache<T>(vars, out var cache))
-                return cmd.QueryAllBufferedAsync<SchemaParser<T>, T>(cache, true, ct);
-            return cmd.QueryAllBufferedAsync<ParsingCacheToMake<T>, T>(new(command, cache, vars.ToBoolArray()), true, ct);
+            if (command.TryGetCachedParser<T>(vars, out var parser))
+                return parser.ParseAsync(cmd, true, ct);
+            else if (parser is not null)
+                return parser.ParseAsync(cmd, command, true, ct);
+            return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
         }
     }
 }

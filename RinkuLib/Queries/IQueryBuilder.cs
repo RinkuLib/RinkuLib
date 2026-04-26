@@ -1,7 +1,4 @@
-﻿using System.Data;
-using System.Data.Common;
-
-namespace RinkuLib.Queries;
+﻿namespace RinkuLib.Queries;
 
 /// <summary>
 /// The control interface for deciding which parts of a query are active and what data they carry.
@@ -111,36 +108,4 @@ public interface IQueryBuilder {
     /// Set the builder state alligned with the parameter object
     /// </summary>
     public void UseWith<T>(ref T parameterObj) where T : notnull;
-}
-/// <summary>
-/// A <see cref="ISchemaParser{T}"/> allready initialized
-/// </summary>
-public readonly struct SchemaParser<T>(/*delegate**/Func<DbDataReader, T> Parser, CommandBehavior Behavior) : ISchemaParser<T> {
-    /// <inheritdoc/>
-    public bool IsInit => parser != null;
-    //public readonly delegate*<DbDataReader, T> parser = Parser;
-    /// <summary>The actual function that do the parsing</summary>
-    public readonly Func<DbDataReader, T> parser = Parser;
-    /// <inheritdoc/>
-    public CommandBehavior Behavior { get; } = Behavior;
-    /// <inheritdoc/>
-    public readonly void Init(DbDataReader reader, IDbCommand cmd) { }
-    /// <inheritdoc/>
-    public T Parse(DbDataReader reader) => parser(reader);
-}
-/// <summary>
-/// A <see cref="ISchemaParser{T}"/> allready initialized
-/// </summary>
-public readonly struct SchemaParserAsync<T>(/*delegate**/Func<DbDataReader, Task<T>> Parser, CommandBehavior Behavior) : ISchemaParserAsync<T> {
-    /// <inheritdoc/>
-    public bool IsInit => parser != null;
-    //public readonly delegate*<DbDataReader, T> parser = Parser;
-    /// <summary>The actual function that do the parsing</summary>
-    public readonly Func<DbDataReader, Task<T>> parser = Parser;
-    /// <inheritdoc/>
-    public CommandBehavior Behavior { get; } = Behavior;
-    /// <inheritdoc/>
-    public readonly Task Init(DbDataReader reader, IDbCommand cmd) => Task.CompletedTask;
-    /// <inheritdoc/>
-    public Task<T> Parse(DbDataReader reader) => parser(reader);
 }

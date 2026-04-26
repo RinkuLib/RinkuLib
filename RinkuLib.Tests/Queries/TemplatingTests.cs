@@ -689,4 +689,21 @@ public class TemplatingTests {
 
         Verify(factory, expectedSegments, expectedConditions, ["All"]);
     }
+    [Fact]
+    public void Using_Space_In_Logical_Cond() {
+        var sql = "SELECT * FROM Products p /*Cond1    | Cond2*/INNER JOIN Commands c ON c.ProductID = p.ID";
+        var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
+
+        var expectedSegments = new[] {
+            new SegmentVerify("SELECT * FROM Products p", 0, false),
+            new SegmentVerify(" INNER JOIN Commands c ON c.ProductID = p.ID", 0, false),
+        };
+
+        var expectedConditions = new[] {
+            new ConditionVerify("Cond1", " INNER JOIN Commands c ON c.ProductID = p.ID", 2, true),
+            new ConditionVerify("Cond2", " INNER JOIN Commands c ON c.ProductID = p.ID", 2),
+        };
+
+        Verify(factory, expectedSegments, expectedConditions, ["Cond1", "Cond2"]);
+    }
 }

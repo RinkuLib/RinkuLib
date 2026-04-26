@@ -9,20 +9,17 @@ namespace RinkuLib.DbParsing;
 /// A composite parser responsible for instantiating complex types and populating their members.
 /// It coordinates the evaluation stack to satisfy constructor parameters and setter methods.
 /// </summary>
-public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters, List<(MemberInfo, DbItemParser)> Members) : DbItemParser {
+public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters, List<(MemberInfo, DbItemParser)>? Members = null) : DbItemParser {
     private readonly Type ParentType = ParentType;
     private readonly Type Type = Type;
     private readonly string ParamName = ParamName;
     private readonly INullColHandler NullColHandler = NullColHandler;
     private readonly MemberInfo MethodBase = MethodBase;
     private readonly List<DbItemParser> Readers = Parameters;
-    private readonly List<(MemberInfo, DbItemParser)> Members = Members;
+    private readonly List<(MemberInfo, DbItemParser)> Members = Members ?? EmptyMembers;
     private static readonly List<(MemberInfo, DbItemParser)> EmptyMembers = [];
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedNullJumpSetPoint(Type);
-    /// <summary>Creation without member assignations</summary>
-    public CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters)
-        : this(ParentType, Type, ParamName, NullColHandler, MethodBase, Parameters, EmptyMembers) { }
     /// <inheritdoc/>
     public override bool IsSequencial(ref int previousIndex) {
         for (int i = 0; i < Readers.Count; i++)
@@ -44,7 +41,7 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
                 jump = generator.DefineLabel();
                 localSetPoint = new(jump.Value, 0);
             }
-            Readers[i].Emit(cols, generator, localSetPoint.WithItemOnStack(i), out targetObject);
+            reader.Emit(cols, generator, localSetPoint.WithItemOnStack(i), out targetObject);
         }
         EmitMemberDispatch(generator, MethodBase);
         var under = Nullable.GetUnderlyingType(Type);
