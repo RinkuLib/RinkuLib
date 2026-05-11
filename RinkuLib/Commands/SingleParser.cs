@@ -14,28 +14,28 @@ public class SingleParser<T>(string commandText) : ICacheUsingParser<T> {
     public readonly string CommandText = commandText;
 
     /// <summary></summary>
-    public T? Query(DbCommand command, bool disposeCommand = false) {
+    public T Query(DbCommand command, bool disposeCommand = false) {
         command.CommandText = CommandText;
         if (Parser is not null)
             return Parser.Query(command, disposeCommand);
         return command.Query(disposeCommand, null, this);
     }
     /// <summary></summary>
-    public T? Query(IDbCommand command, bool disposeCommand = false) {
+    public T Query(IDbCommand command, bool disposeCommand = false) {
         command.CommandText = CommandText;
         if (Parser is not null)
             return Parser.Query(command, disposeCommand);
         return command.Query(disposeCommand, null, this);
     }
     /// <summary></summary>
-    public Task<T?> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<T> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         command.CommandText = CommandText;
         if (Parser is not null)
             return Parser.QueryAsync(command, disposeCommand, ct);
         return command.QueryAsync(disposeCommand, null, this, ct);
     }
     /// <summary></summary>
-    public Task<T?> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<T> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         command.CommandText = CommandText;
         if (Parser is not null)
             return Parser.QueryAsync(command, disposeCommand, ct);
@@ -55,7 +55,7 @@ public class StoredProcParser<T>(string procName) : ICacheUsingParser<T> {
     /// <inheritdoc/>
     public readonly string ProcName = procName;
     /// <summary></summary>
-    public T? Query(DbCommand command, bool disposeCommand = false) {
+    public T Query(DbCommand command, bool disposeCommand = false) {
         command.CommandText = ProcName;
         command.CommandType = CommandType.StoredProcedure;
         if (Parser is not null)
@@ -63,7 +63,7 @@ public class StoredProcParser<T>(string procName) : ICacheUsingParser<T> {
         return command.Query(disposeCommand, null, this);
     }
     /// <summary></summary>
-    public T? Query(IDbCommand command, bool disposeCommand = false) {
+    public T Query(IDbCommand command, bool disposeCommand = false) {
         command.CommandText = ProcName;
         command.CommandType = CommandType.StoredProcedure;
         if (Parser is not null)
@@ -71,7 +71,7 @@ public class StoredProcParser<T>(string procName) : ICacheUsingParser<T> {
         return command.Query(disposeCommand, null, this);
     }
     /// <summary></summary>
-    public Task<T?> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<T> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         command.CommandText = ProcName;
         command.CommandType = CommandType.StoredProcedure;
         if (Parser is not null)
@@ -79,7 +79,7 @@ public class StoredProcParser<T>(string procName) : ICacheUsingParser<T> {
         return command.QueryAsync(disposeCommand, null, this, ct);
     }
     /// <summary></summary>
-    public Task<T?> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<T> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         command.CommandText = ProcName;
         command.CommandType = CommandType.StoredProcedure;
         if (Parser is not null)

@@ -197,14 +197,18 @@ Here are the extensions they are available in both **Synchronous** and **Asynchr
 | --- | --- | --- | --- |
 | **Update/Delete/Insert** | `Execute` | `int` | `Task<int>` |
 | **Update/Delete/Insert** | `ExecuteScalar<T>` | `T` | `Task<T>` |
-| **Fetch Single Row** | `Query<T>` | `T?` | `Task<T?>` |
-| **Fetch Multiple Rows** | `Query<List<T>>` | `List<T>` | `Task<List<T>>` |
-| **Stream Multiple Rows** | `Query<IEnumerable<T>>` | `IEnumerable<T>` | `Task<IEnumerable<T>>` |
-| **Stream Multiple Rows Async** | `StreamQueryAsync<T>` | N/A | `IAsyncEnumerable<T>` |
+| **Fetch One Result (throw when no rows)** | `Query<T>` | `T` | `Task<T>` |
+| **Fetch One Result or Default** | `Query<Optional<T>>` | `Optional<T>` (`T`) | `Task<Optional<T>>` |
+| **Fetch One Single Result** | `Query<Single<T>>` | `Single<T>` (`T`) | `Task<Single<T>>` |
+| **Fetch One Single Result that can be null** | `Query<MaybeNull<T>>` | `MaybeNull<T>` (`T`) | `Task<MaybeNull<T>>` |
+| **Fetch One Single Result null struct** | `Query<T?>` | `T?` | `Task<T?>` |
+| **Fetch Multiple Results** | `Query<List<T>>` | `List<T>` | `Task<List<T>>` |
+| **Stream Multiple Results** | `Query<IEnumerable<T>>` | `IEnumerable<T>` | `Task<IEnumerable<T>>` |
+| **Stream Multiple Results Async** | `StreamQueryAsync<T>` | N/A | `IAsyncEnumerable<T>` |
 | **Get Reader** | `ExecuteReader` | `DbDataReader` | `Task<DbDataReader>` |
 | **Get MultiReader** | `ExecuteMultiReader` | `MultiReader` | `Task<MultiReader>` |
 
-> `Query<T>` returns `T?` but for manualy handled cases like `Query<List<T>>` or `Query<IEnumerable<T>>` the return value will never be null unless manualy changed. The possible null value can safely be ignored in thoses cases
+> Multiple types like `Optional<T>`, `Single<T>`, `MaybeNull<T>` are implicilty convertible to `T`
 
 ```csharp
 var user = builder.Query<User>(cnn);
@@ -232,16 +236,5 @@ The equivalent methods for `QueryBuilderCommand` does not take any parameters (e
 In the spirit of modularity, the mapping engine is accesible using any `DbCommand` instance.
 
 The same extensions are provided directly on the the `DbCommand` (there is also support for `IDbCommand`)
-
-| Goal | Method | Sync Return | Async Return |
-| --- | --- | --- | --- |
-| **Update/Delete/Insert** | `Execute` | `int` | `Task<int>` |
-| **Update/Delete/Insert** | `ExecuteScalar<T>` | `T` | `Task<T>` |
-| **Fetch Single Row** | `Query<T>` | `T?` | `Task<T?>` |
-| **Fetch Multiple Rows** | `Query<List<T>>` | `List<T>` | `Task<List<T>>` |
-| **Stream Multiple Rows** | `Query<IEnumerable<T>>` | `IEnumerable<T>` | `Task<IEnumerable<T>>` |
-| **Stream Multiple Rows Async** | `StreamQueryAsync<T>` | N/A | `IAsyncEnumerable<T>` |
-| **Get Reader** | `ExecuteReader` | `DbDataReader` | `Task<DbDataReader>` |
-| **Get MultiReader** | `ExecuteMultiReader` | `MultiReader` | `Task<MultiReader>` |
 
 The parameters are a bit different and may change from one method to the other.

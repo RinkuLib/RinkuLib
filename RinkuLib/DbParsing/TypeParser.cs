@@ -11,7 +11,22 @@ public static class TypeParser {
     public static readonly DefaultTypeParserMaker DefaultTypeParserMaker = new();
     /// <summary></summary>
     public static readonly List<ITypeParserMaker> TypeParserMakers = [
-        new CollectionTypeParserMaker()
+        new ReusingBaseTypeParserMaker([typeof(IEnumerable<>), typeof(List<>)],
+            (def, itemType, ref _) => (def == typeof(IEnumerable<>))
+                ? typeof(EnumerableTypeParser<>).MakeGenericType(itemType)
+                : typeof(ListTypeParser<>).MakeGenericType(itemType),
+            (def, itemType, ref _) => (def == typeof(IEnumerable<>))
+                ? typeof(FastEnumerableTypeParser<>).MakeGenericType(itemType)
+                : typeof(FastListTypeParser<>).MakeGenericType(itemType)
+        ),
+        new ReusingBaseTypeParserMaker([typeof(Optional<>), typeof(OptionalStruct<>)],
+            (def, itemType, ref _) => typeof(OptionalTypeParser<,>).MakeGenericType(def.MakeGenericType(itemType), itemType),
+            (def, itemType, ref _) => typeof(FastOptionalTypeParser<,>).MakeGenericType(def.MakeGenericType(itemType), itemType)
+        ),
+        new ReusingBaseTypeParserMaker([typeof(Single<>)],
+            (def, itemType, ref _) => typeof(SingleTypeParser<,>).MakeGenericType(def.MakeGenericType(itemType), itemType),
+            (def, itemType, ref _) => typeof(FastSingleTypeParser<,>).MakeGenericType(def.MakeGenericType(itemType), itemType)
+        )
     ];
 }
 /// <summary>
@@ -19,15 +34,6 @@ public static class TypeParser {
 /// </summary>
 public static class TypeParser<T> {
     private static readonly List<(ColumnInfo[] Schema, ITypeParser<T> Parser)> ReadingInfos = [];
-    /// <summary>
-    /// Entry point for retrieving a parser. 
-    /// It first searches the cache for a schema match; if none exists, it triggers 
-    /// the generation of a new <see cref="DynamicMethod"/>.
-    /// </summary>
-    /// <param name="cols">The schema received from the data source.</param>
-    /// <param name="isNullable">Identify wether to throw or not when the root item is null</param>
-    public static ITypeParser<T> GetTypeParser(ref ColumnInfo[] cols, bool isNullable)
-        => GetTypeParser(ref cols, isNullable ? NullableTypeHandle.Instance : NotNullHandle.Instance);
     /// <summary>
     /// Entry point for retrieving a parser. 
     /// It first searches the cache for a schema match; if none exists, it triggers 
@@ -49,6 +55,9 @@ public static class TypeParser<T> {
                     typeParserMaker = tpm;
                     break;
                 }
+            nullColHandler ??= Nullable.GetUnderlyingType(typeof(T)) is not null
+                    ? NullableTypeHandle.Instance : NotNullHandle.Instance;
+
             if (!typeParserMaker.TryMakeParser<T>(nullColHandler, cols, out var info))
                 throw new Exception($"cannot make the parser for {typeof(T)} with the schema ({string.Join(", ", cols.Select(c => $"{c.Type.ShortName()}{(c.IsNullable ? "?" : "")} {c.Name}"))})");
             ReadingInfos.Add(new(cols, info));

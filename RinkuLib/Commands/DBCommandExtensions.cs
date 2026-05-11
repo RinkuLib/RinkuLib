@@ -183,7 +183,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="cache">A cache to be used with the reader</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public T? Query<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null) {
+        public T Query<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             bool suppressCleanup = false;
@@ -233,7 +233,7 @@ public static class DBCommandExtensions {
         /// <param name="cache">A cache to be used with the reader</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async Task<T?> QueryAsync<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null, CancellationToken ct = default) {
+        public async Task<T> QueryAsync<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null, CancellationToken ct = default) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             bool suppressCleanup = false;
@@ -260,7 +260,7 @@ public static class DBCommandExtensions {
                     suppressCleanup = true;
                     return res;
                 }
-                return await parser.ParseAsync(reader, ct);
+                return await parser.ParseAsync(reader, ct).ConfigureAwait(false);
             }
             finally {
                 if (!suppressCleanup) {
@@ -301,8 +301,14 @@ public static class DBCommandExtensions {
                     var schema = reader.GetColumnsFast();
                     parser = TypeParser<T>.GetTypeParser(ref schema);
                 }
-                while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    yield return await parser.ParseAsync(reader, ct);
+                if (parser.SupportsParsingAsync) {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                        yield return await parser.ParseAsync(reader, ct).ConfigureAwait(false);
+                }
+                else {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                        yield return parser.Parse(reader);
+                }
             }
             finally {
                 if (disposeCommand) {
@@ -341,7 +347,7 @@ public static class DBCommandExtensions {
                     parser = TypeParser<T>.GetTypeParser(ref schema);
                 }
                 while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    yield return await parser.ParseAsync(reader, ct);
+                    yield return await parser.ParseAsync(reader, ct).ConfigureAwait(false);
             }
             finally {
                 if (disposeCommand) {
@@ -483,7 +489,7 @@ public static class DBCommandExtensions {
         /// <param name="parser">The item responsible to parse the rows</param>
         /// <param name="cache">A cache to be used with the reader</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public T? Query<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null) {
+        public T Query<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             bool suppressCleanup = false;
@@ -534,7 +540,7 @@ public static class DBCommandExtensions {
         /// <param name="cache">A cache to be used with the reader</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T?> QueryAsync<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null, CancellationToken ct = default) {
+        public Task<T> QueryAsync<T>(bool disposeCommand = true, ITypeParser<T>? parser = null, ICacheUsingParser<T>? cache = null, CancellationToken ct = default) {
             if (cmd is DbCommand c)
                 return c.QueryAsync(disposeCommand, parser, cache, ct);
             return Task.FromResult(cmd.Query(disposeCommand, parser, cache));

@@ -1,8 +1,9 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
+/// <summary>Use to actualy create the comparer</summary>
+public delegate INameComparer NameComparerFactory(Type type, string? name, string[] altNames, object[] attributes, object? param, List<INameComparerMaker> nameComparerMakers);
 /// <summary>
 /// Handles the standard negotiation flow for constructor parameters, properties, and fields.
 /// </summary>
@@ -48,12 +49,8 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>
     /// Adds an alternative name to the existing <see cref="NameComparer"/>.
     /// </summary>
-    public void AddAltName(string altName)
-        => NameComparer = NameComparer.AddAltName(altName);
-    /// <summary>
-    /// Returns the primary name defined for this member.
-    /// </summary>
-    public string GetName() => NameComparer.GetDefaultName();
+    public void UpdateAltName(Func<INameComparer, INameComparer?> modifier)
+        => NameComparer = modifier(NameComparer) ?? NameComparer;
     /// <summary>
     /// Creates a matcher for a constructor or method parameter if the type is usable.
     /// </summary>
@@ -108,16 +105,17 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
         UsageFlags usageFlags = default;
         bool hasNoName = false;
+        List<INameComparerMaker> nameComparersMakers = [];
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
             if (attr is AltAttribute)
                 altCount++;
             if (attr is NoNameAttribute)
                 hasNoName = true;
+            if (attr is INameComparerMaker mkr)
+                nameComparersMakers.Add(mkr);
             if (attr is IParamInfoMaker mm)
                 maker = mm;
-            if (attr is INullColHandler nch)
-                nullColHandler = nch;
             if (attr is InvalidOnNullAttribute)
                 isInvalidOnNull = true;
             if (attr is INullColHandlerMaker nchm)
@@ -137,20 +135,53 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 if (attributes[i] is AltAttribute alt)
                     altNames[altIdx++] = alt.AlternativeName;
         }
-        INameComparer comparer;
-        if (name is null || hasNoName) {
-            if (altNames.Length == 0)
-                comparer = new NoNameComparer();
-            else
-                comparer = new NameComparerArray(altNames);
-        }
-        else if (altNames.Length == 0)
-            comparer = new NameComparer(name);
-        else if (altNames.Length == 1)
-            comparer = new NameComparerTwo(name, altNames[0]);
-        else
-            comparer = new NameComparerMany(name, altNames);
+        INameComparer comparer = ComparerFactory(type, hasNoName ? null : name, altNames, attributes, param, nameComparersMakers);
         return maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
+    }
+    /// <summary>A delegate to implement your own name comparer dispatching strategy</summary>
+    public static NameComparerFactory ComparerFactory { get; set; } = DispatchComparer;
+    /// <summary>
+    /// The default dispatch logic you provided.
+    /// </summary>
+    public static INameComparer DispatchComparer(Type type, string? name, string[] altNames, object[] attributes, object? param, List<INameComparerMaker> nameComparerMakers) {
+        INameComparer current;
+        if (name is null) {
+            current = altNames.Length switch {
+                0 => NoNameComparer.Instance,
+                1 => new NameComparer(altNames[0]),
+                _ => new NameArray(altNames)
+            };
+        }
+        else {
+            current = altNames.Length switch {
+                0 => new NameComparer(name),
+                1 => new NameTwo(name, altNames[0]),
+                _ => new NameArray([name, .. altNames])
+            };
+        }
+        if (nameComparerMakers.Count == 0)
+            return current;
+
+        int maxPotential = 1 + nameComparerMakers.Count;
+        var buffer = new INameComparer[maxPotential];
+        int count = 0;
+
+        if (current is not NoNameComparer)
+            buffer[count++] = current;
+
+        for (int i = 0; i < nameComparerMakers.Count; i++) {
+            var created = nameComparerMakers[i].MakeComparer(type, ref current, attributes, param);
+
+            if (created is not NoNameComparer)
+                buffer[count++] = created;
+        }
+
+        return count switch {
+            0 => NoNameComparer.Instance,
+            1 => buffer[0],
+            2 => new JoinedNameComparer(buffer[0], buffer[1]),
+            _ => new NameComparerGroup(buffer[..count])
+        };
     }
 }
 internal class DefaultParamInfoMaker : IParamInfoMaker {

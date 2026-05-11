@@ -11,6 +11,9 @@ public sealed class ListTypeParser<T>(ITypeParser<T> elementParser) : BaseTypePa
     /// <inheritdoc/>
     public override CommandBehavior Behavior => ElementParser.Behavior & ~CommandBehavior.SingleRow;
     /// <inheritdoc/>
+    public override bool SupportsParsingAsync => true;
+
+    /// <inheritdoc/>
     public override List<T> Default() => [];
 
     /// <inheritdoc/>
@@ -38,6 +41,8 @@ public sealed class FastListTypeParser<T>(CommandBehavior behavior, Func<DbDataR
     private readonly Func<DbDataReader, T> Parser = parser;
     /// <inheritdoc/>
     public override CommandBehavior Behavior { get; } = behavior & ~CommandBehavior.SingleRow;
+    /// <inheritdoc/>
+    public override bool SupportsParsingAsync => true;
     /// <inheritdoc/>
     public override List<T> Default() => [];
     /// <inheritdoc/>

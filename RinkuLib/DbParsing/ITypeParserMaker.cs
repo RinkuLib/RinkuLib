@@ -14,5 +14,5 @@ public interface ITypeParserMaker {
     /// <summary>
     /// The compilation core. Orchestrates the transition from metadata to IL.
     /// </summary>
-    public bool TryMakeParser<T>(INullColHandler? nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser);
+    public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser);
 }

@@ -28,13 +28,15 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
     /// <item>Evaluates if the generated logic allows for <see cref="CommandBehavior.SequentialAccess"/> optimization.</item>
     /// </list>
     /// </remarks>
-    public bool TryMakeParser<T>(INullColHandler? nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
+    public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
         var t = Nullable.GetUnderlyingType(typeof(T));
         bool isNullable = t is not null;
         var closedType = t ?? typeof(T);
-        var paramInfo = isNullable || !typeof(T).IsValueType ? InfoNullable : InfoNotNullable;
-        if (nullColHandler is not null)
-            paramInfo = new(ParamInfo.NoType, nullColHandler, NoNameComparer.Instance);
+        var paramInfo = nullColHandler == NullableTypeHandle.Instance
+            ? InfoNullable 
+            : nullColHandler == NullableTypeHandle.Instance
+                ? InfoNotNullable
+                : new(ParamInfo.NoType, nullColHandler, NoNameComparer.Instance);
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
         var rd = TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(Root), typeof(T), paramInfo, cols, new(), ref colUsage);
         if (rd is null) {

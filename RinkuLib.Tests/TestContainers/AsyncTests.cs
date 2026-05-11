@@ -7,14 +7,14 @@ using RinkuLib.Commands;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tests.Commands;
-using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 using Xunit;
 
 namespace RinkuLib.Tests.TestContainers;
 
 public class AsyncTestsFixture : DBFixture<SqlConnection> {
     public QueryCommand BasicStringUsage = new("select 'abc' as [Value] union all select @txt");
-    public QueryCommand BasicStringUsageNULL = new("select NULL as [Value] union all select @txt");
+    public QueryCommand BasicStringUsageNULL = new("select NULL as [NullValue] union all select @txt");
     public QueryCommand BasicStringUsageSingle = new("select 'abc' as [Value]");
     public QueryCommand QueryWithDelay = new("waitfor delay '00:00:10';select 1");
     public QueryCommand DeclareVar = new("declare @foo table(id int not null); insert @foo values(@id);");
@@ -32,6 +32,8 @@ public class AsyncTestsFixture : DBFixture<SqlConnection> {
     public QueryCommand Select_1_2 = new("select 1; select 2");
     public QueryCommand SelectCol1Col2 = new("select Cast(1 as BigInt) Col1; select Cast(2 as BigInt) Col2");
     public QueryCommand Select_1_2_3_4_5 = new("select 1; select 2; select 3; select 4; select 5");
+    public QueryCommand Select_Nothing_Int = new("select 1 where 1=0");
+    public QueryCommand Select_Nothing_Str = new("select 'Test' where 1=0");
 }
 public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFixture> {
     private readonly AsyncTestsFixture Fixture = Fixture;
@@ -94,19 +96,19 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Null() {
         using var cnn = Fixture.GetConnection();
-        var str = await Fixture.BasicStringUsageNULL.QueryAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        string? str = await Fixture.BasicStringUsageNULL.QueryAsync<MaybeNull<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         Assert.Null(str);
     }
 
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Null_Prevented() {
         using var cnn = Fixture.GetConnection();
-        await Assert.ThrowsAnyAsync<NullValueAssignmentException>(async () => await Fixture.BasicStringUsageNULL.QueryAsync<NotNull<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAnyAsync<NullValueAssignmentException>(async () => await Fixture.BasicStringUsageNULL.QueryAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken));
     }
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Prevented() {
         using var cnn = Fixture.GetConnection();
-        string str = await Fixture.BasicStringUsage.QueryAsync<NotNull<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        string str = await Fixture.BasicStringUsage.QueryAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         Assert.Equal("abc", str);
     }
 
@@ -115,14 +117,46 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         using var cnn = Fixture.GetConnection();
         var obj = await Fixture.BasicStringUsageNULL.QueryAsync<DynaObject>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
         Assert.NotNull(obj);
-        Assert.Null(obj["value"]);
+        Assert.Null(obj["nullvalue"]);
     }
-    
+
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_NoParam() {
         using var cnn = Fixture.GetConnection();
         var str = await Fixture.BasicStringUsageSingle.QueryAsync<string>(cnn, ct: TestContext.Current.CancellationToken);
         Assert.Equal("abc", str);
+    }
+
+    [Fact]
+    public async Task TestBasicStringUsageQueryOneAsync_Single_Fail() {
+        using var cnn = Fixture.GetConnection();
+        await Assert.ThrowsAnyAsync<Exception>(async () => await Fixture.BasicStringUsage.QueryAsync<Single<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken));
+    }
+    [Fact]
+    public async Task TestBasicStringUsageQueryOneAsync_Single() {
+        using var cnn = Fixture.GetConnection();
+        var v = await Fixture.BasicStringUsageSingle.QueryAsync<Single<string>>(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.Equal("abc", v);
+    }
+
+    [Fact]
+    public async Task TestBasicStringUsageQueryOneAsync_OptionalStruct() {
+        using var cnn = Fixture.GetConnection();
+        int? v = await Fixture.Select_Nothing_Int.QueryAsync<OptionalStruct<int>>(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.False(v.HasValue);
+    }
+
+    [Fact]
+    public async Task TestBasicStringUsageQueryOneAsync_Optional_Fail() {
+        using var cnn = Fixture.GetConnection();
+        await Assert.ThrowsAnyAsync<Exception>(async () => await Fixture.Select_Nothing_Str.QueryAsync<string>(cnn, ct: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAnyAsync<Exception>(async () => await Fixture.Select_Nothing_Int.QueryAsync<int?>(cnn, ct: TestContext.Current.CancellationToken));
+    }
+    [Fact]
+    public async Task TestBasicStringUsageQueryOneAsync_Optional() {
+        using var cnn = Fixture.GetConnection();
+        string? v = await Fixture.Select_Nothing_Str.QueryAsync<Optional<string>>(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.Null(v);
     }
 
     [Fact]

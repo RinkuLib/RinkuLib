@@ -1,174 +1,112 @@
-﻿using System.Diagnostics;
+﻿using System.Runtime.CompilerServices;
 
 namespace RinkuLib.DbParsing;
-/// <summary>
-/// Defines an alternative name for a parameter, property, or field during database column matching.
-/// </summary>
-
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true)]
-public sealed class AltAttribute(string AlternativeName) : Attribute {
-    /// <summary>The additional name to check during negotiation.</summary>
-    public readonly string AlternativeName = AlternativeName;
-}
-/// <summary>
-/// Defines an alternative name for a parameter, property, or field during database column matching.
-/// </summary>
-
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class NoNameAttribute : Attribute;
 /// <summary>
 /// Defines the contract for comparing database column names against member identifiers.
 /// </summary>
 public interface INameComparer {
-    /// <summary>Returns the primary or first registered name.</summary>
+    /// <summary>Returns the primary or first registered name used for identification.</summary>
     public string GetDefaultName();
+
     /// <summary>
-    /// Checks if a column name starts with any of the registered names. 
-    /// Used for nested prefix matching (e.g., "UserId" matches "User" and remains "Id").
+    /// Validates if the <paramref name="colName"/> matches this comparer's logic.
+    /// If successful, it consumes its portion of the name and continues the chain.
     /// </summary>
-    /// <param name="colName">The column name from the database.</param>
-    /// <param name="remaining">The slice of the string remaining after the match.</param>
-    /// <returns><c>true</c> if a match is found; otherwise, <c>false</c>.</returns>
-    public bool TryMatchStart(ReadOnlySpan<char> colName, out ReadOnlySpan<char> remaining);
-    /// <summary>Checks for an exact, case-insensitive match.</summary>
-    public bool Equals(ReadOnlySpan<char> name);
-    /// <summary>returns a comparer that includes the new alternative name.</summary>
-    public INameComparer AddAltName(string altName);
+    /// <param name="colName">The remaining portion of the column name to match.</param>
+    /// <param name="nameComparers">The preceding chain of comparers to validate against.</param>
+    /// <returns><c>true</c> if the full path matches; otherwise, <c>false</c>.</returns>
+    bool Match(ReadOnlySpan<char> colName, Span<INameComparer> nameComparers);
+    /// <summary>Checks if this comparer or its children contains the specified name.</summary>
+    public bool Contains(string name);
 }
-/// <summary>Match by default</summary>
-public class NoNameComparer : INameComparer {
-    /// <summary>Singleton</summary>
-    public static readonly NoNameComparer Instance = new();
-    /// <inheritdoc/>
-    public bool Equals(ReadOnlySpan<char> name) => true;
-    /// <inheritdoc/>
-    public string GetDefaultName() => "";
-    /// <inheritdoc/>
-    public bool TryMatchStart(ReadOnlySpan<char> colName, out ReadOnlySpan<char> remaining) {
-        remaining = colName;
-        return true;
-    }
-    /// <inheritdoc/>
-    public INameComparer AddAltName(string altName)
-        => new NameComparer(altName);
+/// <summary>Defines the ability to incorporate a simple alternative name with span 1.</summary>
+public interface INameComparerThatCanAdd : INameComparer {
+    /// <summary>Attempts to add a standard alternative. Returns a new instance if successful; otherwise <c>null</c>.</summary>
+    public INameComparer? TryAdd(string name);
 }
-/// <summary>Match using one name</summary>
-public class NameComparer(string Name) : INameComparer {
-    /// <summary>The name to match to</summary>
-    public readonly string Name = Name;
-    /// <inheritdoc/>
-    public bool Equals(ReadOnlySpan<char> name)
-        => name.Equals(Name, StringComparison.OrdinalIgnoreCase);
-    /// <inheritdoc/>
-    public string GetDefaultName() => Name;
-    /// <inheritdoc/>
-    public bool TryMatchStart(ReadOnlySpan<char> colName, out ReadOnlySpan<char> remaining) {
-        if (!colName.StartsWith(Name, StringComparison.OrdinalIgnoreCase)) {
-            remaining = default;
-            return false;
+
+/// <summary>Defines the ability to absorb another entire <see cref="INameComparer"/> into the current structure.</summary>
+public interface INameComparerThatCanAddAComparer : INameComparer {
+    /// <summary>Attempts to merge another comparer. Returns the consolidated result if successful; otherwise <c>null</c>.</summary>
+    public INameComparer? TryAdd(INameComparer other);
+}
+/// <summary>Defines the ability to remove a specific string identifier from the matching logic.</summary>
+public interface INameComparerThatCanRemove : INameComparer {
+    /// <summary>Attempts to remove a name. Returns the updated comparer if the name was removed; otherwise <c>null</c>.</summary>
+    public INameComparer? TryRemove(string name);
+}
+
+/// <summary>Defines the ability to remove a specific comparer instance from a group or chain.</summary>
+public interface INameComparerThatCanRemoveAComparer : INameComparer {
+    /// <summary>Attempts to remove the target comparer. Returns the updated structure if found; otherwise <c>null</c>.</summary>
+    public INameComparer? TryRemove(INameComparer other);
+}
+/// <summary>
+/// Combines all mutative capabilities. Standard implementations will implement this 
+/// to ensure they can be fully managed by the orchestration logic.
+/// </summary>
+public interface IMutatableNameComparer :
+    INameComparerThatCanAdd,
+    INameComparerThatCanAddAComparer,
+    INameComparerThatCanRemove,
+    INameComparerThatCanRemoveAComparer { }
+/// <summary></summary>
+public static class NameComparerHelper {
+    /// <summary>Helper that passes the chain of matches down</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool MatchNext(this Span<INameComparer> nameComparers, ReadOnlySpan<char> remaining, int count = 1)
+        => nameComparers.Length < count ? remaining.Length == 0 : nameComparers[^count].Match(remaining, nameComparers[..^count]);
+    /// <summary>
+    /// Adds a new alternative name to the existing comparer structure.
+    /// </summary>
+    public static INameComparer AddAltName(this INameComparer current, string altName) {
+        if (current.Contains(altName))
+            return current;
+        if (current is NoNameComparer)
+            return new NameComparer(altName);
+
+        if (current is INameComparerThatCanAdd growable) {
+            var result = growable.TryAdd(altName);
+            if (result != null)
+                return result;
         }
-        remaining = colName[Name.Length..];
-        return true;
+
+        return new JoinedNameComparer(current, new NameComparer(altName));
     }
-    /// <inheritdoc/>
-    public INameComparer AddAltName(string altName) 
-        => new NameComparerTwo(Name, altName);
-}
-/// <summary>Match using two names</summary>
-public class NameComparerTwo(string Name, string AlternativeName) : INameComparer {
-    /// <summary>The name to match to</summary>
-    public readonly string Name = Name;
-    /// <summary>The alternative name to match to</summary>
-    public readonly string AlternativeName = AlternativeName;
-    /// <inheritdoc/>
-    public bool Equals(ReadOnlySpan<char> name) 
-        => name.Equals(AlternativeName, StringComparison.OrdinalIgnoreCase)
-        || name.Equals(Name, StringComparison.OrdinalIgnoreCase);
-    /// <inheritdoc/>
-    public string GetDefaultName() => Name;
-    /// <inheritdoc/>
-    public bool TryMatchStart(ReadOnlySpan<char> colName, out ReadOnlySpan<char> remaining) {
-        if (colName.StartsWith(AlternativeName, StringComparison.OrdinalIgnoreCase)) {
-            remaining = colName[AlternativeName.Length..];
-            return true;
+
+    /// <summary>
+    /// Adds a new alternative comparer to the existing comparer structure.
+    /// </summary>
+    public static INameComparer AddComparer(this INameComparer current, INameComparer other) {
+        if (other is NoNameComparer || ReferenceEquals(current, other))
+            return current;
+        if (current is NoNameComparer)
+            return other;
+
+        if (current is INameComparerThatCanAddAComparer growable) {
+            var result = growable.TryAdd(other);
+            if (result != null)
+                return result;
         }
-        if (colName.StartsWith(Name, StringComparison.OrdinalIgnoreCase)) {
-            remaining = colName[Name.Length..];
-            return true;
-        }
-        remaining = default;
-        return false;
+
+        return new JoinedNameComparer(current, other);
     }
-    /// <inheritdoc/>
-    public INameComparer AddAltName(string altName)
-        => new NameComparerArray([Name, AlternativeName, altName]);
-}
-/// <summary>Match using many names</summary>
-public class NameComparerMany(string Name, string[] AlternativeNames) : INameComparer {
-    /// <summary>The name to match to</summary>
-    public readonly string Name = Name;
-    /// <summary>The alternative names to match to</summary>
-    private string[] AlternativeNames = AlternativeNames;
-    /// <inheritdoc/>
-    public bool Equals(ReadOnlySpan<char> name) {
-        for (int i = 0; i < AlternativeNames.Length; i++)
-            if (name.Equals(AlternativeNames[i], StringComparison.OrdinalIgnoreCase))
-                return true;
-        return name.Equals(Name, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Safely removes a name from the tree if the comparer supports it.
+    /// </summary>
+    public static INameComparer RemoveName(this INameComparer current, string name) {
+        if (current is INameComparerThatCanRemove removable)
+            return removable.TryRemove(name) ?? current;
+        return current;
     }
-    /// <inheritdoc/>
-    public string GetDefaultName() => Name;
-    /// <inheritdoc/>
-    public bool TryMatchStart(ReadOnlySpan<char> colName, out ReadOnlySpan<char> remaining) {
-        for (int i = 0; i < AlternativeNames.Length; i++)
-            if (colName.StartsWith(AlternativeNames[i], StringComparison.OrdinalIgnoreCase)) {
-                remaining = colName[AlternativeNames[i].Length..];
-                return true;
-            }
-        if (colName.StartsWith(Name, StringComparison.OrdinalIgnoreCase)) {
-            remaining = colName[Name.Length..];
-            return true;
-        }
-        remaining = default;
-        return false;
-    }
-    /// <inheritdoc/>
-    public INameComparer AddAltName(string altName) {
-        Interlocked.Exchange(ref AlternativeNames, [.. AlternativeNames, altName]);
-        return this;
-    }
-}
-/// <summary>Match using many names</summary>
-public class NameComparerArray : INameComparer {
-    /// <summary>The alternative name to match to</summary>
-    private string[] Names;
-    /// <summary></summary>
-    public NameComparerArray(string[] Names) {
-        Debug.Assert(Names.Length > 0);
-        this.Names = Names;
-    }
-    /// <inheritdoc/>
-    public bool Equals(ReadOnlySpan<char> name) {
-        for (int i = 0; i < Names.Length; i++)
-            if (name.Equals(Names[i], StringComparison.OrdinalIgnoreCase))
-                return true;
-        return false;
-    }
-    /// <inheritdoc/>
-    public string GetDefaultName() => Names[0];
-    /// <inheritdoc/>
-    public bool TryMatchStart(ReadOnlySpan<char> colName, out ReadOnlySpan<char> remaining) {
-        for (int i = 0; i < Names.Length; i++)
-            if (colName.StartsWith(Names[i], StringComparison.OrdinalIgnoreCase)) {
-                remaining = colName[Names[i].Length..];
-                return true;
-            }
-        remaining = default;
-        return false;
-    }
-    /// <inheritdoc/>
-    public INameComparer AddAltName(string altName) {
-        Interlocked.Exchange(ref Names, [.. Names, altName]);
-        return this;
+
+    /// <summary>
+    /// Safely removes a specific comparer from the tree.
+    /// </summary>
+    public static INameComparer RemoveComparer(this INameComparer current, INameComparer target) {
+        if (current is INameComparerThatCanRemoveAComparer removable)
+            return removable.TryRemove(target) ?? current;
+        return ReferenceEquals(current, target) ? NoNameComparer.Instance : current;
     }
 }
