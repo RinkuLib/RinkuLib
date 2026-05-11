@@ -27,12 +27,12 @@ public class CompleteTests {
         QueryCommand BasicStringUsageNULL = new("select 'value' as [Value] union all select CAST(NULL AS TEXT) union all select @txt");
         using var cnn = GetDbCnn();
 
-        var res = BasicStringUsageNULL.StreamQueryAsync<NotNull<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
+        var res = BasicStringUsageNULL.StreamQueryAsync<string>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken);
 
         await using var enumerator = res.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
         Assert.True(await enumerator.MoveNextAsync());
-        Assert.Equal("value", (string)enumerator.Current);
+        Assert.Equal("value", enumerator.Current);
 
         await Assert.ThrowsAsync<NullValueAssignmentException>(async () => {
             await enumerator.MoveNextAsync();

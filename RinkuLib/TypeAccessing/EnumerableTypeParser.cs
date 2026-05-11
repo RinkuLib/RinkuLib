@@ -33,10 +33,12 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
     }
     /// <inheritdoc/>
     public abstract CommandBehavior Behavior { get; }
+    /// <inheritdoc/>
+    public virtual bool SupportsParsingAsync => false;
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public IEnumerable<T>? Default() => [];
+    public IEnumerable<T> Default() => [];
 
     /// <inheritdoc/>
     public IEnumerable<T> Parse(DbDataReader reader) {
@@ -49,7 +51,7 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
         => Task.FromResult(Parse(reader));
 
     /// <inheritdoc/>
-    public IEnumerable<T>? Query(DbCommand command, bool disposeCommand = false) {
+    public IEnumerable<T> Query(DbCommand command, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -73,7 +75,7 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
         }
     }
     /// <inheritdoc/>
-    public IEnumerable<T>? Query(IDbCommand command, bool disposeCommand = false) {
+    public IEnumerable<T> Query(IDbCommand command, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -99,10 +101,10 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
     }
 
     /// <inheritdoc/>
-    public Task<IEnumerable<T>?> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default)
+    public Task<IEnumerable<T>> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default)
         => Task.FromResult(Query(command, disposeCommand));
     /// <inheritdoc/>
-    public Task<IEnumerable<T>?> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<IEnumerable<T>> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
             return QueryAsync(c, disposeCommand, ct);
         return Task.FromResult(Query(command, disposeCommand));
@@ -110,7 +112,7 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
 
 
     /// <inheritdoc/>
-    public IEnumerable<T>? Query(DbCommand command, ICache cache, bool disposeCommand = false) {
+    public IEnumerable<T> Query(DbCommand command, ICache cache, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -135,7 +137,7 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
         }
     }
     /// <inheritdoc/>
-    public IEnumerable<T>? Query(IDbCommand command, ICache cache, bool disposeCommand = false) {
+    public IEnumerable<T> Query(IDbCommand command, ICache cache, bool disposeCommand = false) {
         var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
@@ -161,10 +163,10 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
         }
     }
     /// <inheritdoc/>
-    public Task<IEnumerable<T>?> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
+    public Task<IEnumerable<T>> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
         => Task.FromResult(Query(command, cache, disposeCommand));
     /// <inheritdoc/>
-    public Task<IEnumerable<T>?> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+    public Task<IEnumerable<T>> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
             return QueryAsync(c, cache, disposeCommand, ct);
         return Task.FromResult(Query(command, cache, disposeCommand));

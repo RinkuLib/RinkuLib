@@ -33,6 +33,10 @@ public interface ITypeParser {
     /// <summary>Indicate the default <see cref="CommandBehavior"/> that can be use to call <see cref="IDbCommand.ExecuteReader(CommandBehavior)"/></summary>
     /// <remarks>May be something like <see cref="CommandBehavior.SequentialAccess"/> or <see cref="CommandBehavior.SingleResult"/></remarks>
     public CommandBehavior Behavior { get; }
+    /// <summary>
+    /// Indicate if the implementation actualy needs async in it's async implementation
+    /// </summary>
+    public bool SupportsParsingAsync { get; }
 }
 /// <summary>
 /// A type parser that should take the disposing responsability
@@ -49,7 +53,7 @@ public interface ILazyTypeParser<T> : ITypeParser<T> {
 public interface ITypeParser<T> : ITypeParser {
     internal bool InternalProtect { get; }
     /// <summary></summary>
-    public T? Default();
+    public T Default();
     /// <summary></summary>
     public T Parse(DbDataReader reader);
     /// <summary></summary>
@@ -57,23 +61,23 @@ public interface ITypeParser<T> : ITypeParser {
 
 
     /// <summary></summary>
-    public T? Query(DbCommand command, bool disposeCommand = false);
+    public T Query(DbCommand command, bool disposeCommand = false);
     /// <summary></summary>
-    public T? Query(IDbCommand command, bool disposeCommand = false);
+    public T Query(IDbCommand command, bool disposeCommand = false);
     /// <summary></summary>
-    public Task<T?> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default);
+    public Task<T> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default);
     /// <summary></summary>
-    public Task<T?> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default);
+    public Task<T> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default);
 
 
     /// <summary></summary>
-    public T? Query(DbCommand command, ICache cache, bool disposeCommand = false);
+    public T Query(DbCommand command, ICache cache, bool disposeCommand = false);
     /// <summary></summary>
-    public T? Query(IDbCommand command, ICache cache, bool disposeCommand = false);
+    public T Query(IDbCommand command, ICache cache, bool disposeCommand = false);
     /// <summary></summary>
-    public Task<T?> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default);
+    public Task<T> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default);
     /// <summary></summary>
-    public Task<T?> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default);
+    public Task<T> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default);
 }
 /// <summary></summary>
 public static class EnumHelper {

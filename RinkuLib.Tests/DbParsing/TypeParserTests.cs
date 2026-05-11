@@ -902,7 +902,47 @@ public class TypeParserTests {
         Assert.Equal((sbyte)14, dyna.Get<sbyte>(13));
         Assert.Equal((long)15, dyna.Get<long>(14));
     }
+    [Fact]
+    public void Test_UpToKey() {
+        ColumnInfo[] columns = [
+            new("First", typeof(int), true),
+            new("NotTooDeep", typeof(int), true),
+            new("SuperDeep", typeof(int), true),
+            new("TwoSemiDeep", typeof(int), true),
+        ];
+
+        using var reader = CreateReader(columns, [
+            [1, 2, 3, 4]
+        ]);
+
+        var parser = TypeParser<LayerOne>.GetTypeParser(ref columns);
+
+        reader.Read();
+        var p1 = parser.Parse(reader);
+        Assert.Equal(1, p1.First);
+        Assert.Equal(2, p1.Two.Second);
+        Assert.Equal(3, p1.Two.Three.Third);
+        Assert.Equal(4, p1.Two.Three.Deep);
+    }
+    [Fact]
+    public void Test_UpToKey_Fail() {
+        ColumnInfo[] columns = [
+            new("First", typeof(int), true),
+            new("NotTooDeep", typeof(int), true),
+            new("SuperDeep", typeof(int), true),
+            new("SemiDeep", typeof(int), true),
+        ];
+
+        using var reader = CreateReader(columns, [
+            [1, 2, 3, 4]
+        ]);
+
+        Assert.ThrowsAny<Exception>(() => TypeParser<LayerOne>.GetTypeParser(ref columns));
+    }
 }
+public record LayerOne(int First, LayerTwo Two);
+public record LayerTwo([AltUpTo("NotTooDeep", "Two")] int Second, LayerThree Three) : IDbReadable;
+public record LayerThree([AltUpTo("SuperDeep", "Two")]int Third, [AltUpTo("SemiDeep", "Three")]int Deep) : IDbReadable;
 public record struct DynaPair<T>([CanNotLookAnywhere] T ID, [NoName] DynaObject Object);
 public record struct DynaPair2<T>(T IDAnywhere, [NoName] DynaObject Object);
 public record class TestStop(int ID, string Name, string? Other = null);

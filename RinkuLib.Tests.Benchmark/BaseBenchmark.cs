@@ -7,6 +7,7 @@ using RinkuLib.Commands;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tests.TestContainers;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Tests.Benchmark;
 
@@ -78,94 +79,142 @@ public class BaseBenchmark : IAsyncDisposable {
                 await cnn.OpenAsync();
 
             Console.WriteLine("--- Starting Full Equivalence Validation ---");
+            await Validate();
+            Console.WriteLine("--- Validation Passed: All 15 Categories Match ---");
 
-            var q1D = Dapper_QueryFirstOrDefault();
-            var q1R = Rinku_QueryT();
-            if (q1D != q1R)
-                throw new Exception("1. Query one Sync: Results differ.");
-            
-            var q2D = await Dapper_QueryFirstOrDefaultAsync();
-            var q2R = await Rinku_QueryTAsync();
-            if (q2D != q2R)
-                throw new Exception("2. Query one Async: Results differ.");
-
-            var q3D = Dapper_QueryUnbuffered();
-            var q3R = Rinku_QueryIEnumerable();
-            if (q3D != q3R)
-                throw new Exception("3. Query Sync (Stream): Sums differ.");
-
-            var q4D = Dapper_QueryBuffered();
-            var q4R = Rinku_QueryList();
-            if (q4D.Count != q4R.Count)
-                throw new Exception("4. Query Buffered Sync: Collections differ.");
-            for (var i = 0; i < q4D.Count; i++)
-                if (q4D[i] != q4R[i])
-                    throw new Exception("4. Query Buffered Sync: Collections differ.");
-
-            var q5D = await Dapper_QueryUnbufferedAsync();
-            var q5R = await Rinku_StreamQueryAsync();
-            if (q5D != q5R)
-                throw new Exception("5. Query Async (Stream): Sums differ.");
-
-            var q6D = await Dapper_QueryAsyncBuffered();
-            var q6R = await Rinku_QueryAsyncList();
-            if (q6D.Count != q6R.Count)
-                throw new Exception("6. Query Buffered Async: Collections differ.");
-            for (var i = 0; i < q6D.Count; i++)
-                if (q6D[i] != q6R[i])
-                    throw new Exception("6. Query Buffered Async: Collections differ.");
-
-            var q7D = await Dapper_QueryAsyncDynamic();
-            var q7R = await Rinku_QueryAsyncDynaObject();
-            if (q7D != q7R)
-                throw new Exception("7. Dynamic Async: Values differ.");
-
-            var q8D = await Dapper_Complex();
-            var q8R = await Rinku_Complex();
-            if (q8D.Count != q8R.Count)
-                throw new Exception("8. Complex Mapping: Results differ.");
-            for (var i = 0; i < q8D.Count; i++)
-                if (q8D[i] != q8R[i])
-                    throw new Exception("8. Complex Mapping: Results differ.");
-
-            var q9D = Dapper_Execute();
-            var q9R = Rinku_Execute();
-            if (q9D != q9R)
-                throw new Exception("9. Execute Sync: Row counts differ.");
-
-            var q10D = await Dapper_ExecuteAsync();
-            var q10R = await Rinku_ExecuteAsync();
-            if (q10D != q10R)
-                throw new Exception("10. Execute Async: Row counts differ.");
-
-            var q11D = await Dapper_InClause();
-            var q11R = await Rinku_InClause();
-            if (q11D != q11R)
-                throw new Exception("11. IN Clause: Results differ.");
-
-            Console.WriteLine("--- Validation Passed: All 11 Categories Match ---");
+            Console.WriteLine("--- Starting Full Equivalence Validation (second pass) ---");
+            await Validate();
+            Console.WriteLine("--- Validation Passed: All 15 Categories Match (second pass) ---");
         }
         cnn = _fixture.GetConnection();
         if (OpenCnn)
             await cnn.OpenAsync();
     }
+    private async Task Validate() {
+        var q1D = Dapper_QueryFirst();
+        var q1R = Rinku_QueryT();
+        if (q1D != q1R)
+            throw new Exception("1. Query one Sync: Results differ.");
 
+        var q2D = Dapper_QueryFirstOrDefault();
+        var q2R = Rinku_QueryOptionalT();
+        if (q2D != q2R)
+            throw new Exception("2. Query one (or default) Sync: Results differ.");
+
+        var q3D = Dapper_QuerySingle();
+        var q3R = Rinku_QuerySingleT();
+        if (q3D != q3R)
+            throw new Exception("3. Query one (single) Sync: Results differ.");
+
+        var q4D = await Dapper_QueryFirstAsync();
+        var q4R = await Rinku_QueryTAsync();
+        if (q4D != q4R)
+            throw new Exception("4. Query one Async: Results differ.");
+
+        var q5D = await Dapper_QueryFirstOrDefaultAsync();
+        var q5R = await Rinku_QueryOptionalTAsync();
+        if (q5D != q5R)
+            throw new Exception("5. Query one (or default) Async: Results differ.");
+
+        var q6D = await Dapper_QuerySingleAsync();
+        var q6R = await Rinku_QuerySingleTAsync();
+        if (q6D != q6R)
+            throw new Exception("6. Query one (single) Async: Results differ.");
+
+        var q7D = Dapper_QueryUnbuffered();
+        var q7R = Rinku_QueryIEnumerable();
+        if (q7D != q7R)
+            throw new Exception("7. Query Sync (Stream): Sums differ.");
+
+        var q8D = Dapper_QueryBuffered();
+        var q8R = Rinku_QueryList();
+        if (q8D.Count != q8R.Count)
+            throw new Exception("8. Query Buffered Sync: Collections differ.");
+        for (var i = 0; i < q8D.Count; i++)
+            if (q8D[i] != q8R[i])
+                throw new Exception("8. Query Buffered Sync: Collections differ.");
+
+        var q9D = await Dapper_QueryUnbufferedAsync();
+        var q9R = await Rinku_StreamQueryAsync();
+        if (q9D != q9R)
+            throw new Exception("9. Query Async (Stream): Sums differ.");
+
+        var q10D = await Dapper_QueryAsyncBuffered();
+        var q10R = await Rinku_QueryAsyncList();
+        if (q10D.Count != q10R.Count)
+            throw new Exception("10. Query Buffered Async: Collections differ.");
+        for (var i = 0; i < q10D.Count; i++)
+            if (q10D[i] != q10R[i])
+                throw new Exception("10. Query Buffered Async: Collections differ.");
+
+        var q11D = await Dapper_QueryAsyncDynamic();
+        var q11R = await Rinku_QueryAsyncDynaObject();
+        if (q11D != q11R)
+            throw new Exception("11. Dynamic Async: Values differ.");
+
+        var q12D = await Dapper_Complex();
+        var q12R = await Rinku_Complex();
+        if (q12D.Count != q12R.Count)
+            throw new Exception("12. Complex Mapping: Results differ.");
+        for (var i = 0; i < q12D.Count; i++)
+            if (q12D[i] != q12R[i])
+                throw new Exception("12. Complex Mapping: Results differ.");
+
+        var q13D = Dapper_Execute();
+        var q13R = Rinku_Execute();
+        if (q13D != q13R)
+            throw new Exception("13. Execute Sync: Row counts differ.");
+
+        var q14D = await Dapper_ExecuteAsync();
+        var q14R = await Rinku_ExecuteAsync();
+        if (q14D != q14R)
+            throw new Exception("14. Execute Async: Row counts differ.");
+
+        var q15D = await Dapper_InClause();
+        var q15R = await Rinku_InClause();
+        if (q15D != q15R)
+            throw new Exception("15. IN Clause: Results differ.");
+    }
 
     [Benchmark(Baseline = true), BenchmarkCategory("1. Query one Sync")]
-    public User? Dapper_QueryFirstOrDefault() => cnn.QueryFirstOrDefault<User>(SelectUserSql, new { id = 1 });
+    public User Dapper_QueryFirst() => cnn.QueryFirst<User>(SelectUserSql, new { id = 1 });
 
     [Benchmark, BenchmarkCategory("1. Query one Sync")]
-    public User? Rinku_QueryT() => QueryUserCmd.Query<User>(cnn, new { id = 1 });
-    
+    public User Rinku_QueryT() => QueryUserCmd.Query<User>(cnn, new { id = 1 });
 
-    [Benchmark(Baseline = true), BenchmarkCategory("2. Query one Async")]
-    public Task<User?> Dapper_QueryFirstOrDefaultAsync() => cnn.QueryFirstOrDefaultAsync<User>(SelectUserSql, new { id = 1 });
+    [Benchmark(Baseline = true), BenchmarkCategory("2. Query one (or default) Sync")]
+    public User? Dapper_QueryFirstOrDefault() => cnn.QueryFirstOrDefault<User>(SelectUserSql, new { id = 1 });
 
-    [Benchmark, BenchmarkCategory("2. Query one Async")]
-    public Task<User?> Rinku_QueryTAsync() => QueryUserCmd.QueryAsync<User?>(cnn, new { id = 1 });
+    [Benchmark, BenchmarkCategory("2. Query one (or default) Sync")]
+    public User? Rinku_QueryOptionalT() => QueryUserCmd.Query<Optional<User>>(cnn, new { id = 1 });
+
+    [Benchmark(Baseline = true), BenchmarkCategory("3. Query one (single) Sync")]
+    public User Dapper_QuerySingle() => cnn.QuerySingle<User>(SelectUserSql, new { id = 1 });
+
+    [Benchmark, BenchmarkCategory("3. Query one (single) Sync")]
+    public User Rinku_QuerySingleT() => QueryUserCmd.Query<Single<User>>(cnn, new { id = 1 });
 
 
-    [Benchmark(Baseline = true), BenchmarkCategory("3. Query Sync (Stream)")]
+    [Benchmark(Baseline = true), BenchmarkCategory("4. Query one Async")]
+    public async Task<User> Dapper_QueryFirstAsync() => await cnn.QueryFirstAsync<User>(SelectUserSql, new { id = 1 });
+
+    [Benchmark, BenchmarkCategory("4. Query one Async")]
+    public async Task<User> Rinku_QueryTAsync() => await QueryUserCmd.QueryAsync<User>(cnn, new { id = 1 });
+
+    [Benchmark(Baseline = true), BenchmarkCategory("5. Query one (or default) Async")]
+    public async Task<User?> Dapper_QueryFirstOrDefaultAsync() => await cnn.QueryFirstOrDefaultAsync<User>(SelectUserSql, new { id = 1 });
+
+    [Benchmark, BenchmarkCategory("5. Query one (or default) Async")]
+    public async Task<User?> Rinku_QueryOptionalTAsync() => await QueryUserCmd.QueryAsync<Optional<User>>(cnn, new { id = 1 });
+
+    [Benchmark(Baseline = true), BenchmarkCategory("6. Query one (single) Async")]
+    public async Task<User> Dapper_QuerySingleAsync() => await cnn.QuerySingleAsync<User>(SelectUserSql, new { id = 1 });
+
+    [Benchmark, BenchmarkCategory("6. Query one (single) Async")]
+    public async Task<User> Rinku_QuerySingleTAsync() => await QueryUserCmd.QueryAsync<Single<User>>(cnn, new { id = 1 });
+
+
+    [Benchmark(Baseline = true), BenchmarkCategory("7. Query Sync (Stream)")]
     public int Dapper_QueryUnbuffered() {
         var items = cnn.Query<User>(SelectAllUsersSql, buffered: false);
         var sum = 0;
@@ -174,7 +223,7 @@ public class BaseBenchmark : IAsyncDisposable {
         return sum;
     }
 
-    [Benchmark, BenchmarkCategory("3. Query Sync (Stream)")]
+    [Benchmark, BenchmarkCategory("7. Query Sync (Stream)")]
     public int Rinku_QueryIEnumerable() {
         var items = QueryAllUsersCmd.Query<IEnumerable<User>>(cnn)!;
         var sum = 0;
@@ -184,14 +233,14 @@ public class BaseBenchmark : IAsyncDisposable {
     }
 
 
-    [Benchmark(Baseline = true), BenchmarkCategory("4. Query Buffered Sync")]
+    [Benchmark(Baseline = true), BenchmarkCategory("8. Query Buffered Sync")]
     public List<User> Dapper_QueryBuffered() => cnn.Query<User>(SelectAllUsersSql).AsList();
 
-    [Benchmark, BenchmarkCategory("4. Query Buffered Sync")]
+    [Benchmark, BenchmarkCategory("8. Query Buffered Sync")]
     public List<User> Rinku_QueryList() => QueryAllUsersCmd.Query<List<User>>(cnn)!;
 
 
-    [Benchmark(Baseline = true), BenchmarkCategory("5. Query Async (Stream)")]
+    [Benchmark(Baseline = true), BenchmarkCategory("9. Query Async (Stream)")]
     public async Task<int> Dapper_QueryUnbufferedAsync() {
         var items = cnn.QueryUnbufferedAsync<User>(SelectAllUsersSql);
         var sum = 0;
@@ -200,7 +249,7 @@ public class BaseBenchmark : IAsyncDisposable {
         return sum;
     }
 
-    [Benchmark, BenchmarkCategory("5. Query Async (Stream)")]
+    [Benchmark, BenchmarkCategory("9. Query Async (Stream)")]
     public async Task<int> Rinku_StreamQueryAsync() {
         var items = QueryAllUsersCmd.StreamQueryAsync<User>(cnn);
         var sum = 0;
@@ -210,48 +259,44 @@ public class BaseBenchmark : IAsyncDisposable {
     }
 
 
-    [Benchmark(Baseline = true), BenchmarkCategory("6. Query Buffered Async")]
+    [Benchmark(Baseline = true), BenchmarkCategory("10. Query Buffered Async")]
     public async Task<List<User>> Dapper_QueryAsyncBuffered() => (await cnn.QueryAsync<User>(SelectAllUsersSql)).AsList();
 
-    [Benchmark, BenchmarkCategory("6. Query Buffered Async")]
+    [Benchmark, BenchmarkCategory("10. Query Buffered Async")]
     public Task<List<User>> Rinku_QueryAsyncList() => QueryAllUsersCmd.QueryAsync<List<User>>(cnn)!;
 
 
-    [Benchmark(Baseline = true), BenchmarkCategory("7. Dynamic Async")]
+    [Benchmark(Baseline = true), BenchmarkCategory("11. Dynamic Async")]
     public async Task<(int, string?, string?, int)> Dapper_QueryAsyncDynamic() {
-        var row = await cnn.QueryFirstOrDefaultAsync(SelectUserSql, new { id = 1 });
-        if (row is null)
-            return default;
+        var row = await cnn.QueryFirstAsync(SelectUserSql, new { id = 1 });
         return ((int)row.Id, (string?)row.Name, (string?)row.Email, (int)row.Age);
     }
 
-    [Benchmark, BenchmarkCategory("7. Dynamic Async")]
+    [Benchmark, BenchmarkCategory("11. Dynamic Async")]
     public async Task<(int, string?, string?, int)> Rinku_QueryAsyncDynaObject() {
         var row = await QueryUserCmd.QueryAsync<DynaObject>(cnn, new { id = 1 });
-        if (row is null)
-            return default;
         return (row.Get<int>("Id"), row.Get<string>("Name"), row.Get<string>("Email"), row.Get<int>("Age"));
     }
 
-    [Benchmark(Baseline = true), BenchmarkCategory("8. Complex Mapping")]
+    [Benchmark(Baseline = true), BenchmarkCategory("12. Complex Mapping")]
     public async Task<List<Product>> Dapper_Complex() => (await cnn.QueryAsync<Product, Category, Product>(SelectComplexSql, (p, c) => { p.Category = c; return p; }, new { id = 1 })).AsList();
 
-    [Benchmark, BenchmarkCategory("8. Complex Mapping")]
+    [Benchmark, BenchmarkCategory("12. Complex Mapping")]
     public Task<List<Product>> Rinku_Complex() => QueryComplexCmd.QueryAsync<List<Product>>(cnn, new { id = 1 })!;
 
-    [Benchmark(Baseline = true), BenchmarkCategory("9. Execute Sync")]
+    [Benchmark(Baseline = true), BenchmarkCategory("13. Execute Sync")]
     public int Dapper_Execute() => cnn.Execute(UpdateSql, new { name = "Test", id = 1 });
 
-    [Benchmark, BenchmarkCategory("9. Execute Sync")]
+    [Benchmark, BenchmarkCategory("13. Execute Sync")]
     public int Rinku_Execute() => ExecuteUpdateCmd.Execute(cnn, new { name = "Test", id = 1 });
 
-    [Benchmark(Baseline = true), BenchmarkCategory("10. Execute Async")]
+    [Benchmark(Baseline = true), BenchmarkCategory("14. Execute Async")]
     public Task<int> Dapper_ExecuteAsync() => cnn.ExecuteAsync(UpdateSql, new { name = "Test", id = 1 });
 
-    [Benchmark, BenchmarkCategory("10. Execute Async")]
+    [Benchmark, BenchmarkCategory("14. Execute Async")]
     public Task<int> Rinku_ExecuteAsync() => ExecuteUpdateCmd.ExecuteAsync(cnn, new { name = "Test", id = 1 });
 
-    [Benchmark(Baseline = true), BenchmarkCategory("11. IN Clause")]
+    [Benchmark(Baseline = true), BenchmarkCategory("15. IN Clause")]
     public async Task<int> Dapper_InClause() {
         var items = cnn.QueryUnbufferedAsync<User>(InClauseSql, new { ids = Enumerable.Range(1, 5) });
         var sum = 0;
@@ -260,7 +305,7 @@ public class BaseBenchmark : IAsyncDisposable {
         return sum;
     }
 
-    [Benchmark, BenchmarkCategory("11. IN Clause")]
+    [Benchmark, BenchmarkCategory("15. IN Clause")]
     public async Task<int> Rinku_InClause() {
         var items = InClauseCmd.StreamQueryAsync<User>(cnn, new { ids = Enumerable.Range(1, 5) });
         var sum = 0;
@@ -290,13 +335,11 @@ public class Product {
     public string? Name { get; set; }
     public Category? Category { get; set; }
     public static bool operator ==(Product? p1, Product? p2) {
-        // Handle nulls on either side
         if (ReferenceEquals(p1, p2))
             return true;
         if (p1 is null || p2 is null)
             return false;
 
-        // Compare properties
         return p1.Id == p2.Id &&
                p1.Name == p2.Name &&
                p1.Category == p2.Category;

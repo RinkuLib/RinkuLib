@@ -4,7 +4,7 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
 /// <summary>The default implementation of TypeParsingInfo</summary>
-public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo {
+public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanSetInvalidOnNull, ICanUpdateAltNames {
     internal static readonly
 #if NET9_0_OR_GREATER
         Lock
@@ -95,7 +95,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo {
             List<MemberParser> memberParsers = [];
             for (int i = 0; i < fields.Length; i++) {
                 var field = fields[i];
-                if (!field.IsInitOnly)
+                if (field.IsInitOnly || field.IsLiteral)
                     continue;
                 var p = ParamInfo.TryNew(field);
                 if (p is not null)
@@ -153,42 +153,31 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo {
         }
     }
     /// <inheritdoc/>
-    public override void AddAltName(string defaultName, string nameToAdd) {
+    public void UpdateAltName(Func<INameComparer, INameComparer?> modifier) { 
         if (!IsInit)
             Init();
         for (int i = 0; i < MCIs.Length; i++) {
             var parameters = MCIs[i].Parameters;
-            for (int j = 0; j < parameters.Length; j++) {
-                var p = parameters[j];
-                if (string.Equals(p.GetName(), defaultName, StringComparison.OrdinalIgnoreCase))
-                    p.AddAltName(nameToAdd);
-            }
+            for (int j = 0; j < parameters.Length; j++)
+                parameters[j].UpdateAltName(modifier);
         }
-        for (int i = 0; i < Members.Length; i++) {
-            var p = Members[i].Param;
-            if (string.Equals(p.GetName(), defaultName, StringComparison.OrdinalIgnoreCase))
-                p.AddAltName(nameToAdd);
-        }
+        for (int i = 0; i < Members.Length; i++)
+            Members[i].Param.UpdateAltName(modifier);
     }
     /// <inheritdoc/>
-    public override void SetInvalidOnNull(string defaultName, bool invalidOnNull) {
+    public void SetInvalidOnNull(string name, bool invalidOnNull) {
         if (!IsInit)
             Init();
         for (int i = 0; i < MCIs.Length; i++) {
             var parameters = MCIs[i].Parameters;
             for (int j = 0; j < parameters.Length; j++) {
                 var p = parameters[j];
-                if (string.Equals(p.GetName(), defaultName, StringComparison.OrdinalIgnoreCase))
+                if (p.NameComparer.Contains(name))
                     p.SetInvalidOnNull(invalidOnNull);
             }
         }
     }
     /// <inheritdoc/>
-    public override void AddPossibleConstruction(MethodBase methodBase)
-        => AddPossibleConstruction(new MethodCtorInfo(methodBase));
-    /// <summary>
-    /// Mannualy add a possible construction path that will be prioritized as much as possible
-    /// </summary>
     public void AddPossibleConstruction(MethodCtorInfo mci) {
         lock (WriteLock) {
             var target = mci.TargetType;
