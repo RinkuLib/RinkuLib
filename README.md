@@ -55,41 +55,53 @@ In truth, originaly it was meant as an extensions to `Dapper`, but the blueprint
 
 ### Rinku vs. Dapper: Performance Profile
 
-| Method                            | Mean       | Ratio | Allocated | Alloc Ratio |
-|-----------------------------------|------------|-------|-----------|-------------|
-| **1. Single Row (Sync)**          |            |       |           |             |
-| Dapper_QueryFirstOrDefault        |   533.7 us |  1.00 |   3.66 KB |        1.00 |
-| Rinku_QueryT                      |   512.3 us |  0.96 |   3.07 KB |        0.84 |
-| **2. Single Row (Async)**         |            |       |           |             |
-| Dapper_QueryFirstOrDefaultAsync   |   579.6 us |  1.00 |   5.61 KB |        1.00 |
-| Rinku_QueryTAsync                 |   552.4 us |  0.96 |   4.81 KB |        0.86 |
-| **3. Streaming (Sync)**           |            |       |           |             |
-| Dapper_QueryUnbuffered            |   631.6 us |  1.00 |  20.84 KB |        1.00 |
-| Rinku_QueryIEnumerable            |   632.2 us |  1.00 |  15.46 KB |        0.74 |
-| **4. Buffered (Sync)**            |            |       |           |             |
-| Dapper_QueryBuffered              |   626.8 us |  1.00 |  22.98 KB |        1.00 |
-| Rinku_QueryList                   |   623.2 us |  0.99 |  17.52 KB |        0.76 |
-| **5. Streaming (Async)**          |            |       |           |             |
-| Dapper_QueryUnbufferedAsync       |   688.4 us |  1.00 |  22.87 KB |        1.00 |
-| Rinku_StreamQueryAsync            |   691.4 us |  1.00 |  24.51 KB |        1.07 |
-| **6. Buffered (Async)**           |            |       |           |             |
-| Dapper_QueryAsyncBuffered         |   691.6 us |  1.00 |  24.79 KB |        1.00 |
-| Rinku_QueryAsyncList              |   656.9 us |  0.95 |  19.36 KB |        0.78 |
-| **7. Dynamic Objects**            |            |       |           |             |
-| Dapper_QueryAsyncDynamic          |   565.4 us |  1.00 |   5.77 KB |        1.00 |
-| Rinku_QueryAsyncDynaObject        |   556.3 us |  0.98 |   4.95 KB |        0.86 |
-| **8. Complex Mapping (Nested)**   |            |       |           |             |
-| Dapper_Complex                    |   570.1 us |  1.00 |   6.25 KB |        1.00 |
-| Rinku_Complex                     |   570.6 us |  1.00 |   5.41 KB |        0.87 |
-| **9. Command Execution (Sync)**   |            |       |           |             |
-| Dapper_Execute                    | 1,518.6 us |  1.00 |   2.33 KB |        1.00 |
-| Rinku_Execute                     | 1,516.0 us |  1.00 |   1.76 KB |        0.76 |
-| **10. Command Execution (Async)** |            |       |           |             |
-| Dapper_ExecuteAsync               | 1,624.6 us |  1.00 |   3.95 KB |        1.00 |
-| Rinku_ExecuteAsync                | 1,587.9 us |  0.98 |   3.37 KB |        0.85 |
-| **11. Collection Params (IN)**    |            |       |           |             |
-| Dapper_InClause                   |   604.8 us |  1.00 |   8.01 KB |        1.00 |
-| Rinku_InClause                    |   598.5 us |  0.99 |   6.38 KB |        0.80 |
+| Method                               | Mean       | Ratio | Allocated | Alloc Ratio |
+|--------------------------------------|------------|-------|-----------|-------------|
+| **1. Query one Sync**                                                               |
+| Dapper_QueryFirst                    |   526.8 us |  1.00 |   3.66 KB |        1.00 |
+| Rinku_QueryT                         |   508.6 us |  0.97 |   3.07 KB |        0.84 |
+| **2. Query one (or default) Sync**                                                  |
+| Dapper_QueryFirstOrDefault           |   521.3 us |  1.00 |   3.66 KB |        1.00 |
+| Rinku_QueryOptionalT                 |   521.3 us |  1.00 |   3.07 KB |        0.84 |
+| **3. Query one (single) Sync**                                                      |
+| Dapper_QuerySingle                   |   510.0 us |  1.00 |   3.66 KB |        1.00 |
+| Rinku_QuerySingleT                   |   512.0 us |  1.00 |   3.07 KB |        0.84 |
+| **4. Query one Async**                                                              |
+| Dapper_QueryFirstAsync               |   559.8 us |  1.00 |   5.71 KB |        1.00 |
+| Rinku_QueryTAsync                    |   540.4 us |  0.97 |   4.91 KB |        0.86 |
+| **5. Query one (or default) Async**                                                 |
+| Dapper_QueryFirstOrDefaultAsync      |   554.5 us |  1.00 |   5.71 KB |        1.00 |
+| Rinku_QueryOptionalTAsync            |   546.8 us |  0.99 |   4.91 KB |        0.86 |
+| **6. Query one (single) Async**                                                     |
+| Dapper_QuerySingleAsync              |   555.9 us |  1.00 |    5.8 KB |        1.00 |
+| Rinku_QuerySingleTAsync              |   544.4 us |  0.98 |   5.01 KB |        0.86 |
+| **7. Query Sync (Stream)**                                                          |
+| Dapper_QueryUnbuffered               |   602.6 us |  1.00 |  20.84 KB |        1.00 |
+| Rinku_QueryIEnumerable               |   601.1 us |  1.00 |  15.46 KB |        0.74 |
+| **8. Query Buffered Sync**                                                          |
+| Dapper_QueryBuffered                 |   603.0 us |  1.00 |  22.98 KB |        1.00 |
+| Rinku_QueryList                      |   601.1 us |  1.00 |  17.52 KB |        0.76 |
+| **9. Query Async (Stream)**                                                         |
+| Dapper_QueryUnbufferedAsync          |   654.7 us |  1.00 |  22.87 KB |        1.00 |
+| Rinku_StreamQueryAsync               |   643.4 us |  0.98 |  17.41 KB |        0.76 |
+| **10. Query Buffered Async**                                                        |
+| Dapper_QueryAsyncBuffered            |   653.4 us |  1.00 |  24.79 KB |        1.00 |
+| Rinku_QueryAsyncList                 |   650.3 us |  1.00 |  19.36 KB |        0.78 |
+| **11. Dynamic Async**                                                               |
+| Dapper_QueryAsyncDynamic             |   570.5 us |  1.00 |   5.77 KB |        1.00 |
+| Rinku_QueryAsyncDynaObject           |   570.0 us |  1.00 |   4.95 KB |        0.86 |
+| **12. Complex Mapping**                                                             |
+| Dapper_Complex                       |   587.2 us |  1.00 |   6.25 KB |        1.00 |
+| Rinku_Complex                        |   581.1 us |  0.99 |   5.41 KB |        0.87 |
+| **13. Execute Sync**                                                                |
+| Dapper_Execute                       | 1,476.8 us |  1.00 |   2.33 KB |        1.00 |
+| Rinku_Execute                        | 1,443.6 us |  0.98 |   1.76 KB |        0.76 |
+| **14. Execute Async**                                                               |
+| Dapper_ExecuteAsync                  | 1,511.7 us |  1.00 |   3.95 KB |        1.00 |
+| Rinku_ExecuteAsync                   | 1,485.1 us |  0.98 |   3.37 KB |        0.85 |
+| **15. IN Clause**                                                                   |
+| Dapper_InClause                      |   604.3 us |  1.00 |   8.01 KB |        1.00 |
+| Rinku_InClause                       |   592.1 us |  0.98 |   6.63 KB |        0.83 |
 
 ---
 

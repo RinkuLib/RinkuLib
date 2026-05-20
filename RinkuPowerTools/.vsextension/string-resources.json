@@ -1,3 +1,5 @@
 {
-  "RinkuPowerTools.Command1.DisplayName": "Add class from DB"
+    "RinkuPowerTools.Command1.DisplayName": "Add class from DB",
+    "RinkuPowerTools.SyncDBCommand.DisplayName": "Sync Database",
+    "RinkuPowerTools.SyncDBNoDialogsCommand.DisplayName": "Refresh"
 }

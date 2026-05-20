@@ -45,11 +45,13 @@ public static class Registry {
             return success ? Results.NoContent() : Results.NotFound();
         });
     }
-
+    public static void AddAltNameWhen(TypeParsingInfo info, string keyToMatch, string nameToAdd)
+        => info.UpdateAltName(c => string.Equals(c.GetDefaultName(), keyToMatch, StringComparison.OrdinalIgnoreCase) 
+        ? c.AddAltName(nameToAdd) : null);
     public static void Initialize(IConfiguration config) {
         var info = TypeParsingInfo.GetOrAdd(typeof(KeyValuePair<,>));
-        info.AddAltName("key", "id");
-        info.AddAltName("value", "name");
+        AddAltNameWhen(info, "key", "id");
+        AddAltNameWhen(info, "value", "name");
         info.SetInvalidOnNull("key", true);
         IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferedParamCache.GetInfoGetterMaker<SqliteCommand>);
 
