@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="RinkuPowerTools.csproj" />
+  <Project Path="RinkuPowerTools.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
 </Solution>
