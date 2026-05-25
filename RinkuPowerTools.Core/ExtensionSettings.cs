@@ -4,8 +4,8 @@ using System.Data.SqlClient;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace RinkuPowerTools;
-/*
+namespace RinkuPowerTools.Core;
+
 public enum QuerySourceType {
     Text,
     StoredProcedure,
@@ -17,7 +17,6 @@ public class ExtensionSettings {
     public required string ConnectionString { get; set; }
     public string OutputPath { get; set; } = string.Empty;
     public string? Namespace { get; set; }
-    public string ClassName { get; set; } = "CommandFor";
     public List<QuerySetting> Queries { get; set; } = [];
 }
 
@@ -30,13 +29,11 @@ public class ParameterOverride {
 [JsonConverter(typeof(QuerySettingConverter))]
 public class QuerySetting {
     public required string MethodName { get; set; }
+    public string? ResultSetName { get; set; }
     public required string Target { get; set; }
     public QuerySourceType SourceType { get; set; }
     public List<ParameterOverride> Parameters { get; set; } = [];
 
-    /// <summary>
-    /// Translates our internal tracking type into a standard ADO.NET CommandType.
-    /// </summary>
     public CommandType GetCommandType() => SourceType switch {
         QuerySourceType.StoredProcedure => CommandType.StoredProcedure,
         QuerySourceType.Text or QuerySourceType.FromFile => CommandType.Text,
@@ -50,6 +47,7 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
             throw new JsonException("Expected JSON object for QuerySetting.");
 
         string? methodName = null;
+        string? resultSetName = null;
         string? target = null;
         QuerySourceType sourceType = QuerySourceType.Text;
         List<ParameterOverride> parameters = [];
@@ -62,8 +60,11 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
                 string propertyName = reader.GetString() ?? string.Empty;
                 reader.Read();
 
-                if (string.Equals(propertyName, "MethodName", StringComparison.OrdinalIgnoreCase)) {
+                if (string.Equals(propertyName, nameof(QuerySetting.MethodName), StringComparison.OrdinalIgnoreCase)) {
                     methodName = reader.GetString();
+                }
+                if (string.Equals(propertyName, nameof(QuerySetting.ResultSetName), StringComparison.OrdinalIgnoreCase)) {
+                    resultSetName = reader.GetString();
                 }
                 else if (string.Equals(propertyName, "StoredProcName", StringComparison.OrdinalIgnoreCase)) {
                     target = reader.GetString();
@@ -77,7 +78,7 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
                     target = reader.GetString();
                     sourceType = QuerySourceType.FromFile;
                 }
-                else if (string.Equals(propertyName, "Parameters", StringComparison.OrdinalIgnoreCase)) {
+                else if (string.Equals(propertyName, nameof(QuerySetting.Parameters), StringComparison.OrdinalIgnoreCase)) {
                     parameters = JsonSerializer.Deserialize<List<ParameterOverride>>(ref reader, options) ?? [];
                 }
                 else {
@@ -94,6 +95,7 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
         return new QuerySetting {
             MethodName = methodName,
             Target = target,
+            ResultSetName = resultSetName,
             SourceType = sourceType,
             Parameters = parameters
         };
@@ -101,7 +103,7 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
 
     public override void Write(Utf8JsonWriter writer, QuerySetting value, JsonSerializerOptions options) {
         writer.WriteStartObject();
-        writer.WriteString("MethodName", value.MethodName);
+        writer.WriteString(nameof(QuerySetting.MethodName), value.MethodName);
 
         switch (value.SourceType) {
             case QuerySourceType.StoredProcedure:
@@ -116,11 +118,16 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
                 break;
         }
 
+        if (value.ResultSetName != null) {
+            writer.WritePropertyName(nameof(QuerySetting.ResultSetName));
+            JsonSerializer.Serialize(writer, value.Parameters, options);
+        }
+
         if (value.Parameters != null && value.Parameters.Count > 0) {
-            writer.WritePropertyName("Parameters");
+            writer.WritePropertyName(nameof(QuerySetting.Parameters));
             JsonSerializer.Serialize(writer, value.Parameters, options);
         }
 
         writer.WriteEndObject();
     }
-}*/
+}

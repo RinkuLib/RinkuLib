@@ -19,7 +19,7 @@ public static class TypeParser {
                 ? typeof(FastEnumerableTypeParser<>).MakeGenericType(itemType)
                 : typeof(FastListTypeParser<>).MakeGenericType(itemType)
         ),
-        new ReusingBaseTypeParserMaker([typeof(Optional<>), typeof(OptionalStruct<>)],
+        new ReusingBaseTypeParserMaker([typeof(Optional<>), typeof(OptionalStruct<>), typeof(OptionalNullable<>)],
             (def, itemType, ref _) => typeof(OptionalTypeParser<,>).MakeGenericType(def.MakeGenericType(itemType), itemType),
             (def, itemType, ref _) => typeof(FastOptionalTypeParser<,>).MakeGenericType(def.MakeGenericType(itemType), itemType)
         ),

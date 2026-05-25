@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Runtime.Serialization;
 using Microsoft.VisualStudio.Extensibility.UI;
+using RinkuPowerTools.Core;
 
 namespace RinkuPowerTools;
 

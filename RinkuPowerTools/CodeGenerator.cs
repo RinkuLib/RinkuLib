@@ -4,6 +4,7 @@ using System.Data.SqlClient;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using RinkuPowerTools.Core;
 
 namespace RinkuPowerTools;
 
@@ -27,7 +28,7 @@ public static class CodeGenerator {
         sb.AppendLine();
         sb.AppendLine($"namespace {settings.Namespace};");
         sb.AppendLine();
-        sb.AppendLine($"public static class {settings.ClassName} {{");
+        sb.AppendLine($"public static class Commands {{");
 
         foreach (var query in settings.Queries) {
             if (string.IsNullOrWhiteSpace(query.MethodName))

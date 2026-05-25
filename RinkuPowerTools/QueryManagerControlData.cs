@@ -6,6 +6,7 @@ using Microsoft.VisualStudio.Extensibility;
 using Microsoft.VisualStudio.Extensibility.Shell;
 using Microsoft.VisualStudio.Extensibility.Shell.FileDialog;
 using Microsoft.VisualStudio.Extensibility.UI;
+using RinkuPowerTools.Core;
 
 namespace RinkuPowerTools;
 

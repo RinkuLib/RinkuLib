@@ -8,6 +8,7 @@ using Microsoft.VisualStudio.Extensibility.Commands;
 using Microsoft.VisualStudio.Extensibility.Shell;
 using Microsoft.VisualStudio.ProjectSystem.Query;
 using Microsoft.VisualStudio.RpcContracts.Notifications;
+using RinkuPowerTools.Core;
 
 namespace RinkuPowerTools;
 
@@ -33,13 +34,13 @@ public class SyncDBCommand(TraceSource traceSource) : Command {
     /// <inheritdoc />
     public override Task ExecuteCommandAsync(IClientContext context, CancellationToken ct)
         => ExecuteCommandAsync(this.Extensibility, context, true, ct);
-    public static async Task<ExtensionSettings?> CompleteGetSettingsAsync(VisualStudioExtensibility extensibility, string projectDirectory, bool showDialogs, CancellationToken ct) {
+    public static async Task<ExtensionSettings?> CompleteGetSettingsAsync(VisualStudioExtensibility extensibility, string projectDirectory, bool showDialogs, CancellationToken ct, string configFile = ConfigFileName) {
         if (string.IsNullOrEmpty(projectDirectory)) {
             await extensibility.Shell().ShowPromptAsync("Could not resolve the project path directory.", PromptOptions.OK, ct);
             return null;
         }
 
-        string configFilePath = Path.Combine(projectDirectory, ConfigFileName);
+        string configFilePath = Path.Combine(projectDirectory, configFile);
         ExtensionSettings settings = await GetSettingsAsync(configFilePath, ct);
         if (showDialogs || settings.ConnectionString is null) {
             if (!await ShowBaseConfigurationDialogAsync(extensibility, settings, projectDirectory, ct))
@@ -83,7 +84,7 @@ public class SyncDBCommand(TraceSource traceSource) : Command {
         if (string.IsNullOrWhiteSpace(settings.Namespace))
             settings.Namespace = await DeduceNamespaceFromPathAsync(extensibility, projectSnapshot, projectDirectory, absoluteTargetDirectory, ct);
 
-        string absoluteOutputFilePath = Path.Combine(absoluteTargetDirectory, $"{settings.ClassName}.cs");
+        string absoluteOutputFilePath = Path.Combine(absoluteTargetDirectory, $"Commands.cs");
         string classContent = await CodeGenerator.GenerateClassAsync(settings, projectDirectory, ct);
 
         try {
@@ -134,7 +135,7 @@ public class SyncDBCommand(TraceSource traceSource) : Command {
             ct);
 
         var project = projectResults.FirstOrDefault();
-        string baseNamespace = project?.DefaultNamespace ?? project?.Name ?? "RinkuPowerTools";
+        string baseNamespace = project?.DefaultNamespace ?? project?.Name ?? "Rinku";
 
         string relativePath = Path.GetRelativePath(projectRootDirectory, targetAbsoluteDirectory);
 

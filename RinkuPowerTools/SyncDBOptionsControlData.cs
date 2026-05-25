@@ -3,6 +3,7 @@ using System.Runtime.Serialization;
 using Microsoft.VisualStudio.Extensibility;
 using Microsoft.VisualStudio.Extensibility.Shell.FileDialog;
 using Microsoft.VisualStudio.Extensibility.UI;
+using RinkuPowerTools.Core;
 
 namespace RinkuPowerTools;
 
@@ -38,7 +39,7 @@ public class SyncDBOptionsControlData : NotifyPropertyChangedObject {
             }
         }
     }
-
+    /*
     [DataMember]
     public string ClassName {
         get => _settings.ClassName ?? "DB";
@@ -48,7 +49,7 @@ public class SyncDBOptionsControlData : NotifyPropertyChangedObject {
                 DebounceValidation();
             }
         }
-    }
+    }*/
 
     [DataMember]
     public string OutputPath {
@@ -80,7 +81,7 @@ public class SyncDBOptionsControlData : NotifyPropertyChangedObject {
         _ = Task.Delay(300, token).ContinueWith(t => {
             if (!t.IsCanceled) {
                 RaiseNotifyPropertyChangedEvent(nameof(ConnectionString));
-                RaiseNotifyPropertyChangedEvent(nameof(ClassName));
+                //RaiseNotifyPropertyChangedEvent(nameof(ClassName));
                 RunValidation();
             }
         }, TaskScheduler.Default);
@@ -88,7 +89,7 @@ public class SyncDBOptionsControlData : NotifyPropertyChangedObject {
 
     private void RunValidation() {
         HasConnError = string.IsNullOrWhiteSpace(ConnectionString);
-        HasClassError = string.IsNullOrWhiteSpace(ClassName);
+        //HasClassError = string.IsNullOrWhiteSpace(ClassName);
 
         RaiseNotifyPropertyChangedEvent(nameof(IsValid));
     }
@@ -96,7 +97,7 @@ public class SyncDBOptionsControlData : NotifyPropertyChangedObject {
     [DataMember] public bool HasConnError { get => _hasConnError; set => SetProperty(ref _hasConnError, value); }
     [DataMember] public bool HasClassError { get => _hasClassError; set => SetProperty(ref _hasClassError, value); }
 
-    public bool IsValid => !string.IsNullOrWhiteSpace(ConnectionString) && !string.IsNullOrWhiteSpace(ClassName);
+    public bool IsValid => !string.IsNullOrWhiteSpace(ConnectionString);// && !string.IsNullOrWhiteSpace(ClassName);
 
     private async Task BrowseFolderAsync(object? parameter, CancellationToken ct) {
         FolderDialogOptions options = new() {

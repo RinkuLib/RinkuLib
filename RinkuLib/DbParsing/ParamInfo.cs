@@ -108,6 +108,8 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         List<INameComparerMaker> nameComparersMakers = [];
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
+            if (INameComparer.TryGetTrueName(attr, out var n))
+                name = n;
             if (attr is AltAttribute)
                 altCount++;
             if (attr is NoNameAttribute)
