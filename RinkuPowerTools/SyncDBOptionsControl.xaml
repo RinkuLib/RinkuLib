@@ -23,26 +23,6 @@
                 </TextBlock>
             </StackPanel>
 
-            <StackPanel Margin="0,0,0,10">
-                <TextBlock Text="Target Class Name:" FontWeight="SemiBold" Margin="0,0,0,3"/>
-
-                <TextBox Text="{Binding ClassName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         Height="24" VerticalContentAlignment="Center"/>
-
-                <TextBlock Text="Target Class Name is required." Foreground="#E11D48" Margin="2,3,0,0" TextWrapping="Wrap">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasClassError}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-            </StackPanel>
-
             <TextBlock Text="Generated Namespace (Optional):" FontWeight="SemiBold" Margin="0,0,0,3"/>
             <TextBox Text="{Binding Namespace, Mode=TwoWay}"
                      Margin="0,0,0,10" Height="24" VerticalContentAlignment="Center"/>

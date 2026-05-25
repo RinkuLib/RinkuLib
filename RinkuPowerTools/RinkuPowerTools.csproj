@@ -13,7 +13,6 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
     <PackageReference Include="Microsoft.VisualStudio.Extensibility.Sdk" Version="17.14.40608" PrivateAssets="all" />
     <PackageReference Include="Microsoft.VisualStudio.Extensibility.Build" Version="17.14.40608" PrivateAssets="all" />
-    <PackageReference Include="Rinku" Version="0.9.1" />
     <PackageReference Include="System.Data.SqlClient" Version="4.9.1" />
   </ItemGroup>
   <ItemGroup>
@@ -25,5 +24,8 @@
     <Page Remove="Resources\DialogText.*xaml" />
     <Page Remove="QuerySelectorControl.xaml" />
 	<Page Remove="SyncDBOptionsControl.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RinkuPowerTools.Core\RinkuPowerTools.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -1,10 +1,32 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace RinkuLib.DbParsing;
 /// <summary>
 /// Defines the contract for comparing database column names against member identifiers.
 /// </summary>
 public interface INameComparer {
+    private const string TargetAttributeName = "TrueNameAttribute";
+
+    /// <summary>
+    /// Attempts to extract an override name from a provided attribute instance.
+    /// This is adaptive: it uses the first public string property found on the attribute.
+    /// </summary>
+    static bool TryGetTrueName(object attribute, [MaybeNullWhen(false)] out string trueName) {
+        trueName = null;
+
+        if (attribute.GetType().Name != TargetAttributeName)
+            return false;
+
+        foreach (var prop in attribute.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)) {
+            trueName = prop.GetValue(attribute) as string;
+            if (trueName is not null)
+                return true;
+        }
+
+        return false;
+    }
     /// <summary>Returns the primary or first registered name used for identification.</summary>
     public string GetDefaultName();
 

@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="../RinkuPowerTools.Core/RinkuPowerTools.Core.csproj" Id="155cb92a-8ee3-4195-93b3-22a20eff8fc4" />
   <Project Path="RinkuPowerTools.csproj">
     <Deploy Solution="Debug|*" />
   </Project>

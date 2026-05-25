@@ -1,9 +1,6 @@
 ﻿using System.Data;
-using System.Data.SqlClient;
-using System.Diagnostics;
 using System.IO;
 using System.Text;
-using Microsoft;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -11,6 +8,7 @@ using Microsoft.VisualStudio.Extensibility;
 using Microsoft.VisualStudio.Extensibility.Commands;
 using Microsoft.VisualStudio.Extensibility.Shell;
 using Microsoft.VisualStudio.RpcContracts.Notifications;
+using RinkuPowerTools.Core;
 
 namespace RinkuPowerTools;
 
@@ -69,7 +67,7 @@ public class AddClassQueryInSettingsCommand : Command {
             await this.Extensibility.Shell().ShowPromptAsync($"Could not locate configuration details for query '{queryMethodName}'.", PromptOptions.OK, ct);
             return;
         }
-        string fullFilePath = Path.GetFullPath(Path.Combine(projectDirectory, settings.OutputPath, $"{settings.ClassName}.cs"));
+        string fullFilePath = Path.GetFullPath(Path.Combine(projectDirectory, settings.OutputPath, $"Commands.cs"));
 
         if (!File.Exists(fullFilePath) && (!await SyncDBCommand.GenerateCommandsFileAsync(this.Extensibility, projectSnapshot, projectDirectory, settings, ct) || !File.Exists(fullFilePath)))
             return;

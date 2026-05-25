@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Reflection.PortableExecutable;
 
 namespace RinkuLib.TypeAccessing;
 /// <summary>
@@ -12,14 +11,11 @@ public sealed class OptionalTypeParser<TOpt, T>(ITypeParser<T> elementParser) : 
     public override CommandBehavior Behavior => ElementParser.Behavior;
     /// <inheritdoc/>
     public override bool SupportsParsingAsync => true;
-
     /// <inheritdoc/>
     public override TOpt Default() => default;
-
     /// <inheritdoc/>
     public override TOpt Parse(DbDataReader reader)
         => TOpt.Make(ElementParser.Parse(reader));
-
     /// <inheritdoc/>
     public override async Task<TOpt> ParseAsync(DbDataReader reader, CancellationToken ct = default)
         => TOpt.Make(await ElementParser.ParseAsync(reader, ct).ConfigureAwait(false));
@@ -49,10 +45,8 @@ public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : Ba
     public override CommandBehavior Behavior => ElementParser.Behavior & ~CommandBehavior.SingleRow;
     /// <inheritdoc/>
     public override bool SupportsParsingAsync => true;
-
     /// <inheritdoc/>
     public override TOpt Default() => default;
-
     /// <inheritdoc/>
     public override TOpt Parse(DbDataReader reader) { 
         var res = TOpt.Make(ElementParser.Parse(reader));
@@ -60,7 +54,6 @@ public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : Ba
             throw new Exception("The query provided more result than required for the single item");
         return res;
     }
-
     /// <inheritdoc/>
     public override async Task<TOpt> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
         var res = TOpt.Make(await ElementParser.ParseAsync(reader, ct).ConfigureAwait(false));
