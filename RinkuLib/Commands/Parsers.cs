@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using RinkuLib.DbParsing;
@@ -40,13 +39,18 @@ public static class TypeSchema<T> {
 
         var columns = new List<ColumnInfo>();
         var nullabilityContext = new NullabilityInfoContext();
+        static (Type baseType, bool isNullable) GetNormalizedInfo(Type type, NullabilityInfo nullInfo) {
+            Type? underlying = Nullable.GetUnderlyingType(type);
+            bool isNullable = underlying != null || nullInfo.WriteState == NullabilityState.Nullable;
+            return (underlying ?? type, isNullable);
+        }
 
         var ctor = FindBestConstructor(type);
         if (ctor != null) {
             foreach (var param in ctor.GetParameters()) {
                 string name = INameComparer.TryGetTrueName(param, out var trueName) ? trueName : param.Name!;
-                var nullInfo = nullabilityContext.Create(param);
-                columns.Add(new ColumnInfo(name, param.ParameterType, nullInfo.WriteState == NullabilityState.Nullable));
+                var (baseType, isNullable) = GetNormalizedInfo(param.ParameterType, nullabilityContext.Create(param));
+                columns.Add(new ColumnInfo(name, baseType, isNullable));
             }
             return [.. columns];
         }
@@ -54,13 +58,13 @@ public static class TypeSchema<T> {
         foreach (var member in type.GetMembers(BindingFlags.Public | BindingFlags.Instance)) {
             if (member is PropertyInfo prop) {
                 string name = INameComparer.TryGetTrueName(prop, out var trueName) ? trueName : prop.Name;
-                var nullInfo = nullabilityContext.Create(prop);
-                columns.Add(new ColumnInfo(name, prop.PropertyType, nullInfo.WriteState == NullabilityState.Nullable));
+                var (baseType, isNullable) = GetNormalizedInfo(prop.PropertyType, nullabilityContext.Create(prop));
+                columns.Add(new ColumnInfo(name, baseType, isNullable));
             }
             else if (member is FieldInfo field) {
                 string name = INameComparer.TryGetTrueName(field, out var trueName) ? trueName : field.Name;
-                var nullInfo = nullabilityContext.Create(field);
-                columns.Add(new ColumnInfo(name, field.FieldType, nullInfo.WriteState == NullabilityState.Nullable));
+                var (baseType, isNullable) = GetNormalizedInfo(field.FieldType, nullabilityContext.Create(field));
+                columns.Add(new ColumnInfo(name, baseType, isNullable));
             }
         }
 
@@ -82,79 +86,103 @@ public static class Parsers<TSchema, T> {
         var schema = TypeSchema<TSchema>.Schema;
         Parser = TypeParser<T>.GetTypeParser(ref schema);
     }
-    internal static readonly ITypeParser<T> Parser;
+    /// <summary></summary>
+    public static readonly ITypeParser<T> Parser;
 }
 /// <summary></summary>
 public static class ParsersExtensions {
     /// <summary>
-    /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Executes the <see cref="DbCommand"/> and projects the result set into an instance of <typeparamref name="T"/>.
     /// </summary>
-    /// <param name="command">The command to execute the query on</param>
-    /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+    /// <typeparam name="TSchema">The type defining the database schema metadata.</typeparam>
+    /// <typeparam name="T">The destination type to be returned.</typeparam>
+    /// <param name="command">The command to execute.</param>
+    /// <param name="disposeCommand">If <c>true</c>, the command is disposed after execution.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T Query<TSchema, T>(this DbCommand command, bool disposeCommand = false)
         => Parsers<TSchema, T>.Parser.Query(command, disposeCommand);
+
     /// <summary>
-    /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Executes the <see cref="IDbCommand"/> and projects the result set into an instance of <typeparamref name="T"/>.
     /// </summary>
-    /// <param name="command">The command to execute the query on</param>
-    /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+    /// <typeparam name="TSchema">The type defining the database schema metadata.</typeparam>
+    /// <typeparam name="T">The destination type to be returned.</typeparam>
+    /// <param name="command">The command to execute.</param>
+    /// <param name="disposeCommand">If <c>true</c>, the command is disposed after execution.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T Query<TSchema, T>(this IDbCommand command, bool disposeCommand = false)
         => Parsers<TSchema, T>.Parser.Query(command, disposeCommand);
+
     /// <summary>
-    /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Executes the <see cref="DbCommand"/> with an <see cref="ICache"/> and projects the result set into an instance of <typeparamref name="T"/>.
     /// </summary>
-    /// <param name="command">The command to execute the query on</param>
-    /// <param name="cache">A cache to be used with the reader</param>
-    /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+    /// <typeparam name="TSchema">The type defining the database schema metadata.</typeparam>
+    /// <typeparam name="T">The destination type to be returned.</typeparam>
+    /// <param name="command">The command to execute.</param>
+    /// <param name="cache">The cache to be used with the reader.</param>
+    /// <param name="disposeCommand">If <c>true</c>, the command is disposed after execution.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T Query<TSchema, T>(this DbCommand command, ICache cache, bool disposeCommand = false)
         => Parsers<TSchema, T>.Parser.Query(command, cache, disposeCommand);
+
     /// <summary>
-    /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Executes the <see cref="IDbCommand"/> with an <see cref="ICache"/> and projects the result set into an instance of <typeparamref name="T"/>.
     /// </summary>
-    /// <param name="command">The command to execute the query on</param>
-    /// <param name="cache">A cache to be used with the reader</param>
-    /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
+    /// <typeparam name="TSchema">The type defining the database schema metadata.</typeparam>
+    /// <typeparam name="T">The destination type to be returned.</typeparam>
+    /// <param name="command">The command to execute.</param>
+    /// <param name="cache">The cache to be used with the reader.</param>
+    /// <param name="disposeCommand">If <c>true</c>, the command is disposed after execution.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T Query<TSchema, T>(this IDbCommand command, ICache cache, bool disposeCommand = false)
         => Parsers<TSchema, T>.Parser.Query(command, cache, disposeCommand);
+
     /// <summary>
-    /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Asynchronously executes the <see cref="DbCommand"/> and projects the result set into an instance of <typeparamref name="T"/>.
     /// </summary>
-    /// <param name="command">The command to execute the query on</param>
-    /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-    /// <param name="ct">The fowarded cancellation token</param>
+    /// <typeparam name="TSchema">The type defining the database schema metadata.</typeparam>
+    /// <typeparam name="T">The destination type to be returned.</typeparam>
+    /// <param name="command">The command to execute.</param>
+    /// <param name="disposeCommand">If <c>true</c>, the command is disposed after execution.</param>
+    /// <param name="ct">The cancellation token.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Task<T> QueryAsync<TSchema, T>(this DbCommand command, bool disposeCommand = false, CancellationToken ct = default)
         => Parsers<TSchema, T>.Parser.QueryAsync(command, disposeCommand, ct);
+
     /// <summary>
-    /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Asynchronously executes the <see cref="IDbCommand"/> and projects the result set into an instance of <typeparamref name="T"/>.
     /// </summary>
-    /// <param name="command">The command to execute the query on</param>
-    /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-    /// <param name="ct">The fowarded cancellation token</param>
+    /// <typeparam name="TSchema">The type defining the database schema metadata.</typeparam>
+    /// <typeparam name="T">The destination type to be returned.</typeparam>
+    /// <param name="command">The command to execute.</param>
+    /// <param name="disposeCommand">If <c>true</c>, the command is disposed after execution.</param>
+    /// <param name="ct">The cancellation token.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Task<T> QueryAsync<TSchema, T>(this IDbCommand command, bool disposeCommand = false, CancellationToken ct = default)
         => Parsers<TSchema, T>.Parser.QueryAsync(command, disposeCommand, ct);
+
     /// <summary>
-    /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Asynchronously executes the <see cref="DbCommand"/> with an <see cref="ICache"/> and projects the result set into an instance of <typeparamref name="T"/>.
     /// </summary>
-    /// <param name="command">The command to execute the query on</param>
-    /// <param name="cache">A cache to be used with the reader</param>
-    /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-    /// <param name="ct">The fowarded cancellation token</param>
+    /// <typeparam name="TSchema">The type defining the database schema metadata.</typeparam>
+    /// <typeparam name="T">The destination type to be returned.</typeparam>
+    /// <param name="command">The command to execute.</param>
+    /// <param name="cache">The cache to be used with the reader.</param>
+    /// <param name="disposeCommand">If <c>true</c>, the command is disposed after execution.</param>
+    /// <param name="ct">The cancellation token.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Task<T> QueryAsync<TSchema, T>(this DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
         => Parsers<TSchema, T>.Parser.QueryAsync(command, cache, disposeCommand, ct);
+
     /// <summary>
-    /// Asynchronously executes the <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Asynchronously executes the <see cref="IDbCommand"/> with an <see cref="ICache"/> and projects the result set into an instance of <typeparamref name="T"/>.
     /// </summary>
-    /// <param name="command">The command to execute the query on</param>
-    /// <param name="cache">A cache to be used with the reader</param>
-    /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-    /// <param name="ct">The fowarded cancellation token</param>
+    /// <typeparam name="TSchema">The type defining the database schema metadata.</typeparam>
+    /// <typeparam name="T">The destination type to be returned.</typeparam>
+    /// <param name="command">The command to execute.</param>
+    /// <param name="cache">The cache to be used with the reader.</param>
+    /// <param name="disposeCommand">If <c>true</c>, the command is disposed after execution.</param>
+    /// <param name="ct">The cancellation token.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Task<T> QueryAsync<TSchema, T>(this IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
         => Parsers<TSchema, T>.Parser.QueryAsync(command, cache, disposeCommand, ct);
