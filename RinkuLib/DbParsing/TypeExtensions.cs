@@ -62,6 +62,7 @@ public static class TypeExtensions {
     internal static readonly MethodInfo _flt = ReaderType.GetMethod(nameof(DbDataReader.GetFloat), IntParam)!;
     internal static readonly MethodInfo _dec = ReaderType.GetMethod(nameof(DbDataReader.GetDecimal), IntParam)!;
     internal static readonly MethodInfo _guid = ReaderType.GetMethod(nameof(DbDataReader.GetGuid), IntParam)!;
+    internal static readonly MethodInfo _byteArr = ReaderType.GetMethod(nameof(DbDataReader.GetBytes), IntParam)!;
     internal static readonly MethodInfo _getMeth = ReaderType.GetMethod(nameof(DbDataReader.GetFieldValue), IntParam)!;
     
     internal static readonly ConstructorInfo _Ni8Ctor = typeof(byte?).GetConstructor([typeof(byte)])!;
@@ -94,8 +95,8 @@ public static class TypeExtensions {
     public static bool IsBaseType(this Type type) {
         return type == typeof(int) || type == typeof(string) || type == typeof(DateTime)
             || type == typeof(bool) || type == typeof(long) || type == typeof(decimal)
-            || type == typeof(Guid) || type == typeof(object) || type == typeof(float)
-            || type == typeof(double) || type == typeof(char) || type == typeof(byte) || type == typeof(short);
+            || type == typeof(Guid) || type == typeof(object) || type == typeof(float) || type == typeof(double) 
+            || type == typeof(char) || type == typeof(byte) || type == typeof(short) || type == typeof(byte[]);
     }
     /// <summary>
     /// Check if the type can hold a <see langword="null"/> value
@@ -125,6 +126,7 @@ public static class TypeExtensions {
             _ when type == typeof(char) => _char,
             _ when type == typeof(byte) => _i8,
             _ when type == typeof(short) => _i16,
+            _ when type == typeof(byte[]) => _byteArr,
             _ => null
         };
 

@@ -1,0 +1,19 @@
+﻿<DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+    <StackPanel Orientation="Vertical" Margin="24,24,24,24">
+        <StackPanel Margin="0,0,0,12">
+            <TextBlock Text="New class name" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBox Width="250" Text="{Binding EditName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNewWorkspace}" />
+            <TextBlock Text="{Binding NameError}" Foreground="#E11D48" Margin="2,3,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <StackPanel Margin="0,0,0,12">
+            <TextBlock Text="Result set name" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <ComboBox Width="250" ItemsSource="{Binding ResultSets}"
+                      SelectedItem="{Binding SelectedResultSet, Mode=TwoWay}"
+                      DisplayMemberPath="DisplayName"/>
+        </StackPanel>
+    </StackPanel>
+</DataTemplate>

@@ -1,6 +1,7 @@
 ﻿using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using RinkuLib.Commands;
 using RinkuLib.DbParsing;
 using RinkuLib.Tools;
 using Xunit;
@@ -939,6 +940,37 @@ public class TypeParserTests {
 
         Assert.ThrowsAny<Exception>(() => TypeParser<LayerOne>.GetTypeParser(ref columns));
     }
+    [Fact]
+    public void Test_User_Mapping_With_Nullable_And_Binary_Types() {
+        var salt = new byte[] { 0x01, 0x02, 0x03 };
+        var expiration = new DateTime(2026, 12, 31, 23, 59, 59, DateTimeKind.Utc);
+
+        var parser = Parsers<UserSchema, UserSchema>.Parser;
+
+        var columns = new ColumnInfo[]
+        {
+            new("ID", typeof(int), false),
+            new("Username", typeof(string), false),
+            new("Email", typeof(string), false),
+            new("Salt", typeof(byte[]), true),
+            new("Token", typeof(string), true),
+            new("ExpirationToken", typeof(DateTime), true),
+            new("Valid", typeof(bool), false)
+        };
+
+        using var reader = CreateReader(columns, [[1, "JohnDoe", "john@example.com", salt, "secret-token", expiration, true]]);
+        reader.Read();
+
+        var result = parser.Parse(reader);
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.ID);
+        Assert.Equal("JohnDoe", result.Username);
+        Assert.Equal(salt, result.Salt);
+        Assert.Equal("secret-token", result.Token);
+        Assert.Equal(expiration, result.ExpirationToken);
+        Assert.True(result.Valid);
+    }
 }
 public record LayerOne(int First, LayerTwo Two);
 public record LayerTwo([AltUpTo("NotTooDeep", "Two")] int Second, LayerThree Three) : IDbReadable;
@@ -961,7 +993,7 @@ public class EmployeeRecord {
     public decimal Salary { get; set; }
     public DateTime JoinedAt { get; set; }
 }
-
+public record UserSchema(int ID, string Username, string Email, byte[]? Salt, string? Token, DateTime? ExpirationToken, bool Valid);
 public class ProductStatus {
     public int ProductId { get; set; }
     public double? Weight { get; set; }
