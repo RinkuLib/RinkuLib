@@ -1,38 +1,56 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-	<PropertyGroup>
-		<TargetFrameworks>net10.0;net8.0</TargetFrameworks>
-		<ImplicitUsings>enable</ImplicitUsings>
-		<Nullable>enable</Nullable>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<LangVersion>latest</LangVersion>
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
 
-		<PackageId>Rinku</PackageId>
-		<Version>0.9.5</Version>
-		<Authors>adam.therrien.marois</Authors>
-		<Product>Rinku</Product>
-		<Title>Rinku</Title>
-		<AssemblyName>Rinku</AssemblyName>
-		<Description>A modular Mirco-ORM with SQL templating and complex object mapping</Description>
-	  
-		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-		<Deterministic>true</Deterministic>
-		<DefaultLanguage>en-US</DefaultLanguage>
-		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
 
-		<PackageProjectUrl>https://github.com/RinkuLib/RinkuLib</PackageProjectUrl>
-		<RepositoryUrl>https://github.com/RinkuLib/RinkuLib</RepositoryUrl>
-		<RepositoryType>git</RepositoryType>
-		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-		<PackageReadmeFile>readmeNuGet.md</PackageReadmeFile>
-		<PackageIcon>logo.png</PackageIcon>
-	  
-		<DebugSymbols>true</DebugSymbols>
-		<DebugType>embedded</DebugType>
-		<EmbedAllSources>true</EmbedAllSources>
-	</PropertyGroup>
-	<ItemGroup>
-		<None Include="..\readmeNuGet.md" Pack="true" PackagePath="\" />
-		<None Include="..\logo.png" Pack="true" PackagePath="\" />
-	</ItemGroup>
+    <PackageId>RinkuLib</PackageId>
+    <Version>0.9.5</Version>
+
+    <Authors>adam.therrien.marois</Authors>
+    <Product>RinkuLib</Product>
+    <Title>RinkuLib</Title>
+    <AssemblyName>RinkuLib</AssemblyName>
+
+    <Description>
+      A modular micro-ORM with SQL templating and complex object mapping
+    </Description>
+
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <PackageProjectUrl>https://github.com/RinkuLib/RinkuLib</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/RinkuLib/RinkuLib</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>readmeNuGet.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
+
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>embedded</DebugType>
+    <EmbedAllSources>true</EmbedAllSources>
+
+    <DevelopmentDependency>true</DevelopmentDependency>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\readmeNuGet.md" Pack="true" PackagePath="\" />
+    <None Include="..\logo.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+	  <ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers\RinkuLib.Analyzers.csproj"
+					ReferenceOutputAssembly="false"
+					OutputItemType="Analyzer" />
+
+	  <ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\RinkuLib.Analyzers.CodeFixes.csproj"
+						ReferenceOutputAssembly="false"
+						OutputItemType="Analyzer" />
+  </ItemGroup> 
 </Project>
