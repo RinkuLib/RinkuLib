@@ -76,3 +76,25 @@ public interface IEditableItem<T> {
 /// The type of the editable representation of the value.
 /// </typeparam>
 public interface IEditableItem<TOg, TEdit> : IEditableItem<TEdit>, ITrackingItem<TOg>;
+/// <summary>
+/// Exposes the ability to be built from an original value
+/// </summary>
+public interface IEditableItemFromOriginal<TOg, TSelf> where TSelf : IEditableItemFromOriginal<TOg, TSelf> {
+    /// <summary>
+    /// Creates a tracking item from an original value.
+    /// </summary>
+    public abstract static TSelf FromOriginal(TOg original);
+}
+/// <summary>
+/// Exposes the ability to be built from an edit value
+/// </summary>
+public interface IEditableItemFromEdit<TEdit, TSelf> where TSelf : IEditableItemFromEdit<TEdit, TSelf> {
+    /// <summary>
+    /// Creates a tracking item initialized directly with an editable value.
+    /// </summary>
+    public abstract static TSelf CreateNew(TEdit value);
+}
+/// <summary>
+/// Exposes the ability to be built from an original and an edit value
+/// </summary>
+public interface IEditableItemFrom<TOg, TEdit, TSelf> : IEditableItemFromOriginal<TOg, TSelf>, IEditableItemFromEdit<TEdit, TSelf> where TSelf : IEditableItemFrom<TOg, TEdit, TSelf>;
