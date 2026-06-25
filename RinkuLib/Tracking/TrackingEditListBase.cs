@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 
 namespace RinkuLib.Tracking;
@@ -8,34 +9,61 @@ namespace RinkuLib.Tracking;
 /// </summary>
 public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TEditItem> items, int initialCapacity = 4)
     : TrackingList<TOg, TEditItem>(items, items.TryGetNonEnumeratedCount(out var count) && initialCapacity < count ? count : initialCapacity),
-    IList<TEdit>, IReadOnlyList<TEdit>, IEditableList<TOg, TEdit>, IList where TEditItem : IEditableItem<TEdit>, ITrackingItem<TOg> {
+    IList<TEdit>, IReadOnlyList<TEdit>, IEditableList<TOg, TEdit>, IList, IBindingList, ICancelAddNew, IAddSetNewItem<TEdit> where TEditItem : IEditableItem<TEdit>, ITrackingItem<TOg> {
     /// <summary>Create a new instance of the edit item from an instance of <typeparamref name="TEdit"/></summary>
     public abstract TEditItem MakeNewEditItem(TEdit newItem);
     /// <inheritdoc/>
     public TEdit this[int index] {
         get => GetValue(index);
-        set => Set(index, MakeNewEditItem(value));
+        set {
+            Set(index, MakeNewEditItem(value));
+            OnListChanged(new ListChangedEventArgs(ListChangedType.ItemChanged, index));
+        }
     }
     private TEdit GetValue(int index) => Get(index).CurrentValue ?? throw new Exception($"No values were available to display at index {index}");
     /// <inheritdoc/>
     public bool HasEditValue(int index, [MaybeNullWhen(false)] out TEdit editValue) {
         ref var item = ref Get(index);
-        editValue = item.IsEditing ? item.EditableValue : default;
+        editValue = item.EditableValue;
         return item.IsEditing;
     }
+    /// <inheritdoc/>
+    public bool EnsureEditing(int index) => EnsureEditing(index, out _);
+    /// <inheritdoc/>
+    public bool EnsureEditing(int index, [MaybeNullWhen(false)] out TEdit editValue) {
+        ref var item = ref Get(index);
+        if (item.IsEditing) {
+            return item.EnsureIsEditing(out editValue);
+        }
+        var res = item.EnsureIsEditing(out editValue);
+        if (res) {
+            OnListChanged(new ListChangedEventArgs(ListChangedType.ItemChanged, index));
+        }
+        return res;
+    }
+    /// <inheritdoc/>
+    public bool IsEditing(int index) => Get(index).IsEditing;
     /// <summary>Check if items are equals</summary>
     protected virtual bool ItemEquals(TEdit item1, TEdit? item2)
         => EqualityComparer<TEdit>.Default.Equals(item1, item2);
     /// <inheritdoc/>
-    public bool IsEditing(int index) => Get(index).IsEditing;
+    public virtual bool CommitEdit(int index) => Get(index).CommitEdit();
     /// <inheritdoc/>
-    public virtual void CommitEdit(int index) => Get(index).CommitEdit();
+    public virtual bool CancelEdit(int index, bool canRemove = false) {
+        ref var item = ref Get(index);
+        if (item.CancelEdit()) {
+            return true;
+        }
+        if (canRemove && !item.HasOriginal(out _)) {
+            RemoveAt(index);
+            return true;
+        }
+        return false;
+    }
     /// <inheritdoc/>
-    public virtual void CancelEdit(int index) => Get(index).CancelEdit();
+    public virtual Task<bool> CommitEditAsync(int index) => Get(index).CommitEditAsync();
     /// <inheritdoc/>
-    public virtual Task CommitEditAsync(int index) => Get(index).CommitEditAsync();
-    /// <inheritdoc/>
-    public virtual Task CancelEditAsync(int index) => Get(index).CancelEditAsync();
+    public virtual Task<bool> CancelEditAsync(int index) => Get(index).CancelEditAsync();
     /// <inheritdoc/>
     public bool IsReadOnly => false;
     /// <inheritdoc/>
@@ -45,18 +73,77 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
     /// <inheritdoc/>
     public object SyncRoot => this;
     /// <inheritdoc/>
-    public bool HasEdit {
+    public virtual bool HasChanges {
         get {
-            for (int i = 0; i < Count; i++)
-                if (Get(i).IsEditing)
+            for (int i = 0; i < Count; i++) {
+                if (Get(i).IsEditing) {
                     return true;
+                }
+            }
+
             return false;
         }
     }
     /// <inheritdoc/>
-    public void Add(TEdit item) => Add(MakeNewEditItem(item));
+    public event ListChangedEventHandler? ListChanged;
+    private Func<TEdit>? _addNewFactory;
     /// <inheritdoc/>
-    public void Insert(int index, TEdit item) => Insert(index, MakeNewEditItem(item));
+    public void SetNewItemFactory(Func<TEdit> factory) => _addNewFactory = factory;
+    private int _addNewPos = -1;
+    /// <summary>
+    /// Raises the ListChanged event.
+    /// </summary>
+    public virtual bool RaiseListChangedEvents { get; set; } = true;
+    /// <summary>
+    /// Raises the ListChanged event. You should also call this from your base TrackingList 
+    /// overrides (like Remove, Insert, Clear) to fully support UI bindings.
+    /// </summary>
+    protected virtual void OnListChanged(ListChangedEventArgs e) {
+        if (RaiseListChangedEvents)
+            ListChanged?.Invoke(this, e);
+    }
+    /// <inheritdoc/>
+    public virtual void CancelNew(int itemIndex) {
+        if (_addNewPos >= 0 && _addNewPos == itemIndex) {
+            int indexToRemove = _addNewPos;
+            _addNewPos = -1;
+            RemoveAt(indexToRemove);
+        }
+    }
+    /// <inheritdoc/>
+    public virtual void EndNew(int itemIndex) {
+        if (_addNewPos >= 0 && _addNewPos == itemIndex)
+            _addNewPos = -1;
+    }
+    /// <inheritdoc/>
+    public virtual bool AllowEdit => true;
+    /// <inheritdoc/>
+    public bool AllowNew => _addNewFactory is not null;
+    /// <inheritdoc/>
+    public virtual bool AllowRemove => true;
+    /// <inheritdoc/>
+    public virtual bool IsSorted => false;
+    /// <inheritdoc/>
+    public virtual ListSortDirection SortDirection => ListSortDirection.Ascending;
+    /// <inheritdoc/>
+    public virtual PropertyDescriptor? SortProperty => null;
+    /// <inheritdoc/>
+    public virtual bool SupportsChangeNotification => true;
+    /// <inheritdoc/>
+    public virtual bool SupportsSearching => false;
+    /// <inheritdoc/>
+    public virtual bool SupportsSorting => false;
+
+    /// <inheritdoc/>
+    public void Add(TEdit item) {
+        Add(MakeNewEditItem(item));
+        OnListChanged(new ListChangedEventArgs(ListChangedType.ItemAdded, Count - 1));
+    }
+    /// <inheritdoc/>
+    public void Insert(int index, TEdit item) {
+        Insert(index, MakeNewEditItem(item));
+        OnListChanged(new ListChangedEventArgs(ListChangedType.ItemAdded, index));
+    }
     /// <inheritdoc/>
     public bool Remove(TEdit item) {
         int index = IndexOf(item);
@@ -64,6 +151,11 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
             return false;
         RemoveAt(index);
         return true;
+    }
+    /// <inheritdoc/>
+    public override void RemoveAt(int index) {
+        base.RemoveAt(index);
+        OnListChanged(new ListChangedEventArgs(ListChangedType.ItemDeleted, index));
     }
     /// <inheritdoc/>
     public bool Contains(TEdit item) => IndexOf(item) >= 0;
@@ -82,7 +174,7 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
         for (int i = 0; i < Count; i++) {
             ref var val = ref Get(i);
             if (val.IsEditing)
-                array[arrayIndex + i] = val.EditableValue;
+                array[arrayIndex + i] = val.EditableValue!;
         }
     }
     object? IList.this[int index] {
@@ -96,7 +188,6 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
     int IList.Add(object? value) {
         if (value is not TEdit item)
             throw new ArgumentException($"Value must be of type {typeof(TEdit).FullName}", nameof(value));
-
         Add(item);
         return Count - 1;
     }
@@ -116,7 +207,6 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
         ArgumentNullException.ThrowIfNull(array);
         if (array.Rank != 1)
             throw new ArgumentException("Multi-dimensional arrays are not supported.");
-
         for (int i = 0; i < Count; i++)
             array.SetValue(Get(i).EditableValue, index + i);
     }
@@ -126,4 +216,36 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
             yield return GetValue(i);
     }
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    object? IBindingList.AddNew() => AddNew();
+    /// <summary>A typed implementation of <see cref="IBindingList.AddNew"/></summary>
+    public virtual TEdit AddNew() {
+        if (_addNewFactory is null)
+            throw new InvalidOperationException("Cannot add a new item. Provide a factory or handle the AddingNew event.");
+
+        var newItem = _addNewFactory();
+        EndNew(_addNewPos);
+        Add(newItem);
+        _addNewPos = Count - 1;
+        return newItem;
+    }
+    /// <inheritdoc/>
+    public virtual void ApplySort(PropertyDescriptor property, ListSortDirection direction) => throw new NotSupportedException();
+    /// <inheritdoc/>
+    public virtual void RemoveSort() => throw new NotSupportedException();
+    /// <inheritdoc/>
+    public virtual int Find(PropertyDescriptor property, object key) => throw new NotSupportedException();
+    /// <inheritdoc/>
+    public virtual void AddIndex(PropertyDescriptor property) { }
+    /// <inheritdoc/>
+    public virtual void RemoveIndex(PropertyDescriptor property) { }
+}
+/// <summary>
+/// Indicate that you can add a factory to create a new instance of <typeparamref name="TEdit"/>
+/// </summary>
+public interface IAddSetNewItem<TEdit> {
+    /// <summary>
+    /// Sets the factory method required to create new items via IBindingList.AddNew().
+    /// </summary>
+    public void SetNewItemFactory(Func<TEdit> factory);
 }

@@ -29,6 +29,7 @@ public sealed class CopyUsingMethodAttribute(string methodName) : CopyFieldAttri
         else
             il.Emit(OpCodes.Ldloc, clone);
 
+        il.Emit(OpCodes.Ldarg_0);
         il.Emit(method.IsVirtual ? OpCodes.Callvirt : OpCodes.Call, method);
 
         il.Emit(OpCodes.Stfld, field);

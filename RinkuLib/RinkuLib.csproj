@@ -45,12 +45,8 @@
   </ItemGroup>
 
   <ItemGroup>
-	  <ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers\RinkuLib.Analyzers.csproj"
-					ReferenceOutputAssembly="false"
-					OutputItemType="Analyzer" />
+	  <ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers\RinkuLib.Analyzers.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
 
-	  <ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\RinkuLib.Analyzers.CodeFixes.csproj"
-						ReferenceOutputAssembly="false"
-						OutputItemType="Analyzer" />
+	  <ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\RinkuLib.Analyzers.CodeFixes.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
   </ItemGroup> 
 </Project>

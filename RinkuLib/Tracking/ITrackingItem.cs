@@ -4,8 +4,7 @@ namespace RinkuLib.Tracking;
 /// <summary>
 /// Represents an item that tracks an original value
 /// </summary>
-public interface ITrackingItem<T>
-{
+public interface ITrackingItem<T> {
     /// <summary>
     /// Attempts to reattach the specified value to this item.
     /// </summary>
@@ -37,10 +36,11 @@ public interface IEditableItem<T> {
     /// <summary>
     /// Gets a value that can be modified.
     /// </summary>
-    /// <remarks>
-    /// Accessing this property may change the state of tracking by entering an edit mode
-    /// </remarks>
-    T EditableValue { get; }
+    T? EditableValue { get; }
+    /// <summary>
+    /// Makes sure that the current state of the item is editing.
+    /// </summary>
+    bool EnsureIsEditing([MaybeNullWhen(false)] out T editableValue);
     /// <summary>
     /// Gets a value indicating whether the item is currently being edited.
     /// </summary>
@@ -52,7 +52,7 @@ public interface IEditableItem<T> {
     /// <summary>
     /// Applies any pending edits.
     /// </summary>
-    void CommitEdit();
+    bool CommitEdit();
     /// <summary>
     /// Discards any pending edits.
     /// </summary>
@@ -60,7 +60,7 @@ public interface IEditableItem<T> {
     /// <summary>
     /// Applies any pending edits.
     /// </summary>
-    Task CommitEditAsync(CancellationToken cancellationToken = default);
+    Task<bool> CommitEditAsync(CancellationToken cancellationToken = default);
     /// <summary>
     /// Discards any pending edits.
     /// </summary>
@@ -98,3 +98,23 @@ public interface IEditableItemFromEdit<TEdit, TSelf> where TSelf : IEditableItem
 /// Exposes the ability to be built from an original and an edit value
 /// </summary>
 public interface IEditableItemFrom<TOg, TEdit, TSelf> : IEditableItemFromOriginal<TOg, TSelf>, IEditableItemFromEdit<TEdit, TSelf> where TSelf : IEditableItemFrom<TOg, TEdit, TSelf>;
+/// <summary>
+/// Represents metadata that can validate a value and expose an associated error when invalid.
+/// </summary>
+/// <typeparam name="TMetadata">The type of validation error produced when invalid.</typeparam>
+public interface IMetadata<out TMetadata> {
+    /// <summary>
+    /// Gets the validation error associated with the metadata, if any.
+    /// </summary>
+    TMetadata? Metadata { get; }
+}
+/// <summary>
+/// Represents metadata that can validate a value and expose an associated error when invalid.
+/// </summary>
+/// <typeparam name="TMetadata">The type of validation error produced when invalid.</typeparam>
+public interface IMetadataSetter<TMetadata> {
+    /// <summary>
+    /// Sets the validation error associated with the metadata, if any.
+    /// </summary>
+    void SetMetadata(TMetadata? metadata);
+}

@@ -9,12 +9,14 @@ namespace RinkuLib.Tracking;
 /// Defines the signature for custom cloning logic.
 /// </summary>
 /// <typeparam name="T">The type of the object.</typeparam>
-public delegate T CopyDelegate<T>(T source);
+[return: NotNullIfNotNull(nameof(source))]
+public delegate T? CopyDelegate<T>(T? source);
 /// <summary>
 /// Defines a contract for types that provide custom cloning logic.
 /// </summary>
 /// <typeparam name="T">The type of the returned object.</typeparam>
-public interface ICopyable<T> {
+public interface ICopyable<T>
+{
     /// <summary>
     /// Returns a new instance that is a functional copy of the current object.
     /// </summary>
@@ -33,7 +35,8 @@ public interface ICopyable<T> {
 /// process, such as deep-copying specific references.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Field)]
-public abstract class CopyFieldAttribute : Attribute {
+public abstract class CopyFieldAttribute : Attribute
+{
     /// <summary>
     /// Emits IL instructions to copy the field value to the target clone.
     /// </summary>
@@ -64,14 +67,15 @@ public static class CopyExtensions {
     public static T? Copy<T>(this T? source) {
         if (source is null)
             return source;
+
         if (typeof(T).IsValueType || typeof(T).IsSealed)
             return Copier<T>.Copy(source)!;
+
         Type runtimeType = source.GetType();
         if (runtimeType == typeof(T))
             return Copier<T>.Copy(source)!;
-        return (T)Dispatchers
-            .GetOrAdd(runtimeType, CreateDispatcher)
-            (source)!;
+
+        return (T)Dispatchers.GetOrAdd(runtimeType, CreateDispatcher)(source)!;
     }
     private static Func<object, object?> CreateDispatcher(Type runtimeType) {
         var copyMethod = typeof(Copier<>)
@@ -96,12 +100,14 @@ public static class Copier<T> {
     /// <summary>
     /// Executes the current cloning strategy for the type.
     /// </summary>
-    public static T Copy(T source) => _strategy(source);
+    [return: NotNullIfNotNull(nameof(source))]
+    public static T? Copy(T? source) => _strategy(source);
     /// <summary>
     /// Executes the original, automatically detected cloning strategy for the type.
     /// </summary>
     /// <param name="source">The object to clone.</param>
-    public static T DefaultCopy(T source) => _defaultStrategy(source);
+    [return: NotNullIfNotNull(nameof(source))]
+    public static T? DefaultCopy(T? source) => _defaultStrategy(source);
     /// <summary>
     /// Registers a custom cloning strategy for the type.
     /// </summary>
@@ -133,6 +139,7 @@ public static class Copier<T> {
             il.Emit(OpCodes.Call, copyMethod);
         else
             il.Emit(OpCodes.Callvirt, copyMethod);
+
         il.Emit(OpCodes.Ret);
         return dm.CreateDelegate<CopyDelegate<T>>();
     }

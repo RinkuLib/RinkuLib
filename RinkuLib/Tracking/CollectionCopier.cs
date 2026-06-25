@@ -20,6 +20,7 @@ public static class CollectionCopyExtensions {
 
         if (runtimeType == declaredType)
             return ShallowCopier<T>.Copy(source);
+
         return (T)ShallowDispatchers.GetOrAdd(runtimeType, CreateDispatcher(typeof(ShallowCopier<>)))(source);
     }
     /// <summary>Clones the collection container and invokes <see cref="CopyExtensions.Copy{T}"/> on each element.</summary>
@@ -52,16 +53,16 @@ public static class CollectionCopyExtensions {
     }
     internal static void PopulateShallowCollection<TCollection, TElement>(TCollection clone, TCollection source)
         where TCollection : ICollection<TElement> {
-        foreach (TElement item in source)
+        foreach (var item in source)
             clone.Add(item);
     }
     internal static void PopulateShallowList(IList clone, IList source) {
-        foreach (object? item in source)
+        foreach (var item in source)
             clone.Add(item);
     }
     internal static void PopulateDeepCollection<TCollection, TElement>(TCollection clone, TCollection source)
         where TCollection : IEnumerable<TElement>, ICollection<TElement> {
-        foreach (TElement item in source)
+        foreach (var item in source)
             clone.Add(item.Copy()!);
     }
     internal static void PopulateDeepDictionary<TDict, TKey, TValue>(TDict clone, TDict source)
@@ -91,8 +92,10 @@ internal static class ShallowCopier<T> where T : IEnumerable {
         Type type = typeof(T);
         if (type == typeof(string))
             return source => source;
+
         if (type.IsAbstract || type.IsInterface)
             throw new InvalidOperationException($"Cannot directly instantiate abstract type or interface {type}. The dispatcher handles this.");
+
         ParameterExpression sourceParam = Expression.Parameter(type, "source");
         if (type.IsArray) {
             MethodInfo cloneMethod = typeof(Array).GetMethod(nameof(Array.Clone))!;
@@ -132,6 +135,7 @@ internal static class ShallowCopier<T> where T : IEnumerable {
             ParameterInfo[] p = c.GetParameters();
             if (p.Length != 1)
                 return false;
+
             Type pt = p[0].ParameterType;
             return pt == typeof(IEnumerable) ||
                    (pt.IsGenericType && pt.GetGenericTypeDefinition() == typeof(IEnumerable<>)) ||
@@ -153,12 +157,15 @@ internal static class DeepCopier<T> where T : IEnumerable {
         Type type = typeof(T);
         if (type == typeof(string))
             return source => source;
+
         if (type.IsAbstract || type.IsInterface)
             throw new InvalidOperationException($"Cannot directly instantiate abstract type or interface {type}. The dispatcher handles this.");
+
         ParameterExpression sourceParam = Expression.Parameter(type, "source");
         if (type.IsArray) {
             if (type.GetArrayRank() > 1)
                 throw new NotSupportedException($"Multi-dimensional array {type} is not supported.");
+
             Type elementType = type.GetElementType()!;
             MethodInfo deepCloneMethod = typeof(DeepCopier<T>).GetMethod(nameof(DeepCloneArray), BindingFlags.NonPublic | BindingFlags.Static)!
                 .MakeGenericMethod(elementType);
@@ -206,6 +213,7 @@ internal static class DeepCopier<T> where T : IEnumerable {
         var clone = new TElement[source.Length];
         for (int i = 0; i < source.Length; i++)
             clone[i] = source[i].Copy()!;
+
         return clone;
     }
 }

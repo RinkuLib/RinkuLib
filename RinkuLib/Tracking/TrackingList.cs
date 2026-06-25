@@ -43,6 +43,8 @@ public class TrackingList<TOg, TTrackingItem> : ITrackingList<TOg>, IList<TTrack
         => _items[index].HasOriginal(out originalValue);
     /// <inheritdoc/>
     public int Count => _count;
+    /// <inheritdoc/>
+    public int ItemCount => _count;
     bool ICollection<TTrackingItem>.IsReadOnly => false;
     TTrackingItem IReadOnlyList<TTrackingItem>.this[int index] => Get(index);
     TTrackingItem IList<TTrackingItem>.this[int index] { get => Get(index); set => Set(index, value); }
@@ -115,6 +117,7 @@ public class TrackingList<TOg, TTrackingItem> : ITrackingList<TOg>, IList<TTrack
         int newCapacity = _items.Length == 0 ? 4 : _items.Length * 2;
         if (newCapacity < min)
             newCapacity = min;
+
         var newArray = new TTrackingItem[newCapacity];
         Array.Copy(_items, newArray, _count);
         _items = newArray;
@@ -124,8 +127,7 @@ public class TrackingList<TOg, TTrackingItem> : ITrackingList<TOg>, IList<TTrack
         => Array.Copy(_items, 0, array, arrayIndex, _count);
     IEnumerator IEnumerable.GetEnumerator() => ((IEnumerable<TTrackingItem>)this).GetEnumerator();
     IEnumerator<TTrackingItem> IEnumerable<TTrackingItem>.GetEnumerator() {
-        for (int i = 0; i < _count; i++) {
+        for (int i = 0; i < _count; i++)
             yield return _items[i];
-        }
     }
 }

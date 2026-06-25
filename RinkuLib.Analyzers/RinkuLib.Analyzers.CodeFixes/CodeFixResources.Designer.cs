@@ -59,14 +59,5 @@ namespace RinkuLib.Analyzers {
                 resourceCulture = value;
             }
         }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Acknowledge new schema (Update LastUpdated).
-        /// </summary>
-        internal static string AknowledgeSyncSchema {
-            get {
-                return ResourceManager.GetString("AknowledgeSyncSchema", resourceCulture);
-            }
-        }
     }
 }

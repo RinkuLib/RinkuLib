@@ -1,4 +1,61 @@
 ﻿namespace RinkuLib.Tracking;
+
+/// <summary>
+/// Represents a processor responsible for validating and/or committing edit operations.
+/// </summary>
+/// <typeparam name="TEdit">The type of editable value being processed.</typeparam>
+/// <typeparam name="TMetadata">
+/// The type of metadata produced by validation and commit operations.
+/// Metadata may contain validation errors, warnings, commit results, or other contextual information.
+/// </typeparam>
+public interface IEditProcessor<TEdit, TMetadata> {
+    /// <summary>
+    /// Gets a value indicating whether this processor supports commit operations.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="false"/>, <see cref="Commit(TEdit)"/> should not be called.
+    /// </remarks>
+    bool DoCommit { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether this processor supports validation operations.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="false"/>, <see cref="Validate(TEdit, object)"/> should not be called.
+    /// </remarks>
+    bool DoValidate { get; }
+
+    /// <summary>
+    /// Validates the specified value and returns metadata describing the validation result.
+    /// </summary>
+    /// <param name="value">The value to validate.</param>
+    /// <param name="context">
+    /// Optional contextual data used during validation.
+    /// The meaning of this parameter is implementation-specific.
+    /// </param>
+    /// <returns>
+    /// Metadata describing the validation result
+    /// </returns>
+    TMetadata? Validate(TEdit? value, object? context);
+
+    /// <summary>
+    /// Commits the specified value and returns metadata describing the commit result.
+    /// </summary>
+    /// <param name="value">The value to commit.</param>
+    /// <returns>
+    /// Metadata describing the commit result
+    /// </returns>
+    TMetadata? Commit(TEdit value);
+
+    /// <summary>
+    /// Determines whether the specified metadata represents a valid result.
+    /// </summary>
+    /// <param name="metadata">The metadata to evaluate.</param>
+    /// <returns>
+    /// <see langword="true"/> if the metadata represents a valid result; otherwise, <see langword="false"/>.
+    /// </returns>
+    bool IsValid(TMetadata? metadata);
+}
 /// <summary>
 /// Represents a list of items that support editing and tracking of original values. (expose <typeparamref name="TEdit"/>)
 /// </summary>
@@ -9,76 +66,42 @@ public class TrackingEditList<TOg, TEdit, TEditItem>(IEnumerable<TOg> items, int
     /// <inheritdoc/>
     public override TEditItem MakeNewEditItem(TEdit newItem) => TEditItem.CreateNew(newItem);
 }
-
 /// <summary>
-/// Represents a list of items that support editing and tracking of original values. (expose <typeparamref name="T"/>)
+/// Represents a list of items that support editing and tracking of original values. (expose <typeparamref name="TEdit"/>)
 /// </summary>
-public class TrackingEditList<T, TEditItem>(IEnumerable<T> items, int initialCapacity = 4)
-    : TrackingEditListBase<T, T, TEditItem>(items.Select(TEditItem.FromOriginal),
-        items.TryGetNonEnumeratedCount(out var count) && initialCapacity < count ? count : initialCapacity)
-    where TEditItem : IEditableItem<T>, ITrackingItem<T>, IEditableItemFromOriginal<T, TEditItem>, IEditableItemFromEdit<T, TEditItem> {
+public class TrackingEditList<TOg, TEdit, TEditItem, TMetadata, TEditProcessor>(TEditProcessor processor, IEnumerable<TOg> items, int initialCapacity = 4)
+    : TrackingEditListBase<TOg, TEdit, TEditItem>(items.Select(TEditItem.FromOriginal),
+        items.TryGetNonEnumeratedCount(out var count) && initialCapacity < count ? count : initialCapacity), IValidatableEditableList<TOg, TEdit, TMetadata>, IMetadataEditableList<TEdit, TMetadata>
+    where TEditItem : IEditableItem<TEdit>, ITrackingItem<TOg>, IEditableItemFromOriginal<TOg, TEditItem>, IEditableItemFromEdit<TEdit, TEditItem>, IMetadata<TMetadata>, IMetadataSetter<TMetadata>
+    where TEditProcessor : IEditProcessor<TEdit, TMetadata> {
     /// <inheritdoc/>
-    public override TEditItem MakeNewEditItem(T newItem) => TEditItem.CreateNew(newItem);
-}
-
-/// <summary>
-/// Represents a list of reference-type items that support editing and tracking of original values.
-/// </summary>
-public class TrackingEditList<T>(IEnumerable<T> items, int initialCapacity = 4)
-    : TrackingEditListBase<T, T, EditableClass<T>>(items.Select(EditableClass<T>.FromOriginal),
-        items.TryGetNonEnumeratedCount(out var count) && initialCapacity < count ? count : initialCapacity)
-    where T : class {
+    public override TEditItem MakeNewEditItem(TEdit newItem) => TEditItem.CreateNew(newItem);
+    private readonly TEditProcessor _processor = processor;
     /// <inheritdoc/>
-    public override EditableClass<T> MakeNewEditItem(T newItem) => EditableClass<T>.CreateNew(newItem);
-}
-
-/// <summary>
-/// Represents a list of value-type items that support editing and tracking of original values.
-/// </summary>
-public class TrackingEditStructList<T>(IEnumerable<T> items, int initialCapacity = 4)
-    : TrackingEditListBase<T, T, EditableStruct<T>>(items.Select(EditableStruct<T>.FromOriginal),
-        items.TryGetNonEnumeratedCount(out var count) && initialCapacity < count ? count : initialCapacity)
-    where T : struct {
-    /// <inheritdoc/>
-    public override EditableStruct<T> MakeNewEditItem(T newItem) => EditableStruct<T>.CreateNew(newItem);
-}
-/// <summary>
-/// Represents a list of value-type items with attached metadata that support editing and tracking of original values.
-/// </summary>
-public class TrackingMetadataEditList<T, TMetadata>(IEnumerable<T> items, int initialCapacity = 4)
-    : TrackingEditListBase<T, T, EditableClass<T, TMetadata>>(items.Select(EditableClass<T, TMetadata>.FromOriginal),
-        items.TryGetNonEnumeratedCount(out var count) && initialCapacity < count ? count : initialCapacity), IEditableList<T, T, TMetadata>
-    where T : class {
-    /// <inheritdoc/>
-    public override EditableClass<T, TMetadata> MakeNewEditItem(T newItem) => EditableClass<T, TMetadata>.CreateNew(newItem);
-    /// <inheritdoc/>
-    public virtual void SetMetadata(int index, TMetadata metadata) {
-        ref var trackedItem = ref Get(index);
-        trackedItem.Metadata = metadata;
+    public TMetadata? GetMetadata(int index) => Get(index).Metadata;
+    ///<inheritdoc/>
+    public override bool CommitEdit(int index) {
+        if (!_processor.DoCommit)
+            return base.CommitEdit(index);
+        ref var item = ref Get(index);
+        if (!item.IsEditing)
+            return true;
+        if (item.EditableValue is null)
+            return false;
+        var meta = _processor.Commit(item.EditableValue);
+        item.SetMetadata(meta);
+        if (!_processor.IsValid(meta))
+            return false;
+        return item.CommitEdit();
     }
     /// <inheritdoc/>
-    public virtual ref TMetadata GetMetadata(int index) {
-        ref var trackedItem = ref Get(index);
-        return ref trackedItem.Metadata;
-    }
-}
-/// <summary>
-/// Represents a list of value-type items with attached metadata that support editing and tracking of original values.
-/// </summary>
-public class TrackingMetadataEditStructList<T, TMetadata>(IEnumerable<T> items, int initialCapacity = 4)
-    : TrackingEditListBase<T, T, EditableStruct<T, TMetadata>>(items.Select(EditableStruct<T, TMetadata>.FromOriginal),
-        items.TryGetNonEnumeratedCount(out var count) && initialCapacity < count ? count : initialCapacity), IEditableList<T, T, TMetadata>
-    where T : struct {
+    public bool IsValid(int index) => _processor.IsValid(Get(index).Metadata);
     /// <inheritdoc/>
-    public override EditableStruct<T, TMetadata> MakeNewEditItem(T newItem) => EditableStruct<T, TMetadata>.CreateNew(newItem);
-    /// <inheritdoc/>
-    public virtual void SetMetadata(int index, TMetadata metadata) {
-        ref var trackedItem = ref Get(index);
-        trackedItem.Metadata = metadata;
-    }
-    /// <inheritdoc/>
-    public virtual ref TMetadata GetMetadata(int index) {
-        ref var trackedItem = ref Get(index);
-        return ref trackedItem.Metadata;
+    public bool Validate(int index) {
+        if (!_processor.DoValidate)
+            return true;
+        ref var item = ref Get(index);
+        item.SetMetadata(_processor.Validate(item.CurrentValue, this));
+        return _processor.IsValid(item.Metadata);
     }
 }
