@@ -61,10 +61,9 @@ public static class ExtensionHelper {
 
     public static Task<bool> GenerateAndOpenCommandsFileAsync(this VisualStudioExtensibility extensibility, IProjectSnapshot projectSnapshot, ExtensionSettings settings, CancellationToken ct) => GenerateAndOpenCommandsFileAsync(extensibility, projectSnapshot, settings, true, ct);
     public static async Task<bool> GenerateAndOpenCommandsFileAsync(this VisualStudioExtensibility extensibility, IProjectSnapshot projectSnapshot, ExtensionSettings settings, bool openAfter, CancellationToken ct) {
-        string? baseNamespace = null;
-        if (string.IsNullOrWhiteSpace(settings.Namespace))
-            baseNamespace = await extensibility.GetBaseNamespaceAsync(projectSnapshot, ct);
-
+        var baseNamespace = await extensibility.GetBaseNamespaceAsync(projectSnapshot, ct);
+        if (baseNamespace is null)
+            return false;
         try {
             var fullPath = await MainClassGenerator.GenerateClassAsync(settings, baseNamespace, ct);
             if (openAfter)

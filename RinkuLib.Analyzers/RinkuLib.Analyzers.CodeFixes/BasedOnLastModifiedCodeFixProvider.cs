@@ -10,65 +10,96 @@ using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace RinkuLib.Analyzers {
-    [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(BasedOnLastModifiedCodeFixProvider)), Shared]
-    public sealed class BasedOnLastModifiedCodeFixProvider : CodeFixProvider {
-        public override ImmutableArray<string> FixableDiagnosticIds => [
-            BasedOnAnalyzer.DiagnosticId, SyncBasedOnAnalyzer.DiagnosticId
-];
+namespace RinkuLib.Analyzers;
 
-        public override FixAllProvider GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
+[ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(BasedOnLastModifiedCodeFixProvider)), Shared]
+public sealed class BasedOnLastModifiedCodeFixProvider : CodeFixProvider {
+    public override ImmutableArray<string> FixableDiagnosticIds => [BasedOnAnalyzer.DiagnosticId];
+    public override FixAllProvider GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
+    public override async Task RegisterCodeFixesAsync(CodeFixContext context) {
+        var document = context.Document;
+        var cancellationToken = context.CancellationToken;
 
-        public override async Task RegisterCodeFixesAsync(CodeFixContext context) {
-            var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);
-            var diagnostic = context.Diagnostics.First();
-            var diagnosticSpan = diagnostic.Location.SourceSpan;
-            var declaration = root?.FindToken(diagnosticSpan.Start).Parent?.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().FirstOrDefault();
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        if (root is null)
+            return;
 
-            if (declaration == null)
-                return;
+        var diagnostic = context.Diagnostics.First();
 
-            context.RegisterCodeFix(
-                CodeAction.Create(
-                    title: "Update BasedOn timestamp to now",
-                    createChangedDocument: c => UpdateTimestampAsync(context.Document, declaration, c),
-                    equivalenceKey: "SyncBasedOnTimestamp"),
-                diagnostic);
-        }
+        var declaration = root
+            .FindToken(diagnostic.Location.SourceSpan.Start)
+            .Parent?
+            .AncestorsAndSelf()
+            .OfType<TypeDeclarationSyntax>()
+            .FirstOrDefault();
 
-        private async Task<Document> UpdateTimestampAsync(Document document, TypeDeclarationSyntax declaration, CancellationToken cancellationToken) {
-            if (!BasedOnHelper.TryGetTag(declaration, "BasedOn", out var existingTag))
-                return document;
+        if (declaration is null)
+            return;
 
-            var nowString = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mmZ");
+        context.RegisterCodeFix(
+            CodeAction.Create(
+                title: "Update BasedOn timestamp to now",
+                createChangedDocument: c => ApplyTimestampAsync(document, declaration, c),
+                equivalenceKey: "SyncBasedOnTimestamp"),
+            diagnostic);
+    }
+    public static async Task<Document> ApplyTimestampAsync(Document document, TypeDeclarationSyntax declaration, CancellationToken ct) {
+        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
+        if (root is null)
+            return document;
+        var updatedDeclaration = WithUpdatedTimestamp(declaration);
+        return document.WithSyntaxRoot(root.ReplaceNode(declaration, updatedDeclaration));
+    }
+    public static TypeDeclarationSyntax WithUpdatedTimestamp(TypeDeclarationSyntax declaration) {
+        var tag = BasedOnHelper.GetTags(declaration, "BasedOn").FirstOrDefault();
+        if (tag is null)
+            return declaration;
 
-            var newAttribute = SyntaxFactory.XmlTextAttribute(
-                SyntaxFactory.XmlName(SyntaxFactory.Identifier("LastUpdated")),
+        var updatedTag = UpdateTag(tag);
+        return declaration.ReplaceNode(tag, updatedTag);
+    }
+    public static XmlNodeSyntax UpdateTag(XmlNodeSyntax tag) {
+        var now = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mmZ");
+        var newAttribute = CreateLastUpdatedAttribute(now);
+
+        return tag switch {
+            XmlEmptyElementSyntax empty => UpdateEmptyElement(empty, newAttribute),
+            XmlElementSyntax element => UpdateElement(element, newAttribute),
+            _ => tag
+        };
+    }
+    private static XmlEmptyElementSyntax UpdateEmptyElement(XmlEmptyElementSyntax tag, XmlTextAttributeSyntax newAttribute) {
+        var existing = tag.Attributes
+            .OfType<XmlTextAttributeSyntax>()
+            .FirstOrDefault(a => a.Name.LocalName.Text == "LastUpdated");
+
+        return existing is null
+            ? tag.AddAttributes(newAttribute)
+            : tag.ReplaceNode(existing, newAttribute);
+    }
+    private static XmlElementSyntax UpdateElement(XmlElementSyntax tag, XmlTextAttributeSyntax newAttribute) {
+        var startTag = tag.StartTag;
+        var existing = startTag.Attributes
+            .OfType<XmlTextAttributeSyntax>()
+            .FirstOrDefault(a => a.Name.LocalName.Text == "LastUpdated");
+        var newStartTag = existing is null
+            ? startTag.AddAttributes(newAttribute)
+            : startTag.ReplaceNode(existing, newAttribute);
+        return tag.WithStartTag(newStartTag);
+    }
+
+    public static XmlTextAttributeSyntax CreateLastUpdatedAttribute(string value) {
+        return SyntaxFactory.XmlTextAttribute(
+                SyntaxFactory.XmlName("LastUpdated"),
                 SyntaxFactory.Token(SyntaxKind.EqualsToken),
                 SyntaxFactory.Token(SyntaxKind.DoubleQuoteToken),
-                SyntaxFactory.TokenList(SyntaxFactory.XmlTextLiteral(
-                    SyntaxFactory.TriviaList(),
-                    nowString,
-                    nowString,
-                    SyntaxFactory.TriviaList())),
-                SyntaxFactory.Token(SyntaxKind.DoubleQuoteToken));
-
-            newAttribute = newAttribute.WithLeadingTrivia(SyntaxFactory.Whitespace(" "));
-
-            var existingAttribute = existingTag!.Attributes.OfType<XmlTextAttributeSyntax>()
-                .FirstOrDefault(a => a.Name.LocalName.Text == "LastUpdated");
-
-            XmlEmptyElementSyntax newTag;
-
-            if (existingAttribute != null) 
-                newTag = existingTag.ReplaceNode(existingAttribute, newAttribute);
-            else 
-                newTag = existingTag.AddAttributes(newAttribute);
-
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var newRoot = root?.ReplaceNode(existingTag, newTag);
-
-            return newRoot is null ? document : document.WithSyntaxRoot(newRoot);
-        }
+                SyntaxFactory.TokenList(
+                    SyntaxFactory.XmlTextLiteral(
+                        SyntaxFactory.TriviaList(),
+                        value,
+                        value,
+                        SyntaxFactory.TriviaList())),
+                SyntaxFactory.Token(SyntaxKind.DoubleQuoteToken))
+            .WithLeadingTrivia(SyntaxFactory.Whitespace(" "));
     }
 }

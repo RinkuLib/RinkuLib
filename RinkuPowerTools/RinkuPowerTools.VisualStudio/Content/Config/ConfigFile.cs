@@ -19,4 +19,5 @@ public sealed class ConfigFile {
     public string? ConnectionExtractionPath { get; set; }
     public string OutputPath { get; set; } = string.Empty;
     public string? Namespace { get; set; }
+    public bool IsInternal { get; set; }
 }
