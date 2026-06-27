@@ -6,6 +6,10 @@
             <TextBox Text="{Binding EditName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNewWorkspace}" />
             <TextBlock Text="{Binding NameError}" Foreground="#E11D48" Margin="2,3,0,0" TextWrapping="Wrap" />
         </StackPanel>
+        <StackPanel Margin="0,0,0,12">
+            <CheckBox IsChecked="{Binding EditIsInternal, Mode=TwoWay}" 
+                      Content="Class is internal" FontWeight="SemiBold" />
+        </StackPanel>
 
 		<StackPanel Margin="0,0,0,12">
 			<TextBlock Text="Connection Source" FontWeight="SemiBold" Margin="0,0,0,4"/>

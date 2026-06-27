@@ -34,6 +34,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     private string? _editExtractionPath;
     private string _editOutputPath = string.Empty;
     private string? _editNamespace;
+    private bool _editIsInternal;
 
     private bool _hasNameError;
     private bool _hasTargetError;
@@ -92,6 +93,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     [DataMember] public string? EditExtractionPath { get => _editExtractionPath; set { if (SetProperty(ref _editExtractionPath, value)) RunValidation(); } }
     [DataMember] public string EditOutputPath { get => _editOutputPath; set { if (SetProperty(ref _editOutputPath, value)) RunValidation(); } }
     [DataMember] public string? EditNamespace { get => _editNamespace; set { if (SetProperty(ref _editNamespace, value)) RunValidation(); } }
+    [DataMember] public bool EditIsInternal { get => _editIsInternal; set { if (SetProperty(ref _editIsInternal, value)) RunValidation(); } }
 
     [DataMember] public string? NameError => _hasNameError ? "Name must be unique and a valid C# identifier." : null;
     public bool HasNameError {
@@ -138,6 +140,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
             EditExtractionPath = null;
             EditOutputPath = string.Empty;
             EditNamespace = null;
+            EditIsInternal = false;
         }
         else {
             EditName = item.Name;
@@ -146,6 +149,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
             SelectedSource = AvailableSources.FirstOrDefault(s => s.Value.SourceType == item.ConnectionSourceType).Value ?? AvailableSources[0].Value;
             EditOutputPath = item.OutputPath;
             EditNamespace = item.Namespace;
+            EditIsInternal = item.IsInternal;
         }
         RunValidation();
     }
@@ -161,7 +165,8 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
             || item.ConnectionTarget != EditTarget
             || item.ConnectionExtractionPath != EditExtractionPath
             || item.OutputPath != EditOutputPath
-            || item.Namespace != EditNamespace;
+            || item.Namespace != EditNamespace
+            || item.IsInternal != EditIsInternal;
     }
 
     protected override bool CanCommit() => !HasNameError && !HasTargetError && !HasExtractionPathError && HasUnsavedChanges();
@@ -179,6 +184,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
         item.ConnectionExtractionPath = EditExtractionPath;
         item.OutputPath = EditOutputPath;
         item.Namespace = string.IsNullOrWhiteSpace(EditNamespace) ? null : EditNamespace;
+        item.IsInternal = EditIsInternal;
 
         await WriteFileAsync(item, ct);
         if (isNew) {
@@ -224,7 +230,8 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
                     ConnectionTarget = detectedTarget ?? string.Empty,
                     ConnectionExtractionPath = node[nameof(ExtensionSettings.ConnectionExtractionPath)]?.ToString(),
                     OutputPath = node[nameof(ExtensionSettings.OutputPath)]?.ToString() ?? string.Empty,
-                    Namespace = node[nameof(ExtensionSettings.Namespace)]?.ToString()
+                    Namespace = node[nameof(ExtensionSettings.Namespace)]?.ToString(),
+                    IsInternal = node[nameof(ExtensionSettings.IsInternal)]?.GetValue<bool>() ?? false
                 });
             }
             catch { }
@@ -260,6 +267,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
         json[nameof(ExtensionSettings.ConnectionExtractionPath)] = file.ConnectionExtractionPath;
         json[nameof(ExtensionSettings.OutputPath)] = file.OutputPath;
         json[nameof(ExtensionSettings.Namespace)] = file.Namespace;
+        json[nameof(ExtensionSettings.IsInternal)] = file.IsInternal;
 
         await using var output = File.Create(file.FilePath);
         await JsonSerializer.SerializeAsync(output, json, SettingsProvider.PrettyIndent, ct);
@@ -331,7 +339,8 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
                 ConnectionTarget = EditTarget,
                 ConnectionExtractionPath = EditExtractionPath,
                 OutputPath = EditOutputPath,
-                Namespace = EditNamespace
+                Namespace = EditNamespace,
+                IsInternal = EditIsInternal
             };
 
             settings.SetProjectDirectory(_projectDirectory);

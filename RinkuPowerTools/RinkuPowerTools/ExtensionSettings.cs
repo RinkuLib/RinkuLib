@@ -44,6 +44,7 @@ public class ExtensionSettings {
     public string? ConnectionExtractionPath { get; set; }
     public string OutputPath { get; set; } = string.Empty;
     public string? Namespace { get; set; }
+    public bool IsInternal { get; set; }
     public List<QuerySetting> Queries { get; set; } = [];
     public async Task ResolveConnectionStringAsync(CancellationToken ct) {
         ConnectionString = await ConnectionResolver.ResolveAsync(ConnectionSourceType, ConnectionTarget, ConnectionExtractionPath, ProjectDirectory ?? throw new Exception("The project directory was not set"), ct);
@@ -60,6 +61,7 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
         string? connectionExtractionPath = null;
         string outputPath = string.Empty;
         string? @namespace = null;
+        bool isInternal = false;
         List<QuerySetting> queries = [];
 
         while (reader.Read()) {
@@ -76,6 +78,8 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
                     outputPath = reader.GetString() ?? string.Empty;
                 else if (string.Equals(propertyName, nameof(ExtensionSettings.Namespace), StringComparison.OrdinalIgnoreCase))
                     @namespace = reader.GetString();
+                else if (string.Equals(propertyName, nameof(ExtensionSettings.IsInternal), StringComparison.OrdinalIgnoreCase))
+                    isInternal = reader.GetBoolean();
                 else if (string.Equals(propertyName, nameof(ExtensionSettings.Queries), StringComparison.OrdinalIgnoreCase))
                     queries = JsonSerializer.Deserialize<List<QuerySetting>>(ref reader, options) ?? [];
                 else if (Enum.TryParse<ConnectionSourceType>(propertyName, true, out var parsedType)) {
@@ -97,6 +101,7 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
             ConnectionExtractionPath = connectionExtractionPath,
             OutputPath = outputPath,
             Namespace = @namespace,
+            IsInternal = isInternal,
             Queries = queries
         };
     }
@@ -112,8 +117,11 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
         if (!string.IsNullOrEmpty(value.OutputPath))
             writer.WriteString(nameof(ExtensionSettings.OutputPath), value.OutputPath);
 
-        if (!string.IsNullOrEmpty(value.Namespace)) 
+        if (!string.IsNullOrEmpty(value.Namespace))
             writer.WriteString(nameof(ExtensionSettings.Namespace), value.Namespace);
+
+        if (value.IsInternal)
+            writer.WriteBoolean(nameof(ExtensionSettings.IsInternal), value.IsInternal);
 
         if (value.Queries != null && value.Queries.Count > 0) {
             writer.WritePropertyName(nameof(ExtensionSettings.Queries));
