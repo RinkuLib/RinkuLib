@@ -38,3 +38,31 @@ public struct ColModifier(params INameComparer[] Comparers) {
         return new ColModifier(newArr);
     }
 }
+/// <summary>
+/// Use to indicate a snapshot of the column usage and the type at a previous node point
+/// </summary>
+public readonly struct RecursiveInfo(Type[] previousTypes, int colUsedToBeat) {
+    /// <summary>Indicate the latest type used (parent type)</summary>
+    public readonly Type LatestUsedType => PreviousTypes.Length > 0 ? PreviousTypes[^1] : typeof(Root);
+    /// <summary>The type that was used at that point</summary>
+    public readonly Type[] PreviousTypes = previousTypes;
+    /// <summary>The amount of column used at the start</summary>
+    public readonly int ColUsedToBeat = colUsedToBeat;
+    /// <summary>
+    /// Use to generate the next usage in the chain
+    /// </summary>
+    public bool CanContinue(Type usedType, int currentColUsed, out RecursiveInfo currentUsage) {
+        if (currentColUsed > ColUsedToBeat) {
+            currentUsage = new([usedType], currentColUsed);
+            return true;
+        }
+        for (int i = PreviousTypes.Length - 1; i >= 0; i--) {
+            if (PreviousTypes[i] == usedType) {
+                currentUsage = new([], currentColUsed);
+                return false;
+            }
+        }
+        currentUsage = new([..PreviousTypes, usedType], currentColUsed);
+        return true;
+    }
+}

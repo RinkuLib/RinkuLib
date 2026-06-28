@@ -81,10 +81,11 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             }
             Interlocked.Exchange(ref field, value);
         }
-    }/// <summary>
-     /// Scans the type via reflection to find all public constructors, static methods, 
-     /// properties, and fields for automatic mapping.
-     /// </summary>
+    }
+    /// <summary>
+    /// Scans the type via reflection to find all public constructors, static methods, 
+    /// properties, and fields for automatic mapping.
+    /// </summary>
     public void Init() {
         lock (WriteLock) {
             if (IsInit)
@@ -190,16 +191,18 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         }
     }
     /// <inheritdoc/>
-    public override DbItemParser? TryGetParser(Type parentType, Type currentClosedType, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
         if (!IsInit)
             Init();
+        var actualType = Nullable.GetUnderlyingType(currentClosedType) ?? currentClosedType;
+        if (!previousUsages.CanContinue(actualType, colUsage.NbUsed, out previousUsages))
+            return null;
         colModifier = colModifier.Add(paramInfo.NameComparer);
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
         colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
         var mcis = MCIs;
         List<DbItemParser> readers = [];
         MemberInfo? method = null;
-        var actualType = Nullable.GetUnderlyingType(currentClosedType) ?? currentClosedType;
         var genericArguments = actualType.IsGenericType ? actualType.GetGenericArguments() : [];
         bool canCompleteWithMembers = false;
         for (int i = 0; i < mcis.Length; i++) {
@@ -218,7 +221,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                         break;
                     typeInfo = ForceGet(paramClosedType);
                 }
-                var node = typeInfo.TryGetParser(actualType, paramClosedType, param, columns, colModifier, ref colUsage);
+                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage);
                 if (node is null)
                     break;
                 readers.Add(node);
@@ -251,13 +254,13 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                     paramClosedType = typeof(Nullable<>).MakeGenericType(paramClosedType);
                 if (!TryGetInfo(paramClosedType, out var typeInfo))
                     throw new Exception("should not happend");
-                var node = typeInfo.TryGetParser(actualType, paramClosedType, param, columns, colModifier, ref colUsage);
+                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage);
                 if (node is not null)
                     memberReaders.Add((members[i].Member.GetClosedMember(currentClosedType), node));
             }
             if (memberReaders.Count == 0 && readers.Count == 0)
                 return null;
         }
-        return new CustomClassParser(parentType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders);
+        return new CustomClassParser(previousUsages.LatestUsedType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders);
     }
 }

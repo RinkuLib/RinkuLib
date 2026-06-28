@@ -2,14 +2,21 @@
 
 /// <summary>A simple struct used track the usage of the columns</summary>
 public ref struct ColumnUsage(Span<bool> Span) {
-    
+    /// <summary>Get the amout of columns used</summary>
+    public readonly int NbUsed { get {
+            var nb = 0;
+            for (int i = 0; i < Span.Length; i++)
+                if (Span[i])
+                    nb++;
+            return nb;
+        } }
     private readonly Span<bool> Span = Span;
     /// <summary>The index of the last column that was used</summary>
     public int LastIndexUsed { get; private set; } = -1;
     /// <summary>The amount of columns</summary>
     public readonly int Length => Span.Length;
     /// <summary>
-    /// Save a snapshot of the current usage into a checkpoint <see cref="Span{Boolean}"/>
+    /// Save a snapshot of the current usage into a checkpoint <see cref="Span{Boolean}" />
     /// </summary>
     public readonly void InitCheckpoint(Span<bool> checkpoint, out int lastUsed) {
         if (checkpoint.Length != Span.Length)

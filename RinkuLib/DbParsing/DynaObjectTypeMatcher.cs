@@ -11,7 +11,9 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
             throw new ArgumentException($"The type may only be {typeof(DynaObject)}");
     }
     /// <inheritdoc/>
-    public override DbItemParser? TryGetParser(Type parentType, Type currentClosedType, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+        if (!previousUsages.CanContinue(currentClosedType, colUsage.NbUsed, out previousUsages))
+            return null;
         Mapper mapper = MakeMapper(columns, colUsage);
         var len = mapper.Count;
         var readers = new DbItemParser[len];
@@ -24,7 +26,7 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
             var type = i >= DynaObjParser.MaxArguments ? typeof(object) : col.Type;
             if (type.IsValueType && col.IsNullable && Nullable.GetUnderlyingType(type) is null)
                 type = typeof(Nullable<>).MakeGenericType(type);
-            var r = ForceGet(type).TryGetParser(currentClosedType, type, NullableTransientParamInfo, columns, colModifier, ref colUsage);
+            var r = ForceGet(type).TryGetParser(type, previousUsages, NullableTransientParamInfo, columns, colModifier, ref colUsage);
             if (r is null)
                 return null;
             if (i < DynaObjParser.MaxArguments)

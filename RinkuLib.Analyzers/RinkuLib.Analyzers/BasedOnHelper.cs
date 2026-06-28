@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -54,24 +56,28 @@ public static class BasedOnHelper {
                 yield return element;
         }
     }
-    public static IEnumerable<ISymbol> GetBasedOnSymbols(INamedTypeSymbol type, Compilation compilation, CancellationToken cancellationToken) {
+    public static IEnumerable<(ISymbol, DateTimeOffset?)> GetBasedOnSymbols(INamedTypeSymbol type, Compilation compilation, CancellationToken cancellationToken) {
         foreach (var tag in GetTags(type, "BasedOn", cancellationToken)) {
             var attributes = tag switch {
                 XmlEmptyElementSyntax e => e.Attributes,
                 XmlElementSyntax e => e.StartTag.Attributes,
                 _ => default
             };
+            DateTimeOffset? lastUpdate = null;
+            SymbolInfo? symbolInfo = null;
             foreach (var attribute in attributes) {
-                if (attribute is not XmlCrefAttributeSyntax crefAttribute)
-                    continue;
-                var semanticModel = compilation.GetSemanticModel(tag.SyntaxTree);
-                var symbolInfo = semanticModel.GetSymbolInfo(crefAttribute.Cref, cancellationToken);
-
-                if (symbolInfo.Symbol != null)
-                    yield return symbolInfo.Symbol;
-                foreach (var item in symbolInfo.CandidateSymbols)
-                    yield return item;
+                if (attribute is XmlTextAttributeSyntax textAttribute && textAttribute.Name.LocalName.ValueText == "LastUpdated"
+                    && DateTimeOffset.TryParse(textAttribute.TextTokens.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dt))
+                    lastUpdate = dt;
+                else if (attribute is XmlCrefAttributeSyntax crefAttribute)
+                    symbolInfo = compilation.GetSemanticModel(tag.SyntaxTree).GetSymbolInfo(crefAttribute.Cref, cancellationToken);
             }
+            if (!symbolInfo.HasValue)
+                continue;
+            if (symbolInfo.Value.Symbol != null)
+                yield return (symbolInfo.Value.Symbol, lastUpdate);
+            foreach (var item in symbolInfo.Value.CandidateSymbols)
+                yield return (item, lastUpdate);
         }
     }
     public static IEnumerable<string> GetAttributes(XmlNodeSyntax tag, string attributeName) {

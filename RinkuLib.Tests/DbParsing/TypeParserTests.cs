@@ -1034,6 +1034,10 @@ public record ExternalIDPayment(int ExternalID) : IPayment;
 public class Order {
     public int OrderId { get; }
     public IPayment Payment { get; }
+    public Order(Order order) {
+        OrderId = order.OrderId;
+        Payment = order.Payment;
+    }
     public static Order Create(int orderId, IPayment payment)
         => new(orderId, payment);
     private Order(int orderId, IPayment payment) {

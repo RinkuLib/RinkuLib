@@ -185,7 +185,7 @@ public abstract class TypeParsingInfo {
     /// <returns>
     /// A configured <see cref="DbItemParser"/> if the schema satisfies a construction path; otherwise, null.
     /// </returns>
-    public abstract DbItemParser? TryGetParser(Type parentType, Type currentClosedType, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
+    public abstract DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
 }
 /// <summary></summary>
 public static class TypeParsingInfoHelper {
