@@ -243,14 +243,14 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         using var cnn = Fixture.GetConnection();
         await cnn.OpenAsync(TestContext.Current.CancellationToken);
         using var multi = await Fixture.Select_1_2.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
-        var res1 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        var res1 = multi.StreamQueryAsync<int>(ct : TestContext.Current.CancellationToken);
         await using var enumerator = res1.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
         Assert.True(await enumerator.MoveNextAsync());
         var item1 = enumerator.Current;
         Assert.Equal(1, item1);
         Assert.False(await enumerator.MoveNextAsync());
-        var item2 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item2 = await multi.QueryAsync<int>(ct : TestContext.Current.CancellationToken);
         Assert.Equal(2, item2);
         cmd.Dispose();
     }
@@ -260,9 +260,9 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         using var cnn = Fixture.GetConnection();
         await cnn.OpenAsync(TestContext.Current.CancellationToken);
         using var multi = await Fixture.SelectCol1Col2.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
-        var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item1 = await multi.QueryAsync<int>(ct :TestContext.Current.CancellationToken);
         Assert.Equal(1, item1);
-        var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        var res2 = multi.StreamQueryAsync<int>(ct: TestContext.Current.CancellationToken);
         await using var enumerator = res2.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
         Assert.True(await enumerator.MoveNextAsync());
@@ -277,25 +277,25 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         using var cnn = Fixture.GetConnection();
         await cnn.OpenAsync(TestContext.Current.CancellationToken);
         using var multi = await Fixture.Select_1_2_3_4_5.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
-        var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item1 = await multi.QueryAsync<int>(ct :TestContext.Current.CancellationToken);
         Assert.Equal(1, item1);
-        var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        var res2 = multi.StreamQueryAsync<int>(ct :TestContext.Current.CancellationToken);
         await using var enumerator = res2.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
         Assert.True(await enumerator.MoveNextAsync());
         var item2 = enumerator.Current;
         Assert.Equal(2, item2);
         Assert.False(await enumerator.MoveNextAsync());
-        var item3 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item3 = await multi.QueryAsync<int>(ct: TestContext.Current.CancellationToken);
         Assert.Equal(3, item3);
-        var res4 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        var res4 = multi.StreamQueryAsync<int>(ct:TestContext.Current.CancellationToken);
         await using var enumerator4 = res4.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
         Assert.True(await enumerator4.MoveNextAsync());
         var item4 = enumerator4.Current;
         Assert.Equal(4, item4);
         Assert.False(await enumerator4.MoveNextAsync());
-        var item5 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item5 = await multi.QueryAsync<int>(ct: TestContext.Current.CancellationToken);
         Assert.Equal(5, item5);
         cmd.Dispose();
     }
@@ -304,14 +304,14 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     public async Task TestMultiClosedConnAsync() {
         using var cnn = Fixture.GetConnection();
         using var multi = await Fixture.Select_1_2.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
-        var res1 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        var res1 = multi.StreamQueryAsync<int>(ct: TestContext.Current.CancellationToken);
         await using var enumerator = res1.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
         Assert.True(await enumerator.MoveNextAsync());
         var item1 = enumerator.Current;
         Assert.Equal(1, item1);
         Assert.False(await enumerator.MoveNextAsync());
-        var item2 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item2 = await multi.QueryAsync<int>(ct: TestContext.Current.CancellationToken);
         Assert.Equal(2, item2);
         cmd.Dispose();
     }
@@ -320,25 +320,25 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     public async Task TestMultiClosedConnAsyncViaFirstOrDefault() {
         using var cnn = Fixture.GetConnection();
         using var multi = await Fixture.Select_1_2_3_4_5.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
-        var item1 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item1 = await multi.QueryAsync<int>(ct: TestContext.Current.CancellationToken);
         Assert.Equal(1, item1);
-        var res2 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        var res2 = multi.StreamQueryAsync<int>(ct: TestContext.Current.CancellationToken);
         await using var enumerator = res2.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
         Assert.True(await enumerator.MoveNextAsync());
         var item2 = enumerator.Current;
         Assert.Equal(2, item2);
         Assert.False(await enumerator.MoveNextAsync());
-        var item3 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item3 = await multi.QueryAsync<int>(ct: TestContext.Current.CancellationToken);
         Assert.Equal(3, item3);
-        var res4 = multi.QueryAllAsync<int>(TestContext.Current.CancellationToken);
+        var res4 = multi.StreamQueryAsync<int>(ct: TestContext.Current.CancellationToken);
         await using var enumerator4 = res4.GetAsyncEnumerator(TestContext.Current.CancellationToken);
 
         Assert.True(await enumerator4.MoveNextAsync());
         var item4 = enumerator4.Current;
         Assert.Equal(4, item4);
         Assert.False(await enumerator4.MoveNextAsync());
-        var item5 = await multi.QueryOneAsync<int>(TestContext.Current.CancellationToken);
+        var item5 = await multi.QueryAsync<int>(ct: TestContext.Current.CancellationToken);
         Assert.Equal(5, item5);
         cmd.Dispose();
     }

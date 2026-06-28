@@ -33,8 +33,11 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         command.UpdateParseCache(usage, schema, cache, nbResultSetPassedMinusOne);
         return cache;
     }
-    /// <summary>Automaticaly skip non-returning set, parse the first row in that result set and go to next result directly (ignore orher rows)</summary>
-    public T? QueryOne<T>() {
+    /// <summary>
+    /// Automaticaly skip non-returning set, parse the first row in that result set and parse it to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// </summary>
+    /// <param name="goToNextResultSet">Indicate if the reader should move to the next result set once the row has been read</param>
+    public T? Query<T>(bool goToNextResultSet = true) {
         while (reader.FieldCount == 0)
             reader.NextResult();
         nbResultSetPassedMinusOne++;
@@ -42,11 +45,16 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         T? res = default;
         if (reader.Read())
             res = cache.Parse(reader);
-        reader.NextResult();
+        if (goToNextResultSet)
+            reader.NextResult();
         return res;
     }
-    /// <summary>Automaticaly skip non-returning set, parse the first row in that result set and go to next result directly (ignore orher rows)</summary>
-    public async Task<T?> QueryOneAsync<T>(CancellationToken ct = default) {
+    /// <summary>
+    /// Asynchronously, automaticaly skip non-returning set, parse the first row in that result set and parse it to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// </summary>
+    /// <param name="goToNextResultSet">Indicate if the reader should move to the next result set once the row has been read</param>
+    /// <param name="ct">The fowarded cancellation token</param>
+    public async Task<T?> QueryAsync<T>(bool goToNextResultSet = true, CancellationToken ct = default) {
         while (reader.FieldCount == 0)
             await reader.NextResultAsync(ct).ConfigureAwait(false);
         nbResultSetPassedMinusOne++;
@@ -54,7 +62,8 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         T? res = default;
         if (await reader.ReadAsync(ct).ConfigureAwait(false))
             res = cache.Parse(reader);
-        await reader.NextResultAsync(ct).ConfigureAwait(false);
+        if (goToNextResultSet)
+            await reader.NextResultAsync(ct).ConfigureAwait(false);
         return res;
     }
     /// <summary>Automaticaly skip non-returning set, parse the rows in that result set and go to next result after enumeration</summary>
@@ -67,39 +76,20 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
             yield return cache.Parse(reader);
         reader.NextResult();
     }
-    /// <summary>Automaticaly skip non-returning set, parse the rows in that result set and go to next result after enumeration</summary>
-    public async IAsyncEnumerable<T> QueryAllAsync<T>([EnumeratorCancellation] CancellationToken ct = default) {
+    /// <summary>
+    /// Asynchronously, automaticaly skip non-returning set, lazily parse the rows in that result set and go to next result once enumeration completes.
+    /// </summary>
+    /// <param name="goToNextResultSet">Indicate if the reader should move to the next result set once enumeration completes</param>
+    /// <param name="ct">The fowarded cancellation token</param>
+    public async IAsyncEnumerable<T> StreamQueryAsync<T>(bool goToNextResultSet = true, [EnumeratorCancellation] CancellationToken ct = default) {
         while (reader.FieldCount == 0)
             await reader.NextResultAsync(ct).ConfigureAwait(false);
         nbResultSetPassedMinusOne++;
         var cache = GetCache<T>();
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
             yield return cache.Parse(reader);
-        await reader.NextResultAsync(ct).ConfigureAwait(false);
-    }
-    /// <summary>Automaticaly skip non-returning set, parse the rows in that result set and go to next result after enumeration</summary>
-    public List<T> QueryAllBuffered<T>() {
-        while (reader.FieldCount == 0)
-            reader.NextResult();
-        nbResultSetPassedMinusOne++;
-        var cache = GetCache<T>();
-        List<T> res = [];
-        while (reader.Read())
-            res.Add(cache.Parse(reader));
-        reader.NextResult();
-        return res;
-    }
-    /// <summary>Automaticaly skip non-returning set, parse the rows in that result set and go to next result after enumeration</summary>
-    public async Task<List<T>> QueryAllBufferedAsync<T>(CancellationToken ct = default) {
-        while (reader.FieldCount == 0)
+        if (goToNextResultSet)
             await reader.NextResultAsync(ct).ConfigureAwait(false);
-        nbResultSetPassedMinusOne++;
-        var cache = GetCache<T>();
-        List<T> res = [];
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-            res.Add(cache.Parse(reader));
-        await reader.NextResultAsync(ct).ConfigureAwait(false);
-        return res;
     }
     /// <inheritdoc/>
     public override bool NextResult() {

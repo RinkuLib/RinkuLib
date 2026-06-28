@@ -29,26 +29,15 @@ namespace RinkuLib.Analyzers {
 
             var cancellationToken = context.CancellationToken;
             var compilation = context.Compilation;
-            foreach (var basedOnTag in BasedOnHelper.GetTags(type, "BasedOn", cancellationToken)) {
-                DateTimeOffset basedOnTimestamp = DateTimeOffset.MinValue;
-                foreach (var item in BasedOnHelper.GetAttributes(basedOnTag!, "LastUpdated")) {
-                    if (!DateTimeOffset.TryParse(item, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dt))
-                        continue;
-                    if (basedOnTimestamp == DateTimeOffset.MinValue || dt < basedOnTimestamp)
-                        basedOnTimestamp = dt;
-                }
-
-                var basedOnSymbols = BasedOnHelper.GetBasedOnSymbols(type, compilation, cancellationToken);
-
-                foreach (var basedOnSymbol in basedOnSymbols) {
-                    foreach (var schemaTag in BasedOnHelper.GetTags(basedOnSymbol, "Schema", cancellationToken)) {
-                        foreach (var item in BasedOnHelper.GetAttributes(schemaTag!, "LastUpdated")) {
-                            if (!DateTimeOffset.TryParse(item, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dt))
-                                continue;
-                            if (dt > basedOnTimestamp && type.Locations.Length > 0) {
-                                context.ReportDiagnostic(Diagnostic.Create(Rule, type.Locations[0], type.Name, basedOnSymbol.Name));
-                                return;
-                            }
+            var basedOnSymbols = BasedOnHelper.GetBasedOnSymbols(type, compilation, cancellationToken);
+            foreach (var (basedOnSymbol, basedOnTimestamp) in basedOnSymbols) {
+                foreach (var schemaTag in BasedOnHelper.GetTags(basedOnSymbol, "Schema", cancellationToken)) {
+                    foreach (var item in BasedOnHelper.GetAttributes(schemaTag!, "LastUpdated")) {
+                        if (!DateTimeOffset.TryParse(item, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dt))
+                            continue;
+                        if ((basedOnTimestamp is null || dt > basedOnTimestamp) && type.Locations.Length > 0) {
+                            context.ReportDiagnostic(Diagnostic.Create(Rule, type.Locations[0], type.Name, basedOnSymbol.Name));
+                            return;
                         }
                     }
                 }

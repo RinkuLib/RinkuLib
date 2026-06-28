@@ -46,7 +46,7 @@ public sealed class GenerateCtorCodeFixProvider : CodeFixProvider {
 
         var basedOnSymbols = BasedOnHelper.GetBasedOnSymbols(targetType, semanticModel.Compilation, ct);
 
-        foreach (var symbol in basedOnSymbols)
+        foreach (var (symbol, dt) in basedOnSymbols)
             foreach (var candidate in GetCandidates(symbol))
                 RegisterCandidateFix(context, document, declaration, candidate);
     }

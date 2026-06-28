@@ -38,7 +38,7 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
                 ? InfoNotNullable
                 : new(ParamInfo.NoType, nullColHandler, NoNameComparer.Instance);
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
-        var rd = TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(Root), typeof(T), paramInfo, cols, new(), ref colUsage);
+        var rd = TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(T), new([], 0), paramInfo, cols, new(), ref colUsage);
         if (rd is null) {
             parser = default;
             return false;
