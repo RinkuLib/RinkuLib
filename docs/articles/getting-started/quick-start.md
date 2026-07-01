@@ -17,7 +17,7 @@ using DbConnection cnn = GetConnection();
 List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
 ```
 
-A command, a connection, the type you want. No attributes and no configuration are needed to get here. The engine reads the result columns and builds a parser that produces your type.
+No attributes and no configuration are needed. The engine reads the result columns and builds a parser that produces `Artist` from each row.
 
 The **type argument decides the shape** of the result.
 
@@ -67,11 +67,11 @@ static readonly QueryCommand Search =
 List<Artist> results = Search.Query<List<Artist>>(cnn, new { name = "%Black%" });
 ```
 
-This is the same `Query<T>` call, no separate API for dynamic queries. The details are in [conditional SQL](../conditional-sql/overview.md).
+The markers live in the SQL template; the call itself is unchanged. Full details are in [conditional SQL](../conditional-sql/overview.md).
 
 ## What happened
 
-- The `QueryCommand` parsed your SQL once and set up its caches. With no markers, the SQL is used as written.
+- The `QueryCommand` parsed your SQL and set up its caches, once. Parsing reads the optional markers; a variable without one is never pruned, so this unmarked query runs as written. Markers are [conditional SQL](../conditional-sql/overview.md).
 - `Query<T>` ran the command, built a mapping from the result columns to your type, and cached it by result shape. So the next call skips that work.
 
 ## Where to go next

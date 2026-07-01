@@ -39,15 +39,6 @@ public interface ITypeParser {
     public bool SupportsParsingAsync { get; }
 }
 /// <summary>
-/// A type parser that should take the disposing responsability
-/// </summary>
-public interface ILazyTypeParser<T> : ITypeParser<T> {
-    /// <summary>
-    /// Parser the result, but also dispose when ready
-    /// </summary>
-    T ParseAndOwn(DbDataReader reader, IDbCommand command, bool wasClosed, bool disposeCommand);
-}
-/// <summary>
 /// The basic interface that parses a type from a db command
 /// </summary>
 public interface ITypeParser<T> : ITypeParser {

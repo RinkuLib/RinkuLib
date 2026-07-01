@@ -1,6 +1,6 @@
 # Core concepts
 
-One page on how a call is put together. There are two moving parts, and once you see how they fit, the rest of the surface is easy to place.
+A call is made of two parts, the command and the run, plus a mapping step that stands apart from both. This page covers each.
 
 ## Two parts, the command and the run
 

@@ -57,7 +57,7 @@ await foreach (Track t in GetTracks.StreamQueryAsync<Track>(cnn, new { albumId =
 
 ## Make the query adapt
 
-Mark optional parts of the template, and the values you supply decide what stays. Still the same `Query<T>` call (full details in [conditional SQL](../conditional-sql/overview.md)).
+Mark optional parts of the template, and the values you supply decide what stays (full details in [conditional SQL](../conditional-sql/overview.md)).
 
 ```csharp
 static readonly QueryCommand Search =
@@ -105,7 +105,7 @@ static readonly QueryCommand Dashboard =
 using var multi = Dashboard.ExecuteMultiReader(cnn, out DbCommand cmd, new { id = 1 });
 using (cmd) {
     Artist artist      = multi.Query<Artist>();
-    List<Album> albums = multi.QueryAll<Album>().ToList();
+    List<Album> albums = multi.Query<List<Album>>();
 }
 ```
 

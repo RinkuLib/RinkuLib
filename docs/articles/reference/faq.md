@@ -25,7 +25,7 @@ You don't need it. Write valid SQL as if every parameter is used, then add `?` t
 
 ### How do I read multiple result sets?
 
-Use [`ExecuteMultiReader`](../executing/multi-result.md) and the `MultiReader`'s `Query<T>` and `QueryAll<T>` methods.
+Use [`ExecuteMultiReader`](../executing/multi-result.md) and the `MultiReader`'s `Query<T>` method, once per set. The type argument picks one row, a list, or a stream, the same as anywhere else.
 
 ### Is it thread-safe to share a `QueryCommand`?
 

@@ -12,7 +12,7 @@ using DbConnection cnn = GetConnection();
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 1 });
 ```
 
-That is the whole loop, a command, a connection, and the type you want back. The type argument decides the shape, here `List<Album>`, but `Album` for one row, `IEnumerable<Album>` to stream, and more. `Album` is just one of your own types. Nothing about it is special to Rinku.
+The call takes the command, a connection, and this run's values; the type argument decides the result shape. Here it is `List<Album>`. Ask for `Album` to get one row, `IEnumerable<Album>` to stream, and so on. `Album` is one of your own types, with no attributes or base class added for Rinku.
 
 If you are new here, the [quick start](articles/getting-started/quick-start.md) goes from a SQL string to mapped objects, and [core concepts](articles/getting-started/core-concepts.md) covers the mental model behind the call above.
 

@@ -2,7 +2,7 @@
 
 *Per-call state you set in C#, for dynamic SQL and command reuse.*
 
-A builder is the other way to supply a run's values. The convenient `cmd.Query<T>(cnn, paramObj)` reads them off an object; a builder lets you set them yourself in C#, useful when logic decides which optional ([conditional SQL](../conditional-sql/overview.md)) segments are active, or when you reuse one `DbCommand` across a batch. Both build the command and run it. A builder holds that state and is created from a [`QueryCommand`](query-command.md) with `StartBuilder()`.
+A builder is the other way to supply a run's values. The `cmd.Query<T>(cnn, paramObj)` form reads them off an object, and a builder lets you set them yourself in C#, useful when logic decides which optional ([conditional SQL](../conditional-sql/overview.md)) segments are active, or when you reuse one `DbCommand` across a batch. Both build the command and run it. A builder holds that state and is created from a [`QueryCommand`](query-command.md) with `StartBuilder()`.
 
 There are two, for two needs.
 
