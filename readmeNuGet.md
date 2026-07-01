@@ -1,55 +1,47 @@
 # RinkuLib: A Modular Micro-ORM
-RinkuLib is a micro-ORM built on top of **ADO.NET**. It separate any SQL construction from the c# structure and provide a declarative way to build them. The engine also has complex type mapping compatibility with multiple customization options.
 
-The library is designed as two independent, highly customizable parts
-* SQL command generation with flexible templating engine
-* Complex type parsing with negotiation phase to use the most appropriate construction
+A micro-ORM for .NET, built directly on **ADO.NET**. Write SQL, get your objects back. It's four capabilities you can reach for one at a time or together:
 
----
+- **Object mapping.** Compile a mapping from the result schema to your type through a configurable negotiation.
+- **Conditional SQL.** Write a template once and have it adapt to the values you pass, staying valid without string concatenation.
+- **Code generation.** Generate ready-to-run `DbCommand`s from your database schema at design time.
+- **Tracking.** Add edit/commit/revert change tracking over an `IEnumerable`.
 
-## Quick Start
+In practice, mapping is the spine and the rest builds on it. Targets .NET 8 and .NET 10.
+
+Full documentation: <https://rinkulib.github.io/RinkuLib/>.
+
+## Quick start
 
 ```csharp
-// 1. INTERPRETATION: The blueprint (Create once and reuse throughout the app)
-// Define the template once to analyzed and cached the sql generation conditions
-string sql = "SELECT ID, Name FROM Users WHERE Group = @Grp AND Cat = ?@Category AND Age > ?@MinAge";
-public static readonly QueryCommand usersQuery = new QueryCommand(sql);
+// Create the command once (a static readonly field is ideal). Parsing happens here.
+static readonly QueryCommand GetAlbums =
+    new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
-public QueryBuilder GetBuilder(QueryCommand queryCmd) {
-    // 2. STATE DEFINITION: A temporary builder (Does not manage DbConnection or DbCommand)
-    // Create a builder for a specific database trip
-    // Identify which variables are used and their values
-    QueryBuilder builder = queryCmd.StartBuilder();
-    builder.Use("@MinAge", 18);      // Will add everything related to the variable
-    builder.Use("@Grp", "Admin");    // Always added to the string and throw if not used
-                        // @Category not used so wont use anything related to that variable
-    return builder;
-}
+using DbConnection cnn = GetConnection();
 
-public IEnumerable<User> GetUsers(QueryBuilder builder) {
-    // 3. EXECUTION: DB call (SQL Generation + Type Parsing Negotiation)
-    using DbConnection cnn = GetConnection();
-    // Uses the QueryCommand and the values in the builder to create the DbCommand and parse the result
-    IEnumerable<User> users = builder.Query<IEnumerable<User>>(cnn);
-    return users;
-}
-// builder.Query<User> for a single user
-// builder.Query<List<User>> for all users buffered
-// Resulting SQL: SELECT ID, Name FROM Users WHERE Group = @Grp AND Age > @MinAge
+// Call execution methods straight on the command.
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 1 });
+// GetAlbums.Query<Album>(cnn, ...)               -> a single album
+// GetAlbums.Query<IEnumerable<Album>>(cnn, ...)  -> streamed
 ```
 
-### The reasons it exist: Separation of concern, Customization and flexibility
+The result shape follows the type argument.`Album` is one of your own types, nothing about it is special to Rinku. When a query must change shape at runtime, mark the optional parts (`?@var`, `/*...*/`) and the values you supply decide what stays.
 
-When dynamicaly building SQL, individual SQL segment must be able to make a valid SQL. You never see the whole picture until processing. By defining a template first, you can have your c# logic focussing on checking validity and then simply need to "inform" the builder of what you use. That way you can have total separation of concern and no matter where an item affect the SQL result, you can keep exactly the same logic ensuring SQL validity and letting you make oprimized SQL commands without any compromizes.
-When mapping to a type, you rearely need a flat object as the logic item, has a deep, fully customizable, negotiation phase that lets you map the flat row result of the DB, to the multi level nesting of the c# type.
+```csharp
+static readonly QueryCommand Search =
+    new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND Title LIKE ?@title");
 
+// @title omitted, so its clause is pruned.
+List<Album> albums = Search.Query<List<Album>>(cnn, new { artistId = 1 });
+// Resulting SQL: SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+```
 
-### The 3-Step Process
+## How it works
 
-1.  **Interpretation (`QueryCommand`):** A reusable blueprint. The engine analyzes your SQL template to create a structural blueprint and sets up storage for parameter instructions cache and mapping functions cache.
+You define the template first, so your code only decides what's used and never concatenates SQL, the statement stays valid wherever a value lands, with no `WHERE 1=1`. Mapping works the same way. A configurable negotiation maps a flat database row onto the multi-level shape of your C# type.
 
-2.  **State Definition (`QueryBuilder`):** A temporary struct. You create this for every database call to hold your specific parameters and true conditions. It acts as the bridge between your C# data and the command's blueprint.
+## Links
 
-3.  **Execution (`Query` / `ExecuteX` methods):** The DB call using methods (such as `QueryAsync`, `Query`, `Execute`, `ExecuteReader`, etc.). The engine takes the blueprint from Step 1 and the data from Step 2 to generate the finalized SQL and create the complete `DbCommand`. It then find the mots apropriate mapping function between the schema and the type.
-
-GitHub : https://github.com/RinkuLib/RinkuLib
+- Documentation: <https://rinkulib.github.io/RinkuLib/>
+- Source: <https://github.com/RinkuLib/RinkuLib>
