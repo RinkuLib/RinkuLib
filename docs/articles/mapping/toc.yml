@@ -1,16 +1,14 @@
-- name: Overview
+- name: Mapping
   href: index.md
-- name: Choosing the Result Type
-  href: simple-results.md
-- name: Complex Objects
-  href: complex-objects.md
+- name: Objects and Nesting
+  href: objects.md
 - name: Nullability
   href: nullability.md
 - name: Value Tuples
-  href: value-tuples.md
+  href: tuples.md
 - name: DynaObject
-  href: dyna-object.md
-- name: Registration & Discovery
-  href: registration-and-discovery.md
-- name: Custom Parsing & Matching
+  href: dynaobject.md
+- name: Registration
+  href: registration.md
+- name: Matching and Parsers
   href: custom-parsing.md

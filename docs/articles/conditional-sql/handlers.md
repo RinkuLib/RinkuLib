@@ -1,33 +1,59 @@
-# Handlers (`_Letter`)
+# Handlers
 
-*Reshape the SQL with an actual runtime value.*
+A handler reshapes the SQL with an actual value, not just a present-or-absent key. The syntax is a suffix on the variable: `@Var_X` means variable `@Var` through handler `X`. The suffix is not part of the name, you still supply `@Var`.
 
-Sometimes a query must change based on a value, not just a true-or-false condition, to change a table name, say, or to expand a list into an `IN` clause. Handlers do this with the syntax `@Var_Letter`, where `_Letter` selects a handler. The variable itself is `@Var`. The `_Letter` is not part of the name.
+## `_X`, collection spreading
 
-> If a handled variable's value is required but missing, the error is raised during **query generation**, not at the database call, because the handler needs the value to build the SQL string.
+Expands an `IEnumerable` into one parameter per item.
 
-## Built-in handlers
+* **Template:** `SELECT * FROM tracks WHERE GenreId IN (@GenreIds_X)`
+* **`@GenreIds` = `[1, 2, 3]`:** `... IN (@GenreIds_1, @GenreIds_2, @GenreIds_3)`
 
-**`_N`, numeric injection.** Inserts a number into the SQL text.
+Combined with `?`, an absent collection drops the whole clause. An empty collection counts as absent, so no `IN ()` is ever produced.
 
-* `SELECT * FROM tracks ORDER BY @Index_N` -> (`@Index` = 3) -> `... ORDER BY 3`
+* **Template:** `SELECT * FROM tracks WHERE GenreId IN (?@GenreIds_X)`
 
-**`_S`, string literal.** Inserts a string, escaped with single quotes.
+## `_N`, number injection
 
-* `SELECT * FROM artists WHERE Name = @Name_S` -> (`@Name` = Queen) -> `... WHERE Name = 'Queen'`
+Writes a number into the SQL text.
 
-**`_R`, raw SQL.** Inserts a string **without escaping**.
+* **Template:** `SELECT Name FROM products ORDER BY Id OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY`
+* **`@Skip` = 50, `@Take` = 50:** `... OFFSET 50 ROWS FETCH NEXT 50 ROWS ONLY`
+* **Neither:** `SELECT Name FROM products ORDER BY Id`
 
-* `SELECT * FROM @Table_R WHERE UnitPrice > 0` -> (`@Table` = tracks) -> `SELECT * FROM tracks ...`
+## `_S`, string literal
 
-> **Warning.** `_R` injects values verbatim. Only pass fully controlled, sanitized values, or you create a SQL-injection hole.
+Writes a string wrapped in single quotes.
 
-**`_X`, collection spreading.** Expands an `IEnumerable` into one parameter per item (`@Var_1`, `@Var_2`).
+* **Template:** `SELECT * FROM artists WHERE Name = @Name_S`
+* **`@Name` = `Queen`:** `... WHERE Name = 'Queen'`
 
-* `SELECT * FROM tracks WHERE GenreId IN (@GenreIds_X)` -> (`@GenreIds` = [1,2,3]) -> `... IN (@GenreId_1, @GenreId_2, @GenreId_3)`
+## `_R`, raw SQL
 
-Handlers combine with optional markers.
+Writes the value verbatim, no escaping.
 
-* `SELECT * FROM tracks WHERE GenreId IN (?@GenreIds_X)` drops the whole clause if `@GenreIds` is not provided.
+* **Template:** `SELECT Id, Name FROM @Table_R WHERE IsActive = 1`
+* **`@Table` = `tracks`:** `SELECT Id, Name FROM tracks WHERE IsActive = 1`
 
-The four built-ins cover the common cases, and they're not the whole story. The handler set is itself a base point. `_N`, `_S`, `_R`, and `_X` are the first implementations of a handler hook, and you can register your own letter the same way. See [custom handlers](custom-handlers.md).
+> **Warning.** `_R` is textual injection. Only pass values you fully control, never user input.
+
+## Errors happen at generation
+
+A handled variable that is required by an active segment but missing raises `RequiredHandlerValueException` while the SQL is being generated, before any database call. The handler needs the value to build the string.
+
+## Registering your own letter
+
+The four built-ins are entries in two global letter maps, and unused letters are yours. There are two kinds:
+
+- A handler that only writes SQL text (like `_N`, `_S`, `_R`) implements `IQuerySegmentHandler` and registers in `QueryFactory.BaseHandlerMapper`.
+- A handler that also touches the `DbCommand`, binding parameters (like `_X`), derives from `SpecialHandler` and registers in `SpecialHandler.SpecialHandlerGetter`.
+
+```csharp
+// @When_D writes a provider-specific date literal
+QueryFactory.BaseHandlerMapper['D'] = _ => new LegacyDateHandler();
+
+// @Secret_P binds an encrypted parameter
+SpecialHandler.SpecialHandlerGetter['P'] = name => new EncryptionHandler(name);
+```
+
+The factory delegate receives the variable name. Letters are case-insensitive, `A` to `Z`, and the maps are global: register at startup, before the first `QueryCommand` is built.

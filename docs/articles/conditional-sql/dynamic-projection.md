@@ -1,52 +1,72 @@
-# Dynamic projection (`?SELECT`)
+# Dynamic projection
 
-*Turn projected columns into independent conditional segments.*
-
-Prefixing a `SELECT` with `?` pulls each projected column into its own conditional segment, keyed by the column name (or alias). It affects only the column list of that `SELECT`.
+Prefixing a `SELECT` with `?` turns each projected column into its own condition, keyed by the column name or alias. It affects only that `SELECT`'s column list.
 
 * **Template:** `?SELECT AlbumId AS Id, Title FROM albums`
 * **Equivalent to:** `SELECT /*Id*/AlbumId AS Id, /*Title*/Title FROM albums`
-* **Result (`Title` provided):** `SELECT Title FROM albums`
+* **Result (`Title` used):** `SELECT Title FROM albums`
 
-It works at lower levels too, such as inside a CTE.
+Activate the keys like any condition key: `builder.Use("Title")`, or a parameter object with `[ForBoolCond]` members.
 
-* **Template:** `WITH A AS (?SELECT AlbumId AS Id, Title, ArtistId FROM albums) SELECT * FROM A`
-* **Result (`Title` provided):** `WITH A AS (SELECT Title FROM albums) SELECT * FROM A`
+## Always-kept columns
 
-## Sharing across UNION
+A `!` right after the column expression keeps it out of the conditional logic. It is always projected.
 
-When column names match across `SELECT`s, their conditions are **shared**, which keeps the projections in sync.
+* **Template:** `?SELECT AlbumId AS Id!, Title, ArtistId FROM albums`
+* **Result (nothing used):** `SELECT AlbumId AS Id FROM albums`
+* **Result (`Title` used):** `SELECT AlbumId AS Id, Title FROM albums`
 
-* **Template:** `?SELECT ArtistId AS Id, Name FROM artists UNION ALL ?SELECT GenreId AS Id, Name FROM genres`
-* **Result (`Name` provided):** `SELECT Name FROM artists UNION ALL SELECT Name FROM genres`
+`!` is only valid inside a `?SELECT`. Anywhere else the template throws at construction.
 
-If names differ, conditions differ too, so watch for invalid SQL.
+## Joining columns
 
-* **Template:** `?SELECT ArtistId AS Id, Name FROM artists UNION ALL ?SELECT GenreId AS Ref, Name FROM genres`
-* **Result (`Id` provided):** `SELECT ArtistId AS Id FROM artists UNION ALL SELECT FROM genres`
-
-## Modifiers and `???`
-
-A modifier before the first column can be swept into that column's condition. Use `???` to isolate it.
-
-* **Template:** `?SELECT DISTINCT Title, Composer FROM tracks` -> **Result:** `SELECT Composer FROM tracks`
-* **Template:** `?SELECT DISTINCT ??? Title, Composer FROM tracks` -> **Result:** `SELECT DISTINCT Composer FROM tracks`
-
-## Joined columns
-
-Joining columns with `&` shares their footprint, and the **last** column name becomes the key.
+`&,` welds columns under one key, the last column's name.
 
 * **Template:** `?SELECT ArtistId AS Id&, Name FROM artists`
 * **Result (`Name` used):** `SELECT ArtistId AS Id, Name FROM artists`
 
-`Id` is not a separate condition because it's joined with `Name`.
+`Id` is not a key of its own here, it rides with `Name`.
 
-## Always-used columns (`!`)
+## Adding a key to a column
 
-Prefix a column with `!` to keep it **out** of the conditional logic. It's always projected, never pruned, handy for a key column you always need while the rest of the projection stays optional.
+A marker before a column adds its keys on top of the column's own, combined with "and".
 
-* **Template:** `?SELECT !AlbumId AS Id, Title, ArtistId FROM albums`
-* **Result (nothing provided):** `SELECT AlbumId AS Id FROM albums`
-* **Result (`Title` provided):** `SELECT AlbumId AS Id, Title FROM albums`
+* **Template:** `?SELECT Id, Username, /*Admin*/Email FROM users`
+* **Result (`Id`, `Username`, `Email` used, `Admin` not):** `SELECT Id, Username FROM users`
 
-The `!` prefix is only valid inside a `?SELECT`. Using it elsewhere throws at compile time.
+`Email` needs both its own key and `Admin`. A marker on an always-kept column replaces "always" with the marker's keys:
+
+* **Template:** `?SELECT /*Manual*/Id!, Username FROM users`
+* `Id` is projected when `Manual` is active, instead of always.
+
+## Under an outer condition
+
+A `?SELECT` can itself sit inside a bigger conditional footprint. The outer key gates the whole select, the column keys refine it.
+
+* **Template:** `/*Wrapping*/?SELECT Id!, Username FROM users`
+* **Result (`Wrapping` not used):** the select is gone, always-kept columns included.
+
+## Across UNION
+
+Matching column names across `?SELECT`s share one key, keeping the projections in sync.
+
+* **Template:** `?SELECT ArtistId AS Id, Name FROM artists UNION ALL ?SELECT GenreId AS Id, Name FROM genres`
+* **Result (`Name` used):** `SELECT Name FROM artists UNION ALL SELECT Name FROM genres`
+
+Different names get different keys, so mismatched aliases can produce an invalid side. Align the aliases.
+
+## In a CTE
+
+* **Template:** `WITH a AS (?SELECT AlbumId AS Id, Title, ArtistId FROM albums) SELECT * FROM a`
+* **Result (`Title` used):** `WITH a AS (SELECT Title FROM albums) SELECT * FROM a`
+
+## Modifiers and `???`
+
+A modifier before the first column is swept into that column's footprint. Isolate it with the [`???` boundary](conditional-markers.md#the--boundary).
+
+* **Template:** `?SELECT DISTINCT Title, Composer FROM tracks` with only `Composer` used gives `SELECT Composer FROM tracks`.
+* **Template:** `?SELECT DISTINCT ??? Title, Composer FROM tracks` gives `SELECT DISTINCT Composer FROM tracks`.
+
+## Mapping note
+
+A command whose projection changes produces several result schemas. That is expected and supported: the row mapper is chosen per schema. Ask for a type whose members are all optional to fit, or a [DynaObject](../mapping/dynaobject.md) when the shape is open-ended.

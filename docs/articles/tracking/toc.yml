@@ -1,10 +1,6 @@
-- name: Overview
+- name: Tracking
   href: index.md
-- name: Tracking Overview
-  href: overview.md
-- name: Editable Items
-  href: editable-items.md
-- name: Tracking Lists
-  href: tracking-lists.md
-- name: Copying & Cloning
+- name: Items and Lists
+  href: items-and-lists.md
+- name: Copying
   href: copying.md

@@ -1,60 +1,66 @@
-# Optional variables (`?@Var`)
+# Optional variables
 
-*Mark a variable optional and let the engine prune its footprint.*
+`?@Var` marks a variable optional. When it is supplied, the SQL keeps its footprint, the surrounding segment. When it is not, the footprint is pruned and the statement stays valid.
 
-The `?` prefix marks a variable as optional. When you use it (for example `?@Var`), the engine works out the **footprint**, the surrounding segment, and treats it as conditional, using the variable name (`@Var`) as the condition key.
+Write the SQL as if every parameter will be used, then add `?` to the optional ones.
 
-You don't need tricks like `WHERE 1=1`. Write standard, valid SQL as if every parameter will be used, then add `?` to make a parameter (and its footprint) conditional.
-
-## Operator association
-
-Logical operators (`AND`, `OR`) belong to the **preceding** variable.
-
-> Template `WHERE col1 = ?@Col1 OR col2 = ?@Col2 AND col3 = ?@Col3` with `@Col2` **not used**.
-> - **Correct:** `WHERE col1 = @Col1 OR col3 = @Col3` (the `AND` after `@Col2` was pruned).
-> - **Wrong:** `WHERE col1 = @Col1 AND col3 = @Col3` (would only happen if the operator belonged to the *following* variable).
+* **Template:** `SELECT * FROM tracks WHERE GenreId = 1 AND Name = ?@Name`
+* **Result (no `@Name`):** `SELECT * FROM tracks WHERE GenreId = 1`
 
 ## Automatic cleanup
 
-When an optional variable is unused, the engine removes the trailing operator, dangling commas, and empty clause keywords to keep valid SQL.
+Pruning removes what would dangle: the trailing operator, commas, and emptied clause keywords.
 
-* **Template:** `SELECT * FROM tracks WHERE GenreId = 1 AND Name = ?@Name`
-* **Result:** `SELECT * FROM tracks WHERE GenreId = 1`
-
-* **Template:** `UPDATE customers SET Email = @Email, Phone = ?@Phone WHERE CustomerId = @ID`
-* **Result:** `UPDATE customers SET Email = @Email WHERE CustomerId = @ID`
+* **Template:** `UPDATE customers SET Email = @Email, Phone = ?@Phone WHERE CustomerId = @Id`
+* **Result:** `UPDATE customers SET Email = @Email WHERE CustomerId = @Id`
 
 * **Template:** `SELECT * FROM artists WHERE Name = ?@Name ORDER BY Name`
 * **Result:** `SELECT * FROM artists ORDER BY Name`
 
-An empty clause keyword is removed entirely.
+An emptied clause disappears entirely.
 
 * **Template:** `SELECT BillingCountry FROM invoices GROUP BY BillingCountry HAVING SUM(Total) > ?@MinTotal AND COUNT(*) > ?@MinCount`
-* **Result (neither provided):** `SELECT BillingCountry FROM invoices GROUP BY BillingCountry`
+* **Result (neither supplied):** `SELECT BillingCountry FROM invoices GROUP BY BillingCountry`
 
-## Keep non-conditional parts together
+These are one set of rules, not per-clause behaviors. Every keyword section (`SET`, `HAVING`, `ORDER BY`, `THEN`, all of them) cleans up the same way.
 
-Keeping non-conditional parts together lets the engine treat them as one block.
+## Operators belong to the variable before them
 
-- **Preferred:** `... WHERE GenreId = 1 AND Name = ?@Name` (2 segments)
-- **Less optimal:** `... WHERE Name = ?@Name AND GenreId = 1` (3 segments)
+* **Template:** `WHERE col1 = ?@Col1 OR col2 = ?@Col2 AND col3 = ?@Col3`
+* **Result (no `@Col2`):** `WHERE col1 = @Col1 OR col3 = @Col3`
+
+The `AND` after `@Col2` was pruned with it, the `OR` before it stayed.
+
+## The footprint is the whole expression
+
+A variable inside a function call or arithmetic carries the full expression with it.
+
+* **Template:** `SELECT Id, Name FROM users WHERE Name LIKE CONCAT('%', ?@Name, '%')`
+* **Result (no `@Name`):** `SELECT Id, Name FROM users`
+
+Several optional variables in one segment share its fate. All must be supplied for the segment to stay.
+
+* **Template:** `SELECT * FROM products WHERE Price * ?@Modifier > ?@Minimum`
+* **Result (only `@Modifier`):** `SELECT * FROM products`
+
+A required `@` inside an optional segment does not control the segment, but must be supplied when the segment is kept, or execution fails.
+
+* **Template:** `WHERE FullName = @First + ' ' + ?@Last`
+* **No `@Last`:** the clause is pruned. **`@Last` supplied:** the clause stays and `@First` becomes mandatory.
 
 ## Works anywhere
 
-Conditionals work in CTEs, subqueries, JOINs, and nested contexts.
+There is no list of supported places. The engine tracks sections and nesting depth, not meaning, so everything above holds in CTEs, subqueries, JOIN conditions, CASE branches, at any depth.
 
 * **Template:** `SELECT * FROM invoices i JOIN customers c ON i.CustomerId = c.CustomerId AND c.Country = ?@Country`
-* **Result:** `SELECT * FROM invoices i JOIN customers c ON i.CustomerId = c.CustomerId`
+* **Result (no `@Country`):** `SELECT * FROM invoices i JOIN customers c ON i.CustomerId = c.CustomerId`
 
-## All-or-nothing segments
+* **Template:** `WITH t AS (SELECT a, b FROM x WHERE cond = ?@inner) SELECT * FROM t`
+* **Result (no `@inner`):** `WITH t AS (SELECT a, b FROM x) SELECT * FROM t`
 
-When several optional variables share one segment, they're kept or dropped together.
+## A small layout tip
 
-* **Template:** `SELECT * FROM customers WHERE FullName = ?@FirstName + ' ' + ?@LastName`
-* **Result (only @FirstName provided):** `SELECT * FROM customers`
+Segments form around the markers. Putting the static parts first keeps them in one block.
 
-When a segment mixes a required (`@`) and an optional (`?@`) variable, the optional one controls the whole segment, but the required one must still be supplied if the segment is kept.
-
-* **Template:** `SELECT * FROM customers WHERE FullName = @FirstName + ' ' + ?@LastName`
-* **If `@LastName` missing:** `SELECT * FROM customers`
-* **If `@LastName` provided:** segment kept, and `@FirstName` must also be supplied or execution fails.
+- Preferred: `WHERE GenreId = 1 AND Name = ?@Name`
+- Works, one segment more: `WHERE Name = ?@Name AND GenreId = 1`

@@ -1,8 +1,4 @@
-- name: Overview
-  href: index.md
 - name: Installation
   href: installation.md
 - name: Quick Start
   href: quick-start.md
-- name: Core Concepts
-  href: core-concepts.md

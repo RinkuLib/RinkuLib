@@ -1,7 +1,5 @@
 # Installation
 
-## The core package
-
 RinkuLib ships on NuGet as **`Rinku`**.
 
 ```bash
@@ -12,14 +10,9 @@ dotnet add package Rinku
 Install-Package Rinku
 ```
 
-It targets **.NET 8** and **.NET 10**. That one package is the whole core, the mapping engine and the SQL templating. There is nothing else to install to get the [quick start](quick-start.md) working.
+It targets **.NET 8** and **.NET 10**. That one package is the whole core: the mapping engine and the SQL templating. A set of Roslyn analyzers ships inside the package too, no separate install (see [analyzers](../codegen/analyzers.md)).
 
-## Code generation (a second workflow)
-
-The core engine builds and maps commands **at runtime**. There is also an opt-in, design-time option for teams that prefer generated, ahead-of-time code.
-
-- **RinkuPowerTools** is a separate Visual Studio extension that generates ready-to-run `DbCommand` factory methods (and matching result records) from your database schema. It is early in development (SQL Server and Visual Studio today). See [code generation](../aot-codegen/overview.md).
-- A set of **Roslyn analyzers** ships *inside* the `Rinku` package. They're mostly designed around the code-generation workflow, keeping generated types in sync, and some can earn their keep outside it too, like an "invoke this method" completion. See [the analyzer note](../aot-codegen/analyzer.md).
+**RinkuPowerTools** is a separate, optional Visual Studio extension that generates `DbCommand` factory methods from your database schema. SQL Server and Visual Studio only for now. See [code generation](../codegen/index.md).
 
 ## Verifying the install
 

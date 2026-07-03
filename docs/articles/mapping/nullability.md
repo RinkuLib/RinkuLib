@@ -1,55 +1,68 @@
 # Nullability
 
-*What the mapper does when a column is `NULL`.*
-
-Every slot (a constructor parameter or a settable member) has a rule for what to do when its column comes back `NULL`. There's a sensible default, two attributes for the common adjustments, and underneath them an interface you can implement when you need something bespoke. Most code never goes past the default and the two attributes.
+Every slot has a rule for what a `NULL` column does. The default follows the C# type. Two attributes cover the common adjustments.
 
 ## The default
 
-With no annotations, nullability follows the C# type.
-
-- A **reference type** or `Nullable<T>` accepts `NULL` and receives `null`.
-- A **non-nullable struct** rejects `NULL`. If the column is null the mapper throws, because there's no valid value to give it.
+- A reference type or `Nullable<T>` accepts `NULL` and receives `null`.
+- A non-nullable struct rejects `NULL` and throws (`NullValueAssignmentException`).
 
 ```csharp
 public record Track(int Id, string Name, string? Composer);
-// Id (int)  -> NULL would throw. An int can't be null
-// Name      -> NULL allowed, you get null
-// Composer  -> NULL allowed, you get null
+// Id       -> NULL throws, an int cannot be null
+// Name     -> NULL gives null
+// Composer -> NULL gives null
 ```
 
-So you get what the type signature implies, and you rarely think about it.
+You get what the type signature implies.
 
-## `[NotNull]`, reject null for a nullable slot
+## `[NotNull]`, fail loudly
 
-Put `[NotNull]` (the standard `System.Diagnostics.CodeAnalysis.NotNullAttribute`) on a reference-type or `Nullable<T>` slot to make the mapper **throw on `NULL`** instead of handing you `null`. Use it when a column is nominally nullable in the schema but you treat its absence as a bug.
+`[NotNull]` (the standard `System.Diagnostics.CodeAnalysis` attribute) on a nullable slot makes `NULL` throw instead of handing you `null`. For columns that are nullable in the schema but must never be null in practice.
 
 ```csharp
-public record Track(int Id, [NotNull] string Name);   // a null Name is an error; fail loudly
+public record Track(int Id, [NotNull] string Name);
 ```
 
-## `[InvalidOnNull]`, let a null collapse the object
+## `[InvalidOnNull]`, collapse the object
 
-`[InvalidOnNull]` on a slot says that if this value is `null`, **abandon the construction path** rather than build a half-empty object. The whole object becomes "not present", and the caller decides what that means. A top-level `Query<Invoice>` would see no object, an `Optional<Invoice>` would be empty, and a nested `Invoice` member would itself be set to null.
-
-This is what you want for an optional nested object from an outer join, where a missing match leaves its columns all `NULL`.
+`[InvalidOnNull]` on a slot says: if this value is `NULL`, do not build the object at all. The typical case is an optional joined object, where a missing match leaves its columns all `NULL`.
 
 ```csharp
-public record Invoice(int Id, decimal Total, [InvalidOnNull] Customer Customer);
-// If the joined Customer columns are all NULL, you don't get an Invoice with a broken
-// Customer. The Customer (and, depending on how you asked, the Invoice) is treated as absent.
+public record struct Package([InvalidOnNull] int TrackingId, double Weight) : IDbReadable;
+
+public record Shipment(int Id, Package? Contents);
+// TrackingId NULL -> Contents is null, not a Package full of zeroes
 ```
 
-## When the defaults are not enough
+What "not built" means depends on where the object sits:
 
-The behaviors above aren't hard-wired. Each is an implementation of one small interface, `INullColHandler`, and the attributes just select which implementation a slot uses.
+- A nested nullable slot becomes `null` (above).
+- A nested non-nullable slot propagates the collapse upward: mark it `[InvalidOnNull]` too and the parent collapses as well.
+- At the top level, the row behaves like a missing row: `Query<T>` throws, `Query<Optional<T>>` is empty.
 
-| Slot situation | Handler used |
+```csharp
+public record Middle(int Id, [InvalidOnNull] Bottom Bottom) : IDbReadable;
+public record Top(int Id, Middle? Middle);
+// Bottom's key is NULL -> Bottom collapses -> Middle collapses -> Top.Middle is null
+```
+
+Note the difference with [result shapes](../running-queries/result-shapes.md): zero rows is a query-level outcome, a `NULL` column is a slot-level one.
+
+## Behind the attributes
+
+Each rule above is an implementation of one small interface, `INullColHandler`, and the attributes just pick which implementation a slot uses.
+
+| Situation | Handler |
 | --- | --- |
-| nullable, default | `NullableTypeHandle` (pass `null` through) |
-| non-nullable struct, or `[NotNull]` | `NotNullHandle` (throw on null) |
-| `[InvalidOnNull]` | `InvalidOnNullAndNullableHandle` / `InvalidOnNullAndNotNullHandle` (abandon the path) |
+| nullable slot, default | `NullableTypeHandle` |
+| non-nullable struct, or `[NotNull]` | `NotNullHandle` |
+| `[InvalidOnNull]` | `InvalidOnNullAndNullableHandle` / `InvalidOnNullAndNotNullHandle` |
 
-To do something they don't, implement `INullColHandler` (the check, throw, or abandon logic) and an `INullColHandlerMaker` (a small factory that attaches it to a slot during discovery). The built-ins are ordinary implementations of the same hook you'd extend, the `[InvalidOnNull]` handlers are a good, tiny example to read if you ever do.
+For a behavior they do not cover, implement `INullColHandler` and attach it with an `INullColHandlerMaker`. The `[InvalidOnNull]` handlers are small and are the reference to read first.
 
-You can also set this without an attribute, by default name, with `TypeParsingInfo.SetInvalidOnNull(name, true)` (see [custom parsing & matching](custom-parsing.md)).
+The same setting is available without an attribute, by slot name:
+
+```csharp
+TypeParsingInfo.GetOrAdd<Invoice>().SetInvalidOnNull("Customer", true);
+```

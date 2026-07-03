@@ -1,8 +1,6 @@
-- name: Overview
-  href: index.md
+- name: Coming from Dapper
+  href: dapper.md
 - name: Performance
   href: performance.md
-- name: Migrating from Dapper
-  href: migrating-from-dapper.md
 - name: FAQ
   href: faq.md

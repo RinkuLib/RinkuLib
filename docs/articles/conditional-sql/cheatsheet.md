@@ -1,23 +1,22 @@
-# Marker cheat sheet
-
-*Every marker on one page.*
+# Cheat sheet
 
 | Marker | Meaning | Example |
 | --- | --- | --- |
-| `@Var` | Standard parameter (static text) | `WHERE TrackId = @ID` |
+| `@Var` | Plain parameter, static text | `WHERE TrackId = @Id` |
 | `?@Var` | Optional variable, prunes its footprint when unused | `AND Name = ?@Name` |
-| `/*Key*/` | Conditional segment under a custom key (no value needed) | `/*ShowPrice*/ UnitPrice` |
+| `/*Key*/` | Conditional segment under a custom key | `/*ShowPrice*/UnitPrice` |
 | `/*@Var*/` | Conditional segment tied to a variable | `/*@AlbumId*/AlbumId = ...` |
-| `???` | Forced boundary conditionals cannot cross (emits nothing) | `SELECT DISTINCT ??? /*X*/TrackId, Name` |
-| `&AND` / `&OR` / `&,` | Group connector, bind conditions as one unit | `?@A &AND ?@B` |
-| `\|` `&` `!` (in a marker) | OR / AND / NOT between keys, read left to right | `/*A\|B&C*/`, `/*!All*/` |
-| `?SELECT` | Dynamic projection, each column becomes a conditional | `?SELECT AlbumId AS Id, Title FROM ...` |
-| `!col` (in `?SELECT`) | Always-used column, never pruned | `?SELECT !AlbumId AS Id, Title FROM ...` |
-| `col&,` (in `?SELECT`) | Join columns under the last column's key | `?SELECT AlbumId AS Id&, Title` |
-| `@Var_N` | Numeric injection | `ORDER BY @Index_N` |
+| `\|` `&` `!` in a marker | Or / and / not between keys, left to right | `/*A\|B&C*/`, `/*!All*/` |
+| `&AND` / `&OR` / `&,` | Weld segments into one unit | `?@A &AND ?@B` |
+| `???` | Boundary a footprint cannot cross, emits nothing | `SELECT DISTINCT ??? /*X*/Id, Name` |
+| `?SELECT` | Dynamic projection, each column becomes a condition | `?SELECT AlbumId AS Id, Title FROM ...` |
+| `col!` in `?SELECT` | Always-kept column | `?SELECT AlbumId AS Id!, Title` |
+| `col&,` in `?SELECT` | Join columns under the last one's key | `?SELECT AlbumId AS Id&, Title` |
+| `/*Key*/col` in `?SELECT` | Extra key required on top of the column's own | `?SELECT Id, /*Admin*/Email` |
+| `@Var_N` | Number written into the SQL | `OFFSET @Skip_N ROWS` |
 | `@Var_S` | Quoted string literal | `Name = @Name_S` |
-| `@Var_R` | Raw SQL (unescaped, injection risk) | `FROM @Table_R` |
-| `@Var_X` | Spread a collection into parameters | `IN (@GenreIds_X)` |
-| `/*~ ... */` | Keep a literal comment in the output | `/*~hint*/SELECT ...` |
+| `@Var_R` | Raw SQL, unescaped, injection risk | `FROM @Table_R` |
+| `@Var_X` | Collection spread into parameters | `IN (@GenreIds_X)` |
+| `/*~ ... */` | Literal comment, kept in the output | `/*~ hint */SELECT ...` |
 
-Detail pages: [optional variables](optional-variables.md), [conditional markers](conditional-markers.md), [operators & grouping](operators-and-grouping.md), [dynamic projection](dynamic-projection.md), [handlers](handlers.md).
+Details: [optional variables](optional-variables.md), [conditional markers](conditional-markers.md), [dynamic projection](dynamic-projection.md), [handlers](handlers.md).
