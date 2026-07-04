@@ -53,7 +53,7 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
 
         INullColHandler? elementHandler;
         if (nullColHandler != TypeParser<T>.DefaultNullColHandler)
-            elementHandler = nullColHandler;   // an explicit override targets the element
+            elementHandler = nullColHandler;
         else
             elementHandler = elementNullability[Array.IndexOf(acceptedGenericDefinitions, def)];
 

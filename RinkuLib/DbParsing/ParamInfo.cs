@@ -42,6 +42,12 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
     public virtual void UpdateColModifier(ref ColModifier mod) { }
     /// <summary>
+    /// Called by a complex parser as it enters this slot's subtree, so a reading-order flag on the slot
+    /// can govern the subtree (or arm the swap for its first consumed column). Base slots use
+    /// <see cref="UpdateColModifier"/> instead.
+    /// </summary>
+    public virtual void EnterSubtree(ref ColModifier mod, int nbUsed) { }
+    /// <summary>
     /// Provide a way to retrieve a <see cref="DbItemParser"/> when the normal way fails
     /// </summary>
     /// <returns></returns>
@@ -210,19 +216,10 @@ internal class DefaultParamInfoMaker : IParamInfoMaker {
     public ParamInfo MakeMatcher(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, string? name, object[] attributes, UsageFlags usageFlags, object? param) {
         var fallback = param is ParameterInfo pp && pp.IsTypeDefault() ? DefaultValueFallback.Instance : IFallbackParserGetter.Nothing;
         if (usageFlags != default || fallback != IFallbackParserGetter.Nothing) {
-            var colModifier = IColModifier.Nothing;
-            if (usageFlags.HasFlag(UsageFlags.CanReuse)) {
-                if (usageFlags.HasFlag(UsageFlags.RemoveSequentialRead))
-                    colModifier = FlagUpdater.CanReuseAndRemoveSequential;
-                else if (usageFlags.HasFlag(UsageFlags.SequentialRead))
-                    colModifier = FlagUpdater.CanReuseAndSequential;
-                else
-                    colModifier = FlagUpdater.CanReuse;
-            } 
-            else if (usageFlags.HasFlag(UsageFlags.RemoveSequentialRead))
-                colModifier = FlagUpdater.RemoveSequentialRead;
-            else if (usageFlags.HasFlag(UsageFlags.SequentialRead))
-                colModifier = FlagUpdater.SequentialRead;
+            var modeFlags = usageFlags & ~UsageFlags.Subtree;   // the reading-order mode, without the scope marker
+            var colModifier = modeFlags == default
+                ? IColModifier.Nothing
+                : new FlagUpdater(modeFlags, usageFlags.HasFlag(UsageFlags.Subtree));
             return new ParamInfoPlus(Type, NullColHandler, NameComparer, colModifier, fallback);
         }
         return new(Type, NullColHandler, NameComparer);

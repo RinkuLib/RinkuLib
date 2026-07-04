@@ -13,10 +13,9 @@ With no annotations:
 ```csharp
 public record Track(int Id, string Name, decimal UnitPrice);   // constructor
 
-public class Playlist {
-    public Playlist(int id) { Id = id; }                        // constructor fills Id
-    public int Id { get; }
-    public string? Name { get; set; }                           // settable, filled after
+public class Playlist {                                         // parameterless constructor
+    public int Id { get; set; }
+    public string? Name { get; set; }                           // both settable, filled after
 }
 ```
 
@@ -98,14 +97,15 @@ The columns decide which factory is satisfiable, and the first fully-satisfied p
 
 ## Post-construction members
 
-After the constructor runs, remaining columns can fill public settable fields and properties. By default this happens only when the chosen path is the parameterless constructor. To allow it after any other constructor or factory, mark that path `[CanCompleteWithMembers]`.
+After a construction path is chosen, the columns it did not consume can fill the type's public settable fields and properties. This completion runs automatically only for the parameterless constructor; to enable it after any other constructor or factory, mark that path `[CanCompleteWithMembers]`.
 
 ```csharp
 [method: CanCompleteWithMembers]
 public class Metadata(string value) {
-    public string Value { get; } = value;
-    public string? Source { get; set; }   // filled from a "Source" column after construction
+    public string Value { get; set; } = value;   // settable, but the constructor already consumed "Value"
+    public string? Source { get; set; }           // member: fills the leftover "Source" column
 }
+// Columns: Value | Source  ->  the constructor takes Value and completion leaves it untouched, Source fills from the rest
 ```
 
-A member fills only a column the constructor did not already consume. If a member matches the same name as a constructor parameter, the parameter has already taken that column, so the member looks among the remaining columns instead, and stays at its default if it finds none. Mark the member `[MayReuseCol]` to let it read a column a parameter already used.
+Members negotiate over the columns the constructor left behind, by the same name and type matching used everywhere. A settable member is not an override: one whose name matches a consumed column finds it already taken, looks among the remaining columns, and is left as construction set it when none fit. To let a member read a column a parameter already used, mark it `[MayReuseCol]`, one of the [reading-order](reading-order.md) flags.

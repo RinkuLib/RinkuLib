@@ -31,7 +31,7 @@ public static class DbCommands {
     /// <Command cref="GetTracksByAlbumResult" />
     public static DbCommand GetTracksByAlbum(this DbConnection connection, int albumId) {
         var command = connection.CreateCommand();
-        command.CommandText = @"SELECT TrackId AS Id, Name AS ""Track Name"", UnitPrice FROM tracks WHERE AlbumId >= @albumId";
+        command.CommandText = @"SELECT TrackId AS Id, Name AS [Track Name], UnitPrice FROM tracks WHERE AlbumId >= @albumId";
         command.CommandType = CommandType.Text;
         command.Add("@albumId", DbType.Int32, albumId);
         return command;

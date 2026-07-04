@@ -309,6 +309,26 @@ public class TypeParserTests {
         Assert.Equal(14532, transfer.ExternalID);
     }
     [Fact]
+    public void Test_Generic_Factory_Manual_Add() {
+        // an external generic factory registered against the open definition
+        TypeParsingInfo.GetOrAdd(typeof(Wrapped<>))
+            .AddPossibleConstruction(typeof(WrappedFactory).GetMethod(nameof(WrappedFactory.Create))!);
+
+        // one registration serves every closed form: Create<int>
+        ColumnInfo[] intCols = [new("Value", typeof(int), false)];
+        using (var reader = CreateReader(intCols, [[7]])) {
+            reader.Read();
+            Assert.Equal(7, TypeParser<Wrapped<int>>.GetTypeParser(ref intCols).Parse(reader).Value);
+        }
+
+        // and Create<string>
+        ColumnInfo[] strCols = [new("Value", typeof(string), false)];
+        using (var reader = CreateReader(strCols, [["hi"]])) {
+            reader.Read();
+            Assert.Equal("hi", TypeParser<Wrapped<string>>.GetTypeParser(ref strCols).Parse(reader).Value);
+        }
+    }
+    [Fact]
     public void Test_With_Interface_Overload_Reorder_Specificity() {
         ColumnInfo[] columns = [
             new("OrderID", typeof(int), false),
@@ -971,6 +991,62 @@ public class TypeParserTests {
         Assert.Equal(expiration, result.ExpirationToken);
         Assert.True(result.Valid);
     }
+    [Fact]
+    public void UpdateNullColHandler_ByName_RejectsNull() {
+        Assert.True(TypeParsingInfo.GetOrAdd<CfgTrackA>()
+            .UpdateNullColHandler("Name", NotNullHandle.Instance));
+
+        ColumnInfo[] columns = [new("Id", typeof(int), false), new("Name", typeof(string), true)];
+        using var reader = CreateReader(columns, [[1, DBNull.Value]]);
+        var parser = TypeParser<CfgTrackA>.GetTypeParser(ref columns);
+
+        reader.Read();
+        Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
+    }
+    [Fact]
+    public void UpdateNullColHandler_Visitor_RejectsNull() {
+        Assert.True(TypeParsingInfo.GetOrAdd<CfgTrackB>()
+            .UpdateNullColHandler(slot => slot.Type == typeof(string) ? NotNullHandle.Instance : null));
+
+        ColumnInfo[] columns = [new("Id", typeof(int), false), new("Name", typeof(string), true)];
+        using var reader = CreateReader(columns, [[1, DBNull.Value]]);
+        var parser = TypeParser<CfgTrackB>.GetTypeParser(ref columns);
+
+        reader.Read();
+        Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
+    }
+    [Fact]
+    public void SetInvalidOnNull_Visitor_CollapsesObject() {
+        Assert.True(TypeParsingInfo.GetOrAdd<CfgPackage>()
+            .SetInvalidOnNull(slot => slot.Type == typeof(int) ? true : null));
+
+        ColumnInfo[] columns = [
+            new("Id", typeof(int), false),
+            new("ContentsTrackingId", typeof(int), true),
+            new("ContentsWeight", typeof(double), true)
+        ];
+        using var reader = CreateReader(columns, [[1, DBNull.Value, 2.5]]);
+        var parser = TypeParser<CfgShipment>.GetTypeParser(ref columns);
+
+        reader.Read();
+        var result = parser.Parse(reader);
+        Assert.Equal(1, result.Id);
+        Assert.Null(result.Contents);
+    }
+    [Fact]
+    public void AddMember_ExternalSetter_FillsColumn() {
+        Assert.True(TypeParsingInfo.GetOrAdd<CfgSecretTarget>()
+            .AddMember(typeof(CfgSecretTarget).GetMethod(nameof(CfgSecretTarget.SetSecret))!));
+
+        ColumnInfo[] columns = [new("Id", typeof(int), false), new("Secret", typeof(string), false)];
+        using var reader = CreateReader(columns, [[1, "xyz"]]);
+        var parser = TypeParser<CfgSecretTarget>.GetTypeParser(ref columns);
+
+        reader.Read();
+        var result = parser.Parse(reader);
+        Assert.Equal(1, result.Id);
+        Assert.Equal("xyz", result.Secret);
+    }
 }
 public record LayerOne(int First, LayerTwo Two);
 public record LayerTwo([AltUpTo("NotTooDeep", "Two")] int Second, LayerThree Three) : IDbReadable;
@@ -1072,8 +1148,26 @@ public record class TestMiddle2(int ID, TestBottom? Bottom) : IDbReadable;
 public record class TestTop3(int ID, TestMiddle3 Middle) : IDbReadable;
 public record class TestMiddle3(int ID, [InvalidOnNull] TestBottom Bottom) : IDbReadable;
 public record struct TestBottom([InvalidOnNull]int ID, string Name) : IDbReadable;
+// Types exercising the instance-level customization helpers (distinct per test to keep the global registry isolated)
+public record class CfgTrackA(int Id, string Name) : IDbReadable;
+public record class CfgTrackB(int Id, string Name) : IDbReadable;
+public record struct CfgPackage(int TrackingId, double Weight) : IDbReadable;
+public record class CfgShipment(int Id, CfgPackage? Contents) : IDbReadable;
+public class CfgSecretTarget : IDbReadable {
+    public int Id { get; set; }
+    public string? Secret { get; private set; }
+    // an external-style static setter: (instance, value)
+    public static void SetSecret(CfgSecretTarget target, string secret) => target.Secret = secret;
+}
 
 public record struct MM(int Amount) {
     public static implicit operator MM([NoName]int amount) => new(amount);
     public static implicit operator MM([NoName]long amount) => new((int)amount);
+}
+public class Wrapped<T> {
+    internal Wrapped(T value) { Value = value; }   // no public ctor: the factory is the only path
+    public T Value { get; }
+}
+public static class WrappedFactory {
+    public static Wrapped<T> Create<T>(T value) => new(value);
 }

@@ -32,13 +32,13 @@ public record Track(int Id, [NotNull] string Name);
 
 The mirror exists too: `[MaybeNull]` makes a slot accept `NULL` regardless of its type.
 
-The runtime form, for a type you cannot annotate, sets the rule by slot name:
+The runtime form, for a type you cannot annotate, is `UpdateNullColHandler`. Its simplest overload sets the rule by slot name:
 
 ```csharp
-TypeParsingInfo.GetOrAdd<Track>().SetNullColHandler("Name", NotNullHandle.Instance);   // what [NotNull] declares
+TypeParsingInfo.GetOrAdd<Track>().UpdateNullColHandler("Name", NotNullHandle.Instance);   // what [NotNull] declares
 ```
 
-When the target is not just a name, the visitor form receives each slot and decides:
+When the target is not just a name, the same method takes a visitor instead: it receives each slot and decides.
 
 ```csharp
 TypeParsingInfo.GetOrAdd<Track>().UpdateNullColHandler(slot =>
@@ -58,10 +58,17 @@ public record Shipment(int Id, Package? Contents);
 // TrackingId NULL -> Contents is null, not a Package full of zeroes
 ```
 
-The runtime form works by slot name:
+The runtime form is `SetInvalidOnNull`, the same simple-then-visitor pair as `UpdateNullColHandler` above. By slot name:
 
 ```csharp
 TypeParsingInfo.GetOrAdd<Package>().SetInvalidOnNull("TrackingId", true);
+```
+
+Or the visitor overload, returning null to leave a slot as is:
+
+```csharp
+TypeParsingInfo.GetOrAdd<Package>().SetInvalidOnNull(slot =>
+    slot.Type == typeof(int) ? true : null);
 ```
 
 A collapse abandons the current object and lands on the slot that holds it. What happens there depends on that slot:

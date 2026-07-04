@@ -4,7 +4,7 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
 /// <summary>The default implementation of TypeParsingInfo</summary>
-public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanProvideParamInfos {
+public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanProvideParamInfos, ICanAddMember, ICanProvideConstructions, ICanProvideMembers {
     internal static readonly
 #if NET9_0_OR_GREATER
         Lock
@@ -19,6 +19,14 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         if (TargetType != Type)
             throw new ArgumentException($"The associated type with this instance is {Type} so it can't be bound with {TargetType}");
     }
+    /// <summary>
+    /// Whether a construction or member whose result is <paramref name="target"/> can build this info's
+    /// <see cref="Type"/>. Besides a stack-equivalent match, a generic method registered against the open
+    /// definition is valid: its return (e.g. <c>Ext&lt;T&gt;</c>) closes to <see cref="Type"/> at parse time.
+    /// </summary>
+    private bool IsValidTarget(Type target)
+        => target.IsStackEquivalent(Type)
+        || (Type.IsGenericTypeDefinition && target.IsGenericType && target.GetGenericTypeDefinition() == Type);
     /// <summary>
     /// The internal state tracker indicating if the automatic discovery of members and 
     /// constructors (Registration Phase) has been performed.
@@ -38,7 +46,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         set {
             for (var i = 0; i < value.Length; i++) {
                 var c = value[i];
-                if (!c.TargetType.IsStackEquivalent(Type))
+                if (!IsValidTarget(c.TargetType))
                     throw new InvalidOperationException($"the method or constructor must be of type {Type} (returning type)");
                 var declare = c.MethodBase.DeclaringType!;
                 if (declare != Type && declare.IsGenericType)
@@ -52,10 +60,15 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
     /// A collection of public properties and fields that can be set after instantiation.
     /// </summary>
     public ReadOnlySpan<MemberParser> AvailableMembers {
-        get => Members; set {
+        get {
+            if (!IsInit)
+                Init();
+            return Members;
+        }
+        set {
             for (var i = 0; i < value.Length; i++) {
                 var c = value[i];
-                if (!c.TargetType.IsStackEquivalent(Type))
+                if (!IsValidTarget(c.TargetType))
                     throw new InvalidOperationException($"the method or constructor must be of type {Type}");
                 var declare = c.Member.DeclaringType!;
                 if (declare != Type && declare.IsGenericType)
@@ -169,12 +182,26 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
     public void AddPossibleConstruction(MethodCtorInfo mci) {
         lock (WriteLock) {
             var target = mci.TargetType;
-            if (!target.IsStackEquivalent(Type))
+            if (!IsValidTarget(target))
                 throw new Exception($"the expected type is {Type} but the provided type via the method is {mci.TargetType}");
             var declare = mci.MethodBase.DeclaringType!;
             if (declare != Type && declare.IsGenericType)
                 throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
             mci.InsertInto(ref MCIs);
+        }
+    }
+    /// <inheritdoc/>
+    public void AddMember(MemberParser member) {
+        lock (WriteLock) {
+            if (!IsValidTarget(member.TargetType))
+                throw new InvalidOperationException($"the member must be of type {Type}");
+            var declare = member.Member.DeclaringType!;
+            if (declare != Type && declare.IsGenericType)
+                throw new Exception($"Cannot add a member from a generic type other then the target type Target:{Type} Used:{declare}");
+            var result = new MemberParser[Members.Length + 1];
+            Array.Copy(Members, result, Members.Length);
+            result[^1] = member;
+            Interlocked.Exchange(ref Members, result);
         }
     }
     /// <inheritdoc/>
@@ -185,6 +212,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         if (!previousUsages.CanContinue(actualType, colUsage.NbUsed, out previousUsages))
             return null;
         colModifier = colModifier.Add(paramInfo.NameComparer);
+        paramInfo.EnterSubtree(ref colModifier, colUsage.NbUsed);   // a reading-order flag on this slot governs its subtree
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
         colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
         var mcis = MCIs;

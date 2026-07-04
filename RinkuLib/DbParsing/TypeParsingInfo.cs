@@ -208,31 +208,12 @@ public static class TypeParsingInfoHelper {
         return false;
     }
     /// <summary>
-    /// Configures the null-value response behavior for parameters matching <paramref name="defaultName"/>.
+    /// The shared road every null-handling helper travels: the info's own
+    /// <see cref="ICanUpdateNullColHandlers"/> capability when it has one, otherwise any info that can
+    /// provide its slots via <see cref="ICanProvideParamInfos"/>. Returns <see langword="false"/> only
+    /// when neither is available.
     /// </summary>
-    /// <param name="info"></param>
-    /// <param name="defaultName">The parameter name in C#.</param>
-    /// <param name="invalidOnNull">Wether or not the parameter should be invalid when null</param>
-    public static bool SetInvalidOnNull(this TypeParsingInfo info, string defaultName, bool invalidOnNull) {
-        if (info is ICanSetInvalidOnNull i) {
-            i.SetInvalidOnNull(defaultName, invalidOnNull);
-            return true;
-        }
-        if (info is ICanProvideParamInfos provider) {
-            foreach (var p in provider.GetParamInfos())
-                if (p.NameComparer.Contains(defaultName))
-                    p.SetInvalidOnNull(invalidOnNull);
-            return true;
-        }
-        return false;
-    }
-    /// <summary>
-    /// Updates the null-value response behavior of the slots.
-    /// </summary>
-    /// <param name="info"></param>
-    /// <param name="modifier">A delegate that receives each slot and returns its new
-    /// <see cref="INullColHandler"/> (returning null wount change the current handler)</param>
-    public static bool UpdateNullColHandler(this TypeParsingInfo info, Func<ParamInfo, INullColHandler?> modifier) {
+    private static bool ApplyNullColHandler(TypeParsingInfo info, Func<ParamInfo, INullColHandler?> modifier) {
         if (info is ICanUpdateNullColHandlers i) {
             i.UpdateNullColHandler(modifier);
             return true;
@@ -246,22 +227,78 @@ public static class TypeParsingInfoHelper {
     }
     /// <summary>
     /// Sets the null-value response behavior for the slots matching <paramref name="defaultName"/>.
+    /// The simplest form of <see cref="UpdateNullColHandler(TypeParsingInfo, Func{ParamInfo, INullColHandler?})"/>.
     /// </summary>
     /// <param name="info"></param>
     /// <param name="defaultName">The parameter name in C#.</param>
     /// <param name="handler">The handler the matching slots receive</param>
-    public static bool SetNullColHandler(this TypeParsingInfo info, string defaultName, INullColHandler handler) {
-        if (info is ICanUpdateNullColHandlers i) {
-            i.SetNullColHandler(defaultName, handler);
-            return true;
-        }
-        if (info is ICanProvideParamInfos provider) {
-            foreach (var p in provider.GetParamInfos())
-                if (p.NameComparer.Contains(defaultName))
-                    p.NullColHandler = handler;
-            return true;
-        }
-        return false;
+    public static bool UpdateNullColHandler(this TypeParsingInfo info, string defaultName, INullColHandler handler)
+        => ApplyNullColHandler(info, p => p.NameComparer.Contains(defaultName) ? handler : null);
+    /// <summary>
+    /// Updates the null-value response behavior of the slots. The form that gives full control:
+    /// the <paramref name="modifier"/> sees each slot and decides.
+    /// </summary>
+    /// <param name="info"></param>
+    /// <param name="modifier">A delegate that receives each slot and returns its new
+    /// <see cref="INullColHandler"/> (returning null wount change the current handler)</param>
+    public static bool UpdateNullColHandler(this TypeParsingInfo info, Func<ParamInfo, INullColHandler?> modifier)
+        => ApplyNullColHandler(info, modifier);
+    /// <summary>
+    /// Configures the null-value response behavior for the slots matching <paramref name="defaultName"/>.
+    /// The simplest form of <see cref="SetInvalidOnNull(TypeParsingInfo, Func{ParamInfo, bool?})"/>.
+    /// </summary>
+    /// <param name="info"></param>
+    /// <param name="defaultName">The parameter name in C#.</param>
+    /// <param name="invalidOnNull">Wether or not the parameter should be invalid when null</param>
+    public static bool SetInvalidOnNull(this TypeParsingInfo info, string defaultName, bool invalidOnNull)
+        => ApplyNullColHandler(info, p => p.NameComparer.Contains(defaultName)
+            ? p.NullColHandler.SetInvalidOnNull(p.Type, invalidOnNull) : null);
+    /// <summary>
+    /// Updates the invalid-on-null behavior of the slots. The form that gives full control:
+    /// the <paramref name="modifier"/> sees each slot and decides.
+    /// </summary>
+    /// <param name="info"></param>
+    /// <param name="modifier">A delegate that receives each slot and returns whether it should be
+    /// invalid when null (returning null leaves the slot as is)</param>
+    public static bool SetInvalidOnNull(this TypeParsingInfo info, Func<ParamInfo, bool?> modifier)
+        => ApplyNullColHandler(info, p => modifier(p) is bool b
+            ? p.NullColHandler.SetInvalidOnNull(p.Type, b) : null);
+    /// <summary>
+    /// Manually add a member to fill after construction: an existing <see cref="MemberParser"/>.
+    /// </summary>
+    public static bool AddMember(this TypeParsingInfo info, MemberParser member) {
+        if (info is not ICanAddMember i)
+            return false;
+        i.AddMember(member);
+        return true;
+    }
+    /// <summary>
+    /// Manually add a member to fill after construction: a public field or writable property, or a
+    /// setter method (<c>static (instance, value)</c> or instance <c>(value)</c>). The value's
+    /// <see cref="ParamInfo"/> is derived the same way discovery derives it.
+    /// </summary>
+    public static bool AddMember(this TypeParsingInfo info, MemberInfo member) {
+        if (info is not ICanAddMember i)
+            return false;
+        i.AddMember(BuildMemberParser(member));
+        return true;
+    }
+    /// <summary>
+    /// Derives the value <see cref="ParamInfo"/> for a member and wraps it in a <see cref="MemberParser"/>,
+    /// mirroring how <c>DefaultTypeParsingInfo.Init</c> builds them for fields and properties and
+    /// extending it to setter methods.
+    /// </summary>
+    private static MemberParser BuildMemberParser(MemberInfo member) {
+        ParamInfo? param = member switch {
+            PropertyInfo prop => ParamInfo.TryNew(prop),
+            FieldInfo field => ParamInfo.TryNew(field),
+            MethodInfo method => ParamInfo.TryNew(method.GetParameters() is { Length: 2 } ps && method.IsStatic
+                ? ps[1] : method.GetParameters()[0]),
+            _ => throw new ArgumentException($"{member} is not a field, property, or setter method")
+        };
+        if (param is null)
+            throw new ArgumentException($"The value type of {member} is not a usable type");
+        return new MemberParser(member, param);
     }
     /// <summary>
     /// Mannualy add a possible construction path that will be prioritized as much as possible
@@ -291,7 +328,11 @@ public interface ICanUpdateAltNames {
     /// updating it (returning null wount change the current comparer)</param>
     public void UpdateAltName(Func<INameComparer, INameComparer?> modifier);
 }
-/// <summary></summary>
+/// <summary>
+/// Governs the null handling of an info's own slots. The single primitive every null-handling helper
+/// (<c>UpdateNullColHandler</c>, <c>SetInvalidOnNull</c>) is derived from: invalid-on-null is just a
+/// transform on a slot's <see cref="INullColHandler"/>.
+/// </summary>
 public interface ICanUpdateNullColHandlers {
     /// <summary>
     /// Updates the null-value response behavior of the slots.
@@ -299,13 +340,6 @@ public interface ICanUpdateNullColHandlers {
     /// <param name="modifier">A delegate that receives each slot and returns its new
     /// <see cref="INullColHandler"/> (returning null wount change the current handler)</param>
     public void UpdateNullColHandler(Func<ParamInfo, INullColHandler?> modifier);
-    /// <summary>
-    /// Sets the null-value response behavior for the slots matching <paramref name="defaultName"/>.
-    /// </summary>
-    /// <param name="defaultName">The parameter name in C#.</param>
-    /// <param name="handler">The handler the matching slots receive</param>
-    public void SetNullColHandler(string defaultName, INullColHandler handler)
-        => UpdateNullColHandler(p => p.NameComparer.Contains(defaultName) ? handler : null);
 }
 /// <summary></summary>
 public interface ICanProvideParamInfos {
@@ -314,14 +348,28 @@ public interface ICanProvideParamInfos {
     /// </summary>
     public IEnumerable<ParamInfo> GetParamInfos();
 }
+/// <summary>
+/// Exposes the whole set of construction paths for reading and wholesale replacement, so callers can
+/// reorder or rebuild it without reaching for a concrete info type. Assigning validates every entry.
+/// </summary>
+public interface ICanProvideConstructions {
+    /// <summary>The prioritized construction paths (constructors or static factory methods).</summary>
+    public ReadOnlySpan<MethodCtorInfo> PossibleConstructors { get; set; }
+}
+/// <summary>
+/// Exposes the whole set of post-construction members for reading and wholesale replacement, the
+/// member counterpart to <see cref="ICanProvideConstructions"/>. Assigning validates every entry.
+/// </summary>
+public interface ICanProvideMembers {
+    /// <summary>The public fields and properties filled after instantiation.</summary>
+    public ReadOnlySpan<MemberParser> AvailableMembers { get; set; }
+}
 /// <summary></summary>
-public interface ICanSetInvalidOnNull {
+public interface ICanAddMember {
     /// <summary>
-    /// Configures the null-value response behavior for parameters matching <paramref name="defaultName"/>.
+    /// Manually add a member to fill after construction, prioritized as it is provided.
     /// </summary>
-    /// <param name="defaultName">The parameter name in C#.</param>
-    /// <param name="invalidOnNull">Wether or not the parameter should be invalid when null</param>
-    public void SetInvalidOnNull(string defaultName, bool invalidOnNull);
+    public void AddMember(MemberParser member);
 }
 /// <summary></summary>
 public interface ICanAddPossibleConstructor {

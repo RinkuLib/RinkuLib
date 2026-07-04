@@ -20,8 +20,6 @@ public class Report {
 // Columns: Id              -> only A is satisfiable
 ```
 
-To pin one path and skip ordering entirely, mark it `[DbConstructor]`.
-
 > **Watch for broad paths.** Specificity only reorders comparable signatures. A path that is easy to satisfy and not comparable to the others keeps its spot and can shadow them.
 >
 > ```csharp
@@ -72,15 +70,32 @@ if (MethodCtorInfo.TryNew(ctor, MethodCtorInfo.TryMakeParameters(ctor),
     info.AddPossibleConstruction(mci);
 ```
 
-The set itself is assignable, and the usual move is not replacing it but taking it, rearranging, and handing it back. This is the direct fix for the broad-path warning above. The paths live on the default info, what a normal registration gets, so match on it rather than cast, the type may have been [registered with another info](registration.md#registering-with-another-info):
+### Generic factories
+
+A construction path can be a generic factory registered against the open definition. The engine closes the method to each closed form at parse time, so one registration serves every `T`.
 
 ```csharp
-if (TypeParsingInfo.GetOrAdd<UserProfile>() is DefaultTypeParsingInfo info) {
-    info.Init();                                // discovery is lazy, fill the set first
+public class Box<T> { internal Box(T value) => Value = value; public T Value { get; } }
+public static class BoxFactory {
+    public static Box<T> Create<T>(T value) => new(value);   // external, non-generic host
+}
 
+TypeParsingInfo.GetOrAdd(typeof(Box<>))
+    .AddPossibleConstruction(typeof(BoxFactory).GetMethod(nameof(BoxFactory.Create))!);
+
+// Box<int> builds through Create<int>, Box<string> through Create<string>, from the one registration
+```
+
+Two rules on the method's shape: its type arguments must match the returned type's exactly (order and count), and its declaring type cannot itself be generic, the engine needs a fixed host to resolve the call. A factory declared on the generic type itself is instead non-generic (`static Box<T> Create(T)` inside `Box<T>`), since the type already supplies the parameter, and that form is discovered without registering anything.
+
+### Replacing the set
+
+The set itself is assignable, so the usual move is to take it, apply an ordering rule of your own, and hand it back. Sorting the paths by descending parameter count is one such rule, and the direct fix for the broad-path warning above: the richer paths come first and a broad lean one can no longer shadow them. Any info that implements `ICanProvideConstructions` exposes the set. The default info does; another info may or may not, depending on [which info parses the type](registration.md#registering-with-another-info). So match on the interface, not on a concrete type:
+
+```csharp
+if (TypeParsingInfo.GetOrAdd<UserProfile>() is ICanProvideConstructions info) {
     var paths = info.PossibleConstructors.ToArray();
-    // order was A, D, C, B: move the broad (string username) path last
-    (paths[0], paths[1], paths[2], paths[3]) = (paths[1], paths[2], paths[3], paths[0]);
+    Array.Sort(paths, (a, b) => b.Parameters.Length - a.Parameters.Length);   // most parameters first
     info.PossibleConstructors = paths;
 }
 ```
@@ -89,17 +104,21 @@ Assigning validates every entry (the result must be assignable to the type) and 
 
 ## Post-construction members
 
-`AvailableMembers` is the same story for the members filled after construction: public fields (not `readonly` or `const`) and properties with a public setter (`init` excluded). Entries can be added by hand, including an external static setter, a `static` method taking `(instance, value)` on a non-generic class.
+`AvailableMembers` is the same story for the members filled after construction: public fields (not `readonly` or `const`) and properties with a public setter (`init` excluded). `AddMember` appends one by hand, the counterpart to `AddPossibleConstruction`. It takes a field, a property, or a setter method, an external `static` one taking `(instance, value)` on a non-generic class or an instance one taking `(value)`, and derives the column's type the same way discovery does.
 
 ```csharp
-if (TypeParsingInfo.GetOrAdd<UserProfile>() is DefaultTypeParsingInfo info) {
-    info.Init();
+// an external setter: static void SetSecretCode(UserProfile profile, string code)
+TypeParsingInfo.GetOrAdd<UserProfile>()
+    .AddMember(typeof(ExternalLogic).GetMethod("SetSecretCode")!);
+// a "SecretCode" column now fills through that setter
+```
 
-    // an external setter: static void SetSecretCode(UserProfile profile, string code)
+For finer control, or to add a member the derivation cannot build on its own, hand `AddMember` a `MemberParser` you assembled, or take the whole set through the `ICanProvideMembers` capability and assign it back, exactly as [replacing the set](#replacing-the-set) does for construction paths.
+
+```csharp
+if (TypeParsingInfo.GetOrAdd<UserProfile>() is ICanProvideMembers info) {
     var setter = typeof(ExternalLogic).GetMethod("SetSecretCode")!;
-    MemberParser[] members = [.. info.AvailableMembers,
+    info.AvailableMembers = [.. info.AvailableMembers,
         new MemberParser(setter, ParamInfo.TryNew(setter.GetParameters()[1])!)];
-    info.AvailableMembers = members;
-    // a "SecretCode" column now fills through that setter
 }
 ```

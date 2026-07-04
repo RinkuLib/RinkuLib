@@ -76,7 +76,7 @@ int alt   = CountTracks.Query<int>(cnn);   // also works
 
 ## Tuples
 
-Ask for a `ValueTuple` and the elements map positionally, names ignored.
+Ask for a `ValueTuple` and its elements are taken in order, the tuple names (`Item1`, `Item2`, ...) ignored. Each element then negotiates as usual: a basic type has no name left to match, so it takes the next column; a complex element still matches its own members by name.
 
 ```csharp
 // Basic: strictly by column order
