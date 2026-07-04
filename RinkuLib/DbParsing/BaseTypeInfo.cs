@@ -18,8 +18,11 @@ public class BaseTypeInfo : TypeParsingInfo {
         int i = 0;
         ITypeConverter? converter = null;
         paramInfo.UpdateColModifier(ref colModifier);
-        bool canReuse = colModifier.Flags.HasFlag(UsageFlags.CanReuse);
-        if (colModifier.Flags.HasFlag(UsageFlags.SequentialRead) && !colModifier.Flags.HasFlag(UsageFlags.RemoveSequentialRead)) {
+        var flags = colModifier.Flags;
+        if (colModifier.SwapFirstAt >= 0 && colUsage.NbUsed == colModifier.SwapFirstAt)
+            flags |= colModifier.SwapFirstFlags;   // the first consumed column of a slot-scope subtree
+        bool canReuse = flags.HasFlag(UsageFlags.CanReuse);
+        if (flags.HasFlag(UsageFlags.SequentialRead) && !flags.HasFlag(UsageFlags.RemoveSequentialRead)) {
             i = colUsage.LastIndexUsed + 1;
             if (i < columns.Length) {
                 if (!canReuse && colUsage.IsUsed(i))

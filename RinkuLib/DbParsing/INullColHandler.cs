@@ -9,34 +9,69 @@ public interface IUsageFlagModifier {
 /// <summary>
 /// Specifies that an instantiation members need to jump if DBNull.
 /// </summary>
-[AttributeUsage(AttributeTargets.Parameter)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class InvalidOnNullAttribute : Attribute;
 /// <summary>
-/// Specifies that an the member may look anywhere in the schema to find matching col not only the column folowing the one previously used.
+/// The member may look anywhere in the schema to find its column, not only the one following the last
+/// consumed. On a complex-typed slot this frees only the subtree's first consumed column; the rest keep
+/// the inherited regime. Use <see cref="CanLookAnywhereSubtreeAttribute"/> to free the whole subtree.
 /// </summary>
-[AttributeUsage(AttributeTargets.Parameter)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class CanLookAnywhereAttribute : Attribute, IUsageFlagModifier {
     /// <inheritdoc/>
     public void UpdateFlags(object? param, ref UsageFlags usageFlag)
         => usageFlag |= UsageFlags.RemoveSequentialRead;
 }
 /// <summary>
-/// Specifies that an the member may <b>not</b> look anywhere in the schema to find matching col and must only use the one folowing the one previously used.
+/// The member must <b>not</b> look anywhere and must take only the column following the last consumed.
+/// On a complex-typed slot this constrains only the subtree's first consumed column; the rest keep the
+/// inherited regime. Use <see cref="CanNotLookAnywhereSubtreeAttribute"/> to constrain the whole subtree.
 /// </summary>
-[AttributeUsage(AttributeTargets.Parameter)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class CanNotLookAnywhereAttribute : Attribute, IUsageFlagModifier {
     /// <inheritdoc/>
     public void UpdateFlags(object? param, ref UsageFlags usageFlag)
         => usageFlag |= UsageFlags.SequentialRead;
 }
 /// <summary>
-/// Specifies that an an allready used column may be used to match
+/// Specifies that an an allready used column may be used to match. On a complex-typed slot this applies
+/// to the subtree's first consumed column; use <see cref="MayReuseColSubtreeAttribute"/> for the whole subtree.
 /// </summary>
-[AttributeUsage(AttributeTargets.Parameter)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class MayReuseColAttribute : Attribute, IUsageFlagModifier {
     /// <inheritdoc/>
     public void UpdateFlags(object? param, ref UsageFlags usageFlag)
         => usageFlag |= UsageFlags.CanReuse;
+}
+/// <summary>
+/// The subtree form of <see cref="CanLookAnywhereAttribute"/>: frees the complex slot's whole subtree to
+/// look anywhere, not just its first column.
+/// </summary>
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class CanLookAnywhereSubtreeAttribute : Attribute, IUsageFlagModifier {
+    /// <inheritdoc/>
+    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
+        => usageFlag |= UsageFlags.RemoveSequentialRead | UsageFlags.Subtree;
+}
+/// <summary>
+/// The subtree form of <see cref="CanNotLookAnywhereAttribute"/>: constrains the complex slot's whole
+/// subtree to sequential reading, not just its first column.
+/// </summary>
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class CanNotLookAnywhereSubtreeAttribute : Attribute, IUsageFlagModifier {
+    /// <inheritdoc/>
+    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
+        => usageFlag |= UsageFlags.SequentialRead | UsageFlags.Subtree;
+}
+/// <summary>
+/// The subtree form of <see cref="MayReuseColAttribute"/>: lets the complex slot's whole subtree reuse
+/// already consumed columns, not just its first column.
+/// </summary>
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class MayReuseColSubtreeAttribute : Attribute, IUsageFlagModifier {
+    /// <inheritdoc/>
+    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
+        => usageFlag |= UsageFlags.CanReuse | UsageFlags.Subtree;
 }
 /// <summary>
 /// Defines a factory for creating <see cref="INullColHandler"/> instances based on reflection metadata.

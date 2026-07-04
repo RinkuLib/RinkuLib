@@ -15,20 +15,14 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
     protected abstract T ParseOne(DbDataReader reader);
 
     /// <inheritdoc/>
-    public IEnumerable<T> ParseAndOwn(DbDataReader reader, IDbCommand command, bool wasClosed, bool disposeCommand) {
+    public IEnumerable<T> ParseAndOwn<TCallback>(DbDataReader reader, TCallback callback) where TCallback : ILazyTypeParserCallback {
         try {
             do {
                 yield return ParseOne(reader);
             } while (reader.Read());
         }
         finally {
-            reader.Dispose();
-            if (wasClosed)
-                command.Connection?.Close();
-            if (disposeCommand) {
-                command.Parameters.Clear();
-                command.Dispose();
-            }
+            callback.Invoke(reader);
         }
     }
     /// <inheritdoc/>

@@ -35,7 +35,10 @@
         <DebugType>embedded</DebugType>
         <EmbedAllSources>true</EmbedAllSources>
     </PropertyGroup>
-	<ItemGroup>
+	<!-- Analyzer references are packed into the NuGet but are not part of the public API.
+	     DocFX sets DocsApiBuild=true so it doesn't load them when generating the API reference
+	     (avoids duplicate-source and missing-metadata-reference warnings). -->
+	<ItemGroup Condition="'$(DocsApiBuild)' != 'true'">
 		<ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers\RinkuLib.Analyzers.csproj" PrivateAssets="all" ReferenceOutputAssembly="false"/>
 		<ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\RinkuLib.Analyzers.CodeFixes.csproj" PrivateAssets="all" ReferenceOutputAssembly="false"/>
 	</ItemGroup>

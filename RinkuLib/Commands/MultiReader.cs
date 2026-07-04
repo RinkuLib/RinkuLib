@@ -3,7 +3,10 @@ using System.Collections.ObjectModel;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
+using System.Transactions;
+using System.Windows.Input;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tools;
@@ -41,13 +44,20 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         while (reader.FieldCount == 0)
             reader.NextResult();
         nbResultSetPassedMinusOne++;
-        var cache = GetCache<T>();
-        T? res = default;
-        if (reader.Read())
-            res = cache.Parse(reader);
-        if (goToNextResultSet)
-            reader.NextResult();
-        return res;
+        try {
+            var cache = GetCache<T>();
+            if (!reader.Read())
+                return cache.Default();
+            if (goToNextResultSet && cache is ILazyTypeParser<T> lazyParser) {
+                goToNextResultSet = false;
+                return lazyParser.ParseAndOwn<GoToNextResultSet>(reader, new());
+            }
+            return cache.Parse(reader);
+        }
+        finally {
+            if (goToNextResultSet)
+                reader.NextResult();
+        }
     }
     /// <summary>
     /// Asynchronously, automaticaly skip non-returning set, parse the first row in that result set and parse it to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -58,23 +68,20 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         while (reader.FieldCount == 0)
             await reader.NextResultAsync(ct).ConfigureAwait(false);
         nbResultSetPassedMinusOne++;
-        var cache = GetCache<T>();
-        T? res = default;
-        if (await reader.ReadAsync(ct).ConfigureAwait(false))
-            res = cache.Parse(reader);
-        if (goToNextResultSet)
-            await reader.NextResultAsync(ct).ConfigureAwait(false);
-        return res;
-    }
-    /// <summary>Automaticaly skip non-returning set, parse the rows in that result set and go to next result after enumeration</summary>
-    public IEnumerable<T> QueryAll<T>() {
-        while (reader.FieldCount == 0)
-            reader.NextResult();
-        nbResultSetPassedMinusOne++;
-        var cache = GetCache<T>();
-        while (reader.Read())
-            yield return cache.Parse(reader);
-        reader.NextResult();
+        try {
+            var cache = GetCache<T>();
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                return cache.Default();
+            if (goToNextResultSet && cache is ILazyTypeParser<T> lazyParser) {
+                goToNextResultSet = false;
+                return lazyParser.ParseAndOwn<GoToNextResultSet>(reader, new());
+            }
+            return cache.Parse(reader);
+        }
+        finally {
+            if (goToNextResultSet)
+                await reader.NextResultAsync(ct).ConfigureAwait(false);
+        }
     }
     /// <summary>
     /// Asynchronously, automaticaly skip non-returning set, lazily parse the rows in that result set and go to next result once enumeration completes.

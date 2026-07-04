@@ -3,9 +3,11 @@
 [Flags]
 public enum UsageFlags {
     /// <summary>Indicate that the next read should follow the precedent in columns order</summary>
-    SequentialRead = 0b01,
+    SequentialRead = 0b001,
     /// <summary>Indicate that an allready used column may be reused</summary>
-    CanReuse = 0b10,
+    CanReuse = 0b010,
+    /// <summary>Indicate the mode applies to a complex slot's whole subtree, not just its first column</summary>
+    Subtree = 0b100,
     /// <summary>Indicate the sequential read should me removed</summary>
     RemoveSequentialRead = int.MinValue
 }
@@ -18,6 +20,14 @@ public struct ColModifier(params INameComparer[] Comparers) {
     public UsageFlags Flags = default;
     /// <summary>The current chain of comparers</summary>
     public readonly INameComparer[] Comparers = Comparers;
+    /// <summary>
+    /// The <see cref="ColumnUsage.NbUsed"/> captured when a slot-scope subtree was entered, or -1 when
+    /// no such scope is active. The subtree's first consumed column (the read where <c>NbUsed</c> still
+    /// equals this) applies <see cref="SwapFirstFlags"/>; every later read falls back to <see cref="Flags"/>.
+    /// </summary>
+    public int SwapFirstAt = -1;
+    /// <summary>The flags applied to a slot-scope subtree's first consumed column.</summary>
+    public UsageFlags SwapFirstFlags = default;
     /// <summary>Entry point without any modifications</summary>
     public ColModifier() : this([]) { }
     /// <summary>
@@ -30,12 +40,12 @@ public struct ColModifier(params INameComparer[] Comparers) {
         if (comparer is NoNameComparer)
             return this;
         if (Comparers.Length == 0)
-            return new([comparer]);
+            return new([comparer]) { Flags = Flags, SwapFirstAt = SwapFirstAt, SwapFirstFlags = SwapFirstFlags };
         int newLen = Comparers.Length + 1;
         var newArr = new INameComparer[newLen];
         Array.Copy(Comparers, newArr, Comparers.Length);
         newArr[newLen - 1] = comparer;
-        return new ColModifier(newArr);
+        return new ColModifier(newArr) { Flags = Flags, SwapFirstAt = SwapFirstAt, SwapFirstFlags = SwapFirstFlags };
     }
 }
 /// <summary>

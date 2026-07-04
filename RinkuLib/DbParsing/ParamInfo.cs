@@ -42,6 +42,12 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
     public virtual void UpdateColModifier(ref ColModifier mod) { }
     /// <summary>
+    /// Called by a complex parser as it enters this slot's subtree, so a reading-order flag on the slot
+    /// can govern the subtree (or arm the swap for its first consumed column). Base slots use
+    /// <see cref="UpdateColModifier"/> instead.
+    /// </summary>
+    public virtual void EnterSubtree(ref ColModifier mod, int nbUsed) { }
+    /// <summary>
     /// Provide a way to retrieve a <see cref="DbItemParser"/> when the normal way fails
     /// </summary>
     /// <returns></returns>
@@ -95,13 +101,11 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <list type="bullet">
     /// <item>If any attribute implements <see cref="IParamInfoMaker"/>, it takes control and creates the matcher.</item>
     /// <item><see cref="AltAttribute"/> instances are collected to build optimized <see cref="INameComparer"/> versions.</item>
-    /// <item>Null-handling is determined by <see cref="NotNullAttribute"/>, <see cref="InvalidOnNullAttribute"/>, or custom <see cref="INullColHandlerMaker"/>.</item>
+    /// <item>Null-handling is resolved by <see cref="GetDeclaredNullColHandler"/> (<see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>, <see cref="InvalidOnNullAttribute"/>, or a custom <see cref="INullColHandlerMaker"/>), falling back to the type's own nullability.</item>
     /// </list>
     /// </remarks>
     public static ParamInfo Create(Type type, string? name, object[] attributes, object? param = null) {
         int altCount = 0;
-        INullColHandler? nullColHandler = null;
-        bool isInvalidOnNull = false;
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
         UsageFlags usageFlags = default;
         bool hasNoName = false;
@@ -118,17 +122,11 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 nameComparersMakers.Add(mkr);
             if (attr is IParamInfoMaker mm)
                 maker = mm;
-            if (attr is InvalidOnNullAttribute)
-                isInvalidOnNull = true;
-            if (attr is INullColHandlerMaker nchm)
-                nullColHandler = nchm.MakeColHandler(type, name, attributes, param);
-            if (attr is NotNullAttribute)
-                nullColHandler = NotNullHandle.Instance;
             if (attr is IUsageFlagModifier ufm)
                 ufm.UpdateFlags(param, ref usageFlags);
         }
-        nullColHandler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
-        nullColHandler = nullColHandler.SetInvalidOnNull(type, isInvalidOnNull);
+        var nullColHandler = GetDeclaredNullColHandler(type, name, attributes, param)
+            ?? (type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance);
         string[] altNames = [];
         if (altCount > 0) {
             altNames = new string[altCount];
@@ -139,6 +137,32 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         }
         INameComparer comparer = ComparerFactory(type, hasNoName ? null : name, altNames, attributes, param, nameComparersMakers);
         return maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
+    }
+    /// <summary>
+    /// Resolves the nullability that a set of attributes declares: a custom
+    /// <see cref="INullColHandlerMaker"/>, <see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>,
+    /// composed with <see cref="InvalidOnNullAttribute"/>. This is the resolution <see cref="Create"/> uses
+    /// before falling back to the type's own nullability.
+    /// </summary>
+    /// <returns>The declared handler, or <see langword="null"/> when nothing is declared.</returns>
+    public static INullColHandler? GetDeclaredNullColHandler(Type type, string? name, object[] attributes, object? param = null) {
+        INullColHandler? handler = null;
+        bool isInvalidOnNull = false;
+        for (int i = 0; i < attributes.Length; i++) {
+            var attr = attributes[i];
+            if (attr is InvalidOnNullAttribute)
+                isInvalidOnNull = true;
+            if (attr is INullColHandlerMaker nchm)
+                handler = nchm.MakeColHandler(type, name, attributes, param);
+            if (attr is NotNullAttribute)
+                handler = NotNullHandle.Instance;
+            if (attr is MaybeNullAttribute)
+                handler = NullableTypeHandle.Instance;
+        }
+        if (!isInvalidOnNull)
+            return handler;
+        handler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
+        return handler.SetInvalidOnNull(type, true);
     }
     /// <summary>A delegate to implement your own name comparer dispatching strategy</summary>
     public static NameComparerFactory ComparerFactory { get; set; } = DispatchComparer;
@@ -192,19 +216,10 @@ internal class DefaultParamInfoMaker : IParamInfoMaker {
     public ParamInfo MakeMatcher(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, string? name, object[] attributes, UsageFlags usageFlags, object? param) {
         var fallback = param is ParameterInfo pp && pp.IsTypeDefault() ? DefaultValueFallback.Instance : IFallbackParserGetter.Nothing;
         if (usageFlags != default || fallback != IFallbackParserGetter.Nothing) {
-            var colModifier = IColModifier.Nothing;
-            if (usageFlags.HasFlag(UsageFlags.CanReuse)) {
-                if (usageFlags.HasFlag(UsageFlags.RemoveSequentialRead))
-                    colModifier = FlagUpdater.CanReuseAndRemoveSequential;
-                else if (usageFlags.HasFlag(UsageFlags.SequentialRead))
-                    colModifier = FlagUpdater.CanReuseAndSequential;
-                else
-                    colModifier = FlagUpdater.CanReuse;
-            } 
-            else if (usageFlags.HasFlag(UsageFlags.RemoveSequentialRead))
-                colModifier = FlagUpdater.RemoveSequentialRead;
-            else if (usageFlags.HasFlag(UsageFlags.SequentialRead))
-                colModifier = FlagUpdater.SequentialRead;
+            var modeFlags = usageFlags & ~UsageFlags.Subtree;   // the reading-order mode, without the scope marker
+            var colModifier = modeFlags == default
+                ? IColModifier.Nothing
+                : new FlagUpdater(modeFlags, usageFlags.HasFlag(UsageFlags.Subtree));
             return new ParamInfoPlus(Type, NullColHandler, NameComparer, colModifier, fallback);
         }
         return new(Type, NullColHandler, NameComparer);
