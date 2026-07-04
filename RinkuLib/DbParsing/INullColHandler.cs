@@ -9,12 +9,12 @@ public interface IUsageFlagModifier {
 /// <summary>
 /// Specifies that an instantiation members need to jump if DBNull.
 /// </summary>
-[AttributeUsage(AttributeTargets.Parameter)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class InvalidOnNullAttribute : Attribute;
 /// <summary>
 /// Specifies that an the member may look anywhere in the schema to find matching col not only the column folowing the one previously used.
 /// </summary>
-[AttributeUsage(AttributeTargets.Parameter)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class CanLookAnywhereAttribute : Attribute, IUsageFlagModifier {
     /// <inheritdoc/>
     public void UpdateFlags(object? param, ref UsageFlags usageFlag)
@@ -23,7 +23,7 @@ public sealed class CanLookAnywhereAttribute : Attribute, IUsageFlagModifier {
 /// <summary>
 /// Specifies that an the member may <b>not</b> look anywhere in the schema to find matching col and must only use the one folowing the one previously used.
 /// </summary>
-[AttributeUsage(AttributeTargets.Parameter)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class CanNotLookAnywhereAttribute : Attribute, IUsageFlagModifier {
     /// <inheritdoc/>
     public void UpdateFlags(object? param, ref UsageFlags usageFlag)
@@ -32,7 +32,7 @@ public sealed class CanNotLookAnywhereAttribute : Attribute, IUsageFlagModifier 
 /// <summary>
 /// Specifies that an an allready used column may be used to match
 /// </summary>
-[AttributeUsage(AttributeTargets.Parameter)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class MayReuseColAttribute : Attribute, IUsageFlagModifier {
     /// <inheritdoc/>
     public void UpdateFlags(object? param, ref UsageFlags usageFlag)

@@ -16,6 +16,29 @@ Pin a parameter's metadata up front instead of letting it be learned.
 TrackCmd.UpdateParamCache("@Name", TypedDbParamCache.Get(DbType.AnsiStringFixedLength, 1000));
 ```
 
+## Output parameters
+
+Direction is part of the metadata. Pin an output parameter with a directional cache, run through an overload that hands you the command, and read the value once the read completes. `Execute`, `ExecuteScalar`, `Query`, and their async forms all take an `out DbCommand`, like the reader methods.
+
+```csharp
+static readonly QueryCommand Renumber = new("EXEC dbo.RenumberTracks @albumId, @moved OUTPUT");
+
+Renumber.UpdateParamCache("@moved", new DirectionalSizedDbParamCache(ParameterDirection.Output, DbType.Int32));
+
+List<Track> renumbered = Renumber.Query<List<Track>>(cnn, out DbCommand cmd, new { albumId = 1, moved = 0 });
+
+int moved = (int)cmd.Parameters["@moved"].Value!;
+cmd.Dispose();
+```
+
+The details that matter:
+
+- The `out DbCommand` overloads leave the command alive and in your hands, dispose it when done. The overloads without it create and dispose their own command, so outputs are not reachable there.
+- A parameter is only created for a supplied value, so give the output a placeholder (`moved = 0` above) to bring it into the command.
+- Providers fill outputs when the reader closes. A buffered shape completes its read before returning; a streamed shape fills them only after enumeration finishes.
+- A [builder bound to your own command](parameters.md#a-builder-bound-to-one-dbcommand) works the same way, its command is yours already.
+- `DirectionalScaledDbParamCache` is the same with precision and scale, for decimals.
+
 ## Plugging in a provider
 
 The capture step is pluggable. A maker inspects the command and, when it recognizes it, returns a getter that reads provider-specific metadata.

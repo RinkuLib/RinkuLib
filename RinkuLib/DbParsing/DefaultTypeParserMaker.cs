@@ -33,8 +33,8 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
         bool isNullable = t is not null;
         var closedType = t ?? typeof(T);
         var paramInfo = nullColHandler == NullableTypeHandle.Instance
-            ? InfoNullable 
-            : nullColHandler == NullableTypeHandle.Instance
+            ? InfoNullable
+            : nullColHandler == NotNullHandle.Instance
                 ? InfoNotNullable
                 : new(ParamInfo.NoType, nullColHandler, NoNameComparer.Instance);
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);

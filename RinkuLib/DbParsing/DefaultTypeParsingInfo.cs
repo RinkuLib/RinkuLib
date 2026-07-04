@@ -4,7 +4,7 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
 /// <summary>The default implementation of TypeParsingInfo</summary>
-public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanSetInvalidOnNull, ICanUpdateAltNames {
+public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanProvideParamInfos {
     internal static readonly
 #if NET9_0_OR_GREATER
         Lock
@@ -154,29 +154,16 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         }
     }
     /// <inheritdoc/>
-    public void UpdateAltName(Func<INameComparer, INameComparer?> modifier) { 
+    public IEnumerable<ParamInfo> GetParamInfos() {
         if (!IsInit)
             Init();
         for (int i = 0; i < MCIs.Length; i++) {
             var parameters = MCIs[i].Parameters;
             for (int j = 0; j < parameters.Length; j++)
-                parameters[j].UpdateAltName(modifier);
+                yield return parameters[j];
         }
         for (int i = 0; i < Members.Length; i++)
-            Members[i].Param.UpdateAltName(modifier);
-    }
-    /// <inheritdoc/>
-    public void SetInvalidOnNull(string name, bool invalidOnNull) {
-        if (!IsInit)
-            Init();
-        for (int i = 0; i < MCIs.Length; i++) {
-            var parameters = MCIs[i].Parameters;
-            for (int j = 0; j < parameters.Length; j++) {
-                var p = parameters[j];
-                if (p.NameComparer.Contains(name))
-                    p.SetInvalidOnNull(invalidOnNull);
-            }
-        }
+            yield return Members[i].Param;
     }
     /// <inheritdoc/>
     public void AddPossibleConstruction(MethodCtorInfo mci) {
@@ -241,7 +228,6 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             canCompleteWithMembers = true;
         }
         List<(MemberInfo, DbItemParser)>? memberReaders = null;
-        colModifier.Flags &= ~UsageFlags.SequentialRead;
         if (canCompleteWithMembers) {
             memberReaders = [];
             var members = Members;

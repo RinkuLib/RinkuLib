@@ -196,10 +196,16 @@ public static class TypeParsingInfoHelper {
     /// <param name="modifier">A delegate that will manage both matching with name comparer and 
     /// updating it (returning null wount change the current comparer)</param>
     public static bool UpdateAltName(this TypeParsingInfo info, Func<INameComparer, INameComparer?> modifier) {
-        if (info is not ICanUpdateAltNames i)
-            return false;
-        i.UpdateAltName(modifier);
-        return true;
+        if (info is ICanUpdateAltNames i) {
+            i.UpdateAltName(modifier);
+            return true;
+        }
+        if (info is ICanProvideParamInfos provider) {
+            foreach (var p in provider.GetParamInfos())
+                p.UpdateAltName(modifier);
+            return true;
+        }
+        return false;
     }
     /// <summary>
     /// Configures the null-value response behavior for parameters matching <paramref name="defaultName"/>.
@@ -208,10 +214,54 @@ public static class TypeParsingInfoHelper {
     /// <param name="defaultName">The parameter name in C#.</param>
     /// <param name="invalidOnNull">Wether or not the parameter should be invalid when null</param>
     public static bool SetInvalidOnNull(this TypeParsingInfo info, string defaultName, bool invalidOnNull) {
-        if (info is not ICanSetInvalidOnNull i)
-            return false;
-        i.SetInvalidOnNull(defaultName, invalidOnNull);
-        return true;
+        if (info is ICanSetInvalidOnNull i) {
+            i.SetInvalidOnNull(defaultName, invalidOnNull);
+            return true;
+        }
+        if (info is ICanProvideParamInfos provider) {
+            foreach (var p in provider.GetParamInfos())
+                if (p.NameComparer.Contains(defaultName))
+                    p.SetInvalidOnNull(invalidOnNull);
+            return true;
+        }
+        return false;
+    }
+    /// <summary>
+    /// Updates the null-value response behavior of the slots.
+    /// </summary>
+    /// <param name="info"></param>
+    /// <param name="modifier">A delegate that receives each slot and returns its new
+    /// <see cref="INullColHandler"/> (returning null wount change the current handler)</param>
+    public static bool UpdateNullColHandler(this TypeParsingInfo info, Func<ParamInfo, INullColHandler?> modifier) {
+        if (info is ICanUpdateNullColHandlers i) {
+            i.UpdateNullColHandler(modifier);
+            return true;
+        }
+        if (info is ICanProvideParamInfos provider) {
+            foreach (var p in provider.GetParamInfos())
+                p.NullColHandler = modifier(p) ?? p.NullColHandler;
+            return true;
+        }
+        return false;
+    }
+    /// <summary>
+    /// Sets the null-value response behavior for the slots matching <paramref name="defaultName"/>.
+    /// </summary>
+    /// <param name="info"></param>
+    /// <param name="defaultName">The parameter name in C#.</param>
+    /// <param name="handler">The handler the matching slots receive</param>
+    public static bool SetNullColHandler(this TypeParsingInfo info, string defaultName, INullColHandler handler) {
+        if (info is ICanUpdateNullColHandlers i) {
+            i.SetNullColHandler(defaultName, handler);
+            return true;
+        }
+        if (info is ICanProvideParamInfos provider) {
+            foreach (var p in provider.GetParamInfos())
+                if (p.NameComparer.Contains(defaultName))
+                    p.NullColHandler = handler;
+            return true;
+        }
+        return false;
     }
     /// <summary>
     /// Mannualy add a possible construction path that will be prioritized as much as possible
@@ -240,6 +290,29 @@ public interface ICanUpdateAltNames {
     /// <param name="modifier">A delegate that will manage both matching with name comparer and 
     /// updating it (returning null wount change the current comparer)</param>
     public void UpdateAltName(Func<INameComparer, INameComparer?> modifier);
+}
+/// <summary></summary>
+public interface ICanUpdateNullColHandlers {
+    /// <summary>
+    /// Updates the null-value response behavior of the slots.
+    /// </summary>
+    /// <param name="modifier">A delegate that receives each slot and returns its new
+    /// <see cref="INullColHandler"/> (returning null wount change the current handler)</param>
+    public void UpdateNullColHandler(Func<ParamInfo, INullColHandler?> modifier);
+    /// <summary>
+    /// Sets the null-value response behavior for the slots matching <paramref name="defaultName"/>.
+    /// </summary>
+    /// <param name="defaultName">The parameter name in C#.</param>
+    /// <param name="handler">The handler the matching slots receive</param>
+    public void SetNullColHandler(string defaultName, INullColHandler handler)
+        => UpdateNullColHandler(p => p.NameComparer.Contains(defaultName) ? handler : null);
+}
+/// <summary></summary>
+public interface ICanProvideParamInfos {
+    /// <summary>
+    /// Enumerates every slot of the type, constructor parameters and members alike.
+    /// </summary>
+    public IEnumerable<ParamInfo> GetParamInfos();
 }
 /// <summary></summary>
 public interface ICanSetInvalidOnNull {

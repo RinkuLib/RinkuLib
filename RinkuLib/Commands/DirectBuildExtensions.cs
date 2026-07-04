@@ -17,6 +17,46 @@ public static class DirectBuildExtensions {
                 arr[i] = true;
         return arr;
     }
+    /// <summary>The shared parser dispatch of the Query methods</summary>
+    private static T QueryParse<T>(QueryCommand command, DbCommand cmd, Span<bool> usageMap, bool disposeCommand) {
+        if (command.TryGetCachedParser<T>(usageMap, out var parser))
+            return parser.Query(cmd, disposeCommand);
+        else if (parser is not null)
+            return parser.Query(cmd, command, disposeCommand);
+        return cmd.Query(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+    }
+    /// <summary>The shared parser dispatch of the Query methods</summary>
+    private static T QueryParse<T>(QueryCommand command, IDbCommand cmd, Span<bool> usageMap, bool disposeCommand) {
+        if (command.TryGetCachedParser<T>(usageMap, out var parser))
+            return parser.Query(cmd, disposeCommand);
+        else if (parser is not null)
+            return parser.Query(cmd, command, disposeCommand);
+        return cmd.Query(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+    }
+    /// <summary>The shared parser dispatch of the QueryAsync methods</summary>
+    private static Task<T> QueryParseAsync<T>(QueryCommand command, DbCommand cmd, Span<bool> usageMap, bool disposeCommand, CancellationToken ct) {
+        if (command.TryGetCachedParser<T>(usageMap, out var parser))
+            return parser.QueryAsync(cmd, disposeCommand, ct);
+        else if (parser is not null)
+            return parser.QueryAsync(cmd, command, disposeCommand, ct);
+        return cmd.QueryAsync(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+    }
+    /// <summary>The shared parser dispatch of the QueryAsync methods</summary>
+    private static Task<T> QueryParseAsync<T>(QueryCommand command, IDbCommand cmd, Span<bool> usageMap, bool disposeCommand, CancellationToken ct) {
+        if (command.TryGetCachedParser<T>(usageMap, out var parser))
+            return parser.QueryAsync(cmd, disposeCommand, ct);
+        else if (parser is not null)
+            return parser.QueryAsync(cmd, command, disposeCommand, ct);
+        return cmd.QueryAsync(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+    }
+    /// <summary>The shared parser dispatch of the StreamQueryAsync methods</summary>
+    private static IAsyncEnumerable<T> StreamParse<T>(QueryCommand command, DbCommand cmd, Span<bool> usageMap, bool disposeCommand, CancellationToken ct) {
+        if (command.TryGetCachedParser<T>(usageMap, out var parser))
+            return cmd.StreamQueryAsync(disposeCommand, parser, (ICache?)null, ct);
+        else if (parser is not null)
+            return cmd.StreamQueryAsync(disposeCommand, parser, command, ct);
+        return cmd.StreamQueryAsync(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+    }
     extension(QueryCommand command) {
         #region object param
         /// <summary>
@@ -33,6 +73,20 @@ public static class DirectBuildExtensions {
             return cmd.Execute(true, command.NeedToCache(usageMap) ? command : null);
         }
         /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the nb of affected rows, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public int Execute(DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.Execute(false, command.NeedToCache(usageMap) ? command : null);
+        }
+        /// <summary>
         /// Executes a <see cref="DbCommand"/> and return the nb of affected rows.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
@@ -45,6 +99,21 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             return cmd.ExecuteAsync(true, command.NeedToCache(usageMap) ? command : null, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the nb of affected rows, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<int> ExecuteAsync(DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteAsync(false, command.NeedToCache(usageMap) ? command : null, ct);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and return scalar value.
@@ -60,6 +129,20 @@ public static class DirectBuildExtensions {
             return cmd.ExecuteScalar<T>(true, command.NeedToCache(usageMap) ? command : null);
         }
         /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return scalar value, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T>(DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteScalar<T>(false, command.NeedToCache(usageMap) ? command : null);
+        }
+        /// <summary>
         /// Executes a <see cref="DbCommand"/> and return the scalar value.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
@@ -72,6 +155,21 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             return cmd.ExecuteScalarAsync<T>(true, command.NeedToCache(usageMap) ? command : null, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and return the scalar value, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteScalarAsync<T>(false, command.NeedToCache(usageMap) ? command : null, ct);
         }
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
@@ -146,11 +244,21 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Query(cmd, true);
-            else if (parser is not null)
-                return parser.Query(cmd, command, true);
-            return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+            return QueryParse<T>(command, cmd, usageMap, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T Query<T>(DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return QueryParse<T>(command, cmd, usageMap, false);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -164,11 +272,22 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.QueryAsync(cmd, true, ct);
-            else if (parser is not null)
-                return parser.QueryAsync(cmd, command, true, ct);
-            return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return QueryParseAsync<T>(command, cmd, usageMap, true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> QueryAsync<T>(DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return QueryParseAsync<T>(command, cmd, usageMap, false, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -182,11 +301,22 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return cmd.StreamQueryAsync(true, parser, (ICache?)null, ct);
-            else if (parser is not null)
-                return cmd.StreamQueryAsync(true, parser, command, ct);
-            return cmd.StreamQueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return StreamParse<T>(command, cmd, usageMap, true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="DbCommand"/> and lazily parse the rows, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters, filled once enumeration completes) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public IAsyncEnumerable<T> StreamQueryAsync<T>(DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return StreamParse<T>(command, cmd, usageMap, false, ct);
         }
 
 
@@ -205,6 +335,20 @@ public static class DirectBuildExtensions {
             return cmd.Execute(true, command.NeedToCache(usageMap) ? command : null);
         }
         /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the nb of affected rows, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public int Execute(IDbConnection cnn, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.Execute(false, command.NeedToCache(usageMap) ? command : null);
+        }
+        /// <summary>
         /// Executes a <see cref="IDbCommand"/> and return the nb of affected rows.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
@@ -217,6 +361,21 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             return cmd.ExecuteAsync(true, command.NeedToCache(usageMap) ? command : null, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the nb of affected rows, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<int> ExecuteAsync(IDbConnection cnn, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteAsync(false, command.NeedToCache(usageMap) ? command : null, ct);
         }
         /// <summary>
         /// Executes a <see cref="IDbCommand"/> and return scalar value.
@@ -232,6 +391,20 @@ public static class DirectBuildExtensions {
             return cmd.ExecuteScalar<T>(true, command.NeedToCache(usageMap) ? command : null);
         }
         /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return scalar value, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T ExecuteScalar<T>(IDbConnection cnn, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteScalar<T>(false, command.NeedToCache(usageMap) ? command : null);
+        }
+        /// <summary>
         /// Executes a <see cref="IDbCommand"/> and return the scalar value.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
@@ -244,6 +417,21 @@ public static class DirectBuildExtensions {
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             return cmd.ExecuteScalarAsync<T>(true, command.NeedToCache(usageMap) ? command : null, ct);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and return the scalar value, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> ExecuteScalarAsync<T>(IDbConnection cnn, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteScalarAsync<T>(false, command.NeedToCache(usageMap) ? command : null, ct);
         }
         /// <summary>
         /// Executes the reader of the <see cref="IDbCommand"/>.
@@ -318,11 +506,21 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Query(cmd, true);
-            else if (parser is not null)
-                return parser.Query(cmd, command, true);
-            return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+            return QueryParse<T>(command, cmd, usageMap, true);
+        }
+        /// <summary>
+        /// Executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public T Query<T>(IDbConnection cnn, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return QueryParse<T>(command, cmd, usageMap, false);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -336,11 +534,22 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.QueryAsync(cmd, true, ct);
-            else if (parser is not null)
-                return parser.QueryAsync(cmd, command, true, ct);
-            return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return QueryParseAsync<T>(command, cmd, usageMap, true, ct);
+        }
+        /// <summary>
+        /// Asynchronously executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result, keeping the command alive.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="cmd">The command, kept for the caller to read (e.g. output parameters) and dispose</param>
+        /// <param name="parametersObj">The current state object for the <see cref="IDbCommand"/> creation</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<T> QueryAsync<T>(IDbConnection cnn, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            cmd = cnn.GetCommand(transaction, timeout);
+            Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return QueryParseAsync<T>(command, cmd, usageMap, false, ct);
         }
         #endregion
         #region generic param
@@ -472,11 +681,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Query(cmd, true);
-            else if (parser is not null)
-                return parser.Query(cmd, command, true);
-            return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+            return QueryParse<T>(command, cmd, usageMap, true);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -490,11 +695,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.QueryAsync(cmd, true, ct);
-            else if (parser is not null)
-                return parser.QueryAsync(cmd, command, true, ct);
-            return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return QueryParseAsync<T>(command, cmd, usageMap, true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -508,11 +709,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return cmd.StreamQueryAsync(true, parser, (ICache?)null, ct);
-            else if (parser is not null)
-                return cmd.StreamQueryAsync(true, parser, command, ct);
-            return cmd.StreamQueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return StreamParse<T>(command, cmd, usageMap, true, ct);
         }
 
 
@@ -644,11 +841,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Query(cmd, true);
-            else if (parser is not null)
-                return parser.Query(cmd, command, true);
-            return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+            return QueryParse<T>(command, cmd, usageMap, true);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -662,11 +855,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.QueryAsync(cmd, true, ct);
-            else if (parser is not null)
-                return parser.QueryAsync(cmd, command, true, ct);
-            return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return QueryParseAsync<T>(command, cmd, usageMap, true, ct);
         }
         #endregion
         #region ref generic param
@@ -798,11 +987,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Query(cmd, true);
-            else if (parser is not null)
-                return parser.Query(cmd, command, true);
-            return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+            return QueryParse<T>(command, cmd, usageMap, true);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -816,11 +1001,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.QueryAsync(cmd, true, ct);
-            else if (parser is not null)
-                return parser.QueryAsync(cmd, command, true, ct);
-            return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return QueryParseAsync<T>(command, cmd, usageMap, true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -834,11 +1015,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return cmd.StreamQueryAsync(true, parser, (ICache?)null, ct);
-            else if (parser is not null)
-                return cmd.StreamQueryAsync(true, parser, command, ct);
-            return cmd.StreamQueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return StreamParse<T>(command, cmd, usageMap, true, ct);
         }
 
 
@@ -970,11 +1147,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.Query(cmd, true);
-            else if (parser is not null)
-                return parser.Query(cmd, command, true);
-            return cmd.Query(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+            return QueryParse<T>(command, cmd, usageMap, true);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -988,11 +1161,7 @@ public static class DirectBuildExtensions {
             var cmd = cnn.GetCommand(transaction, timeout);
             Span<bool> usageMap = stackalloc bool[command.Mapper.Count];
             command.SetCommand(cmd, ref parametersObj, usageMap);
-            if (command.TryGetCachedParser<T>(usageMap, out var parser))
-                return parser.QueryAsync(cmd, true, ct);
-            else if (parser is not null)
-                return parser.QueryAsync(cmd, command, true, ct);
-            return cmd.QueryAsync(true, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return QueryParseAsync<T>(command, cmd, usageMap, true, ct);
         }
         #endregion
     }

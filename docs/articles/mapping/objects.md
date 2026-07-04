@@ -20,7 +20,19 @@ public class Playlist {
 }
 ```
 
-A column matches a slot when the name matches (case-insensitive) and the type is convertible. Among the viable paths, the engine takes the first one the columns fully satisfy. Paths are kept most-specific first, so that first match is usually the right one. The exact ordering is on [registration](registration.md).
+A column matches a slot when the name matches (case-insensitive) and the type is convertible. Among the viable paths, the engine takes the first one the columns fully satisfy. Paths are kept most-specific first, so that first match is usually the right one. The exact ordering is on [construction paths](construction-paths.md).
+
+## Default values
+
+A parameter with a default value is optional to the negotiation. When nothing satisfies it, no matching column for a simple type, no satisfiable construction for a complex one, the slot falls back to its default instead of failing the path. One constructor with defaults covers what several arities would: `(int, string, string?)` below also stands in for `(int, string)`.
+
+```csharp
+public record Track(int Id, string Name, string? Composer = null);
+// Columns: Id | Name            -> builds, Composer stays null
+// Columns: Id | Name | Composer -> builds with all three
+```
+
+The fallback emits the type's default, so it applies when the declared default is exactly that (`= null`, `= 0`, `= false`). A parameter with `= 5` is not optional, the engine will not fabricate the value. Post-construction members need none of this, they are optional by nature and simply stay unset when nothing matches.
 
 ## Alternative names
 
@@ -31,12 +43,7 @@ public record Person(int Id, [Alt("Name")] string Username);
 // matches a "Username" column or a "Name" column
 ```
 
-For a column whose name is not a valid C# identifier, the engine also honors a `[TrueName("...")]` on the slot. There is no such attribute in RinkuLib: it is matched by name, so any attribute called `TrueNameAttribute` with a string value works. That is what lets [generated result records](../codegen/index.md) carry the real column name without depending on Rinku.
-
-```csharp
-public record Row([TrueName("Track Name")] string TrackName);
-// matches the literal column "Track Name"
-```
+Names go further, skipping prefix segments, matching by position alone: the full rules are on [names](names.md).
 
 ## Nesting
 
@@ -56,7 +63,7 @@ Nested custom types must be registered. `IDbReadable` on the nested type is the 
 
 ## Recursion
 
-The same negotiation runs at every depth, with no special handling for a type that references itself. Each level consumes its own columns, and the descent goes exactly as deep as the columns reach.
+The same negotiation runs at every depth, a self-referencing type included. Each level consumes its own columns, and the descent goes exactly as deep as the columns reach.
 
 ```csharp
 public record User(int Id, string Name, [Alt("Boss")] User? Supervisor = null);
@@ -67,7 +74,7 @@ User u = GetUser.Query<User>(cnn, new { id = 3 });
 // and its own Supervisor finds no columns and stays null
 ```
 
-What stops a self-reference from looping is column consumption, not the prefix: a level that consumes no new column will not re-enter the same type. So the descent halts on its own once the columns run out. The nullable `Supervisor` is what lets the deepest level simply be left empty rather than fail. The prefix (`Supervisor`, `SupervisorBoss`) only routes distinct columns to each level, it is not itself the stopping rule.
+A level that consumes no new column stops instead of descending into the same type again, so the recursion ends once the columns run out. The `= null` [default](#default-values) is what lets it end cleanly: at the deepest level no `Supervisor` columns remain, so the slot falls back to its default and the path still builds. Without it, every level would require a `Supervisor` and the negotiation could never resolve.
 
 ## Factories and polymorphism
 
@@ -101,4 +108,4 @@ public class Metadata(string value) {
 }
 ```
 
-If a constructor parameter and a settable member both map to the same column, the member assignment runs after the constructor and wins. Make the member non-public or non-writable if that is not what you want.
+A member fills only a column the constructor did not already consume. If a member matches the same name as a constructor parameter, the parameter has already taken that column, so the member looks among the remaining columns instead, and stays at its default if it finds none. Mark the member `[MayReuseCol]` to let it read a column a parameter already used.

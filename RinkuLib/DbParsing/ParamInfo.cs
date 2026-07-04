@@ -95,13 +95,11 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <list type="bullet">
     /// <item>If any attribute implements <see cref="IParamInfoMaker"/>, it takes control and creates the matcher.</item>
     /// <item><see cref="AltAttribute"/> instances are collected to build optimized <see cref="INameComparer"/> versions.</item>
-    /// <item>Null-handling is determined by <see cref="NotNullAttribute"/>, <see cref="InvalidOnNullAttribute"/>, or custom <see cref="INullColHandlerMaker"/>.</item>
+    /// <item>Null-handling is resolved by <see cref="GetDeclaredNullColHandler"/> (<see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>, <see cref="InvalidOnNullAttribute"/>, or a custom <see cref="INullColHandlerMaker"/>), falling back to the type's own nullability.</item>
     /// </list>
     /// </remarks>
     public static ParamInfo Create(Type type, string? name, object[] attributes, object? param = null) {
         int altCount = 0;
-        INullColHandler? nullColHandler = null;
-        bool isInvalidOnNull = false;
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
         UsageFlags usageFlags = default;
         bool hasNoName = false;
@@ -118,17 +116,11 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 nameComparersMakers.Add(mkr);
             if (attr is IParamInfoMaker mm)
                 maker = mm;
-            if (attr is InvalidOnNullAttribute)
-                isInvalidOnNull = true;
-            if (attr is INullColHandlerMaker nchm)
-                nullColHandler = nchm.MakeColHandler(type, name, attributes, param);
-            if (attr is NotNullAttribute)
-                nullColHandler = NotNullHandle.Instance;
             if (attr is IUsageFlagModifier ufm)
                 ufm.UpdateFlags(param, ref usageFlags);
         }
-        nullColHandler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
-        nullColHandler = nullColHandler.SetInvalidOnNull(type, isInvalidOnNull);
+        var nullColHandler = GetDeclaredNullColHandler(type, name, attributes, param)
+            ?? (type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance);
         string[] altNames = [];
         if (altCount > 0) {
             altNames = new string[altCount];
@@ -139,6 +131,32 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         }
         INameComparer comparer = ComparerFactory(type, hasNoName ? null : name, altNames, attributes, param, nameComparersMakers);
         return maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
+    }
+    /// <summary>
+    /// Resolves the nullability that a set of attributes declares: a custom
+    /// <see cref="INullColHandlerMaker"/>, <see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>,
+    /// composed with <see cref="InvalidOnNullAttribute"/>. This is the resolution <see cref="Create"/> uses
+    /// before falling back to the type's own nullability.
+    /// </summary>
+    /// <returns>The declared handler, or <see langword="null"/> when nothing is declared.</returns>
+    public static INullColHandler? GetDeclaredNullColHandler(Type type, string? name, object[] attributes, object? param = null) {
+        INullColHandler? handler = null;
+        bool isInvalidOnNull = false;
+        for (int i = 0; i < attributes.Length; i++) {
+            var attr = attributes[i];
+            if (attr is InvalidOnNullAttribute)
+                isInvalidOnNull = true;
+            if (attr is INullColHandlerMaker nchm)
+                handler = nchm.MakeColHandler(type, name, attributes, param);
+            if (attr is NotNullAttribute)
+                handler = NotNullHandle.Instance;
+            if (attr is MaybeNullAttribute)
+                handler = NullableTypeHandle.Instance;
+        }
+        if (!isInvalidOnNull)
+            return handler;
+        handler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
+        return handler.SetInvalidOnNull(type, true);
     }
     /// <summary>A delegate to implement your own name comparer dispatching strategy</summary>
     public static NameComparerFactory ComparerFactory { get; set; } = DispatchComparer;

@@ -3,7 +3,7 @@ using RinkuLib.DbParsing;
 
 namespace RinkuLib.TypeAccessing;
 /// <summary>Indicate that the value returned may be null</summary>
-public readonly struct MaybeNull<T>([NoName] T? value) where T : class {
+public readonly struct MaybeNull<T>([MaybeNull][NoName] T value) where T : class {
     /// <summary>Indicate if the item has a value</summary>
     public bool HasValue => Value is not null;
     /// <summary>The underlying value</summary>
@@ -13,7 +13,7 @@ public readonly struct MaybeNull<T>([NoName] T? value) where T : class {
     [return: MaybeNull]
     public static implicit operator T?(MaybeNull<T> val) => val.Value;
     /// <inheritdoc/>
-    public static implicit operator MaybeNull<T>(T? val) => new(val);
+    public static implicit operator MaybeNull<T>(T? val) => val is null ? new() : new(val);
 }
 /// <summary></summary>
 public interface IWrapping<TSelf, T> where TSelf : IWrapping<TSelf, T> {
@@ -31,7 +31,7 @@ public readonly struct Optional<T>([NoName] T value) : IWrapping<Optional<T>, T>
     [return: MaybeNull]
     public static implicit operator T?(Optional<T> val) => val.Value;
     /// <inheritdoc/>
-    public static implicit operator Optional<T>(T val) => new(val);
+    public static implicit operator Optional<T>(T? val) => val is null ? new() : new(val);
     /// <inheritdoc/>
     public static Optional<T> Make(T val) => new(val);
 }
@@ -46,7 +46,7 @@ public readonly struct OptionalStruct<T>([NoName] T value) : IWrapping<OptionalS
     [return: MaybeNull]
     public static implicit operator T?(OptionalStruct<T> val) => val.Value;
     /// <inheritdoc/>
-    public static implicit operator OptionalStruct<T>(T val) => new(val);
+    public static implicit operator OptionalStruct<T>(T? val) => !val.HasValue ? new() : new(val.Value);
     /// <inheritdoc/>
     public static OptionalStruct<T> Make(T val) => new(val);
 }
@@ -61,7 +61,7 @@ public readonly struct OptionalNullable<T>([MaybeNull][NoName] T value) : IWrapp
     [return: MaybeNull]
     public static implicit operator T?(OptionalNullable<T> val) => val.Value;
     /// <inheritdoc/>
-    public static implicit operator OptionalNullable<T>(T val) => new(val);
+    public static implicit operator OptionalNullable<T>(T? val) => val is null ? new() : new(val);
     /// <inheritdoc/>
     public static OptionalNullable<T> Make(T val) => new(val);
 }

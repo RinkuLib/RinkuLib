@@ -33,51 +33,73 @@ await foreach (var t in GetTracks.StreamQueryAsync<Track>(cnn))   // async strea
 
 `List<T>` buffers every row. `IEnumerable<T>` and `IAsyncEnumerable<T>` produce rows as you enumerate, keeping memory flat on large results. A streamed result holds the reader open while you iterate, so finish or dispose it before reusing the connection. Zero rows give an empty collection.
 
-## The full set
+## The built-in shapes
 
-| Ask for | Zero rows | Many rows | Notes |
+These, and a few more, are the shapes Rinku ships for common cases. Each is a small type wrapping the element parser with one rule of its own, nothing the engine treats specially, and you can add your own the same way (see [below](#these-shapes-are-just-types)). The set is open.
+
+They answer two separate questions.
+
+**How many rows.**
+
+| Ask for | No row | One row | Extra rows |
 | --- | --- | --- | --- |
-| `T` | throws | takes the first | |
-| `List<T>` / `IEnumerable<T>` | empty collection | all rows | |
-| `Optional<T>` | empty (`HasValue == false`) | takes the first | reference types |
-| `OptionalStruct<T>` | empty | takes the first | value types |
-| `Single<T>` | empty value | **throws** on a second row | asserts at most one row |
-| `MaybeNull<T>` | empty | takes the first | the mapped object itself may be `null` |
-| `OptionalNullable<T>` | empty | takes the first | both of the above |
+| `T` | throws | the object | takes the first |
+| `Optional<T>` | `HasValue == false` | the object | takes the first |
+| `OptionalStruct<T>` | `HasValue == false` | the value | takes the first |
+| `List<T>` / `IEnumerable<T>` | empty collection | one element | all rows |
+| `Single<T>` | a default `Single<T>` | the object | **throws** |
 
-Each wrapper converts implicitly to its inner `T`, so it costs nothing to pass around.
+**Whether the value may be null.** A row can carry a `NULL`, or a nested object can [collapse](../mapping/nullability.md#invalidonnull-collapse-the-object) to nothing. By default that throws. A null-accepting shape takes it instead.
 
-```csharp
-string? maybe = await cmd.QueryAsync<MaybeNull<string>>(cnn, new { txt = "def" });
-```
+| Ask for | Null value |
+| --- | --- |
+| `MaybeNull<T>` | `HasValue == false` (reference types) |
+| `T?` | `null` (value types) |
 
-## Zero rows and NULL are different things
-
-A nullable type answers "the value may be NULL", not "there may be no row".
+The two questions are independent. `Optional<T>` accepts a missing row but throws on a `NULL` value; `MaybeNull<T>` accepts a `NULL` value but throws on a missing row. `OptionalNullable<T>` is the two stacked, `Optional`'s missing-row rule around `MaybeNull`'s null rule, flattened to a single `HasValue == false` for both cases.
 
 ```csharp
-int? n = GetNumber.Query<int?>(cnn);                       // a NULL value becomes null. Zero rows still throw
-OptionalStruct<int> o = GetNumber.Query<OptionalStruct<int>>(cnn); // zero rows give an empty value
+int? n                = GetNumber.Query<int?>(cnn);               // no row -> throws; NULL value -> null; 
+OptionalStruct<int> o = GetNumber.Query<OptionalStruct<int>>(cnn); // no row -> HasValue == false; NULL value -> throws;
 ```
 
-Same on the reference side: `Query<string>` throws on a NULL value, `Query<MaybeNull<string>>` hands you `null`. Column-level NULL rules are on [nullability](../mapping/nullability.md).
+Every wrapper converts implicitly to its inner `T`, so it costs nothing to pass around. Column-level `NULL` rules are on [nullability](../mapping/nullability.md).
 
 ## Scalars
 
-A primitive `T` maps the first column of the first row. For a value that is the whole point of the call, `ExecuteScalar<T>` is the natural choice.
+A primitive `T` maps the first column of the first row. While `ExecuteScalar<T>` actualy run the whole script and return a single value.
 
 ```csharp
 int count = CountTracks.ExecuteScalar<int>(cnn);
 int alt   = CountTracks.Query<int>(cnn);   // also works
 ```
 
-## These shapes are just types
+## Tuples
 
-`Optional<T>` is not a feature of `Query`. It is a small type the engine knows how to produce, and you can wrap it in a name you prefer.
+Ask for a `ValueTuple` and the elements map positionally, names ignored.
 
 ```csharp
-public static Optional<T> QueryFirstOrDefault<T>(this QueryCommand cmd, DbConnection cnn, object? p = null)
-    where T : class => cmd.Query<Optional<T>>(cnn, p);
+// Basic: strictly by column order
+var (id, name) = cmd.Query<(int, string)>(cnn);
+
+// Mixed: the basic element takes the next column, the complex one negotiates its own
+var (id, location) = cmd.Query<(int, Location)>(cnn);
+
+// Complex: each element matches its member names, in order
+public record struct Person(int Id, string Name);
+var (p1, p2) = cmd.Query<(Person, Person)>(cnn);
+// Columns: Id | Name | Id | Name  -> p1 takes the first pair, p2 the second
 ```
 
-Adding a shape of your own works the same way the built-in ones were added. See [matching and parsers](../mapping/custom-parsing.md#adding-a-result-shape).
+Positional parsing comes from the type's registration, and any type can opt into it: see [registering with another info](../mapping/registration.md#registering-with-another-info).
+
+## These shapes are just types
+
+Every shape above is an ordinary type the engine produces from a small parser. Wrap one in a name you prefer:
+
+```csharp
+public static OptionalNullable<T> QueryFirstOrDefault<T>(this QueryCommand cmd, DbConnection cnn, object? p = null)
+    where T : class => cmd.Query<OptionalNullable<T>>(cnn, p);
+```
+
+Adding a shape of your own works the same way the built-in ones were added. See [parsers](../mapping/parsers.md#adding-a-result-shape).

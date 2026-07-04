@@ -23,13 +23,17 @@ List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
 
 One rule to know up front: a type you query directly is known automatically, a type reached only through another one must be registered. The `IDbReadable` marker on `Artist` above is the simplest way. Details on [registration](registration.md).
 
+The engine is one negotiation composed of small parts, each a default implementation that can be swapped. The behaviors in this section, from nesting to tuples, are arrangements of those parts.
+
 ## In this section
 
 - [Objects and nesting](objects.md). Constructors, factories, members, prefixes, recursion.
 - [Nullability](nullability.md). What a `NULL` column does, and how to change it.
-- [Value tuples](tuples.md). Positional mapping.
 - [DynaObject](dynaobject.md). Rows without a fixed type.
-- [Registration](registration.md). How types and construction paths become known, and how to add your own.
-- [Matching and parsers](custom-parsing.md). The matching machinery, and where the defaults can be swapped.
+- [Registration](registration.md). How a type becomes known, and which rules it signs up for.
+- [Construction paths](construction-paths.md). How paths are ordered, added, and reordered.
+- [Names](names.md). The matching rules and their adjustments.
+- [Reading order](reading-order.md). Whether a slot holds the line or searches the schema.
+- [Parsers](parsers.md). How the parser for a `T` is picked, added, or driven directly.
 
 The result wrappers (`List<T>`, `Optional<T>`, streaming) are on [result shapes](../running-queries/result-shapes.md).

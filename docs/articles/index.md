@@ -18,9 +18,8 @@ RinkuLib is a micro-ORM made of four capabilities: mapping, conditional SQL, cod
 
 How rows become objects.
 
-- [Mapping](mapping/index.md), [objects and nesting](mapping/objects.md), [nullability](mapping/nullability.md).
-- [Value tuples](mapping/tuples.md), [DynaObject](mapping/dynaobject.md).
-- [Registration](mapping/registration.md) and [matching and parsers](mapping/custom-parsing.md), where you steer or replace the defaults.
+- [Mapping](mapping/index.md), [objects and nesting](mapping/objects.md), [nullability](mapping/nullability.md), [DynaObject](mapping/dynaobject.md).
+- [Registration](mapping/registration.md), [construction paths](mapping/construction-paths.md), [names](mapping/names.md), [reading order](mapping/reading-order.md), and [parsers](mapping/parsers.md), where you steer or replace the defaults.
 
 ## Conditional SQL
 

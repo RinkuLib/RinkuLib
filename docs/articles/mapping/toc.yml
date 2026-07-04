@@ -4,11 +4,15 @@
   href: objects.md
 - name: Nullability
   href: nullability.md
-- name: Value Tuples
-  href: tuples.md
 - name: DynaObject
   href: dynaobject.md
 - name: Registration
   href: registration.md
-- name: Matching and Parsers
-  href: custom-parsing.md
+- name: Construction Paths
+  href: construction-paths.md
+- name: Names
+  href: names.md
+- name: Reading Order
+  href: reading-order.md
+- name: Parsers
+  href: parsers.md

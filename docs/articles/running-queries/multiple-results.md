@@ -15,7 +15,7 @@ using (cmd) {
 
 `Query<T>` works like everywhere else: `T` picks one row, `List<T>` all rows, `IEnumerable<T>` a stream. Each call advances to the next result set, and non-returning sets are skipped automatically.
 
-The `out DbCommand` is yours: keep it to read output parameters, and dispose it along with the reader. It is assigned synchronously, so the async form composes with `await`.
+The `out DbCommand` is yours: keep it to read [output parameters](parameter-metadata.md#output-parameters), and dispose it along with the reader. It is assigned synchronously, so the async form composes with `await`.
 
 ```csharp
 using var multi = await Dashboard.ExecuteMultiReaderAsync(cnn, out DbCommand cmd, new { id = 1 }, ct: ct);
