@@ -1,8 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Runtime.CompilerServices;
 using RinkuLib.Queries;
-using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Commands; 
 /// <summary>Extensions to direcly call a <see cref="QueryCommand"/> with an obj</summary>
@@ -23,7 +21,7 @@ public static class DirectBuildExtensions {
             return parser.Query(cmd, disposeCommand);
         else if (parser is not null)
             return parser.Query(cmd, command, disposeCommand);
-        return cmd.Query(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+        return cmd.Query(new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), disposeCommand);
     }
     /// <summary>The shared parser dispatch of the Query methods</summary>
     private static T QueryParse<T>(QueryCommand command, IDbCommand cmd, Span<bool> usageMap, bool disposeCommand) {
@@ -31,7 +29,7 @@ public static class DirectBuildExtensions {
             return parser.Query(cmd, disposeCommand);
         else if (parser is not null)
             return parser.Query(cmd, command, disposeCommand);
-        return cmd.Query(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()));
+        return cmd.Query(new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), disposeCommand);
     }
     /// <summary>The shared parser dispatch of the QueryAsync methods</summary>
     private static Task<T> QueryParseAsync<T>(QueryCommand command, DbCommand cmd, Span<bool> usageMap, bool disposeCommand, CancellationToken ct) {
@@ -39,7 +37,7 @@ public static class DirectBuildExtensions {
             return parser.QueryAsync(cmd, disposeCommand, ct);
         else if (parser is not null)
             return parser.QueryAsync(cmd, command, disposeCommand, ct);
-        return cmd.QueryAsync(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+        return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), disposeCommand, ct);
     }
     /// <summary>The shared parser dispatch of the QueryAsync methods</summary>
     private static Task<T> QueryParseAsync<T>(QueryCommand command, IDbCommand cmd, Span<bool> usageMap, bool disposeCommand, CancellationToken ct) {
@@ -47,15 +45,15 @@ public static class DirectBuildExtensions {
             return parser.QueryAsync(cmd, disposeCommand, ct);
         else if (parser is not null)
             return parser.QueryAsync(cmd, command, disposeCommand, ct);
-        return cmd.QueryAsync(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+        return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), disposeCommand, ct);
     }
     /// <summary>The shared parser dispatch of the StreamQueryAsync methods</summary>
     private static IAsyncEnumerable<T> StreamParse<T>(QueryCommand command, DbCommand cmd, Span<bool> usageMap, bool disposeCommand, CancellationToken ct) {
         if (command.TryGetCachedParser<T>(usageMap, out var parser))
-            return cmd.StreamQueryAsync(disposeCommand, parser, (ICache?)null, ct);
+            return cmd.StreamQueryAsync(parser, null, disposeCommand, ct);
         else if (parser is not null)
-            return cmd.StreamQueryAsync(disposeCommand, parser, command, ct);
-        return cmd.StreamQueryAsync(disposeCommand, null, new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), ct);
+            return cmd.StreamQueryAsync(parser, command, disposeCommand, ct);
+        return cmd.StreamQueryAsync(new LinkerQueryCommandWithParser<T>(command, usageMap.ToArray()), disposeCommand, ct);
     }
     extension(QueryCommand command) {
         #region object param

@@ -176,6 +176,11 @@ public class QueryCommand : IQueryCommand, ICache {
         }
         UpdateCache(new DefaultParamCache(cmd));
     }
+    /// <inheritdoc/>
+    public Task UpdateCacheAsync(IDbCommand cmd, CancellationToken ct = default) {
+        UpdateCache(cmd);
+        return Task.CompletedTask;
+    }
     private bool UpdateCache<T>(T infoGetter) where T : IDbParamInfoGetter {
         foreach (var item in infoGetter.EnumerateParameters()) {
             var ind = Mapper.GetIndex(item.Key);
@@ -530,7 +535,7 @@ public class QueryCommand : IQueryCommand, ICache {
         return true;
     }
 #endif
-    }
+}
 
 internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {
     private object? _first = first;

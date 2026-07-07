@@ -5,14 +5,15 @@ RinkuPowerTools is a Visual Studio extension. You list your queries once, it con
 > **Status.** RinkuPowerTools is early in development. SQL Server and Visual Studio only for now.
 
 ```csharp
+static readonly CachedTypeParser<List<GetTracksByAlbumResult>> Tracks = new();
+
 using var cnn = new SqlConnection(connectionString);
 
-// GetTracksByAlbum is generated ADO.NET. Query maps the rows.
-List<GetTracksByAlbumResult> tracks =
-    cnn.GetTracksByAlbum(albumId: 1).Query<List<GetTracksByAlbumResult>>();
+// GetTracksByAlbum is generated ADO.NET. The cache maps the rows.
+List<GetTracksByAlbumResult> tracks = Tracks.Query(cnn.GetTracksByAlbum(albumId: 1));
 ```
 
-The generated method builds the `DbCommand` with no Rinku dependency. Pairing it with [mapping](../mapping/index.md) is the natural fit, and the generated result records are exact column mirrors, which also enables the compile-time-schema mapping on [any DbCommand](../running-queries/direct-dbcommand.md#a-schema-known-at-compile-time).
+The generated method builds the `DbCommand` with no Rinku dependency. Pairing it with [mapping](../mapping/index.md) is the natural fit: the generated result records are exact column mirrors, so the rows map straight through, run through a cache as on [any DbCommand](../running-queries/direct-dbcommand.md).
 
 ## The workflow
 

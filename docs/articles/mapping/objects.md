@@ -33,6 +33,22 @@ public record Track(int Id, string Name, string? Composer = null);
 
 The fallback emits the type's default, so it applies when the declared default is exactly that (`= null`, `= 0`, `= false`). A parameter with `= 5` is not optional, the engine will not fabricate the value. Post-construction members need none of this, they are optional by nature and simply stay unset when nothing matches.
 
+The runtime form is an `IFallbackParserGetter` on the slot, carried by a `ParamInfoPlus` on the [construction path](construction-paths.md#replacing-the-set). `DefaultValueFallback.Instance` is the type-default fallback a compiler default produces, so attaching it makes a slot optional even when its parameter declares nothing:
+
+```csharp
+public record Track(int Id, string Name, int Code);   // Code is required, no = default
+
+if (TypeParsingInfo.GetOrAdd<Track>() is ICanProvideConstructions info) {
+    var slots = info.PossibleConstructors[0].Parameters;
+    var s = slots[2];                                  // Code
+    slots[2] = new ParamInfoPlus(s.Type, s.NullColHandler, s.NameComparer,
+        IColModifier.Nothing, DefaultValueFallback.Instance);
+    // a schema without a Code column now builds, Code falling back to 0
+}
+```
+
+Going runtime reaches past what a declared default can say. A default only fires when it equals the type default, so `= 5` is ignored; your own `IFallbackParserGetter` returns any parser for the missing slot, so it can supply a non-default constant, a computed value, or a whole alternative construction.
+
 ## Alternative names
 
 `[Alt]` adds an accepted name to a slot.

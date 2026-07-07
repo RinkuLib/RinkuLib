@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
 
@@ -36,34 +37,56 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
             res[i] = DeclaredElementNullability(defs[i]);
         return res;
     }
-
     /// <inheritdoc/>
     public bool CanHandle<T>() 
         => typeof(T).IsGenericType && acceptedGenericDefinitions.Contains(typeof(T).GetGenericTypeDefinition());
+    private static object? GetItemParser(Type itemType, ref ColumnInfo[] cols, INullColHandler? nullColHandler) {
+        object?[] args = [cols, nullColHandler];
+
+        MethodInfo? method = null;
+        foreach (var m in typeof(TypeParser).GetMethods()) {
+            if (m.Name != nameof(TypeParser.GetTypeParser) || !m.IsGenericMethodDefinition)
+                continue;
+
+            var ps = m.GetParameters();
+            if (ps.Length != 2 
+                || ps[0].ParameterType != typeof(ColumnInfo[]).MakeByRefType() 
+                || ps[1].ParameterType != typeof(INullColHandler))
+                continue;
+
+            method = m;
+            break;
+        }
+
+        if (method is null)
+            throw new MissingMethodException(typeof(TypeParser).FullName, nameof(TypeParser.GetTypeParser));
+
+        var parser = method.MakeGenericMethod(itemType).Invoke(null, args);
+
+        cols = (ColumnInfo[])args[0]!;
+        return parser;
+    }
     /// <inheritdoc/>
     public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
         parser = null;
-        var type = typeof(T);
 
+        var type = typeof(T);
         if (!type.IsGenericType)
             return false;
 
         var def = type.GetGenericTypeDefinition();
-        Type itemType = type.GetGenericArguments()[0];
+        var itemType = type.GetGenericArguments()[0];
 
         INullColHandler? elementHandler;
-        if (nullColHandler != TypeParser<T>.DefaultNullColHandler)
+        if (nullColHandler != TypeParser.GetDefaultNullColHandler<T>())
             elementHandler = nullColHandler;
         else
             elementHandler = elementNullability[Array.IndexOf(acceptedGenericDefinitions, def)];
 
-        var itemParser = typeof(TypeParser<>)
-            .MakeGenericType(itemType)
-            .GetMethod(nameof(TypeParser<>.GetTypeParser))
-            ?.Invoke(null, [cols, elementHandler]);
-
+        var itemParser = GetItemParser(itemType, ref cols, elementHandler);
         if (itemParser is null)
             return false;
+
         var itemParserType = itemParser.GetType();
 
         Type collectionParserType;
@@ -72,12 +95,12 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
         if (getParserTypeWhenSimple is not null
             && itemParserType.IsGenericType
             && itemParserType.GetGenericTypeDefinition() == typeof(SimpleTypeParser<>)) {
+
             var behavior = (CommandBehavior)itemParserType.GetProperty(nameof(SimpleTypeParser<>.Behavior))!.GetValue(itemParser)!;
             var func = itemParserType.GetField(nameof(SimpleTypeParser<>.Parser))!.GetValue(itemParser)!;
+
             constructorArgs = [behavior, func];
-
             collectionParserType = getParserTypeWhenSimple(def, itemType, ref constructorArgs);
-
         }
         else {
             constructorArgs = [itemParser];
@@ -85,6 +108,6 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
         }
 
         parser = (ITypeParser<T>)Activator.CreateInstance(collectionParserType, constructorArgs)!;
-        return parser != null;
+        return true;
     }
 }

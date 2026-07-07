@@ -125,16 +125,28 @@ using (cmd) {
 
 See [multiple result sets](multiple-results.md).
 
+## The SQL string on the connection
+
+Skip declaring a `QueryCommand` and hand the SQL to the connection; it caches the command by the string. More on [the SQL string](sql-string.md).
+
+```csharp
+List<Track> tracks = cnn.Query<List<Track>>(
+    "SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE AlbumId = @albumId",
+    new { albumId = 1 });
+```
+
 ## A DbCommand you already have
 
 The mapping side also runs on a command you built yourself.
 
 ```csharp
+static readonly CachedTypeParser<Track> Tracks = new();
+
 using var cmd = cnn.CreateCommand();
 cmd.CommandText = "SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE TrackId = @id";
 cmd.Parameters.Add(new SqlParameter("@id", 10));
 
-Track track = cmd.Query<Track>();
+Track track = Tracks.Query(cmd);
 ```
 
 See [any DbCommand](direct-dbcommand.md).
@@ -160,9 +172,9 @@ UpdateTrack.Execute(cnn, new { trackId = 10, name = "Remastered" });
 // UPDATE tracks SET Name = @name WHERE TrackId = @trackId
 ```
 
-Nothing about this is specific to filters. The engine treats every keyword section the same, so projected columns, joins, grouping, ordering, and `SET` lists toggle exactly like a `WHERE` clause. When several queries are really one query with parts switched on and off, one command replaces them all. The template syntax is its own section, [conditional SQL](../conditional-sql/index.md).
+The `?@` toggle is a structural rule the engine applies to every keyword section alike, the `WHERE` and the `SET` list above, and just as well a projected column, a join, a group-by, or an order-by. When several queries are really one with parts switched on and off, one command replaces them all. The template syntax is its own section, [conditional SQL](../conditional-sql/index.md).
 
-## The full method table
+## Cheatsheet
 
 | Goal | Method | Sync return | Async return |
 | --- | --- | --- | --- |
@@ -176,3 +188,5 @@ Nothing about this is specific to filters. The engine treats every keyword secti
 | Many (async stream) | `StreamQueryAsync<T>` | n/a | `IAsyncEnumerable<T>` |
 | A raw reader | `ExecuteReader` | `DbDataReader` | `Task<DbDataReader>` |
 | Several result sets | `ExecuteMultiReader` | `MultiReader` | `Task<MultiReader>` |
+
+The `T` in `Query<T>` is open, not a fixed menu: new [result shapes](result-shapes.md) plug in the same way the built-in ones do.

@@ -3,10 +3,7 @@ using System.Collections.ObjectModel;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
-using System.Transactions;
-using System.Windows.Input;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tools;
@@ -32,7 +29,7 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         if (command.TryGetCachedParser<T>(usage, out var cache, nbResultSetPassedMinusOne))
             return cache;
         var schema = reader.GetColumns();
-        cache = TypeParser<T>.GetTypeParser(ref schema);
+        cache = TypeParser.GetTypeParser<T>(ref schema);
         command.UpdateParseCache(usage, schema, cache, nbResultSetPassedMinusOne);
         return cache;
     }

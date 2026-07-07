@@ -53,7 +53,7 @@ public struct ColModifier(params INameComparer[] Comparers) {
 /// </summary>
 public readonly struct RecursiveInfo(Type[] previousTypes, int colUsedToBeat) {
     /// <summary>Indicate the latest type used (parent type)</summary>
-    public readonly Type LatestUsedType => PreviousTypes.Length > 0 ? PreviousTypes[^1] : typeof(Root);
+    public readonly Type LatestUsedType => PreviousTypes.Length > 0 ? PreviousTypes[^1] : typeof(RecursiveInfo);
     /// <summary>The type that was used at that point</summary>
     public readonly Type[] PreviousTypes = previousTypes;
     /// <summary>The amount of column used at the start</summary>

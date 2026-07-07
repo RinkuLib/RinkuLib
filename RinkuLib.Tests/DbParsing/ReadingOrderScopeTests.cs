@@ -13,7 +13,7 @@ public class ReadingOrderScopeTests {
     }
     private static T Parse<T>(ColumnInfo[] cols, object[] row) {
         using var r = Reader(cols, row);
-        var p = TypeParser<T>.GetTypeParser(ref cols);
+        var p = TypeParser.GetTypeParser<T>(ref cols);
         r.Read();
         return p.Parse(r);
     }

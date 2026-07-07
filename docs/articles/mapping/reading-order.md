@@ -33,6 +33,8 @@ public record Entry(int Id, [CanNotLookAnywhere] int? Code = null);
 // Columns: Id | Other | Code  ->  the next column is "Other", so Code does not match and stays at its default
 ```
 
+The `= null` is what keeps that second schema building. Drop it and `Code` is required, so the mismatch has nowhere to fall back: the negotiation fails and the parse throws. That is the intended outcome, a loud predictable break beats a silent wrong value.
+
 ## `[CanLookAnywhere]`, free for one slot
 
 Frees one slot to look anywhere instead of taking the next column in line. Its real use is the first parameter of an object in a sequential run: when a stray column sits between two objects, the second cannot build, because its first parameter lands on that column. Freeing that parameter lets the object anchor past the gap, then read on in sequence from there.
