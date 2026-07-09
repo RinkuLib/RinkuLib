@@ -1,52 +1,126 @@
 # Conditional SQL
 
-Write valid SQL once, mark the optional spots, and the engine prunes the parts whose values you did not supply. No `WHERE 1=1`, no string concatenation.
+Write valid SQL once, mark the optional spots, and each run drops the parts whose values you did not supply. No `WHERE 1=1`, no string concatenation.
 
-```csharp
-static readonly QueryCommand Search = new(
-    "SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = @albumId AND UnitPrice >= ?@minPrice AND Name LIKE ?@name");
+```sql
+SELECT TrackId AS Id, Name FROM tracks
+WHERE AlbumId = @albumId AND UnitPrice >= ?@minPrice AND Name LIKE ?@name
 
-var tracks = Search.Query<List<Track>>(cnn, new { albumId = 1, minPrice = 0.99m });
-// SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = @albumId AND UnitPrice >= @minPrice
+-- @albumId and @minPrice supplied, no @name
+SELECT TrackId AS Id, Name FROM tracks
+WHERE AlbumId = @albumId AND UnitPrice >= @minPrice
 ```
 
-`@name` was not supplied, so its clause left, along with the `AND` that would have dangled. The same works on any statement:
+`@name` was left out, so its clause dropped with the dangling `AND`. Keys come from the object or builder you pass at run time, see [supplying values](../running-queries/parameters.md#a-builder).
 
-```csharp
-static readonly QueryCommand UpdateTrack = new(
-    "UPDATE tracks SET Name = ?@name, UnitPrice = ?@price WHERE TrackId = @trackId");
+## Markers are opt-in
 
-UpdateTrack.Execute(cnn, new { trackId = 10, name = "Remastered" });
-// UPDATE tracks SET Name = @name WHERE TrackId = @trackId
+Markers are the only thing the engine acts on. A template with none is returned as written, so you can add this to queries you already have without changing what they do.
+
+```sql
+SELECT AlbumId, Title FROM albums ORDER BY Title
 ```
 
-When C# logic decides what is active, a [builder](../running-queries/parameters.md#a-builder) sets the same keys explicitly:
+It also means the engine does nothing about what you leave unmarked. A plain `@albumId` is not conditional. It stays whether or not you supply a value, so a missing value throws just like handwritten SQL. Only the marked `?@minLength` drops when its value is absent.
 
-```csharp
-var b = Search.StartBuilder();
-b.Use("@albumId", 1);
-if (filterByPrice) b.Use("@minPrice", 0.99m);
-var tracks = b.Query<List<Track>>(cnn);
+```sql
+SELECT Name, Composer FROM tracks
+WHERE AlbumId = @albumId AND Milliseconds > ?@minLength
+
+-- nothing supplied: ?@minLength drops, @albumId stays and the run throws for its missing value
+SELECT Name, Composer FROM tracks
+WHERE AlbumId = @albumId
 ```
 
-## Any SQL is a template
+Mark a spot with `?` when its presence should follow its value.
 
-Templates are plain SQL. With no markers, the query passes through untouched, so adopting this costs nothing on existing queries.
+## Where markers work
 
-## Structure, not clauses
+A marker works the same in any statement, at any spot, an `UPDATE` as much as a `SELECT`.
 
-The parser does not know what a `WHERE` is for. It reads structure: word boundaries, quote and comment state, parenthesis and `CASE` depth, and section keywords (`SELECT`, `FROM`, the joins, `WHERE`, `SET`, `VALUES`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`, `WHEN`, `THEN`, `ELSE`, `;`), every one treated identically. A footprint is a span between structural points, and the cleanup rules, trailing operator, dangling comma, emptied section keyword, are the same rules in every section, at every nesting depth.
+```sql
+UPDATE tracks SET Name = ?@name, UnitPrice = ?@price WHERE TrackId = @trackId
 
-The consequence: nothing on these pages is a special case, and there is no list of supported clauses. A marker behaves in a projection, a `JOIN`, a `SET` list, a `THEN` branch, or a CTE body exactly as it does in a `WHERE`, and you decide how much of a statement is conditional, from one column to most of the text.
+-- @trackId and @name supplied, no @price
+UPDATE tracks SET Name = @name WHERE TrackId = @trackId
+```
 
-Two facts to keep straight:
+And one statement can carry conditions in several places at once. Here a CTE's `WHERE`, a `HAVING`, and the outer `WHERE` each prune on their own.
 
-- **A plain `@id` is static text.** The engine does not manage its presence. If its clause stays and you never supply a value, the database provider throws at execution. Mark it `?@id` when its presence should follow the value.
-- **Everything is decided per call, parsed once.** The template is parsed when the `QueryCommand` is built. Runs only pick which parts stay.
+```sql
+WITH spend AS (
+    SELECT CustomerId, SUM(Total) AS Total, COUNT(*) AS Orders
+    FROM invoices
+    WHERE InvoiceDate >= ?@since
+    GROUP BY CustomerId
+    HAVING SUM(Total) >= ?@minSpend
+)
+SELECT c.FirstName, c.LastName, c.Country, s.Total, s.Orders
+FROM spend s
+JOIN customers c ON c.CustomerId = s.CustomerId
+WHERE c.Country = ?@country
+ORDER BY s.Total DESC
+```
+
+```sql
+-- only @minSpend supplied
+WITH spend AS (
+    SELECT CustomerId, SUM(Total) AS Total, COUNT(*) AS Orders
+    FROM invoices
+    GROUP BY CustomerId
+    HAVING SUM(Total) >= @minSpend
+)
+SELECT c.FirstName, c.LastName, c.Country, s.Total, s.Orders
+FROM spend s
+JOIN customers c ON c.CustomerId = s.CustomerId
+ORDER BY s.Total DESC
+```
+
+```sql
+-- @since and @country supplied
+WITH spend AS (
+    SELECT CustomerId, SUM(Total) AS Total, COUNT(*) AS Orders
+    FROM invoices
+    WHERE InvoiceDate >= @since
+    GROUP BY CustomerId
+)
+SELECT c.FirstName, c.LastName, c.Country, s.Total, s.Orders
+FROM spend s
+JOIN customers c ON c.CustomerId = s.CustomerId
+WHERE c.Country = @country
+ORDER BY s.Total DESC
+```
+
+## How the template is read
+
+The engine never builds your SQL into a tree. It scans the text, tracking structure as it goes, the sections, parentheses, quotes, and `CASE` depth, and the marker rules follow from that alone.
+
+It also means the template does not have to be valid SQL on its own. Nothing is checked, only the SQL a run produces has to hold together. So you can lay down alternatives that could never coexist and let each run keep one. These two `FROM` clauses never appear together.
+
+```sql
+SELECT TrackId, Name /*!Archived*/FROM tracks /*Archived*/FROM tracks_archive ORDER BY Name
+
+-- Archived off
+SELECT TrackId, Name FROM tracks ORDER BY Name
+
+-- Archived on
+SELECT TrackId, Name FROM tracks_archive ORDER BY Name
+```
+
+The flip side is that a template broken for any other reason stays broken, since nothing here validates it.
 
 ## Reading the examples
 
-Pages in this section show a **Template** (the SQL you write) and a **Result** (the SQL generated for a given set of supplied keys).
+The pages that follow show SQL blocks. The first block in an example is the template you write, the one carrying the markers. Each block below it is the SQL the engine generates, under a comment naming which keys that run supplies.
+
+```sql
+SELECT * FROM tracks WHERE AlbumId = @albumId AND Name = ?@Name
+
+-- @albumId supplied, no @Name
+SELECT * FROM tracks WHERE AlbumId = @albumId
+```
+
+A plain `@x` is a required key. It is taken as supplied throughout, so the labels only call out the optional markers a run does or does not include.
 
 ## The syntax
 
@@ -58,7 +132,7 @@ Pages in this section show a **Template** (the SQL you write) and a **Result** (
 
 ## Changing the variable character
 
-`@` is the default, not a requirement. The parser spots a variable as the chosen character at a word boundary, then reads the name up to the next boundary, so any character that does not otherwise start a word in your SQL works: `:` for Oracle style, `$`, `#`, whatever fits your provider.
+`@` is the default, not a requirement. The parser spots a variable as the chosen character at a word boundary, then reads the name up to the next boundary, so any character that does not otherwise start a word in your SQL works, `:` for Oracle style, `$`, `#`, whatever fits your provider.
 
 ```csharp
 var oracle = new QueryCommand("SELECT * FROM t WHERE id = :id AND status = ?:status", ':');
@@ -66,4 +140,4 @@ var oracle = new QueryCommand("SELECT * FROM t WHERE id = :id AND status = ?:sta
 QueryFactory.DefaultVariableChar = ':';   // app-wide, set once at startup
 ```
 
-All markers compose with the chosen character unchanged: `?:status` is optional, `:table_R` is a handler. The builder's `Use('@', name, value)` overload takes the character separately from the name for `nameof`-friendly code (see [supplying values](../running-queries/parameters.md#a-builder)).
+All markers compose with the chosen character unchanged. `?:status` is optional, `:table_R` is a handler. The builder's `Use('@', name, value)` overload takes the character separately from the name for `nameof`-friendly code (see [supplying values](../running-queries/parameters.md#a-builder)).

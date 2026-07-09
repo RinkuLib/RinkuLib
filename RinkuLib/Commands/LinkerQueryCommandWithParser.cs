@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tools;
@@ -9,34 +8,22 @@ using RinkuLib.TypeAccessing;
 namespace RinkuLib.Commands;
 
 /// <summary>
-/// Uses the <see cref="TypeParser{T}"/> to retrieve or make the complied parser function and cache both the parser and any used parameters
+/// Uses the <see cref="TypeParser"/> to retrieve or make the complied parser function and cache both the parser and any used parameters
 /// </summary>
-public class LinkerQueryCommandWithParser<T>(QueryCommand command, bool[] usageMap) : ICacheUsingParser<T> {
+public class LinkerQueryCommandWithParser<T>(QueryCommand command, bool[] usageMap) : ICacheGivingParser<T> {
     private readonly QueryCommand Command = command;
     private readonly bool[] UsageMap = usageMap;
-
     /// <inheritdoc/>
-    public void UpdateCache(IDbCommand cmd, DbDataReader reader, [NotNull] ref ITypeParser<T>? parser) {
+    public CommandBehavior Behavior => CommandBehavior.Default;
+    /// <inheritdoc/>
+    public ITypeParser<T> UpdateCache(IDbCommand cmd, DbDataReader reader) {
         var schema = reader.GetColumns();
-        parser ??= TypeParser<T>.GetTypeParser(ref schema);
+        var parser = TypeParser.GetTypeParser<T>(ref schema);
         Command.UpdateParseCache(UsageMap, schema, parser);
         Command.UpdateCache(cmd);
+        return parser;
     }
-
-}
-
-/// <summary>
-/// Uses the <see cref="TypeParser{T}"/> to retrieve or make the complied parser function and cache both the parser and any used parameters
-/// </summary>
-public class CacheWrapper<T>(ICache cache) : ICacheUsingParser<T> {
-    private readonly ICache Cache = cache;
-
     /// <inheritdoc/>
-    public void UpdateCache(IDbCommand cmd, DbDataReader reader, [NotNull] ref ITypeParser<T>? parser) {
-        var schema = reader.GetColumns();
-        parser ??= TypeParser<T>.GetTypeParser(ref schema);
-
-        Cache.UpdateCache(cmd);
-    }
-
+    public ValueTask<ITypeParser<T>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default)
+        => new(UpdateCache(cmd, reader));
 }

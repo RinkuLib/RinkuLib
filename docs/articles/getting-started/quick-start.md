@@ -9,7 +9,7 @@ using RinkuLib.Commands;
 // Your own type. Nothing about it is special to Rinku.
 public record Artist(int Id, string Name);
 
-// Create once. A static readonly field is ideal.
+// Create once, in a static readonly field.
 static readonly QueryCommand GetArtists = new("SELECT ArtistId AS Id, Name FROM artists");
 
 using DbConnection cnn = GetConnection();

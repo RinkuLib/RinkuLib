@@ -1,6 +1,6 @@
 # Documentation
 
-RinkuLib is a micro-ORM made of four capabilities: mapping, conditional SQL, code generation, and tracking. Reach for one on its own or several together.
+RinkuLib is a micro-ORM. Its capabilities, mapping, conditional SQL, code generation, and tracking, work on their own or together.
 
 ## Start here
 

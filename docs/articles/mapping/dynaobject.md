@@ -35,7 +35,7 @@ row.Set(0, 99);
 
 ## Mixing with typed mapping
 
-`DynaObject` composes like any other type: in a tuple, or as a member of an object.
+`DynaObject` composes like any other type, in a tuple or as a member of an object.
 
 ```csharp
 var (id, rest) = cmd.Query<(int, DynaObject)>(cnn);

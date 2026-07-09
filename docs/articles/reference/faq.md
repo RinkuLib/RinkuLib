@@ -2,7 +2,7 @@
 
 ### Do I create a `QueryCommand` per call?
 
-No. Create it once, a `static readonly` field is ideal, and reuse it. Parsing happens at construction. Per-call state travels in the parameter object or a builder.
+No. Create it once, in a `static readonly` field, and reuse it. Parsing happens at construction. Per-call state travels in the parameter object or a builder.
 
 ```csharp
 static readonly QueryCommand GetTrackById = new("SELECT TrackId AS Id, Name FROM tracks WHERE TrackId = @id");
@@ -16,7 +16,7 @@ Yes, that is the intended usage. The command holds no per-call state, and its in
 
 ### The clause is in the SQL but the provider throws about a missing parameter.
 
-A plain `@Id` is static text, the engine does not manage its presence. If its clause stays and you never supplied a value, the provider throws at execution. Mark it `?@Id` when its presence should follow the value. See [conditional SQL](../conditional-sql/index.md#any-sql-is-a-template).
+A plain `@Id` is static text, the engine does not manage its presence. If its clause stays and you never supplied a value, the provider throws at execution. Mark it `?@Id` when its presence should follow the value. See [conditional SQL](../conditional-sql/index.md#markers-are-opt-in).
 
 ### How do I avoid `WHERE 1=1`?
 

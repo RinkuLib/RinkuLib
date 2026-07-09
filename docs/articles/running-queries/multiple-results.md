@@ -13,9 +13,9 @@ using (cmd) {
 }
 ```
 
-`Query<T>` works like everywhere else: `T` picks one row, `List<T>` all rows, `IEnumerable<T>` a stream. Each call advances to the next result set, and non-returning sets are skipped automatically.
+`Query<T>` works like everywhere else. `T` picks one row, `List<T>` all rows, `IEnumerable<T>` a stream. Each call advances to the next result set, and non-returning sets are skipped automatically.
 
-The `out DbCommand` is yours: keep it to read [output parameters](parameter-metadata.md#output-parameters), and dispose it along with the reader. It is assigned synchronously, so the async form composes with `await`.
+The `out DbCommand` is yours. Keep it to read [output parameters](parameter-metadata.md#output-parameters), and dispose it along with the reader. It is assigned synchronously, so the async form composes with `await`.
 
 ```csharp
 using var multi = await Dashboard.ExecuteMultiReaderAsync(cnn, out DbCommand cmd, new { id = 1 }, ct: ct);
@@ -37,7 +37,7 @@ using (cmd) {
 
 ## Mixing with manual reading
 
-`MultiReader` is itself a `DbDataReader`, so the raw reader surface (`Read`, `NextResult`, indexers) is available. That is the scenario `Get<T>` exists for: `Query<T>` does the reading itself, so once you have called `Read()` yourself, `Get<T>` parses the row you are standing on. Useful when the row's content decides how to parse it.
+`MultiReader` is itself a `DbDataReader`, so the raw reader surface (`Read`, `NextResult`, indexers) is available. That is the scenario `Get<T>` exists for. `Query<T>` does the reading itself, so once you have called `Read()` yourself, `Get<T>` parses the row you are standing on. Useful when the row's content decides how to parse it.
 
 ```csharp
 while (multi.Read()) {

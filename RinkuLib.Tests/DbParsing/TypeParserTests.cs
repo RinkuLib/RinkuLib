@@ -38,7 +38,7 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         ]);
 
-        var parser = TypeParser<SimpleUser>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<SimpleUser>(ref columns);
 
         reader.Read();
         var user1 = parser.Parse(reader);
@@ -62,7 +62,7 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         ]);
 
-        var parser = TypeParser<(int ID, string Name)>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<(int ID, string Name)>(ref columns);
 
         reader.Read();
         var (ID, Name) = parser.Parse(reader);
@@ -85,7 +85,7 @@ public class TypeParserTests {
             [1, 2]
         ]);
 
-        var parser = TypeParser<(int ID, int ID2)>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<(int ID, int ID2)>(ref columns);
 
         reader.Read();
         var (ID, ID2) = parser.Parse(reader);
@@ -107,7 +107,7 @@ public class TypeParserTests {
             [1, "Test1", 2, "Test2", "Stop2"]
         ]);
 
-        var parser = TypeParser<(TestStop, TestStop)>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<(TestStop, TestStop)>(ref columns);
 
         reader.Read();
         var (stop1, stop2) = parser.Parse(reader);
@@ -132,7 +132,7 @@ public class TypeParserTests {
             [1, "Test1", 2, "Test2", "Stop1"]
         ]);
 
-        var parser = TypeParser<(TestStop2, TestStop3)>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<(TestStop2, TestStop3)>(ref columns);
 
         reader.Read();
         var (stop1, stop2) = parser.Parse(reader);
@@ -155,7 +155,7 @@ public class TypeParserTests {
             [3, "Jane Smith"]
         ]);
 
-        var parser = TypeParser<int>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<int>(ref columns);
 
         reader.Read();
         var id1 = parser.Parse(reader);
@@ -181,7 +181,7 @@ public class TypeParserTests {
             [badge, "Engineering", 95000.50m, joinDate]
         ]);
 
-        var parser = TypeParser<EmployeeRecord>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<EmployeeRecord>(ref columns);
 
         reader.Read();
         var emp = parser.Parse(reader);
@@ -207,7 +207,7 @@ public class TypeParserTests {
             [501, DBNull.Value, false, 'B']
         ]);
 
-        var parser = TypeParser<ProductStatus>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<ProductStatus>(ref columns);
 
         reader.Read();
         var p1 = parser.Parse(reader);
@@ -238,7 +238,7 @@ public class TypeParserTests {
             [200, DBNull.Value, 0.0, "Ground", DBNull.Value]
         ]);
 
-        var parser = TypeParser<Shipment>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<Shipment>(ref columns);
 
         // --- Execute Row 1 ---
         reader.Read();
@@ -271,7 +271,7 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [[99, "DE123456789", "GENEDEBK"]]);
 
-        var parser = TypeParser<Order>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<Order>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);
@@ -297,7 +297,7 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [[99, 14532]]);
 
-        var parser = TypeParser<Order>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<Order>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);
@@ -318,14 +318,14 @@ public class TypeParserTests {
         ColumnInfo[] intCols = [new("Value", typeof(int), false)];
         using (var reader = CreateReader(intCols, [[7]])) {
             reader.Read();
-            Assert.Equal(7, TypeParser<Wrapped<int>>.GetTypeParser(ref intCols).Parse(reader).Value);
+            Assert.Equal(7, TypeParser.GetTypeParser<Wrapped<int>>(ref intCols).Parse(reader).Value);
         }
 
         // and Create<string>
         ColumnInfo[] strCols = [new("Value", typeof(string), false)];
         using (var reader = CreateReader(strCols, [["hi"]])) {
             reader.Read();
-            Assert.Equal("hi", TypeParser<Wrapped<string>>.GetTypeParser(ref strCols).Parse(reader).Value);
+            Assert.Equal("hi", TypeParser.GetTypeParser<Wrapped<string>>(ref strCols).Parse(reader).Value);
         }
     }
     [Fact]
@@ -338,7 +338,7 @@ public class TypeParserTests {
 
         using var reader = CreateReader(columns, [[321, "1234 5678 9012 3456", "John Smith"]]);
 
-        var parser = TypeParser<Order>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<Order>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);
@@ -364,7 +364,7 @@ public class TypeParserTests {
             [100, "1234 5678 9012 3456", DBNull.Value]
         ]);
 
-        var parser = TypeParser<Order>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<Order>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);
@@ -405,7 +405,7 @@ public class TypeParserTests {
         ]);
 
         // Testing BoxedProduct with <decimal, string>
-        var parser = TypeParser<BoxedProduct<decimal, string>>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<BoxedProduct<decimal, string>>(ref columns);
 
         // --- Row 1 ---
         reader.Read();
@@ -427,7 +427,7 @@ public class TypeParserTests {
             [500, 12.50, CurrencyCode.CAD, 42, "API"]
         ]);
 
-        var parser = TypeParser<BoxedProduct<double, int>>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<BoxedProduct<double, int>>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);
@@ -461,7 +461,7 @@ public class TypeParserTests {
         ]);
 
         // Closing with <decimal, int>
-        var parser = TypeParser<BoxedProduct<decimal, int>>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<BoxedProduct<decimal, int>>(ref columns);
 
         // --- VALIDATE ROW 1: Normal Operation ---
         reader.Read();
@@ -502,7 +502,7 @@ public class TypeParserTests {
         // Metadata.Value is [NotNull] T. If DB gives us NULL, it must fail.
         using var reader = CreateReader(columns, [[201, 15.0d, 2, "Trusted"], [202, 15.0, 1, DBNull.Value]]);
 
-        var parser = TypeParser<BoxedProduct<double, string>>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<BoxedProduct<double, string>>(ref columns);
 
         reader.Read();
         var p1 = parser.Parse(reader);
@@ -532,7 +532,7 @@ public class TypeParserTests {
             [3, "Roger", 2, "Victor", 1, "Albert"]
         ]);
 
-        var parser = TypeParser<User>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<User>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);
@@ -563,7 +563,7 @@ public class TypeParserTests {
             [3, "Roger", 2, "Victor", DBNull.Value, DBNull.Value]
         ]);
 
-        var parser = TypeParser<User2>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<User2>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);
@@ -591,7 +591,7 @@ public class TypeParserTests {
             [500, 400, DBNull.Value, "Name"]
         ]);
 
-        var parser = TypeParser<TestTop>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<TestTop>(ref columns);
 
         reader.Read();
         var top = parser.Parse(reader);
@@ -618,7 +618,7 @@ public class TypeParserTests {
             [500, 400, DBNull.Value, "Name"]
         ]);
 
-        var parser = TypeParser<TestTop2>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<TestTop2>(ref columns);
 
         reader.Read();
         var top = parser.Parse(reader);
@@ -641,7 +641,7 @@ public class TypeParserTests {
             [500, 400, DBNull.Value, "Name"]
         ]);
 
-        var parser = TypeParser<TestTop3>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<TestTop3>(ref columns);
 
         reader.Read();
         var top = parser.Parse(reader);
@@ -665,7 +665,7 @@ public class TypeParserTests {
             [badge, "Engineeringg", DBNull.Value, DBNull.Value]
         ]);
 
-        var parser = TypeParser<DynaObject>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<DynaObject>(ref columns);
 
         reader.Read();
         var emp = parser.Parse(reader);
@@ -698,7 +698,7 @@ public class TypeParserTests {
             [2, badge, "Engineeringg", DBNull.Value, DBNull.Value]
         ]);
 
-        var parser = TypeParser<(int, DynaObject)>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<(int, DynaObject)>(ref columns);
 
         reader.Read();
         var (id, emp) = parser.Parse(reader);
@@ -733,7 +733,7 @@ public class TypeParserTests {
             [2, badge, "Engineeringg", DBNull.Value, DBNull.Value]
         ]);
 
-        var parser = TypeParser<DynaPair<int>>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<DynaPair<int>>(ref columns);
 
         reader.Read();
         var (id, emp) = parser.Parse(reader);
@@ -768,7 +768,7 @@ public class TypeParserTests {
             [badge, "Engineeringg", DBNull.Value, 2, DBNull.Value]
         ]);
 
-        var parser = TypeParser<DynaPair2<int>>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<DynaPair2<int>>(ref columns);
 
         reader.Read();
         var (id, emp) = parser.Parse(reader);
@@ -799,7 +799,7 @@ public class TypeParserTests {
             [badge, DBNull.Value]
         ]);
 
-        var parser = TypeParser<DynaObject>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<DynaObject>(ref columns);
 
         reader.Read();
         var emp = parser.Parse(reader);
@@ -821,7 +821,7 @@ public class TypeParserTests {
             [1, 1]
         ]);
 
-        var parser = TypeParser<DynaObject>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<DynaObject>(ref columns);
 
         reader.Read();
         var emp = parser.Parse(reader);
@@ -840,7 +840,7 @@ public class TypeParserTests {
             [1, 1]
         ]);
 
-        var parser = TypeParser<(MM, MM)>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<(MM, MM)>(ref columns);
 
         reader.Read();
         var (nb1, nb2) = parser.Parse(reader);
@@ -861,7 +861,7 @@ public class TypeParserTests {
             [10.00m, 3]
         ]);
 
-        var parser = TypeParser<Price<decimal>?>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<Price<decimal>?>(ref columns);
 
         reader.Read();
         var p1 = parser.Parse(reader);
@@ -902,7 +902,7 @@ public class TypeParserTests {
             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         ]);
 
-        var parser = TypeParser<DynaObject>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<DynaObject>(ref columns);
 
         reader.Read();
         var dyna = parser.Parse(reader);
@@ -936,7 +936,7 @@ public class TypeParserTests {
             [1, 2, 3, 4]
         ]);
 
-        var parser = TypeParser<LayerOne>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<LayerOne>(ref columns);
 
         reader.Read();
         var p1 = parser.Parse(reader);
@@ -958,14 +958,14 @@ public class TypeParserTests {
             [1, 2, 3, 4]
         ]);
 
-        Assert.ThrowsAny<Exception>(() => TypeParser<LayerOne>.GetTypeParser(ref columns));
+        Assert.ThrowsAny<Exception>(() => TypeParser.GetTypeParser<LayerOne>(ref columns));
     }
     [Fact]
     public void Test_User_Mapping_With_Nullable_And_Binary_Types() {
         var salt = new byte[] { 0x01, 0x02, 0x03 };
         var expiration = new DateTime(2026, 12, 31, 23, 59, 59, DateTimeKind.Utc);
 
-        var parser = Parsers<UserSchema, UserSchema>.Parser;
+        var parser = TypeParser.GetTypeParser<UserSchema, UserSchema>(out _);
 
         var columns = new ColumnInfo[]
         {
@@ -998,7 +998,7 @@ public class TypeParserTests {
 
         ColumnInfo[] columns = [new("Id", typeof(int), false), new("Name", typeof(string), true)];
         using var reader = CreateReader(columns, [[1, DBNull.Value]]);
-        var parser = TypeParser<CfgTrackA>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<CfgTrackA>(ref columns);
 
         reader.Read();
         Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
@@ -1010,7 +1010,7 @@ public class TypeParserTests {
 
         ColumnInfo[] columns = [new("Id", typeof(int), false), new("Name", typeof(string), true)];
         using var reader = CreateReader(columns, [[1, DBNull.Value]]);
-        var parser = TypeParser<CfgTrackB>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<CfgTrackB>(ref columns);
 
         reader.Read();
         Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
@@ -1026,7 +1026,7 @@ public class TypeParserTests {
             new("ContentsWeight", typeof(double), true)
         ];
         using var reader = CreateReader(columns, [[1, DBNull.Value, 2.5]]);
-        var parser = TypeParser<CfgShipment>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<CfgShipment>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);
@@ -1040,7 +1040,7 @@ public class TypeParserTests {
 
         ColumnInfo[] columns = [new("Id", typeof(int), false), new("Secret", typeof(string), false)];
         using var reader = CreateReader(columns, [[1, "xyz"]]);
-        var parser = TypeParser<CfgSecretTarget>.GetTypeParser(ref columns);
+        var parser = TypeParser.GetTypeParser<CfgSecretTarget>(ref columns);
 
         reader.Read();
         var result = parser.Parse(reader);

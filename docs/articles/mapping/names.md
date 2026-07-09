@@ -107,7 +107,7 @@ info.UpdateAltName(nc => nc.GetDefaultName() == "Deep" ? nc.AddComparer(new Name
 info.UpdateAltName(nc => nc.GetDefaultName() == "Value" ? NoNameComparer.Instance : null);
 ```
 
-`AddAltName` and `AddComparer` add to a slot's current names; returning a comparer on its own (like `NoNameComparer.Instance` above) replaces them. `RemoveName` and `RemoveComparer` take one back out:
+`AddAltName` and `AddComparer` add to a slot's current names. Returning a comparer on its own (like `NoNameComparer.Instance` above) replaces them. `RemoveName` and `RemoveComparer` take one back out.
 
 ```csharp
 // undo the [Alt("PostalCode")] above

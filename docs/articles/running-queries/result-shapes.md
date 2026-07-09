@@ -1,6 +1,6 @@
 # Result shapes
 
-Reads go through one method, `Query<T>`. The behavior lives in `T`: what zero rows mean, how many rows are taken, whether a `NULL` is allowed. To change the behavior, ask for a different type, not a different method.
+Reads go through one method, `Query<T>`. The behavior lives in `T`. It decides what zero rows mean, how many rows are taken, and whether a `NULL` is allowed. To change the behavior, ask for a different type, not a different method.
 
 ## One object
 
@@ -35,7 +35,7 @@ await foreach (var t in GetTracks.StreamQueryAsync<Track>(cnn))   // async strea
 
 ## The built-in shapes
 
-These, and a few more, are the shapes Rinku ships for common cases. Each is a small type wrapping the element parser with one rule of its own, nothing the engine treats specially, and you can add your own the same way (see [below](#these-shapes-are-just-types)). The set is open.
+These, and a few more, are the shapes Rinku ships for common cases. Each is a small type that wraps the element parser with one rule of its own, and you can add your own the same way (see [below](#adding-your-own-shape)). The set is open.
 
 They answer two separate questions.
 
@@ -56,18 +56,18 @@ They answer two separate questions.
 | `MaybeNull<T>` | `HasValue == false` (reference types) |
 | `T?` | `null` (value types) |
 
-The two questions are independent. `Optional<T>` accepts a missing row but throws on a `NULL` value; `MaybeNull<T>` accepts a `NULL` value but throws on a missing row. `OptionalNullable<T>` is the two stacked, `Optional`'s missing-row rule around `MaybeNull`'s null rule, flattened to a single `HasValue == false` for both cases.
+The two questions are independent. `Optional<T>` accepts a missing row but throws on a `NULL` value. `MaybeNull<T>` accepts a `NULL` value but throws on a missing row. `OptionalNullable<T>` is the two stacked, `Optional`'s missing-row rule around `MaybeNull`'s null rule, flattened to a single `HasValue == false` for both cases.
 
 ```csharp
 int? n                = GetNumber.Query<int?>(cnn);               // no row -> throws; NULL value -> null; 
 OptionalStruct<int> o = GetNumber.Query<OptionalStruct<int>>(cnn); // no row -> HasValue == false; NULL value -> throws;
 ```
 
-Every wrapper converts implicitly to its inner `T`, so it costs nothing to pass around. Column-level `NULL` rules are on [nullability](../mapping/nullability.md).
+Every wrapper converts implicitly to its inner `T`, so you can pass it wherever the `T` is expected. Column-level `NULL` rules are on [nullability](../mapping/nullability.md).
 
 ## Scalars
 
-A primitive `T` maps the first column of the first row. While `ExecuteScalar<T>` actualy run the whole script and return a single value.
+A primitive `T` maps the first column of the first row. `ExecuteScalar<T>` runs the command and returns that single value.
 
 ```csharp
 int count = CountTracks.ExecuteScalar<int>(cnn);
@@ -76,7 +76,7 @@ int alt   = CountTracks.Query<int>(cnn);   // also works
 
 ## Tuples
 
-Ask for a `ValueTuple` and its elements are taken in order, the tuple names (`Item1`, `Item2`, ...) ignored. Each element then negotiates as usual: a basic type has no name left to match, so it takes the next column; a complex element still matches its own members by name.
+Ask for a `ValueTuple` and its elements are taken in order, the tuple names (`Item1`, `Item2`, ...) ignored. Each element then negotiates as usual. A basic type has no name left to match, so it takes the next column. A complex element still matches its own members by name.
 
 ```csharp
 // Basic: strictly by column order
@@ -91,9 +91,9 @@ var (p1, p2) = cmd.Query<(Person, Person)>(cnn);
 // Columns: Id | Name | Id | Name  -> p1 takes the first pair, p2 the second
 ```
 
-Positional parsing comes from the type's registration, and any type can opt into it: see [registering with another info](../mapping/registration.md#registering-with-another-info).
+Positional parsing comes from the type's registration, and any type can opt into it. See [registering with another info](../mapping/registration.md#registering-with-another-info).
 
-## These shapes are just types
+## Adding your own shape
 
 Every shape above is an ordinary type the engine produces from a small parser. Wrap one in a name you prefer:
 

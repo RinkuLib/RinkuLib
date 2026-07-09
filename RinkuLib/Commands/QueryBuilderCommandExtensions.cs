@@ -116,7 +116,7 @@ public static class QueryBuilderCommandExtensions {
                 return parser.Query(cmd, false);
             else if (parser is not null)
                 return parser.Query(cmd, command, false);
-            return cmd.Query(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
+            return cmd.Query(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false);
         }
         /// <summary>
         /// Asynchronously executes the managed <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -131,7 +131,7 @@ public static class QueryBuilderCommandExtensions {
                 return parser.QueryAsync(cmd, false, ct);
             else if (parser is not null)
                 return parser.QueryAsync(cmd, command, false, ct);
-            return cmd.QueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
+            return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false, ct);
         }
 
         /// <summary>
@@ -144,10 +144,10 @@ public static class QueryBuilderCommandExtensions {
             var cmd = builder.Command;
             cmd.CommandText = command.QueryText.Parse(vars);
             if (command.TryGetCachedParser<T>(vars, out var parser))
-                return cmd.StreamQueryAsync(false, parser, (ICache?)null, ct);
+                return cmd.StreamQueryAsync(parser, null, false, ct);
             else if (parser is not null)
-                return cmd.StreamQueryAsync(false, parser, command, ct);
-            return cmd.StreamQueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
+                return cmd.StreamQueryAsync(parser, command, false, ct);
+            return cmd.StreamQueryAsync(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false, ct);
         }
     }
 
@@ -252,7 +252,7 @@ public static class QueryBuilderCommandExtensions {
                 return parser.Query(cmd, false);
             else if (parser is not null)
                 return parser.Query(cmd, command, false);
-            return cmd.Query(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()));
+            return cmd.Query(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false);
         }
         /// <summary>
         /// Asynchronously executes the managed <see cref="DbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
@@ -267,7 +267,7 @@ public static class QueryBuilderCommandExtensions {
                 return parser.QueryAsync(cmd, false, ct);
             else if (parser is not null)
                 return parser.QueryAsync(cmd, command, false, ct);
-            return cmd.QueryAsync(false, null, new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), ct);
+            return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false, ct);
         }
     }
 }

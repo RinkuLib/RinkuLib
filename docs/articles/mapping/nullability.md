@@ -17,9 +17,9 @@ public record Track(int Id, string Name, string? Composer);
 // Composer -> NULL gives null
 ```
 
-The engine reads the runtime type, not the nullable-reference-type annotation. `string` and `string?` are the same to it, both accept `NULL`, so the `?` on a reference type carries no meaning here. Only value types split: a plain struct rejects `NULL`, `Nullable<T>` accepts it.
+The engine reads the runtime type, not the nullable-reference-type annotation. `string` and `string?` are the same to it, both accept `NULL`, so the `?` on a reference type carries no meaning here. Only value types split. A plain struct rejects `NULL`, `Nullable<T>` accepts it.
 
-The type you query for directly is stricter: at the root only `Nullable<T>` accepts `NULL` on its own. `Query<int?>` gives `null`, `Query<string>` throws. Accepting null at the root of a reference type is a [result shape](../running-queries/result-shapes.md), `MaybeNull<T>`.
+The type you query for directly is stricter. At the root only `Nullable<T>` accepts `NULL` on its own. `Query<int?>` gives `null`, `Query<string>` throws. Accepting null at the root of a reference type is a [result shape](../running-queries/result-shapes.md), `MaybeNull<T>`.
 
 ## `[NotNull]`, fail loudly
 
@@ -38,7 +38,7 @@ The runtime form, for a type you cannot annotate, is `UpdateNullColHandler`. Its
 TypeParsingInfo.GetOrAdd<Track>().UpdateNullColHandler("Name", NotNullHandle.Instance);   // what [NotNull] declares
 ```
 
-When the target is not just a name, the same method takes a visitor instead: it receives each slot and decides.
+When the target is not just a name, the same method takes a visitor instead. It receives each slot and decides.
 
 ```csharp
 TypeParsingInfo.GetOrAdd<Track>().UpdateNullColHandler(slot =>
@@ -49,7 +49,7 @@ TypeParsingInfo.GetOrAdd<Track>().UpdateNullColHandler(slot =>
 
 ## `[InvalidOnNull]`, collapse the object
 
-`[InvalidOnNull]` on a slot says: if this value is `NULL`, do not build the object at all. The typical case is an optional joined object, where a missing match leaves its columns all `NULL`.
+`[InvalidOnNull]` on a slot means that if its value is `NULL`, the object is not built at all. The typical case is an optional joined object, where a missing match leaves its columns all `NULL`.
 
 ```csharp
 public record struct Package([InvalidOnNull] int TrackingId, double Weight) : IDbReadable;
@@ -75,7 +75,7 @@ A collapse abandons the current object and lands on the slot that holds it. What
 
 - A nullable slot (a reference type or `Nullable<T>`) receives `null`.
 - A non-nullable slot throws, the same `NullValueAssignmentException` a plain `NULL` gives it. Mark that slot `[InvalidOnNull]` too and it collapses in turn, carrying the abandonment up to its own parent.
-- At the top level, the collapse is a null result. A null-accepting shape takes it as empty, `MaybeNull<T>` or `OptionalNullable<T>` for a reference type, `T?` for a struct; plain `T`, `Optional<T>`, and `OptionalStruct<T>` throw. These are the same shapes that accept a `NULL` value, see [result shapes](../running-queries/result-shapes.md).
+- At the top level, the collapse is a null result. A null-accepting shape takes it as empty, `MaybeNull<T>` or `OptionalNullable<T>` for a reference type, `T?` for a struct. Plain `T`, `Optional<T>`, and `OptionalStruct<T>` throw. These are the same shapes that accept a `NULL` value, see [result shapes](../running-queries/result-shapes.md).
 
 ```csharp
 public record struct Bottom([InvalidOnNull] int Key, string Name) : IDbReadable;

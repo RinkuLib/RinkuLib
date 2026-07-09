@@ -1,6 +1,6 @@
 # Copying
 
-Tracking needs independent snapshots: an original to compare against, a state to revert to. `Copy<T>` makes one, with an IL-generated clone cached per type.
+Tracking needs independent snapshots, an original to compare against, a state to revert to. `Copy<T>` makes one, with an IL-generated clone cached per type.
 
 ```csharp
 var snapshot = original.Copy();

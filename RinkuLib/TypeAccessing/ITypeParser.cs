@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace RinkuLib.TypeAccessing;
@@ -14,17 +13,30 @@ public interface ICache {
     /// <see cref="IDbCommand.ExecuteReader()"/>, ...) to update the internal cache
     /// </summary>
     void UpdateCache(IDbCommand cmd);
+    /// <summary>
+    /// Uses a <see cref="IDbCommand"/> that has just been executed (<see cref="IDbCommand.ExecuteNonQuery"/>, 
+    /// <see cref="IDbCommand.ExecuteReader()"/>, ...) to update the internal cache
+    /// </summary>
+    Task UpdateCacheAsync(IDbCommand cmd, CancellationToken ct = default);
 }
 /// <summary>
 /// Contract to update internal cache
 /// </summary>
-public interface ICacheUsingParser<T> {
+public interface ICacheGivingParser<T> {
     /// <summary>
     /// Uses a <see cref="IDbCommand"/> that has just been executed (<see cref="IDbCommand.ExecuteNonQuery"/>, 
     /// <see cref="IDbCommand.ExecuteReader()"/>, ...) to update the internal cache
     /// And return a <see cref="ITypeParser{T}"/> using the reader
     /// </summary>
-    void UpdateCache(IDbCommand cmd, DbDataReader reader, [NotNull] ref ITypeParser<T>? parser);
+    ITypeParser<T> UpdateCache(IDbCommand cmd, DbDataReader reader);
+    /// <summary>
+    /// Uses a <see cref="IDbCommand"/> that has just been executed (<see cref="IDbCommand.ExecuteNonQuery"/>, 
+    /// <see cref="IDbCommand.ExecuteReader()"/>, ...) to update the internal cache
+    /// And return a <see cref="ITypeParser{T}"/> using the reader
+    /// </summary>
+    ValueTask<ITypeParser<T>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default);
+    /// <summary>Returns the associated command behavior of the parser</summary>
+    CommandBehavior Behavior { get; }
 }
 /// <summary>
 /// The basic interface that parses a type from a db command
@@ -69,6 +81,15 @@ public interface ITypeParser<T> : ITypeParser {
     public Task<T> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default);
     /// <summary></summary>
     public Task<T> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default);
+}
+/// <summary>
+/// A <see cref="ITypeParser{T}"/> that needs init before being used
+/// </summary>
+public interface IInitableTypeParser<T> : ITypeParser<T> {
+    /// <summary></summary>
+    public void Init(IDbCommand cmd, DbDataReader reader);
+    /// <summary></summary>
+    public Task InitAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default);
 }
 /// <summary></summary>
 public static class EnumHelper {

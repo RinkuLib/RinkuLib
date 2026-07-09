@@ -1,66 +1,121 @@
 # Optional variables
 
-`?@Var` marks a variable optional. When it is supplied, the SQL keeps its footprint, the surrounding segment. When it is not, the footprint is pruned and the statement stays valid.
+`?@Var` marks a variable optional. Supply it and its footprint, the SQL around it, stays. Leave it out and the footprint is pruned, and the statement is still valid.
 
 Write the SQL as if every parameter will be used, then add `?` to the optional ones.
 
-* **Template:** `SELECT * FROM tracks WHERE GenreId = 1 AND Name = ?@Name`
-* **Result (no `@Name`):** `SELECT * FROM tracks WHERE GenreId = 1`
+```sql
+SELECT * FROM tracks WHERE AlbumId = @albumId AND Name = ?@Name
+
+-- no @Name
+SELECT * FROM tracks WHERE AlbumId = @albumId
+```
 
 ## Automatic cleanup
 
-Pruning removes what would dangle: the trailing operator, commas, and emptied clause keywords.
+Pruning removes whatever would dangle, a trailing operator, a comma, an emptied clause keyword.
 
-* **Template:** `UPDATE customers SET Email = @Email, Phone = ?@Phone WHERE CustomerId = @Id`
-* **Result:** `UPDATE customers SET Email = @Email WHERE CustomerId = @Id`
+```sql
+UPDATE customers SET Email = @Email, Phone = ?@Phone WHERE CustomerId = @Id
 
-* **Template:** `SELECT * FROM artists WHERE Name = ?@Name ORDER BY Name`
-* **Result:** `SELECT * FROM artists ORDER BY Name`
+-- no @Phone
+UPDATE customers SET Email = @Email WHERE CustomerId = @Id
+```
+
+```sql
+SELECT * FROM artists WHERE Name = ?@Name ORDER BY Name
+
+-- no @Name
+SELECT * FROM artists ORDER BY Name
+```
 
 An emptied clause disappears entirely.
 
-* **Template:** `SELECT BillingCountry FROM invoices GROUP BY BillingCountry HAVING SUM(Total) > ?@MinTotal AND COUNT(*) > ?@MinCount`
-* **Result (neither supplied):** `SELECT BillingCountry FROM invoices GROUP BY BillingCountry`
+```sql
+SELECT BillingCountry FROM invoices
+GROUP BY BillingCountry HAVING SUM(Total) > ?@MinTotal AND COUNT(*) > ?@MinCount
 
-These are one set of rules, not per-clause behaviors. Every keyword section (`SET`, `HAVING`, `ORDER BY`, `THEN`, all of them) cleans up the same way.
+-- neither supplied
+SELECT BillingCountry FROM invoices GROUP BY BillingCountry
+```
 
-## Operators belong to the variable before them
+These are one set of rules, not per-clause behavior. Every keyword section (`SET`, `HAVING`, `ORDER BY`, `THEN`, all of them) cleans up the same way.
 
-* **Template:** `WHERE col1 = ?@Col1 OR col2 = ?@Col2 AND col3 = ?@Col3`
-* **Result (no `@Col2`):** `WHERE col1 = @Col1 OR col3 = @Col3`
+## How far the footprint reaches
 
-The `AND` after `@Col2` was pruned with it, the `OR` before it stayed.
+The footprint is the whole condition around the variable, however big the expression gets. To make that hold, the footprint grows out of any parentheses inside the expression. A function call does not cut it short.
 
-## The footprint is the whole expression
+```sql
+SELECT Id, Name FROM users WHERE Name LIKE CONCAT('%', ?@Name, '%')
 
-A variable inside a function call or arithmetic carries the full expression with it.
+-- no @Name
+SELECT Id, Name FROM users
+```
 
-* **Template:** `SELECT Id, Name FROM users WHERE Name LIKE CONCAT('%', ?@Name, '%')`
-* **Result (no `@Name`):** `SELECT Id, Name FROM users`
+It owns the connector after it, not the one before.
 
-Several optional variables in one segment share its fate. All must be supplied for the segment to stay.
+```sql
+SELECT * FROM customers WHERE City = ?@City OR State = ?@State AND Country = ?@Country
 
-* **Template:** `SELECT * FROM products WHERE Price * ?@Modifier > ?@Minimum`
-* **Result (only `@Modifier`):** `SELECT * FROM products`
+-- no @State
+SELECT * FROM customers WHERE City = @City OR Country = @Country
+```
 
-A required `@` inside an optional segment does not control the segment, but must be supplied when the segment is kept, or execution fails.
+The `AND` after `@State` was pruned with it. The `OR` before it stayed.
 
-* **Template:** `WHERE FullName = @First + ' ' + ?@Last`
-* **No `@Last`:** the clause is pruned. **`@Last` supplied:** the clause stays and `@First` becomes mandatory.
+Several optional variables in one footprint must all be supplied for it to stay, an implicit "and" detailed in [conditional markers](conditional-markers.md#several-conditions-one-footprint).
 
-## Works anywhere
+```sql
+SELECT * FROM products WHERE Price * ?@Modifier > ?@Minimum
 
-There is no list of supported places. The engine tracks sections and nesting depth, not meaning, so everything above holds in CTEs, subqueries, JOIN conditions, CASE branches, at any depth.
+-- only @Modifier
+SELECT * FROM products
+```
 
-* **Template:** `SELECT * FROM invoices i JOIN customers c ON i.CustomerId = c.CustomerId AND c.Country = ?@Country`
-* **Result (no `@Country`):** `SELECT * FROM invoices i JOIN customers c ON i.CustomerId = c.CustomerId`
+A required `@` inside an optional footprint does not control it, but must have a value when the footprint is kept, or execution fails.
 
-* **Template:** `WITH t AS (SELECT a, b FROM x WHERE cond = ?@inner) SELECT * FROM t`
-* **Result (no `@inner`):** `WITH t AS (SELECT a, b FROM x) SELECT * FROM t`
+```sql
+SELECT * FROM customers WHERE FullName = @First + ' ' + ?@Last
 
-## A small layout tip
+-- no @Last, the footprint prunes and @First is never needed
+SELECT * FROM customers
 
-Segments form around the markers. Putting the static parts first keeps them in one block.
+-- @Last supplied, the footprint stays, so @First must be supplied too
+SELECT * FROM customers WHERE FullName = @First + ' ' + @Last
+```
 
-- Preferred: `WHERE GenreId = 1 AND Name = ?@Name`
-- Works, one segment more: `WHERE Name = ?@Name AND GenreId = 1`
+## Parentheses and subqueries
+
+The growth does not tell a function's parentheses from a grouping's. A parenthesized group around the variable goes as a whole.
+
+```sql
+SELECT * FROM invoices WHERE Total > @MinTotal AND (Country = @Country OR City = ?@City)
+
+-- no @City
+SELECT * FROM invoices WHERE Total > @MinTotal
+```
+
+To prune one term inside a group and keep the rest, place a [marker](conditional-markers.md#the-footprint) yourself. A marker never grows.
+
+A subquery holds the footprint in. Only the inner part is pruned.
+
+```sql
+SELECT * FROM tracks WHERE TrackId IN (SELECT TrackId FROM playlist_track WHERE PlaylistId = ?@PlaylistId)
+
+-- no @PlaylistId
+SELECT * FROM tracks WHERE TrackId IN (SELECT TrackId FROM playlist_track)
+```
+
+## A layout tip
+
+Internally, markers split the template into segments, and static text after an optional condition becomes its own segment. Put the optionals last and the statics stay in one.
+
+```sql
+-- two segments
+SELECT * FROM Users WHERE ParentID = @ParentID AND Cat = ?@Cat
+
+-- three segments, same output
+SELECT * FROM Users WHERE Cat = ?@Cat AND ParentID = @ParentID
+```
+
+Fewer segments, a little less memory and work at run time.

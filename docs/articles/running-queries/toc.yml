@@ -6,6 +6,8 @@
   href: parameters.md
 - name: Multiple Result Sets
   href: multiple-results.md
+- name: The SQL String
+  href: sql-string.md
 - name: Any DbCommand
   href: direct-dbcommand.md
 - name: Parameter Metadata

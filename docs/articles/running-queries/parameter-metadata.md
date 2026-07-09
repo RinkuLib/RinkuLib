@@ -35,7 +35,7 @@ The details that matter:
 
 - The `out DbCommand` overloads leave the command alive and in your hands, dispose it when done. The overloads without it create and dispose their own command, so outputs are not reachable there.
 - A parameter is only created for a supplied value, so give the output a placeholder (`moved = 0` above) to bring it into the command.
-- Providers fill outputs when the reader closes. A buffered shape completes its read before returning; a streamed shape fills them only after enumeration finishes.
+- Providers fill outputs when the reader closes. A buffered shape completes its read before returning. A streamed shape fills them only after enumeration finishes.
 - A [builder bound to your own command](parameters.md#a-builder-bound-to-one-dbcommand) works the same way, its command is yours already.
 - `DirectionalScaledDbParamCache` is the same with precision and scale, for decimals.
 
