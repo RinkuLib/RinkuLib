@@ -21,7 +21,7 @@ Markers are the only thing the engine acts on. A template with none is returned 
 SELECT AlbumId, Title FROM albums ORDER BY Title
 ```
 
-It also means the engine does nothing about what you leave unmarked. A plain `@albumId` is not conditional: it stays whether or not you supply a value, so a missing value throws just like handwritten SQL. Only the marked `?@minLength` drops when its value is absent.
+It also means the engine does nothing about what you leave unmarked. A plain `@albumId` is not conditional. It stays whether or not you supply a value, so a missing value throws just like handwritten SQL. Only the marked `?@minLength` drops when its value is absent.
 
 ```sql
 SELECT Name, Composer FROM tracks
@@ -36,7 +36,7 @@ Mark a spot with `?` when its presence should follow its value.
 
 ## Where markers work
 
-A marker works the same in any statement, at any spot. An `UPDATE`:
+A marker works the same in any statement, at any spot, an `UPDATE` as much as a `SELECT`.
 
 ```sql
 UPDATE tracks SET Name = ?@name, UnitPrice = ?@price WHERE TrackId = @trackId
@@ -132,7 +132,7 @@ A plain `@x` is a required key. It is taken as supplied throughout, so the label
 
 ## Changing the variable character
 
-`@` is the default, not a requirement. The parser spots a variable as the chosen character at a word boundary, then reads the name up to the next boundary, so any character that does not otherwise start a word in your SQL works: `:` for Oracle style, `$`, `#`, whatever fits your provider.
+`@` is the default, not a requirement. The parser spots a variable as the chosen character at a word boundary, then reads the name up to the next boundary, so any character that does not otherwise start a word in your SQL works, `:` for Oracle style, `$`, `#`, whatever fits your provider.
 
 ```csharp
 var oracle = new QueryCommand("SELECT * FROM t WHERE id = :id AND status = ?:status", ':');
@@ -140,4 +140,4 @@ var oracle = new QueryCommand("SELECT * FROM t WHERE id = :id AND status = ?:sta
 QueryFactory.DefaultVariableChar = ':';   // app-wide, set once at startup
 ```
 
-All markers compose with the chosen character unchanged: `?:status` is optional, `:table_R` is a handler. The builder's `Use('@', name, value)` overload takes the character separately from the name for `nameof`-friendly code (see [supplying values](../running-queries/parameters.md#a-builder)).
+All markers compose with the chosen character unchanged. `?:status` is optional, `:table_R` is a handler. The builder's `Use('@', name, value)` overload takes the character separately from the name for `nameof`-friendly code (see [supplying values](../running-queries/parameters.md#a-builder)).

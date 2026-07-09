@@ -1,6 +1,6 @@
 # Handlers
 
-A handler reshapes the SQL with an actual value, not just a present-or-absent key. The syntax is a suffix on the variable: `@Var_X` means variable `@Var` through handler `X`. The suffix is not part of the name, you still supply `@Var`.
+A handler reshapes the SQL with an actual value, not just a present-or-absent key. The syntax is a suffix on the variable. `@Var_X` means variable `@Var` through handler `X`. The suffix is not part of the name, you still supply `@Var`.
 
 ## `_X`, collection spreading
 
@@ -79,4 +79,4 @@ QueryFactory.BaseHandlerMapper['D'] = _ => new LegacyDateHandler();
 SpecialHandler.SpecialHandlerGetter['P'] = name => new EncryptionHandler(name);
 ```
 
-The factory delegate receives the variable name. Letters are case-insensitive, `A` to `Z`, and the maps are global: register at startup, before the first `QueryCommand` is built.
+The factory delegate receives the variable name. Letters are case-insensitive, `A` to `Z`, and the maps are global. Register at startup, before the first `QueryCommand` is built.

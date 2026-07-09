@@ -13,7 +13,7 @@ using var cnn = new SqlConnection(connectionString);
 List<GetTracksByAlbumResult> tracks = Tracks.Query(cnn.GetTracksByAlbum(albumId: 1));
 ```
 
-The generated method builds the `DbCommand` with no Rinku dependency. Pairing it with [mapping](../mapping/index.md) is the natural fit: the generated result records are exact column mirrors, so the rows map straight through, run through a cache as on [any DbCommand](../running-queries/direct-dbcommand.md).
+The generated method builds the `DbCommand` with no Rinku dependency. Pairing it with [mapping](../mapping/index.md) fits naturally. The generated result records are exact column mirrors, so the rows map straight through, run through a cache as on [any DbCommand](../running-queries/direct-dbcommand.md).
 
 ## The workflow
 

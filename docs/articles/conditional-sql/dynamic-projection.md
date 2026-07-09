@@ -12,7 +12,7 @@ SELECT /*Id*/AlbumId AS Id, /*Title*/Title FROM albums
 SELECT Title FROM albums
 ```
 
-Activate the keys like any condition key: `builder.Use("Title")`, or a parameter object with `[ForBoolCond]` members.
+Activate the keys like any condition key, with `builder.Use("Title")` or a parameter object with `[ForBoolCond]` members.
 
 ## Always-kept columns
 
@@ -118,4 +118,4 @@ SELECT DISTINCT Composer FROM tracks
 
 ## Mapping note
 
-A command whose projection changes produces several result schemas. That is expected and supported: the row mapper is chosen per schema. Ask for a type whose members are all optional to fit, or a [DynaObject](../mapping/dynaobject.md) when the shape is open-ended.
+A command whose projection changes produces several result schemas. That is expected and supported. The row mapper is chosen per schema. Ask for a type whose members are all optional to fit, or a [DynaObject](../mapping/dynaobject.md) when the shape is open-ended.

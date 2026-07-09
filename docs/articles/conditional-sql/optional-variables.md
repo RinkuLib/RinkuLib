@@ -13,7 +13,7 @@ SELECT * FROM tracks WHERE AlbumId = @albumId
 
 ## Automatic cleanup
 
-Pruning removes whatever would dangle: a trailing operator, a comma, an emptied clause keyword.
+Pruning removes whatever would dangle, a trailing operator, a comma, an emptied clause keyword.
 
 ```sql
 UPDATE customers SET Email = @Email, Phone = ?@Phone WHERE CustomerId = @Id
@@ -43,7 +43,7 @@ These are one set of rules, not per-clause behavior. Every keyword section (`SET
 
 ## How far the footprint reaches
 
-The footprint is the whole condition around the variable, however big the expression gets. To make that hold, the footprint grows out of any parentheses inside the expression: a function call does not cut it short.
+The footprint is the whole condition around the variable, however big the expression gets. To make that hold, the footprint grows out of any parentheses inside the expression. A function call does not cut it short.
 
 ```sql
 SELECT Id, Name FROM users WHERE Name LIKE CONCAT('%', ?@Name, '%')
@@ -95,7 +95,7 @@ SELECT * FROM invoices WHERE Total > @MinTotal AND (Country = @Country OR City =
 SELECT * FROM invoices WHERE Total > @MinTotal
 ```
 
-To prune one term inside a group and keep the rest, place a [marker](conditional-markers.md#the-footprint) yourself: a marker never grows.
+To prune one term inside a group and keep the rest, place a [marker](conditional-markers.md#the-footprint) yourself. A marker never grows.
 
 A subquery holds the footprint in. Only the inner part is pruned.
 

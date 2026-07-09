@@ -29,4 +29,4 @@ QueryCommand ByAlbum = ConnectionQueryExtensions.GetOrCreateCommand(
 List<Track> tracks = ByAlbum.Query<List<Track>>(cnn, new { albumId = 1 });
 ```
 
-Declaring a `QueryCommand` up front stays the primary form and skips the by-string lookup; the string form is the lighter road.
+Declaring a `QueryCommand` up front stays the primary form and skips the by-string lookup. The string form skips the declaration and pays that lookup.

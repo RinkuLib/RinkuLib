@@ -10,7 +10,7 @@ Querying a type registers it, whatever the `T`:
 Album album = GetAlbum.Query<Album>(cnn);   // Album registers on first use
 ```
 
-Basic types and enums, anything a `DbDataReader` exposes directly, work on contact. Any other type must be known before the engine will consider it inside another one: a custom type reached only as a slot, with no registration, makes its construction path unsatisfiable. Three ways to make it known.
+Basic types and enums, anything a `DbDataReader` exposes directly, work on contact. Any other type must be known before the engine will consider it inside another one. A custom type reached only as a slot, with no registration, makes its construction path unsatisfiable. There are three ways to make it known.
 
 The `IDbReadable` marker, registering the type wherever it appears:
 
@@ -37,7 +37,7 @@ Separate from the rules, a type's implementation may register more on its own: `
 
 ## Generic types
 
-`GetOrAdd` saves a generic type under its definition by default, so one entry (`Result<>`) covers every closed form. Pass `saveAsGenericDefinitionWhenGeneric: false` to register a single closed form (`Result<int>`) with its own entry instead. Resolution takes the exact closed entry when one exists and falls back to the definition otherwise, so both can coexist: configure the definition for the general case, a closed form for the exception.
+`GetOrAdd` saves a generic type under its definition by default, so one entry (`Result<>`) covers every closed form. Pass `saveAsGenericDefinitionWhenGeneric: false` to register a single closed form (`Result<int>`) with its own entry instead. Resolution takes the exact closed entry when one exists and falls back to the definition otherwise, so both can coexist. Configure the definition for the general case, a closed form for the exception.
 
 ```csharp
 var forAll  = TypeParsingInfo.GetOrAdd(typeof(Result<>));                          // every Result<T>
@@ -48,7 +48,7 @@ Registering a generic *method* as a construction path for such a type is on [con
 
 ## Registering with another info
 
-Registration also decides *which info* parses the type, the deepest lever there is: a different info negotiates by different rules. The built-in `CtorTypeInfo` maps by position and type alone, names ignored, [reading order](reading-order.md) sequential.
+Registration also decides *which info* parses the type, the deepest lever there is. A different info negotiates by different rules. The built-in `CtorTypeInfo` maps by position and type alone, names ignored, [reading order](reading-order.md) sequential.
 
 ```csharp
 public record struct Coordinates(double Lat, double Long);
@@ -57,7 +57,7 @@ TypeParsingInfo.GetOrAdd<Coordinates>(CtorTypeInfo.Instance);
 // Columns: Longitude | Latitude  ->  Lat takes the first double, Long the second, names disregarded
 ```
 
-With several constructors, `[DbConstructor]` marks the one to use; without it, the first constructor that takes parameters wins.
+With several constructors, `[DbConstructor]` marks the one to use. Without it, the first constructor that takes parameters wins.
 
 ```csharp
 public class Segment {

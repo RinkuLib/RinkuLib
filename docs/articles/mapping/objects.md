@@ -1,6 +1,6 @@
 # Objects and nesting
 
-The engine builds an object by finding a construction path the columns can satisfy: a constructor or a static factory, optionally followed by filling settable members.
+The engine builds an object by finding a construction path the columns can satisfy, a constructor or a static factory, optionally followed by filling settable members.
 
 ## What it can use
 
@@ -19,11 +19,11 @@ public class Playlist {                                         // parameterless
 }
 ```
 
-A column matches a slot when the name matches (case-insensitive) and the type is convertible. Among the viable paths, the engine takes the first one the columns fully satisfy. Paths are kept most-specific first, so that first match is usually the right one. The exact ordering is on [construction paths](construction-paths.md).
+A column matches a slot when the name matches (case-insensitive) and the type is convertible. Among the viable paths, the engine takes the first one the columns fully satisfy. Paths are kept most-specific first, so that first match is usually correct. The exact ordering is on [construction paths](construction-paths.md).
 
 ## Default values
 
-A parameter with a default value is optional to the negotiation. When nothing satisfies it, no matching column for a simple type, no satisfiable construction for a complex one, the slot falls back to its default instead of failing the path. One constructor with defaults covers what several arities would: `(int, string, string?)` below also stands in for `(int, string)`.
+A parameter with a default value is optional to the negotiation. When nothing satisfies it, no matching column for a simple type, no satisfiable construction for a complex one, the slot falls back to its default instead of failing the path. One constructor with defaults covers what several arities would. `(int, string, string?)` below also stands in for `(int, string)`.
 
 ```csharp
 public record Track(int Id, string Name, string? Composer = null);
@@ -31,7 +31,7 @@ public record Track(int Id, string Name, string? Composer = null);
 // Columns: Id | Name | Composer -> builds with all three
 ```
 
-The fallback emits the type's default, so it applies when the declared default is exactly that (`= null`, `= 0`, `= false`). A parameter with `= 5` is not optional, the engine will not fabricate the value. Post-construction members need none of this, they are optional by nature and simply stay unset when nothing matches.
+The fallback emits the type's default, so it applies when the declared default is exactly that (`= null`, `= 0`, `= false`). A parameter with `= 5` is not optional, the engine will not fabricate the value. Post-construction members need none of this, they are optional by nature and stay unset when nothing matches.
 
 The runtime form is an `IFallbackParserGetter` on the slot, carried by a `ParamInfoPlus` on the [construction path](construction-paths.md#replacing-the-set). `DefaultValueFallback.Instance` is the type-default fallback a compiler default produces, so attaching it makes a slot optional even when its parameter declares nothing:
 
@@ -47,7 +47,7 @@ if (TypeParsingInfo.GetOrAdd<Track>() is ICanProvideConstructions info) {
 }
 ```
 
-Going runtime reaches past what a declared default can say. A default only fires when it equals the type default, so `= 5` is ignored; your own `IFallbackParserGetter` returns any parser for the missing slot, so it can supply a non-default constant, a computed value, or a whole alternative construction.
+Going runtime reaches past what a declared default can say. A default only fires when it equals the type default, so `= 5` is ignored. Your own `IFallbackParserGetter` returns any parser for the missing slot, so it can supply a non-default constant, a computed value, or a whole alternative construction.
 
 ## Alternative names
 
@@ -58,7 +58,7 @@ public record Person(int Id, [Alt("Name")] string Username);
 // matches a "Username" column or a "Name" column
 ```
 
-Names go further, skipping prefix segments, matching by position alone: the full rules are on [names](names.md).
+Names go further, skipping prefix segments or matching by position alone. The full rules are on [names](names.md).
 
 ## Nesting
 
@@ -89,7 +89,7 @@ User u = GetUser.Query<User>(cnn, new { id = 3 });
 // and its own Supervisor finds no columns and stays null
 ```
 
-A level that consumes no new column stops instead of descending into the same type again, so the recursion ends once the columns run out. The `= null` [default](#default-values) is what lets it end cleanly: at the deepest level no `Supervisor` columns remain, so the slot falls back to its default and the path still builds. Without it, every level would require a `Supervisor` and the negotiation could never resolve.
+A level that consumes no new column stops instead of descending into the same type again, so the recursion ends once the columns run out. The `= null` [default](#default-values) is what lets it end cleanly. At the deepest level no `Supervisor` columns remain, so the slot falls back to its default and the path still builds. Without it, every level would require a `Supervisor` and the negotiation could never resolve.
 
 ## Factories and polymorphism
 
@@ -113,7 +113,7 @@ The columns decide which factory is satisfiable, and the first fully-satisfied p
 
 ## Post-construction members
 
-After a construction path is chosen, the columns it did not consume can fill the type's public settable fields and properties. This completion runs automatically only for the parameterless constructor; to enable it after any other constructor or factory, mark that path `[CanCompleteWithMembers]`.
+After a construction path is chosen, the columns it did not consume can fill the type's public settable fields and properties. This completion runs automatically only for the parameterless constructor. To enable it after any other constructor or factory, mark that path `[CanCompleteWithMembers]`.
 
 ```csharp
 [method: CanCompleteWithMembers]
@@ -124,4 +124,4 @@ public class Metadata(string value) {
 // Columns: Value | Source  ->  the constructor takes Value and completion leaves it untouched, Source fills from the rest
 ```
 
-Members negotiate over the columns the constructor left behind, by the same name and type matching used everywhere. A settable member is not an override: one whose name matches a consumed column finds it already taken, looks among the remaining columns, and is left as construction set it when none fit. To let a member read a column a parameter already used, mark it `[MayReuseCol]`, one of the [reading-order](reading-order.md) flags.
+Members negotiate over the columns the constructor left behind, by the same name and type matching used everywhere. A settable member is not an override. One whose name matches a consumed column finds it already taken, looks among the remaining columns, and is left as construction set it when none fit. To let a member read a column a parameter already used, mark it `[MayReuseCol]`, one of the [reading-order](reading-order.md) flags.

@@ -127,7 +127,7 @@ See [multiple result sets](multiple-results.md).
 
 ## The SQL string on the connection
 
-Skip declaring a `QueryCommand` and hand the SQL to the connection; it caches the command by the string. More on [the SQL string](sql-string.md).
+Skip declaring a `QueryCommand` and hand the SQL to the connection. It caches the command by the string. More on [the SQL string](sql-string.md).
 
 ```csharp
 List<Track> tracks = cnn.Query<List<Track>>(
@@ -189,4 +189,4 @@ The `?@` toggle is a structural rule the engine applies to every keyword section
 | A raw reader | `ExecuteReader` | `DbDataReader` | `Task<DbDataReader>` |
 | Several result sets | `ExecuteMultiReader` | `MultiReader` | `Task<MultiReader>` |
 
-The `T` in `Query<T>` is open, not a fixed menu: new [result shapes](result-shapes.md) plug in the same way the built-in ones do.
+The `T` in `Query<T>` is open, not a fixed menu. New [result shapes](result-shapes.md) plug in the same way the built-in ones do.

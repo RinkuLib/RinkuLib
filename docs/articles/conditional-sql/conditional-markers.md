@@ -58,7 +58,7 @@ SELECT TrackId, Name FROM tracks
 SELECT TrackId, Name FROM tracks WHERE Milliseconds > @ms
 ```
 
-Space around the marker is cosmetic. It can sit on either side or both and drops with the marker; the footprint's edges are the boundary tokens, not the spaces. The one rule is not to weld two words: write `WHERE /*Long*/Milliseconds` or `WHERE/*Long*/ Milliseconds`, never `WHERE/*Long*/Milliseconds`.
+Space around the marker is cosmetic. It can sit on either side or both and drops with the marker. The footprint's edges are the boundary tokens, not the spaces. The one rule is not to weld two words. Write `WHERE /*Long*/Milliseconds` or `WHERE/*Long*/ Milliseconds`, never `WHERE/*Long*/Milliseconds`.
 
 The connector after a footprint belongs to it, so a marker just before an `AND`, `OR`, or comma binds the condition on its left, not the one on its right.
 
@@ -299,7 +299,7 @@ SELECT * FROM products WHERE IsActive = 1 /*@Sort*/ORDER BY @Sort_R ?@Dir_R
 SELECT * FROM products WHERE IsActive = 1 ORDER BY Price DESC
 ```
 
-`WHEN`, `THEN`, and `ELSE` are ordinary sections, so a footprint stops at them like it stops at a `WHERE`. Making only a `WHEN` conditional strands its `THEN`; mark the `THEN` with the same key and the pair leaves together.
+`WHEN`, `THEN`, and `ELSE` are ordinary sections, so a footprint stops at them like it stops at a `WHERE`. Making only a `WHEN` conditional strands its `THEN`. Mark the `THEN` with the same key and the pair leaves together.
 
 ```sql
 CASE WHEN Role = ?@Special /*@Special*/THEN 'S' WHEN Role = 'Admin' THEN 'A' ELSE 'U' END

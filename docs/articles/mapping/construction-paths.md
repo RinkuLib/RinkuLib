@@ -4,7 +4,7 @@ A type's parsing info holds its construction paths, the constructors and factori
 
 ## Ordering
 
-Discovery keeps the order paths are declared in and applies one adjustment: a signature that is more specific than one ahead of it moves in front of that one. More specific means equal or more parameters, each the same or a more derived type. At parse time, the first path the columns fully satisfy wins, so the richer paths get their chance first and the lean ones catch what remains, per schema.
+Discovery keeps the order paths are declared in, with one adjustment. A signature that is more specific than one ahead of it moves in front of that one. More specific means equal or more parameters, each the same or a more derived type. At parse time, the first path the columns fully satisfy wins, so the richer paths get their chance first and the lean ones catch what remains, per schema.
 
 ```csharp
 public class Report {
@@ -35,12 +35,12 @@ public class Report {
 > `A` is not comparable to `D` or `C` (their first parameter is an `int`, not a `string`), so it keeps first place. Any schema with a `Username` column satisfies it, and since `D` and `C` need that column too, they can never win. Ways out:
 >
 > - Declare the rich constructors first. Discovery keeps that order.
-> - Constrain the broad path so it fails when it should not apply: `[CanNotLookAnywhere]` on `username` makes `A` match only when `Username` is the next unconsumed column, leaving `Id`-first schemas to the richer paths.
+> - Constrain the broad path so it fails when it should not apply. `[CanNotLookAnywhere]` on `username` makes `A` match only when `Username` is the next unconsumed column, leaving `Id`-first schemas to the richer paths.
 > - Reorder at runtime, [below](#adding-and-reordering).
 
 ## Adding and reordering
 
-`AddPossibleConstruction` accepts any constructor or method whose result is assignable to the target: private constructors, factories on other classes, a derived type's constructor. An added path goes to the front, unless an existing entry is more specific, in which case it settles just behind it.
+`AddPossibleConstruction` accepts any constructor or method whose result is assignable to the target, private constructors, factories on other classes, a derived type's constructor. An added path goes to the front, unless an existing entry is more specific, in which case it settles just behind it.
 
 ```csharp
 var info = TypeParsingInfo.GetOrAdd<UserProfile>();
@@ -53,7 +53,7 @@ info.AddPossibleConstruction(typeof(UserProfile).GetConstructor(
 info.AddPossibleConstruction(typeof(UserFactory).GetMethod("CreateLegacyUser")!);
 ```
 
-This composes with polymorphism: registering a derived type's constructor against an interface adds another shape the columns can select.
+This composes with polymorphism. Registering a derived type's constructor against an interface adds another shape the columns can select.
 
 ```csharp
 TypeParsingInfo.GetOrAdd<IPayment>()
@@ -86,11 +86,11 @@ TypeParsingInfo.GetOrAdd(typeof(Box<>))
 // Box<int> builds through Create<int>, Box<string> through Create<string>, from the one registration
 ```
 
-Two rules on the method's shape: its type arguments must match the returned type's exactly (order and count), and its declaring type cannot itself be generic, the engine needs a fixed host to resolve the call. A factory declared on the generic type itself is instead non-generic (`static Box<T> Create(T)` inside `Box<T>`), since the type already supplies the parameter, and that form is discovered without registering anything.
+Two rules apply to the method's shape. Its type arguments must match the returned type's exactly (order and count), and its declaring type cannot itself be generic, the engine needs a fixed host to resolve the call. A factory declared on the generic type itself is instead non-generic (`static Box<T> Create(T)` inside `Box<T>`), since the type already supplies the parameter, and that form is discovered without registering anything.
 
 ### Replacing the set
 
-The set itself is assignable, so the usual move is to take it, apply an ordering rule of your own, and hand it back. Sorting the paths by descending parameter count is one such rule, and the direct fix for the broad-path warning above: the richer paths come first and a broad lean one can no longer shadow them. Any info that implements `ICanProvideConstructions` exposes the set. The default info does; another info may or may not, depending on [which info parses the type](registration.md#registering-with-another-info). So match on the interface, not on a concrete type:
+The set itself is assignable, so the usual move is to take it, apply an ordering rule of your own, and hand it back. Sorting the paths by descending parameter count is one such rule, and the direct fix for the broad-path warning above. The richer paths come first and a broad lean one can no longer shadow them. Any info that implements `ICanProvideConstructions` exposes the set. The default info does. Another info may or may not, depending on [which info parses the type](registration.md#registering-with-another-info). So match on the interface, not on a concrete type.
 
 ```csharp
 if (TypeParsingInfo.GetOrAdd<UserProfile>() is ICanProvideConstructions info) {
@@ -104,7 +104,7 @@ Assigning validates every entry (the result must be assignable to the type) and 
 
 ## Post-construction members
 
-`AvailableMembers` is the same story for the members filled after construction: public fields (not `readonly` or `const`) and properties with a public setter (`init` excluded). `AddMember` appends one by hand, the counterpart to `AddPossibleConstruction`. It takes a field, a property, or a setter method, an external `static` one taking `(instance, value)` on a non-generic class or an instance one taking `(value)`, and derives the column's type the same way discovery does.
+`AvailableMembers` is the same story for the members filled after construction, the public fields (not `readonly` or `const`) and properties with a public setter (`init` excluded). `AddMember` appends one by hand, the counterpart to `AddPossibleConstruction`. It takes a field, a property, or a setter method, an external `static` one taking `(instance, value)` on a non-generic class or an instance one taking `(value)`, and derives the column's type the same way discovery does.
 
 ```csharp
 // an external setter: static void SetSecretCode(UserProfile profile, string code)

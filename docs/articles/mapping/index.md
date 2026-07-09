@@ -21,7 +21,7 @@ List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
 // albums[0].Artist.Name is filled from ArtistName
 ```
 
-One rule to know up front: a type you query directly is known automatically, a type reached only through another one must be registered. The `IDbReadable` marker on `Artist` above is the simplest way. Details on [registration](registration.md).
+There is one rule to know up front. A type you query directly is known automatically. A type reached only through another one must be registered. The `IDbReadable` marker on `Artist` above is the simplest way. Details on [registration](registration.md).
 
 The engine is one negotiation composed of small parts, each a default implementation that can be swapped. The behaviors in this section, from nesting to tuples, are arrangements of those parts.
 

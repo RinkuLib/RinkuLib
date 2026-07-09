@@ -1,10 +1,10 @@
 # Tracking
 
-`RinkuLib.Tracking` wraps an ordinary `IEnumerable<T>` with change tracking: what was added, removed, or edited, with commit and revert. The result still binds and enumerates like a normal list, which is what a form or a data grid needs.
+`RinkuLib.Tracking` wraps an ordinary `IEnumerable<T>` with change tracking, what was added, removed, or edited, with commit and revert. The result still binds and enumerates like a normal list, which is what a form or a data grid needs.
 
 > **Status.** Tracking is in active development. The blocks below work, but the surface may still change.
 
-The model: each item holds an **original** value and, once you start editing, a separate **edit** copy. Nothing is copied until you actually edit. Commit makes the edit the new original, cancel discards it.
+Each item holds an **original** value and, once you start editing, a separate **edit** copy. Nothing is copied until you actually edit. Commit makes the edit the new original, cancel discards it.
 
 ## End to end
 

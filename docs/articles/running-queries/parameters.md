@@ -1,6 +1,6 @@
 # Supplying values
 
-A run needs the values for this call. There are two ways to hand them over: an object whose members carry them, or a builder you set in C#. Both end in the same execution methods.
+A run needs the values for this call. There are two ways to hand them over, an object whose members carry them, or a builder you set in C#. Both end in the same execution methods.
 
 ## An object
 
@@ -62,10 +62,10 @@ var tracks = SearchCmd.Query<List<Track>>(cnn, new TrackSearch(1, "  ", 0) { Inc
 // Composer is blank and MinPrice is default, so only @AlbumId and the IncludeArtist condition are active.
 ```
 
-- `[NotNullOrWhitespace]` on a string member: used only when it has content.
-- `[NotDefault]` on any member: used only when it is not the type's default.
-- `[ForBoolCond]` on a `bool` member: drives a comment condition key (see [conditional markers](../conditional-sql/conditional-markers.md)) instead of a parameter.
-- `[UsesBoolConds("Key1", "Key2")]` on the type: activates the named condition keys whenever this object is used.
+- `[NotNullOrWhitespace]` on a string member, used only when it has content.
+- `[NotDefault]` on any member, used only when it is not the type's default.
+- `[ForBoolCond]` on a `bool` member drives a comment condition key (see [conditional markers](../conditional-sql/conditional-markers.md)) instead of a parameter.
+- `[UsesBoolConds("Key1", "Key2")]` on the type activates the named condition keys whenever this object is used.
 
 ```csharp
 [UsesBoolConds("Year")]
@@ -73,7 +73,7 @@ public record ReportFilter([property: NotDefault] int DeptId);
 // every call with a ReportFilter also turns on the "Year" condition
 ```
 
-These attributes are implementations of one base, `AccessorEmiterHandler`. Deriving from it gives your own attribute the same two controls: when a member counts as supplied, and what value is read from it. `[NotNullOrWhitespace]` is the smallest one to read as a reference.
+These attributes are implementations of one base, `AccessorEmiterHandler`. Deriving from it gives your own attribute the same two controls, when a member counts as supplied, and what value is read from it. `[NotNullOrWhitespace]` is the smallest one to read as a reference.
 
 ## A builder
 
@@ -87,7 +87,7 @@ if (alsoByComposer)
 List<Track> tracks = b.Query<List<Track>>(cnn);
 ```
 
-`Use(name, value)` stores the value and keeps the key's footprint in the SQL. `Use(name)` with no value activates a comment condition. Both return `bool`: whether the command has that key and the bind landed.
+`Use(name, value)` stores the value and keeps the key's footprint in the SQL. `Use(name)` with no value activates a comment condition. Both return `bool`, whether the command has that key and the bind landed.
 
 That return matters when code receives a builder without knowing which template is behind it. A shared method that runs updates can refuse to run one it cannot key to a row.
 

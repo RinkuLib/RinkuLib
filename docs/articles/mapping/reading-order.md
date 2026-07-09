@@ -1,6 +1,6 @@
 # Reading order
 
-A slot finds its column under one of two regimes. Free: it takes any unconsumed column that matches by name and type, wherever it sits. Sequential: it takes only the column right after the last one consumed. Either way it consumes that column so nothing else can.
+A slot finds its column under one of two regimes. Under free, it takes any unconsumed column that matches by name and type, wherever it sits. Under sequential, it takes only the column right after the last one consumed. Either way it consumes that column so nothing else can.
 
 The regime comes from the info parsing the type. A normal registration reads free, so order and gaps do not matter.
 
@@ -21,11 +21,11 @@ var (a, b) = cmd.Query<(Person, Person)>(cnn);
 // b resumes at Id(2), Name(3), Email(4), seeing only the columns from where a stopped
 ```
 
-Same type, two regimes, decided by where it is read (see [registering with another info](registration.md#registering-with-another-info)). Two attributes flip the regime on a single slot; on a complex-typed slot they reach into its subtree, [below](#scope-on-a-nested-slot).
+Same type, two regimes, decided by where it is read (see [registering with another info](registration.md#registering-with-another-info)). Two attributes flip the regime on a single slot. On a complex-typed slot they reach into its subtree, [below](#scope-on-a-nested-slot).
 
 ## `[CanNotLookAnywhere]`, sequential for one slot
 
-Makes one slot sequential even in a free context: it takes only the column right after the last one consumed, and looks no further if that one does not match.
+Makes one slot sequential even in a free context. It takes only the column right after the last one consumed, and looks no further if that one does not match.
 
 ```csharp
 public record Entry(int Id, [CanNotLookAnywhere] int? Code = null);
@@ -33,11 +33,11 @@ public record Entry(int Id, [CanNotLookAnywhere] int? Code = null);
 // Columns: Id | Other | Code  ->  the next column is "Other", so Code does not match and stays at its default
 ```
 
-The `= null` is what keeps that second schema building. Drop it and `Code` is required, so the mismatch has nowhere to fall back: the negotiation fails and the parse throws. That is the intended outcome, a loud predictable break beats a silent wrong value.
+The `= null` is what keeps that second schema building. Drop it and `Code` is required, so the mismatch has nowhere to fall back. The negotiation fails and the parse throws, rather than silently storing a wrong value.
 
 ## `[CanLookAnywhere]`, free for one slot
 
-Frees one slot to look anywhere instead of taking the next column in line. Its real use is the first parameter of an object in a sequential run: when a stray column sits between two objects, the second cannot build, because its first parameter lands on that column. Freeing that parameter lets the object anchor past the gap, then read on in sequence from there.
+Frees one slot to look anywhere instead of taking the next column in line. Its real use is the first parameter of an object in a sequential run. When a stray column sits between two objects, the second cannot build, because its first parameter lands on that column. Freeing that parameter lets the object anchor past the gap, then read on in sequence from there.
 
 ```csharp
 public record struct Person(int Id, string Name);
@@ -75,7 +75,7 @@ public record Money(int Amount, [Alt("Amount")][MayReuseCol] int Copy);
 
 ## Scope on a nested slot
 
-The regime carries down into nested objects, so a reading-order attribute on a complex-typed slot reaches its subtree. The plain attribute reaches only the subtree's first consumed column; a `...Subtree` variant reaches the whole subtree.
+The regime carries down into nested objects, so a reading-order attribute on a complex-typed slot reaches its subtree. The plain attribute reaches only the subtree's first consumed column. A `...Subtree` variant reaches the whole subtree.
 
 `[CanLookAnywhere]` on a complex slot frees that first column, then the subtree reads on in sequence:
 

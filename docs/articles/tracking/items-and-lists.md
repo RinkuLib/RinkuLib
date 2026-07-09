@@ -18,14 +18,14 @@ item.CancelEdit();   // discard the edit, keep the original
 
 `CurrentValue` returns the value as it stands, the edit while editing, otherwise the original, with no mutability guarantee. Use `EditableValue` or `EnsureIsEditing` when you intend to modify.
 
-Metadata-carrying variants exist for validation results: `EditableClass<T, TMetadata>` and `EditableStruct<T, TMetadata>`.
+Metadata-carrying variants exist for validation results, `EditableClass<T, TMetadata>` and `EditableStruct<T, TMetadata>`.
 
 ## Tracking lists
 
 Two list types build on the items.
 
 - `TrackingList` tracks removals and revivals. Removed originals are exposed on `Removed`, `CommitRemoved()` discards that history, `HasOriginal(index, out original)` answers per row.
-- `TrackingEditList` adds per-item edit state: `HasChanges`, `IsEditing(index)`, `EnsureEditing(index, out edit)`, `CommitEdit(index)`, `CancelEdit(index)`.
+- `TrackingEditList` adds per-item edit state, `HasChanges`, `IsEditing(index)`, `EnsureEditing(index, out edit)`, `CommitEdit(index)`, `CancelEdit(index)`.
 
 The `ToTrackingList` extensions build one from any sequence, with overloads for classes and structs, and optional validation, commit, and metadata.
 
@@ -69,4 +69,4 @@ if (!list.CommitEdit(0))                    // Validate runs, refuses, stores th
 
 ## UI binding
 
-`TrackingEditList` implements `IList<T>`, `IList`, and `IBindingList`, so it binds directly to a `DataGridView` or a WPF grid. It raises `ListChanged` and supports `AddNew()` once a new-item factory exists: the `ToTrackingList` overloads wire one up when the element type has a parameterless constructor, or set it with `SetNewItemFactory`.
+`TrackingEditList` implements `IList<T>`, `IList`, and `IBindingList`, so it binds directly to a `DataGridView` or a WPF grid. It raises `ListChanged` and supports `AddNew()` once a new-item factory exists. The `ToTrackingList` overloads wire one up when the element type has a parameterless constructor, or set it with `SetNewItemFactory`.

@@ -2,14 +2,19 @@
 [![Rinku](https://img.shields.io/nuget/v/Rinku)](https://www.nuget.org/packages/Rinku/)
 [![Rinku](https://img.shields.io/nuget/dt/Rinku)](https://www.nuget.org/packages/Rinku/)
 
-A micro-ORM for .NET, built directly on **ADO.NET**. Write SQL, get your objects back. It's four capabilities you can reach for one at a time or together:
+A micro-ORM for .NET, built directly on **ADO.NET**. You write the SQL, name a type, and get your objects back.
 
-- **Mapping**. Turn result rows into your types, from a single scalar to a nested object graph.
-- **Conditional SQL**. Write one template that adapts to the values you pass, staying valid without string concatenation (no `WHERE 1=1`).
-- **Code generation**. Generate ready-to-run `DbCommand`s from your database schema at design time.
-- **Tracking**. Add edit / commit / revert change tracking over an `IEnumerable`.
+```csharp
+public record Album(int Id, string Title);
 
-In practice, mapping is the spine and the rest builds on it.
+// Create the command once (a static readonly field is ideal). Parsing happens here.
+static readonly QueryCommand GetAlbums =
+    new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 1 });
+```
+
+The mapping runs from a single scalar to a nested object graph. Conditional SQL, design-time code generation, and change tracking build on it.
 
 ## Install
 
@@ -19,22 +24,36 @@ dotnet add package Rinku
 
 Targets **.NET 8** and **.NET 10**. The compile-time analyzers ship inside the package, no separate install. See [installation](docs/articles/getting-started/installation.md).
 
-## Quick start
+## Pick the result shape
+
+The type argument decides what comes back. `Album` is one of your own types, nothing about it is special to Rinku.
 
 ```csharp
-// Create the command once (a static readonly field is ideal). Parsing happens here.
-static readonly QueryCommand GetAlbums =
-    new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
-
-using DbConnection cnn = GetConnection();
-
-// Call execution methods straight on the command.
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 1 });
+Album one                 = GetAlbums.Query<Album>(cnn, new { artistId = 1 });              // one row
+IEnumerable<Album> stream = GetAlbums.Query<IEnumerable<Album>>(cnn, new { artistId = 1 }); // streamed
 ```
 
-The result shape follows the type argument, `Query<Album>` (one), `Query<List<Album>>` (buffered), `Query<IEnumerable<Album>>` (streamed), and more. For a single value, `ExecuteScalar<T>` returns it. `Album` is one of your own types. Nothing about it is special to Rinku. See [running queries](docs/articles/running-queries/index.md).
+For a single value, `ExecuteScalar<T>` returns it. See [running queries](docs/articles/running-queries/index.md).
 
-The same call handles dynamic SQL. Mark the optional parts of a template, and the values you supply decide what stays.
+## Map onto nested types
+
+Flat rows fill nested shapes, matched by column name.
+
+```csharp
+public record Customer(int Id, string Name) : IDbReadable;
+public record Invoice(int Id, decimal Total, Customer Customer);
+
+static readonly QueryCommand GetInvoices = new(
+    "SELECT i.InvoiceId AS Id, i.Total, i.CustomerId, c.FirstName AS CustomerName " +
+    "FROM invoices i JOIN customers c ON c.CustomerId = i.CustomerId");
+
+List<Invoice> invoices = GetInvoices.Query<List<Invoice>>(cnn);
+// each Invoice.Customer is filled from CustomerId and CustomerName
+```
+
+## Make parts of the SQL optional
+
+Mark the optional parts of a template, and the values you supply decide what stays.
 
 ```csharp
 static readonly QueryCommand Search =
@@ -46,6 +65,15 @@ List<Album> albums = Search.Query<List<Album>>(cnn, new { artistId = 1 });
 ```
 
 You define the template up front, so your code only decides what's used and never concatenates SQL, the validity of the statement holds wherever a value lands. Mapping works the same way. A configurable negotiation maps a flat database row onto the multi-level shape of your type. A [builder](docs/articles/running-queries/parameters.md) is available when you'd rather toggle conditions in C#.
+
+## Query from the SQL string
+
+As an alternative to declaring the command, hand the SQL to the connection. The command is built once and cached by the string.
+
+```csharp
+List<Album> albums = cnn.Query<List<Album>>(
+    "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 1 });
+```
 
 ## Documentation
 

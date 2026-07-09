@@ -3,7 +3,7 @@
 RinkuLib began as a Dapper extension, so the patterns carry over. There are two calling styles, and both mirror a Dapper call.
 
 - Hand the SQL to the connection. This reads almost like Dapper, and the command is built once and cached by the string.
-- Declare a reusable `QueryCommand` and call methods on it. This is the primary Rinku form: the SQL is parsed once up front and each call skips the by-string lookup.
+- Declare a reusable `QueryCommand` and call methods on it. This is the primary Rinku form. The SQL is parsed once up front and each call skips the by-string lookup.
 
 ```csharp
 // Dapper
@@ -72,7 +72,7 @@ cnn.Query<List<Track>>("SELECT * FROM tracks WHERE GenreId IN (@genreIds_X)", ne
 
 ## What replaces string-built SQL
 
-Where a Dapper codebase concatenates SQL or leans on `WHERE 1=1`, one [conditional template](../conditional-sql/index.md) covers the variations: mark the optional parts and the values you pass decide the SQL.
+Where a Dapper codebase concatenates SQL or leans on `WHERE 1=1`, one [conditional template](../conditional-sql/index.md) covers the variations. Mark the optional parts and the values you pass decide the SQL.
 
 ```csharp
 static readonly QueryCommand Search = new(

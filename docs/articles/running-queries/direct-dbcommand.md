@@ -30,7 +30,7 @@ await foreach (Track t in Tracks.StreamQueryAsync(cmd, ct: token))
 
 ## Your own cache
 
-`cmd.Query` takes an `ICacheGivingParser<T>`, so a class of your own can be the cache and hold the parser itself. The first call goes through `cmd.Query(this)`, which fills the parser in `UpdateCache`; later calls use it directly.
+`cmd.Query` takes an `ICacheGivingParser<T>`, so a class of your own can be the cache and hold the parser itself. The first call goes through `cmd.Query(this)`, which fills the parser in `UpdateCache`. Later calls use it directly.
 
 ```csharp
 public sealed class TrackRepo : ICacheGivingParser<List<Track>> {
@@ -53,4 +53,4 @@ One class can hold several shapes this way, a field for `Track`, another for `Li
 
 ## `IDbCommand` support
 
-Mirrored for `IDbCommand`; when it is really a `DbCommand`, async forwards to the real async implementation.
+Mirrored for `IDbCommand`. When it is really a `DbCommand`, async forwards to the real async implementation.
