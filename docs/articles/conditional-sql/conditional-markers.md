@@ -1,127 +1,330 @@
 # Conditional markers
 
-`/*...*/` places a condition exactly where you want it. `?@Var` is shorthand for `/*@Var*/@Var` with one difference: the footprint of `?@Var` grows out of ordinary parentheses on its own, while `/*...*/` treats every parenthesis as a boundary, giving you precise control.
+`/*...*/` places a condition in the SQL. Its key is either a variable, active when the variable is supplied, or a name you choose, active when you turn it on.
 
-## Tied to a variable
+## `?@Var` written out
 
-`/*@Var*/` makes the segment after it conditional on `@Var` being supplied.
+`?@Var` places a marker on its own variable. On a plain condition, the two forms are the same query.
 
-* **Template:** `SELECT * FROM tracks WHERE /*@AlbumId*/AlbumId = (SELECT AlbumId FROM albums WHERE AlbumId = @AlbumId)`
-* **Result (no `@AlbumId`):** `SELECT * FROM tracks`
+```sql
+SELECT * FROM tracks WHERE Name = ?@Name
+SELECT * FROM tracks WHERE Name = /*@Name*/@Name
 
-Or keep the condition inside a parenthesized group:
+-- no @Name, either form
+SELECT * FROM tracks
+```
 
-* **Template:** `SELECT * FROM invoices WHERE Total > @Min AND (Country = @C1 OR /*@City*/City = @City)`
-* **Result (no `@City`):** `SELECT * FROM invoices WHERE Total > @Min AND (Country = @C1)`
+They differ at parentheses: the footprint of `?` [grows out of them](optional-variables.md#parentheses-and-subqueries), a marker's never does.
 
 ## Custom keys
 
-A comment without a variable defines a key you activate yourself, no value attached.
+A marker does not need a variable: `/*Key*/` prunes by a key you activate yourself, no value attached.
 
-* **Template:** `SELECT * FROM tracks WHERE GenreId = 1 AND /*HighPriced*/UnitPrice > 1`
-* **Result (key not used):** `SELECT * FROM tracks WHERE GenreId = 1`
+```sql
+SELECT TrackId, Name FROM tracks WHERE AlbumId = @albumId AND /*HasComposer*/Composer IS NOT NULL
+
+-- HasComposer off
+SELECT TrackId, Name FROM tracks WHERE AlbumId = @albumId
+```
 
 ```csharp
 var b = cmd.StartBuilder();
-b.Use("HighPriced");                 // from a builder
+b.Use("HasComposer");                // from a builder
 // or [ForBoolCond] / [UsesBoolConds] on a parameter object
 ```
 
 Columns work the same way.
 
-* **Template:** `SELECT TrackId, Name, /*ShowPrice*/UnitPrice FROM tracks`
-* **Result (key not used):** `SELECT TrackId, Name FROM tracks`
+```sql
+SELECT TrackId, Name, /*ShowPrice*/UnitPrice FROM tracks
 
-## Whole clauses
+-- ShowPrice off
+SELECT TrackId, Name FROM tracks
+```
 
-Placed before a clause, the marker takes the whole clause as its footprint.
+## The footprint
 
-* **Template:** `SELECT i.InvoiceId FROM invoices i /*@Country*/INNER JOIN customers c ON i.CustomerId = c.CustomerId WHERE c.Country = ?@Country`
-* **Result (no `@Country`):** `SELECT i.InvoiceId FROM invoices i`
-* **Result (`@Country` supplied):** the join and the filter both stay.
+A footprint runs between structural boundaries: a connector (`AND`, `OR`), a list comma, a section keyword (`WHERE`, `SET`, `THEN`, any of them), a parenthesis. The marker can sit anywhere between those boundaries, so these three are the same query.
 
-A dynamic `ORDER BY` combines a clause marker with [handlers](handlers.md):
+```sql
+SELECT TrackId, Name FROM tracks WHERE /*Long*/Milliseconds > @ms
+SELECT TrackId, Name FROM tracks WHERE Milliseconds /*Long*/> @ms
+SELECT TrackId, Name FROM tracks WHERE Milliseconds > /*Long*/@ms
 
-* **Template:** `SELECT * FROM products WHERE IsActive = 1 /*@Sort*/ORDER BY @Sort_R ?@Dir_R`
-* **Result (`@Sort` = `Price`, `@Dir` = `DESC`):** `SELECT * FROM products WHERE IsActive = 1 ORDER BY Price DESC`
+-- Long off, any form
+SELECT TrackId, Name FROM tracks
 
-## Combining keys: `|`, `&`, `!`
+-- Long on, any form
+SELECT TrackId, Name FROM tracks WHERE Milliseconds > @ms
+```
 
-Inside a marker, combine keys with `|` (or), `&` (and), `!` (not). Read left to right, no precedence: `/*A|B&C*/` means `(A or B) and C`. Spaces are allowed.
+Space around the marker is cosmetic. It can sit on either side or both and drops with the marker; the footprint's edges are the boundary tokens, not the spaces. The one rule is not to weld two words: write `WHERE /*Long*/Milliseconds` or `WHERE/*Long*/ Milliseconds`, never `WHERE/*Long*/Milliseconds`.
 
-* **Template:** `SELECT * FROM tracks WHERE /*Cheap|Pricey&InCatalog*/UnitPrice > 1`
-* The segment stays when (`Cheap` or `Pricey`) and `InCatalog` are active.
+The connector after a footprint belongs to it, so a marker just before an `AND`, `OR`, or comma binds the condition on its left, not the one on its right.
 
-`!` keeps the segment only when the key is absent. The classic use is an "all" switch:
+```sql
+SELECT * FROM tracks WHERE Composer = @composer /*Extra*/AND Milliseconds > @ms
 
-* **Template:** `SELECT * FROM tracks WHERE /*!All*/GenreId = 1`
-* **Result (`All` not used):** `SELECT * FROM tracks WHERE GenreId = 1`
-* **Result (`All` used):** `SELECT * FROM tracks`
+-- Extra off, the left condition and its AND prune
+SELECT * FROM tracks WHERE Milliseconds > @ms
+```
 
-A join that several features depend on listens to all of them:
+Move the marker past the connector to bind the condition on the right.
 
-* **Template:** `SELECT i.InvoiceId, /*Name*/c.FirstName FROM invoices i /*@Country|Name*/JOIN customers c ON i.CustomerId = c.CustomerId WHERE c.Country = ?@Country`
-* Either the `@Country` filter or the `Name` column pulls the join in.
+An expression is one footprint however deep it goes. A subquery inside it comes along, even when the variable sits in the subquery.
 
-## Grouping with `&AND`, `&OR`, `&,`
+```sql
+SELECT * FROM tracks WHERE /*@AlbumId*/AlbumId = (SELECT AlbumId FROM albums WHERE AlbumId = @AlbumId)
 
-Prefix a connector with `&` to weld the segments around it into one unit, kept or dropped together.
+-- no @AlbumId
+SELECT * FROM tracks
+```
 
-* **Template:** `SELECT * FROM invoices WHERE InvoiceDate > ?@MinDate &AND InvoiceDate < ?@MaxDate`
-* **Result (only `@MinDate`):** `SELECT * FROM invoices`
-* **Result (both):** `SELECT * FROM invoices WHERE InvoiceDate > @MinDate AND InvoiceDate < @MaxDate`
+A parenthesis bounds a marker's footprint, so inside a group it prunes only its term. `?@Var` is the one exception: its footprint [grows out of plain parentheses](optional-variables.md#parentheses-and-subqueries).
 
-It welds a static condition to an optional one:
+```sql
+SELECT * FROM invoices WHERE Total > @MinTotal AND (Country = @Country OR /*@City*/City = @City)
 
-* **Template:** `SELECT * FROM customers WHERE Country = 'USA' &OR Country = ?@Country`
-* **Result (no `@Country`):** `SELECT * FROM customers`
+-- no @City
+SELECT * FROM invoices WHERE Total > @MinTotal AND (Country = @Country)
+```
 
-And it works with commas, in projections and `SET` lists:
+## Making a whole clause conditional
 
-* **Template:** `UPDATE customers SET Phone = '000' &, Email = ?@Email, Company = @Company WHERE CustomerId = @Id`
-* **Result (no `@Email`):** `UPDATE customers SET Company = @Company WHERE CustomerId = @Id`, the welded `Phone` assignment left with it.
+The footprints above are conditions. A marker placed right before a section keyword instead takes the whole clause it introduces, from the keyword to the next section or the statement's end. This is the way to make a join, an `ORDER BY`, or any clause come and go.
 
-* **Template:** `SELECT Id, Username, /*IncludeAddress*/City&, Street&, ZipCode FROM users`
-* **Result (key used):** `SELECT Id, Username, City, Street, ZipCode FROM users`
-* **Result (key not used):** `SELECT Id, Username FROM users`
+Here the join appears only when the filter that needs it does, both keyed on `@Country`.
+
+```sql
+SELECT i.InvoiceId FROM invoices i /*@Country*/INNER JOIN customers c ON i.CustomerId = c.CustomerId WHERE c.Country = ?@Country
+
+-- no @Country
+SELECT i.InvoiceId FROM invoices i
+
+-- @Country supplied
+SELECT i.InvoiceId FROM invoices i INNER JOIN customers c ON i.CustomerId = c.CustomerId WHERE c.Country = @Country
+```
+
+Keep a space before the marker, `i /*@Country*/INNER JOIN`, so the clause in front of it is not pulled in.
+
+It reaches exactly one clause, never the one that follows. Dropping a `GROUP BY` leaves its `HAVING` stranded, which is invalid.
+
+```sql
+SELECT Country, COUNT(*) FROM customers /*Grouped*/GROUP BY Country HAVING COUNT(*) > 1
+
+-- Grouped off, the HAVING is stranded
+SELECT Country, COUNT(*) FROM customers HAVING COUNT(*) > 1
+```
+
+Mark the dependent clause with the same key so the two leave together. Likewise, each join in a chain needs its own marker.
+
+```sql
+SELECT Country, COUNT(*) FROM customers /*Grouped*/GROUP BY Country /*Grouped*/HAVING COUNT(*) > 1
+
+-- Grouped off
+SELECT Country, COUNT(*) FROM customers
+```
+
+## Several conditions, one footprint
+
+Every condition touching a footprint must be active for it to stay, an implicit "and".
+
+```sql
+SELECT * FROM tracks WHERE /*Cheap*//*InCatalog*/UnitPrice > @minPrice
+
+-- Cheap and InCatalog on
+SELECT * FROM tracks WHERE UnitPrice > @minPrice
+
+-- Cheap on, InCatalog off
+SELECT * FROM tracks
+```
+
+`?@Var` counts too. This footprint needs `Premium` on and `@minPrice` supplied, just as [several `?@Var` in one footprint](optional-variables.md#how-far-the-footprint-reaches) need every value.
+
+```sql
+SELECT * FROM tracks WHERE /*Premium*/UnitPrice > ?@minPrice
+
+-- Premium off, or no @minPrice
+SELECT * FROM tracks
+
+-- Premium on with @minPrice
+SELECT * FROM tracks WHERE UnitPrice > @minPrice
+```
+
+## Combining keys: `|` and `&`
+
+Inside one marker, `&` writes that same "and", and `|` brings "or".
+
+```sql
+SELECT * FROM tracks WHERE /*Cheap*//*InCatalog*/UnitPrice > @minPrice
+SELECT * FROM tracks WHERE /*Cheap&InCatalog*/UnitPrice > @minPrice
+
+-- Cheap and InCatalog on, either form
+SELECT * FROM tracks WHERE UnitPrice > @minPrice
+```
+
+Keys read left to right, no precedence: `/*A|B&C*/` is `(A or B) and C`. Spaces around keys and operators are ignored, so these two are the same marker.
+
+```sql
+SELECT * FROM tracks WHERE /*Cheap|Pricey&InCatalog*/UnitPrice > @minPrice
+SELECT * FROM tracks WHERE /* Cheap | Pricey & InCatalog */UnitPrice > @minPrice
+
+-- Cheap and InCatalog on, either form
+SELECT * FROM tracks WHERE UnitPrice > @minPrice
+
+-- Cheap on, InCatalog off, either form
+SELECT * FROM tracks
+```
+
+`|` lets a footprint serve several features. Either the `@Country` filter or the `Name` column pulls the join in.
+
+```sql
+SELECT i.InvoiceId, /*Name*/c.FirstName FROM invoices i /*@Country|Name*/JOIN customers c ON i.CustomerId = c.CustomerId WHERE c.Country = ?@Country
+
+-- Name on, no @Country
+SELECT i.InvoiceId, c.FirstName FROM invoices i JOIN customers c ON i.CustomerId = c.CustomerId
+
+-- neither
+SELECT i.InvoiceId FROM invoices i
+```
+
+## Negating a key: `!`
+
+`!` in front of a key flips it, so the footprint stays only when that key is absent. The classic use is an "all" switch that drops a fixed filter, one with no variable you could simply leave unsupplied.
+
+```sql
+SELECT * FROM products WHERE /*!All*/IsActive = 1
+
+-- All off
+SELECT * FROM products WHERE IsActive = 1
+
+-- All on
+SELECT * FROM products
+```
+
+Unlike the combine operators, `!` must touch its key. `/*! All*/` with a space does not negate.
+
+## Merging footprints: `&AND`, `&OR`, `&,`
+
+Prefix a connector with `&` and the footprints on both sides become one, kept or dropped together.
+
+```sql
+SELECT * FROM invoices WHERE InvoiceDate > ?@MinDate &AND InvoiceDate < ?@MaxDate
+
+-- only @MinDate
+SELECT * FROM invoices
+
+-- both supplied
+SELECT * FROM invoices WHERE InvoiceDate > @MinDate AND InvoiceDate < @MaxDate
+```
+
+It merges a static condition into an optional one.
+
+```sql
+SELECT * FROM customers WHERE Country = 'USA' &OR Country = ?@Country
+
+-- no @Country
+SELECT * FROM customers
+```
+
+And it works with commas, in projections and `SET` lists. `Phone` and `Email` update together or neither.
+
+```sql
+UPDATE customers SET Phone = @phone &, Email = ?@Email, Company = @Company WHERE CustomerId = @Id
+
+-- no @Email
+UPDATE customers SET Company = @Company WHERE CustomerId = @Id
+```
+
+```sql
+SELECT Id, Username, /*IncludeAddress*/City&, Street&, ZipCode FROM users
+
+-- IncludeAddress on
+SELECT Id, Username, City, Street, ZipCode FROM users
+
+-- IncludeAddress off
+SELECT Id, Username FROM users
+```
 
 ## The `???` boundary
 
 `???` is a wall a footprint cannot cross. It emits nothing.
 
-* **Template:** `SELECT DISTINCT /*ShowId*/TrackId, Name FROM tracks`
-* **Result (key not used):** `SELECT Name FROM tracks`, `DISTINCT` was swept into the pruned footprint.
+Without it, `DISTINCT` is swept into the pruned footprint.
 
-* **Template:** `SELECT DISTINCT ??? /*ShowId*/TrackId, Name FROM tracks`
-* **Result (key not used):** `SELECT DISTINCT Name FROM tracks`
+```sql
+SELECT DISTINCT /*ShowId*/TrackId, Name FROM tracks
 
-The same wall makes a modifier itself conditional:
+-- ShowId off
+SELECT Name FROM tracks
+```
 
-* **Template:** `SELECT /*UseDistinct*/DISTINCT ??? Id, Name FROM users`
-* **Result (key not used):** `SELECT Id, Name FROM users`
+With the wall in front of the marker, `DISTINCT` stays put.
+
+```sql
+SELECT DISTINCT ??? /*ShowId*/TrackId, Name FROM tracks
+
+-- ShowId off
+SELECT DISTINCT Name FROM tracks
+```
+
+The same wall makes a modifier itself conditional.
+
+```sql
+SELECT /*UseDistinct*/DISTINCT ??? Id, Name FROM users
+
+-- UseDistinct off
+SELECT Id, Name FROM users
+```
 
 ## Keeping a real comment
 
 Start a comment with `~` to pass it through instead of parsing it.
 
-* **Template:** `/*~ join hint */SELECT TrackId FROM tracks`
-* **Result:** `/* join hint */SELECT TrackId FROM tracks`
+```sql
+/*~ join hint */SELECT TrackId FROM tracks
 
-## Sections in practice
+-- result
+/* join hint */SELECT TrackId FROM tracks
+```
 
-The engine treats every keyword section identically, and sometimes that uniformity is the thing to know.
+## In practice
 
-**CASE expressions.** `WHEN`, `THEN`, and `ELSE` are ordinary sections, so a footprint stops at them like it stops at a `WHERE`. Making only a `WHEN` conditional strands its `THEN`; mark the `THEN` with the same key so the pair leaves together.
+A dynamic `ORDER BY` comes from a clause marker and two [handlers](handlers.md).
 
-* **Template:** `CASE WHEN Role = ?@Special /*@Special*/THEN 'S' WHEN Role = 'Admin' THEN 'A' ELSE 'U' END`
-* **Result (no `@Special`):** `CASE WHEN Role = 'Admin' THEN 'A' ELSE 'U' END`
+```sql
+SELECT * FROM products WHERE IsActive = 1 /*@Sort*/ORDER BY @Sort_R ?@Dir_R
 
-**INSERT statements.** Pair the column and its value under one key, either with the same variable key on both sides, or `&,` groups on both lists.
+-- @Sort = Price, @Dir = DESC
+SELECT * FROM products WHERE IsActive = 1 ORDER BY Price DESC
+```
 
-* **Template:** `INSERT INTO users (Username, /*@Email*/Email) VALUES (@Username, ?@Email)`
-* **Result (no `@Email`):** `INSERT INTO users (Username) VALUES (@Username)`
+`WHEN`, `THEN`, and `ELSE` are ordinary sections, so a footprint stops at them like it stops at a `WHERE`. Making only a `WHEN` conditional strands its `THEN`; mark the `THEN` with the same key and the pair leaves together.
 
-* **Template:** `INSERT INTO profiles (UserId, /*Details*/Bio&, Website&, AvatarUrl) VALUES (@Uid, /*Details*/@Bio&, @Web&, @Img)`
-* Both lists gain or lose their trio together under the `Details` key.
+```sql
+CASE WHEN Role = ?@Special /*@Special*/THEN 'S' WHEN Role = 'Admin' THEN 'A' ELSE 'U' END
 
-Note: inside an `INSERT`, `?@Var` cannot grow its footprint out of the first-level column and `VALUES` parentheses. Use the paired markers above.
+-- no @Special
+CASE WHEN Role = 'Admin' THEN 'A' ELSE 'U' END
+```
+
+In an `INSERT`, pair a column with its value under one key: the same variable key on both sides, or `&,` groups on both lists.
+
+```sql
+INSERT INTO users (Username, /*@Email*/Email) VALUES (@Username, ?@Email)
+
+-- no @Email
+INSERT INTO users (Username) VALUES (@Username)
+```
+
+The `&,` groups weld a trio on each side, so key one member and all three move together. Here `@Bio` drives both columns and values.
+
+```sql
+INSERT INTO profiles (UserId, /*@Bio*/Bio&, Website&, AvatarUrl)
+VALUES (@Uid, ?@Bio&, @Web&, @Img)
+
+-- no @Bio
+INSERT INTO profiles (UserId) VALUES (@Uid)
+```
+
+The pairing is needed because `?@Var` cannot grow out of the first-level column and `VALUES` parentheses: on its own it would drop a value but leave the column, and the lists would no longer line up.

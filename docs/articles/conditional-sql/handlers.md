@@ -6,34 +6,57 @@ A handler reshapes the SQL with an actual value, not just a present-or-absent ke
 
 Expands an `IEnumerable` into one parameter per item.
 
-* **Template:** `SELECT * FROM tracks WHERE GenreId IN (@GenreIds_X)`
-* **`@GenreIds` = `[1, 2, 3]`:** `... IN (@GenreIds_1, @GenreIds_2, @GenreIds_3)`
+```sql
+SELECT * FROM tracks WHERE GenreId IN (@GenreIds_X)
+
+-- @GenreIds = [1, 2, 3]
+SELECT * FROM tracks WHERE GenreId IN (@GenreIds_1, @GenreIds_2, @GenreIds_3)
+```
 
 Combined with `?`, an absent collection drops the whole clause. An empty collection counts as absent, so no `IN ()` is ever produced.
 
-* **Template:** `SELECT * FROM tracks WHERE GenreId IN (?@GenreIds_X)`
+```sql
+SELECT * FROM tracks WHERE GenreId IN (?@GenreIds_X)
+
+-- @GenreIds = [] or not supplied
+SELECT * FROM tracks
+```
 
 ## `_N`, number injection
 
 Writes a number into the SQL text.
 
-* **Template:** `SELECT Name FROM products ORDER BY Id OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY`
-* **`@Skip` = 50, `@Take` = 50:** `... OFFSET 50 ROWS FETCH NEXT 50 ROWS ONLY`
-* **Neither:** `SELECT Name FROM products ORDER BY Id`
+```sql
+SELECT Name FROM products ORDER BY Id OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY
+
+-- @Skip = 50, @Take = 50
+SELECT Name FROM products ORDER BY Id OFFSET 50 ROWS FETCH NEXT 50 ROWS ONLY
+
+-- neither
+SELECT Name FROM products ORDER BY Id
+```
 
 ## `_S`, string literal
 
 Writes a string wrapped in single quotes.
 
-* **Template:** `SELECT * FROM artists WHERE Name = @Name_S`
-* **`@Name` = `Queen`:** `... WHERE Name = 'Queen'`
+```sql
+SELECT * FROM artists WHERE Name = @Name_S
+
+-- @Name = Queen
+SELECT * FROM artists WHERE Name = 'Queen'
+```
 
 ## `_R`, raw SQL
 
 Writes the value verbatim, no escaping.
 
-* **Template:** `SELECT Id, Name FROM @Table_R WHERE IsActive = 1`
-* **`@Table` = `tracks`:** `SELECT Id, Name FROM tracks WHERE IsActive = 1`
+```sql
+SELECT Id, Name FROM @Table_R WHERE IsActive = 1
+
+-- @Table = tracks
+SELECT Id, Name FROM tracks WHERE IsActive = 1
+```
 
 > **Warning.** `_R` is textual injection. Only pass values you fully control, never user input.
 

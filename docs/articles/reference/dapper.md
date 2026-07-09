@@ -1,49 +1,83 @@
 # Coming from Dapper
 
-RinkuLib began as a Dapper extension, so most patterns have a direct equivalent. The structural difference: the SQL lives in a reusable `QueryCommand` instead of being passed inline on every call.
+RinkuLib began as a Dapper extension, so the patterns carry over. There are two calling styles, and both mirror a Dapper call.
 
-## Method mapping
+- Hand the SQL to the connection. This reads almost like Dapper, and the command is built once and cached by the string.
+- Declare a reusable `QueryCommand` and call methods on it. This is the primary Rinku form: the SQL is parsed once up front and each call skips the by-string lookup.
 
-Dapper hangs the call off the connection. Rinku hangs it off the command and passes the connection in. `p` is a parameter object, anonymous objects work.
+```csharp
+// Dapper
+IEnumerable<Album> albums = cnn.Query<Album>("SELECT * FROM albums WHERE ArtistId = @id", new { id = 1 });
+
+// RinkuLib, SQL on the connection
+List<Album> albums = cnn.Query<List<Album>>("SELECT * FROM albums WHERE ArtistId = @id", new { id = 1 });
+
+// RinkuLib, reusable command
+static readonly QueryCommand ByArtist = new("SELECT * FROM albums WHERE ArtistId = @id");
+List<Album> albums = ByArtist.Query<List<Album>>(cnn, new { id = 1 });
+```
+
+## The shape is a type argument
+
+Where Dapper picks the result shape with the method name, Rinku picks it with the `T` in `Query<T>`.
 
 | Dapper | RinkuLib |
 | --- | --- |
-| `cnn.QueryFirst<T>(sql, p)` | `cmd.Query<T>(cnn, p)` |
-| `cnn.QueryFirstOrDefault<T>(...)` | `cmd.Query<Optional<T>>(cnn, p)` |
-| `cnn.QuerySingle<T>(...)` | `cmd.Query<Single<T>>(cnn, p)` |
-| `cnn.Query<T>(...)` (buffered) | `cmd.Query<List<T>>(cnn, p)` |
-| `cnn.Query<T>(..., buffered: false)` | `cmd.Query<IEnumerable<T>>(cnn, p)` |
-| `cnn.Execute(sql, p)` | `cmd.Execute(cnn, p)` |
-| `cnn.ExecuteScalar<T>(...)` | `cmd.ExecuteScalar<T>(cnn, p)` |
-| `cnn.QueryMultiple(...)` | `cmd.ExecuteMultiReader(cnn, out var dbCmd, p)` |
-| `cnn.Query<dynamic>(...)` | `cmd.Query<DynaObject>(cnn, p)` |
+| `QueryFirst<T>` | `Query<T>` |
+| `QueryFirstOrDefault<T>` | `Query<Optional<T>>` |
+| `QuerySingle<T>` | `Query<Single<T>>` |
+| `Query<T>` (buffered) | `Query<List<T>>` |
+| `Query<T>` (`buffered: false`) | `Query<IEnumerable<T>>` |
+| `Execute` | `Execute` |
+| `ExecuteScalar<T>` | `ExecuteScalar<T>` |
+| `QueryMultiple` | `ExecuteMultiReader` |
+| `Query<dynamic>` | `Query<DynaObject>` |
 
-The wrappers are on [result shapes](../running-queries/result-shapes.md).
+Each reads either way, `cnn.Query<List<T>>(sql, p)` or `cmd.Query<List<T>>(cnn, p)`. The result wrappers are on [result shapes](../running-queries/result-shapes.md).
 
 ## Parameters
 
-The anonymous-object habit carries over unchanged.
+The anonymous-object habit carries over unchanged, and records or DTOs work the same. Member names match variables case-insensitively, unmatched members are ignored.
 
 ```csharp
 // Dapper
 cnn.Query<Album>("... WHERE ArtistId = @artistId", new { artistId = 1 });
 
 // RinkuLib
-albumCmd.Query<List<Album>>(cnn, new { artistId = 1 });
+cnn.Query<List<Album>>("... WHERE ArtistId = @artistId", new { artistId = 1 });
 ```
 
-Member names match variables case-insensitively, unmatched members are ignored. The extra abilities (usage attributes, builders) are on [supplying values](../running-queries/parameters.md).
+When C# logic should set the values instead of an object, a builder is the other road.
+
+```csharp
+var b = ByArtist.StartBuilder();
+b.Use("@id", 1);
+List<Album> albums = b.Query<List<Album>>(cnn);
+```
+
+The extra abilities (usage attributes, builders) are on [supplying values](../running-queries/parameters.md).
 
 ## IN clauses
 
-Dapper expands a collection parameter automatically. Rinku does it with the explicit `_X` suffix.
+Dapper expands a collection parameter automatically. Rinku does it with the explicit `_X` suffix on the variable.
 
 ```csharp
-// template
-"SELECT * FROM tracks WHERE GenreId IN (@genreIds_X)"
-// @genreIds = [1, 2, 3]  ->  GenreId IN (@genreIds_1, @genreIds_2, @genreIds_3)
+// Dapper
+cnn.Query<Track>("SELECT * FROM tracks WHERE GenreId IN @genreIds", new { genreIds = new[] { 1, 2, 3 } });
+
+// RinkuLib
+cnn.Query<List<Track>>("SELECT * FROM tracks WHERE GenreId IN (@genreIds_X)", new { genreIds = new[] { 1, 2, 3 } });
+// GenreId IN (@genreIds_1, @genreIds_2, @genreIds_3)
 ```
 
 ## What replaces string-built SQL
 
-Where a Dapper codebase concatenates SQL or leans on `WHERE 1=1`, one [conditional template](../conditional-sql/index.md) covers the variations.
+Where a Dapper codebase concatenates SQL or leans on `WHERE 1=1`, one [conditional template](../conditional-sql/index.md) covers the variations: mark the optional parts and the values you pass decide the SQL.
+
+```csharp
+static readonly QueryCommand Search = new(
+    "SELECT * FROM tracks WHERE AlbumId = ?@albumId AND GenreId IN (?@genreIds_X)");
+
+Search.Query<List<Track>>(cnn, new { albumId = 1 });
+// SELECT * FROM tracks WHERE AlbumId = @albumId
+```

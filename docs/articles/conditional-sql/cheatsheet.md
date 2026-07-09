@@ -4,10 +4,11 @@
 | --- | --- | --- |
 | `@Var` | Plain parameter, static text | `WHERE TrackId = @Id` |
 | `?@Var` | Optional variable, prunes its footprint when unused | `AND Name = ?@Name` |
-| `/*Key*/` | Conditional segment under a custom key | `/*ShowPrice*/UnitPrice` |
-| `/*@Var*/` | Conditional segment tied to a variable | `/*@AlbumId*/AlbumId = ...` |
-| `\|` `&` `!` in a marker | Or / and / not between keys, left to right | `/*A\|B&C*/`, `/*!All*/` |
-| `&AND` / `&OR` / `&,` | Weld segments into one unit | `?@A &AND ?@B` |
+| `/*Key*/` | Conditional footprint under a custom key | `/*ShowPrice*/UnitPrice` |
+| `/*@Var*/` | Conditional footprint tied to a variable | `/*@AlbumId*/AlbumId = ...` |
+| `|` `&` in a marker | Combine keys, or / and, left to right | `/*A|B&C*/` |
+| `!` in a marker | Negate a key, keep the footprint when it is absent | `/*!All*/` |
+| `&AND` / `&OR` / `&,` | Weld footprints into one | `?@A &AND ?@B` |
 | `???` | Boundary a footprint cannot cross, emits nothing | `SELECT DISTINCT ??? /*X*/Id, Name` |
 | `?SELECT` | Dynamic projection, each column becomes a condition | `?SELECT AlbumId AS Id, Title FROM ...` |
 | `col!` in `?SELECT` | Always-kept column | `?SELECT AlbumId AS Id!, Title` |
