@@ -8,22 +8,33 @@ When a parser is needed for a `T` and a schema, the engine walks `TypeParser.Typ
 
 ## Add a result shape
 
-<a id="adding-a-result-shape"></a>Adding a shape of your own is how `List<T>` itself is built, and the reason to reach for a parser. It decides how the rows become a value. To gather rows into a `HashSet<T>`, a shape the engine does not ship, write a parser over the element parser, strip `SingleRow` so every row is read, return the empty set on no rows, and add one element per row.
+<a id="adding-a-result-shape"></a>Adding a shape of your own is how `List<T>` itself is built, and the reason to reach for a parser. It decides how the rows become a value.
+
+A parser is called with the reader on the first row to parse and advances the reader as it goes. `CanContinue` reports the reader's state on return, `true` when it is left on an untreated row. The element parser follows the same contract, so a shape that gathers rows loops on the element's flag instead of calling `Read` itself.
+
+To gather rows into a `HashSet<T>`, a shape the engine does not ship, write a parser over the element parser, strip `SingleRow` so every row is read, return the empty set on no rows, and add one element per iteration.
 
 ```csharp
 public sealed class HashSetParser<T>(ITypeParser<T> element) : BaseTypeParser<HashSet<T>> {
     public override CommandBehavior Behavior => element.Behavior & ~CommandBehavior.SingleRow;
-    public override bool SupportsParsingAsync => true;
     public override HashSet<T> Default() => [];                                    // no rows
-    public override HashSet<T> Parse(DbDataReader reader) {
+    public override (bool CanContinue, HashSet<T> Result) Parse(DbDataReader reader) {
         var set = new HashSet<T>();
-        do { set.Add(element.Parse(reader)); } while (reader.Read());              // one element per row
-        return set;
+        bool canContinue;
+        do {
+            (canContinue, var item) = element.Parse(reader);                       // the element advances the reader
+            set.Add(item);
+        } while (canContinue);
+        return (false, set);                                                       // no row left
     }
-    public override async Task<HashSet<T>> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
+    public override async ValueTask<(bool CanContinue, HashSet<T> Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
         var set = new HashSet<T>();
-        do { set.Add(await element.ParseAsync(reader, ct)); } while (await reader.ReadAsync(ct));
-        return set;
+        bool canContinue;
+        do {
+            (canContinue, var item) = await element.ParseAsync(reader, ct);
+            set.Add(item);
+        } while (canContinue);
+        return (false, set);
     }
 }
 ```

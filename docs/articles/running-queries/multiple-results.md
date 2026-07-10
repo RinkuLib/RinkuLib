@@ -30,20 +30,35 @@ using (cmd) {
 
 | Method | Purpose |
 | --- | --- |
-| `Query<T>(bool goToNextResultSet = true)` | Parse the current set as `T`, then advance. Pass `false` to stay on the set. |
-| `QueryAsync<T>(bool goToNextResultSet = true, CancellationToken ct = default)` | Async form. |
+| `Query<T>()` | Parse the current set as `T`, then advance to the next set. |
+| `QueryAsync<T>(CancellationToken ct = default)` | Async form. |
 | `StreamQueryAsync<T>(bool goToNextResultSet = true, CancellationToken ct = default)` | Stream the current set's rows, advance when enumeration completes. |
-| `Get<T>()` | Parse the row a manual `Read()` put you on. No initial reading, no advancing. |
+| `GetStep<T>()` | Parse one step from the row a manual `Read()` put you on, ending on the step's last row. Throws when the parser must look past its own rows. |
+| `GetStepAsync<T>(CancellationToken ct = default)` | Async form. |
+| `Get<T>()` | Parse starting at the current row, advancing the reader. `CanContinue` reports whether it is left on an untreated row. |
+| `GetAsync<T>(CancellationToken ct = default)` | Async form. |
 
 ## Mixing with manual reading
 
-`MultiReader` is itself a `DbDataReader`, so the raw reader surface (`Read`, `NextResult`, indexers) is available. That is the scenario `Get<T>` exists for. `Query<T>` does the reading itself, so once you have called `Read()` yourself, `Get<T>` parses the row you are standing on. Useful when the row's content decides how to parse it.
+`MultiReader` is itself a `DbDataReader`, so the raw reader surface (`Read`, `NextResult`, indexers) is available. `Query<T>` does the reading itself and always finishes the set, so parsing a set step by step belongs to `GetStep<T>` and `Get<T>`. Useful when the row's content decides how to parse it.
+
+`GetStep<T>` parses one step from the row you are standing on and ends on the step's last row, never looking further. A plain row type is a one row step, so the reader does not move at all. The rows a step takes are decided by the parser alone, which keeps the advance yours, and a parser that must look past its own rows to find its end (`List<T>`, `Single<T>`) throws.
 
 ```csharp
 while (multi.Read()) {
     if (multi.GetInt32(0) == (int)RowKind.Refund)
-        refunds.Add(multi.Get<Refund>());
+        refunds.Add(multi.GetStep<Refund>()!);
     else
-        payments.Add(multi.Get<Payment>());
+        payments.Add(multi.GetStep<Payment>()!);
+}
+```
+
+`Get<T>` runs the full parser from the row you are standing on. The parser advances the reader, and `CanContinue` reports its state afterwards, `true` when it sits on an untreated row, so the loop runs on that flag instead of calling `Read()` between rows.
+
+```csharp
+var reading = multi.Read();
+while (reading) {
+    (reading, var refund) = multi.Get<Refund>();
+    refunds.Add(refund!);
 }
 ```

@@ -87,19 +87,11 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
         if (itemParser is null)
             return false;
 
-        var itemParserType = itemParser.GetType();
-
         Type collectionParserType;
         object?[] constructorArgs;
 
-        if (getParserTypeWhenSimple is not null
-            && itemParserType.IsGenericType
-            && itemParserType.GetGenericTypeDefinition() == typeof(SimpleTypeParser<>)) {
-
-            var behavior = (CommandBehavior)itemParserType.GetProperty(nameof(SimpleTypeParser<>.Behavior))!.GetValue(itemParser)!;
-            var func = itemParserType.GetField(nameof(SimpleTypeParser<>.Parser))!.GetValue(itemParser)!;
-
-            constructorArgs = [behavior, func];
+        if (getParserTypeWhenSimple is not null && itemParser is ISimpleParser simple) {
+            constructorArgs = [simple.Behavior, simple.RowParser];
             collectionParserType = getParserTypeWhenSimple(def, itemType, ref constructorArgs);
         }
         else {

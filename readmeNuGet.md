@@ -40,7 +40,7 @@ List<Album> albums = Search.Query<List<Album>>(cnn, new { artistId = 1 });
 
 ## How it works
 
-You define the template first, so your code only decides what's used and never concatenates SQL, the statement stays valid wherever a value lands, with no `WHERE 1=1`. Mapping works the same way. A configurable negotiation maps a flat database row onto the multi-level shape of your C# type.
+You define the template first, so your code only decides what's used and never concatenates SQL, the statement stays valid wherever a value lands, with no `WHERE 1=1`. Mapping works the same way. A configurable negotiation maps the flat result onto the shape of your C# type, and the type decides how the columns nest and how many rows it takes.
 
 ## Links
 

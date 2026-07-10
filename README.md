@@ -64,7 +64,7 @@ List<Album> albums = Search.Query<List<Album>>(cnn, new { artistId = 1 });
 // SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ```
 
-You define the template up front, so your code only decides what's used and never concatenates SQL, the validity of the statement holds wherever a value lands. Mapping works the same way. A configurable negotiation maps a flat database row onto the multi-level shape of your type. A [builder](docs/articles/running-queries/parameters.md) is available when you'd rather toggle conditions in C#.
+You define the template up front, so your code only decides what's used and never concatenates SQL, the validity of the statement holds wherever a value lands. Mapping works the same way. A configurable negotiation maps the flat result onto the shape of your type, and the type decides how the columns nest and how many rows it takes. A [builder](docs/articles/running-queries/parameters.md) is available when you'd rather toggle conditions in C#.
 
 ## Query from the SQL string
 

@@ -1,6 +1,5 @@
-﻿using System.Data;
+using System.Data;
 using System.Data.Common;
-
 namespace RinkuLib.TypeAccessing;
 /// <summary>
 /// Optionaly parse a type.
@@ -10,79 +9,81 @@ public sealed class OptionalTypeParser<TOpt, T>(ITypeParser<T> elementParser) : 
     /// <inheritdoc/>
     public override CommandBehavior Behavior => ElementParser.Behavior;
     /// <inheritdoc/>
-    public override bool SupportsParsingAsync => true;
-    /// <inheritdoc/>
     public override TOpt Default() => default;
     /// <inheritdoc/>
-    public override TOpt Parse(DbDataReader reader)
-        => TOpt.Make(ElementParser.Parse(reader));
+    public override (bool CanContinue, TOpt Result) Parse(DbDataReader reader) {
+        var (canContinue, res) = ElementParser.Parse(reader);
+        return (canContinue, TOpt.Make(res));
+    }
     /// <inheritdoc/>
-    public override async Task<TOpt> ParseAsync(DbDataReader reader, CancellationToken ct = default)
-        => TOpt.Make(await ElementParser.ParseAsync(reader, ct).ConfigureAwait(false));
+    public override async ValueTask<(bool CanContinue, TOpt Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
+        var (canContinue, res) = await ElementParser.ParseAsync(reader, ct).ConfigureAwait(false);
+        return (canContinue, TOpt.Make(res));
+    }
 }
-/// <summary>Optimized List parser that uses a direct delegate.</summary>
-public sealed class FastOptionalTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
+/// <summary>Optimized wrapping parser that uses a direct delegate.</summary>
+public sealed class FastOptionalTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser) : BaseTypeParser<TOpt>, ISimpleParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly Func<DbDataReader, T> Parser = parser;
+    /// <inheritdoc/>
+    public Func<DbDataReader, TOpt> RowParser { get; } = r => TOpt.Make(parser(r));
     /// <inheritdoc/>
     public override CommandBehavior Behavior { get; } = behavior;
     /// <inheritdoc/>
-    public override bool SupportsParsingAsync => false;
-    /// <inheritdoc/>
     public override TOpt Default() => default;
     /// <inheritdoc/>
-    public override TOpt Parse(DbDataReader reader)
-        => TOpt.Make(Parser(reader));
+    public override (bool CanContinue, TOpt Result) Parse(DbDataReader reader) {
+        var res = TOpt.Make(Parser(reader));
+        return (reader.Read(), res);
+    }
     /// <inheritdoc/>
-    public override Task<TOpt> ParseAsync(DbDataReader reader, CancellationToken ct = default)
-        => Task.FromResult(TOpt.Make(Parser(reader)));
+    public override async ValueTask<(bool CanContinue, TOpt Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
+        var res = TOpt.Make(Parser(reader));
+        return (await reader.ReadAsync(ct).ConfigureAwait(false), res);
+    }
 }
 /// <summary>
-/// Optionaly parse a type.
+/// Parse a single row and throw when the query provides more.
 /// </summary>
 public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly ITypeParser<T> ElementParser = elementParser;
     /// <inheritdoc/>
     public override CommandBehavior Behavior => ElementParser.Behavior & ~CommandBehavior.SingleRow;
     /// <inheritdoc/>
-    public override bool SupportsParsingAsync => true;
-    /// <inheritdoc/>
     public override TOpt Default() => default;
     /// <inheritdoc/>
-    public override TOpt Parse(DbDataReader reader) { 
-        var res = TOpt.Make(ElementParser.Parse(reader));
-        if (reader.Read())
+    public override (bool CanContinue, TOpt Result) Parse(DbDataReader reader) {
+        var (canContinue, res) = ElementParser.Parse(reader);
+        if (canContinue)
             throw new Exception("The query provided more result than required for the single item");
-        return res;
+        return (false, TOpt.Make(res));
     }
     /// <inheritdoc/>
-    public override async Task<TOpt> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
-        var res = TOpt.Make(await ElementParser.ParseAsync(reader, ct).ConfigureAwait(false));
-        if (await reader.ReadAsync(ct).ConfigureAwait(false))
+    public override async ValueTask<(bool CanContinue, TOpt Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
+        var (canContinue, res) = await ElementParser.ParseAsync(reader, ct).ConfigureAwait(false);
+        if (canContinue)
             throw new Exception("The query provided more result than required for the single item");
-        return res;
+        return (false, TOpt.Make(res));
     }
 }
-/// <summary>Optimized List parser that uses a direct delegate.</summary>
+/// <summary>Optimized single-row parser that uses a direct delegate.</summary>
 public sealed class FastSingleTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly Func<DbDataReader, T> Parser = parser;
     /// <inheritdoc/>
     public override CommandBehavior Behavior { get; } = behavior & ~CommandBehavior.SingleRow;
     /// <inheritdoc/>
-    public override bool SupportsParsingAsync => true;
-    /// <inheritdoc/>
     public override TOpt Default() => default;
     /// <inheritdoc/>
-    public override TOpt Parse(DbDataReader reader) { 
+    public override (bool CanContinue, TOpt Result) Parse(DbDataReader reader) {
         var res = TOpt.Make(Parser(reader));
         if (reader.Read())
             throw new Exception("The query provided more result than required for the single item");
-        return res;
+        return (false, res);
     }
     /// <inheritdoc/>
-    public override async Task<TOpt> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
+    public override async ValueTask<(bool CanContinue, TOpt Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
         var res = TOpt.Make(Parser(reader));
         if (await reader.ReadAsync(ct).ConfigureAwait(false))
             throw new Exception("The query provided more result than required for the single item");
-        return res;
+        return (false, res);
     }
 }

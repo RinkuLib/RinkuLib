@@ -15,7 +15,7 @@ public class ReadingOrderScopeTests {
         using var r = Reader(cols, row);
         var p = TypeParser.GetTypeParser<T>(ref cols);
         r.Read();
-        return p.Parse(r);
+        return p.Parse(r).Result;
     }
     [Fact]
     public void Free_complex_subtree_skips_gap() {

@@ -197,7 +197,9 @@ public static class DBCommandExtensions {
                     suppressCleanup = true;
                     return res;
                 }
-                return parser.Parse(reader);
+                if (parser is ISimpleParser<T> simple)
+                    return simple.RowParser(reader);
+                return parser.Parse(reader).Result;
             }
             finally {
                 if (!suppressCleanup) {
@@ -240,7 +242,9 @@ public static class DBCommandExtensions {
                     suppressCleanup = true;
                     return res;
                 }
-                return await parser.ParseAsync(reader, ct).ConfigureAwait(false);
+                if (parser is ISimpleParser<T> simple)
+                    return simple.RowParser(reader);
+                return (await parser.ParseAsync(reader, ct).ConfigureAwait(false)).Result;
             }
             finally {
                 if (!suppressCleanup) {
@@ -275,13 +279,17 @@ public static class DBCommandExtensions {
                 }
                 using var reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
                 cache?.UpdateCache(cmd);
-                if (parser.SupportsParsingAsync) {
+                if (parser is ISimpleParser<T> simple) {
+                    var rowParser = simple.RowParser;
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                        yield return await parser.ParseAsync(reader, ct).ConfigureAwait(false);
+                        yield return rowParser(reader);
                 }
-                else {
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                        yield return parser.Parse(reader);
+                else if (await reader.ReadAsync(ct).ConfigureAwait(false)) {
+                    bool canContinue;
+                    do {
+                        (canContinue, var item) = await parser.ParseAsync(reader, ct).ConfigureAwait(false);
+                        yield return item;
+                    } while (canContinue);
                 }
             }
             finally {
@@ -311,8 +319,18 @@ public static class DBCommandExtensions {
                 }
                 using var reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
                 var parser = await cache.UpdateCacheAsync(cmd, reader, ct).ConfigureAwait(false);
-                while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    yield return await parser.ParseAsync(reader, ct).ConfigureAwait(false);
+                if (parser is ISimpleParser<T> simple) {
+                    var rowParser = simple.RowParser;
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                        yield return rowParser(reader);
+                }
+                else if (await reader.ReadAsync(ct).ConfigureAwait(false)) {
+                    bool canContinue;
+                    do {
+                        (canContinue, var item) = await parser.ParseAsync(reader, ct).ConfigureAwait(false);
+                        yield return item;
+                    } while (canContinue);
+                }
             }
             finally {
                 if (disposeCommand) {
@@ -475,7 +493,9 @@ public static class DBCommandExtensions {
                     suppressCleanup = true;
                     return res;
                 }
-                return parser.Parse(reader);
+                if (parser is ISimpleParser<T> simple)
+                    return simple.RowParser(reader);
+                return parser.Parse(reader).Result;
             }
             finally {
                 if (!suppressCleanup) {

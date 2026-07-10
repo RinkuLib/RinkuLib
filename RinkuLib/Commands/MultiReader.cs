@@ -22,8 +22,34 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
     private readonly bool disposeCmd = disposeCmd;
     private readonly bool wasClosed = wasClosed;
     private int nbResultSetPassedMinusOne = -1;
-    /// <summary>Parse the current row in the current result set, does not read or change result set</summary>
-    public T? Get<T>() => GetCache<T>().Parse(reader);
+    /// <summary>
+    /// Parses starting at the current row in the current result set, does not change result set.
+    /// The parser advances the reader, and <c>CanContinue</c> reports its state on return,
+    /// <see langword="true"/> when it is left on an untreated row
+    /// </summary>
+    public (bool CanContinue, T? Result) Get<T>() => GetCache<T>().Parse(reader);
+    /// <inheritdoc cref="Get{T}"/>
+    /// <param name="ct">The fowarded cancellation token</param>
+    public async ValueTask<(bool CanContinue, T? Result)> GetAsync<T>(CancellationToken ct = default)
+        => await GetCache<T>().ParseAsync(reader, ct).ConfigureAwait(false);
+    /// <summary>
+    /// Parses one <typeparamref name="T"/> as a self-delimited step, from the row a manual <c>Read()</c>
+    /// put you on, leaving the reader on the last row of the step. A plain row type is a one row step.
+    /// Only an <see cref="IStepParser{T}"/> can parse this way; a parser that must look past its own rows
+    /// to find its end (a List gathering every row) throws, that mode belongs to <see cref="Get{T}"/>
+    /// </summary>
+    public T? GetStep<T>() {
+        if (GetCache<T>() is IStepParser<T> step)
+            return step.ParseStep(reader);
+        throw new Exception($"The parser for {typeof(T).ShortName()} must look past its own rows to find its end, use {nameof(Get)} instead");
+    }
+    /// <inheritdoc cref="GetStep{T}"/>
+    /// <param name="ct">The fowarded cancellation token</param>
+    public async ValueTask<T?> GetStepAsync<T>(CancellationToken ct = default) {
+        if (GetCache<T>() is IStepParser<T> step)
+            return await step.ParseStepAsync(reader, ct).ConfigureAwait(false);
+        throw new Exception($"The parser for {typeof(T).ShortName()} must look past its own rows to find its end, use {nameof(GetAsync)} instead");
+    }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ITypeParser<T> GetCache<T>() {
         if (command.TryGetCachedParser<T>(usage, out var cache, nbResultSetPassedMinusOne))
@@ -34,22 +60,25 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         return cache;
     }
     /// <summary>
-    /// Automaticaly skip non-returning set, parse the first row in that result set and parse it to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Automaticaly skip non-returning set, parse the current result set to return an instance of <typeparamref name="T"/> or the default if no result, then move to the next result set.
+    /// To parse a set row by row and keep control of the reader, use <see cref="Get{T}"/> or <see cref="GetStep{T}"/>
     /// </summary>
-    /// <param name="goToNextResultSet">Indicate if the reader should move to the next result set once the row has been read</param>
-    public T? Query<T>(bool goToNextResultSet = true) {
+    public T? Query<T>() {
         while (reader.FieldCount == 0)
             reader.NextResult();
         nbResultSetPassedMinusOne++;
+        bool goToNextResultSet = true;
         try {
             var cache = GetCache<T>();
             if (!reader.Read())
                 return cache.Default();
-            if (goToNextResultSet && cache is ILazyTypeParser<T> lazyParser) {
+            if (cache is ILazyTypeParser<T> lazyParser) {
                 goToNextResultSet = false;
                 return lazyParser.ParseAndOwn<GoToNextResultSet>(reader, new());
             }
-            return cache.Parse(reader);
+            if (cache is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return cache.Parse(reader).Result;
         }
         finally {
             if (goToNextResultSet)
@@ -57,23 +86,26 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         }
     }
     /// <summary>
-    /// Asynchronously, automaticaly skip non-returning set, parse the first row in that result set and parse it to return an instance of <typeparamref name="T"/> or the default if no result.
+    /// Asynchronously, automaticaly skip non-returning set, parse the current result set to return an instance of <typeparamref name="T"/> or the default if no result, then move to the next result set.
+    /// To parse a set row by row and keep control of the reader, use <see cref="GetAsync{T}"/> or <see cref="GetStep{T}"/>
     /// </summary>
-    /// <param name="goToNextResultSet">Indicate if the reader should move to the next result set once the row has been read</param>
     /// <param name="ct">The fowarded cancellation token</param>
-    public async Task<T?> QueryAsync<T>(bool goToNextResultSet = true, CancellationToken ct = default) {
+    public async Task<T?> QueryAsync<T>(CancellationToken ct = default) {
         while (reader.FieldCount == 0)
             await reader.NextResultAsync(ct).ConfigureAwait(false);
         nbResultSetPassedMinusOne++;
+        bool goToNextResultSet = true;
         try {
             var cache = GetCache<T>();
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return cache.Default();
-            if (goToNextResultSet && cache is ILazyTypeParser<T> lazyParser) {
+            if (cache is ILazyTypeParser<T> lazyParser) {
                 goToNextResultSet = false;
                 return lazyParser.ParseAndOwn<GoToNextResultSet>(reader, new());
             }
-            return cache.Parse(reader);
+            if (cache is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return (await cache.ParseAsync(reader, ct).ConfigureAwait(false)).Result;
         }
         finally {
             if (goToNextResultSet)
@@ -90,8 +122,18 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
             await reader.NextResultAsync(ct).ConfigureAwait(false);
         nbResultSetPassedMinusOne++;
         var cache = GetCache<T>();
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-            yield return cache.Parse(reader);
+        if (cache is ISimpleParser<T> simple) {
+            var rowParser = simple.RowParser;
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                yield return rowParser(reader);
+        }
+        else if (await reader.ReadAsync(ct).ConfigureAwait(false)) {
+            bool canContinue;
+            do {
+                (canContinue, var item) = await cache.ParseAsync(reader, ct).ConfigureAwait(false);
+                yield return item;
+            } while (canContinue);
+        }
         if (goToNextResultSet)
             await reader.NextResultAsync(ct).ConfigureAwait(false);
     }
