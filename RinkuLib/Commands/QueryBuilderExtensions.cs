@@ -5,19 +5,21 @@ using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Commands;
 /// <summary>
-/// Extensions on <see cref="QueryBuilder"/>
+/// Runs a query off an in-memory <see cref="QueryBuilder"/>. Once the builder holds the values you want,
+/// these methods turn them into a command on a connection and execute it, in the same shapes the command's
+/// own execution methods offer.
 /// </summary>
 public static class QueryBuilderExtensions {
     /// <summary>
-    /// Create a <see cref="IDbCommand"/> using the <see cref="QueryCommand"/> blueprint and a state array
+    /// Builds a fresh command on <paramref name="cnn"/> for the current builder values. Useful when you want
+    /// the command in hand rather than running it through one of the execution methods.
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="command">The blueprint that uses the state to create the <see cref="DbCommand"/></param>
-    /// <param name="variables">The current state array for the <see cref="DbCommand"/> creation</param>
-    /// <param name="cnn">The connection to execute on</param>
-    /// <param name="transaction">The transaction to execute on</param>
-    /// <param name="timeout">The timeout for the command</param>
-    /// <returns></returns>
+    /// <param name="command">The command whose text and parameters are produced from the values.</param>
+    /// <param name="variables">The builder values driving the command.</param>
+    /// <param name="cnn">The connection to create the command on.</param>
+    /// <param name="transaction">The transaction to enlist, if any.</param>
+    /// <param name="timeout">The command timeout, if set.</param>
+    /// <returns>A command ready to run.</returns>
     public static DbCommand GetCommand<T>(T command, object?[] variables, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) where T : IQueryCommand {
         var cmd = cnn.CreateCommand();
         if (transaction is not null)
@@ -27,16 +29,7 @@ public static class QueryBuilderExtensions {
         command.SetCommand(cmd, variables);
         return cmd;
     }
-    /// <summary>
-    /// Create a <see cref="IDbCommand"/> using the <see cref="IQueryCommand"/> blueprint and a state array
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="command">The blueprint that uses the state to create the <see cref="IDbCommand"/></param>
-    /// <param name="variables">The current state array for the <see cref="IDbCommand"/> creation</param>
-    /// <param name="cnn">The connection to execute on</param>
-    /// <param name="transaction">The transaction to execute on</param>
-    /// <param name="timeout">The timeout for the command</param>
-    /// <returns></returns>
+    /// <inheritdoc cref="GetCommand{T}(T, object[], DbConnection, DbTransaction, int?)"/>
     public static IDbCommand GetCommand<T>(T command, object?[] variables, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) where T : IQueryCommand {
         var cmd = cnn.CreateCommand();
         if (transaction is not null)
@@ -215,93 +208,49 @@ public static class QueryBuilderExtensions {
 
 
 
-        /// <summary>
-        /// Executes a <see cref="IDbCommand"/> and return the nb of affected rows.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.Execute(QueryBuilder, DbConnection, DbTransaction, int?)"/>
         public int Execute(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             return cmd.Execute(true, command.NeedToCache(vars) ? command : null);
         }
-        /// <summary>
-        /// Executes a <see cref="IDbCommand"/> and return the nb of affected rows.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.ExecuteAsync(QueryBuilder, DbConnection, DbTransaction, int?, CancellationToken)"/>
         public Task<int> ExecuteAsync(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             return cmd.ExecuteAsync(true, command.NeedToCache(vars) ? command : null, ct);
         }
-        /// <summary>
-        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.ExecuteScalar{T}(QueryBuilder, DbConnection, DbTransaction, int?)"/>
         public T ExecuteScalar<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             return cmd.ExecuteScalar<T>(true, command.NeedToCache(vars) ? command : null);
         }
-        /// <summary>
-        /// Executes a <see cref="IDbCommand"/> and return the scalar value.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.ExecuteScalarAsync{T}(QueryBuilder, DbConnection, DbTransaction, int?, CancellationToken)"/>
         public Task<T> ExecuteScalarAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             return cmd.ExecuteScalarAsync<T>(true, command.NeedToCache(vars) ? command : null, ct);
         }
-        /// <summary>
-        /// Executes the reader of the <see cref="IDbCommand"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="cmd">The command associated with the reader</param>
-        /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.ExecuteReader(QueryBuilder, DbConnection, out DbCommand, CommandBehavior, DbTransaction, int?)"/>
         public DbDataReader ExecuteReader(IDbConnection cnn, out IDbCommand cmd, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
             return cmd.ExecuteReader(behavior, command.NeedToCache(vars) ? command : null);
         }
-        /// <summary>
-        /// Executes the reader of the <see cref="IDbCommand"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="cmd">The command associated with the reader</param>
-        /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.ExecuteReaderAsync(QueryBuilder, DbConnection, out DbCommand, CommandBehavior, DbTransaction, int?, CancellationToken)"/>
         public Task<DbDataReader> ExecuteReaderAsync(IDbConnection cnn, out IDbCommand cmd, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
             return cmd.ExecuteReaderAsync(behavior, command.NeedToCache(vars) ? command : null, ct);
         }
-        /// <summary>
-        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="cmd">The command associated with the reader</param>
-        /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.ExecuteMultiReader(QueryBuilder, DbConnection, out DbCommand, CommandBehavior, DbTransaction, int?)"/>
         public MultiReader ExecuteMultiReader(IDbConnection cnn, out IDbCommand cmd, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -309,15 +258,7 @@ public static class QueryBuilderExtensions {
             cmd.CommandText = command.QueryText.Parse(vars);
             return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
-        /// <summary>
-        /// Executes the <see cref="MultiReader"/> of the <see cref="IDbCommand"/>.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="cmd">The command associated with the reader</param>
-        /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.ExecuteMultiReaderAsync(QueryBuilder, DbConnection, out DbCommand, CommandBehavior, DbTransaction, int?, CancellationToken)"/>
         public Task<MultiReader> ExecuteMultiReaderAsync(IDbConnection cnn, out IDbCommand cmd, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -325,12 +266,7 @@ public static class QueryBuilderExtensions {
             cmd.CommandText = command.QueryText.Parse(vars);
             return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
         }
-        /// <summary>
-        /// Executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.Query{T}(QueryBuilder, DbConnection, DbTransaction, int?)"/>
         public T Query<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -341,13 +277,7 @@ public static class QueryBuilderExtensions {
                 return parser.Query(cmd, command, true);
             return cmd.Query(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), true);
         }
-        /// <summary>
-        /// Asynchronously executes a <see cref="IDbCommand"/> and parse the first row to return an instance of <typeparamref name="T"/> or the default if no result.
-        /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The fowarded cancellation token</param>
+        /// <inheritdoc cref="QueryBuilderExtensions.QueryAsync{T}(QueryBuilder, DbConnection, DbTransaction, int?, CancellationToken)"/>
         public Task<T> QueryAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;

@@ -4,7 +4,10 @@ using System.Runtime.CompilerServices;
 
 namespace RinkuLib.DbParsing;
 /// <summary>
-/// Defines the contract for comparing database column names against member identifiers.
+/// Decides whether a column name matches a member. A member may go by more than one name, and for a nested
+/// object the match runs as a chain, each link consuming its part of the name, which is what lets a flattened
+/// column like <c>Address_City</c> reach a nested member. You usually shape this through the naming attributes
+/// rather than implementing it.
 /// </summary>
 public interface INameComparer {
     private const string TargetAttributeName = "TrueNameAttribute";
@@ -72,9 +75,9 @@ public interface IMutatableNameComparer :
     INameComparerThatCanAddAComparer,
     INameComparerThatCanRemove,
     INameComparerThatCanRemoveAComparer { }
-/// <summary></summary>
+/// <summary>Building and reshaping name matchers, adding or removing alternatives and combining them.</summary>
 public static class NameComparerHelper {
-    /// <summary>Helper that passes the chain of matches down</summary>
+    /// <summary>Continues the match down the chain against the remaining name.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool MatchNext(this Span<INameComparer> nameComparers, ReadOnlySpan<char> remaining, int count = 1)
         => nameComparers.Length < count ? remaining.Length == 0 : nameComparers[^count].Match(remaining, nameComparers[..^count]);

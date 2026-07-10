@@ -1,111 +1,102 @@
 ﻿namespace RinkuLib.Queries;
 
 /// <summary>
-/// The control interface for deciding which parts of a query are active and what data they carry.
+/// Supplies a query's values from code instead of a parameter object. You set variables and switch
+/// conditional parts on or off, then run the command off the builder. This is the road to take when the
+/// values come from branching C# logic rather than a ready-made object.
 /// </summary>
 /// <remarks>
-/// This interface treats a query as a set of optional pieces. By default, pieces are not used. 
-/// You "activate" them by calling the <c>Use</c> methods. 
+/// A query is a set of optional pieces. Nothing is included until you ask for it. A variable is a piece
+/// that carries a value (a <c>@name</c> parameter). A condition is a piece that only turns on or off (a
+/// conditional marker or a projected column), it carries no data. Both are addressed by name or, once you
+/// know it, by index.
 /// </remarks>
 public interface IQueryBuilder {
     /// <summary>
-    /// Returns the current state or value at the specified index.
+    /// The value set for the variable or condition at <paramref name="ind"/>, or <see langword="null"/>
+    /// when it is off.
     /// </summary>
     object? this[int ind] { get; }
     /// <summary>
-    /// Returns the current state or value for a specific condition or variable name.
+    /// The value set for the named variable or condition, or <see langword="null"/> when it is off.
     /// </summary>
     object? this[string condition] { get; }
-    /// <summary>
-    /// Returns the current state or value for a specific condition or variable name.
-    /// </summary>
+    /// <inheritdoc cref="this[string]"/>
     object? this[ReadOnlySpan<char> condition] { get; }
     /// <summary>
-    /// Generates the SQL text only using the actual variables states without making or maintaining a command.
+    /// The SQL text for the current state, with the off pieces dropped. Reads the state alone and touches
+    /// no command, so you can inspect what a run would send without executing it.
     /// </summary>
     string GetQueryText();
     /// <summary>
-    /// Deactivates a condition or variable so it is no longer included in the query.
+    /// Turns off the named variable or condition so its part drops from the query.
     /// </summary>
+    /// <param name="condition">The variable or condition name.</param>
     void Remove(string condition);
-    /// <summary>
-    /// Deactivates a condition or variable so it is no longer included in the query.
-    /// </summary>
+    /// <inheritdoc cref="Remove(string)"/>
     void Remove(ReadOnlySpan<char> condition);
     /// <summary>
-    /// Deactivates all items, resetting the state of the query.
+    /// Turns everything off, back to the state of a fresh builder.
     /// </summary>
     void Reset();
     /// <summary>
-    /// Activates a condition that only functions as a toggle (such as a column or a conditional marker).
+    /// Turns on a condition, a piece that carries no value (a conditional marker or a projected column).
     /// </summary>
-    /// <param name="condition">The name of the condition to activate.</param>
+    /// <param name="condition">The condition name.</param>
+    /// <returns><see langword="true"/> if the name is a condition and was turned on, <see langword="false"/> if it names a value-carrying variable instead.</returns>
     bool Use(string condition);
-    /// <summary>
-    /// Activates a condition that only functions as a toggle (such as a column or a conditional marker).
-    /// </summary>
-    /// <param name="condition">The name of the condition to activate.</param>
+    /// <inheritdoc cref="Use(string)"/>
     bool Use(ReadOnlySpan<char> condition);
     /// <summary>
-    /// Activates a condition that only functions as a toggle (such as a column or a conditional marker).
+    /// Turns on the condition at <paramref name="conditionIndex"/>.
     /// </summary>
-    /// <param name="conditionIndex">The index of the condition to activate.</param>
+    /// <param name="conditionIndex">The condition index.</param>
     void Use(int conditionIndex);
     /// <summary>
-    /// Desactivate a condition that only functions as a toggle (such as a column or a conditional marker).
+    /// Turns off a condition previously turned on with <see cref="Use(string)"/>.
     /// </summary>
-    /// <param name="condition">The name of the condition to activate.</param>
+    /// <param name="condition">The condition name.</param>
+    /// <returns><see langword="true"/> if the name is a condition, <see langword="false"/> if it names a value-carrying variable instead.</returns>
     bool UnUse(string condition);
-    /// <summary>
-    /// Desactivate a condition that only functions as a toggle (such as a column or a conditional marker).
-    /// </summary>
-    /// <param name="condition">The name of the condition to activate.</param>
+    /// <inheritdoc cref="UnUse(string)"/>
     bool UnUse(ReadOnlySpan<char> condition);
     /// <summary>
-    /// Desactivate a condition that only functions as a toggle (such as a column or a conditional marker).
+    /// Turns off the condition at <paramref name="conditionIndex"/>.
     /// </summary>
-    /// <param name="conditionIndex">The index of the condition to activate.</param>
+    /// <param name="conditionIndex">The condition index.</param>
     void UnUse(int conditionIndex);
 
     /// <summary>
-    /// Activates a variable and assigns it a data value.
+    /// Sets a variable to <paramref name="value"/> and turns it on, spelling the variable character apart
+    /// from the name so the name can come from <c>nameof</c>.
     /// </summary>
-    /// <param name="charVariable">The character to appent to the start of the variable to match as a key.</param>
-    /// <param name="variable">The name of the item to activate.</param>
-    /// <param name="value">The data value to assign.</param>
-    /// <returns>True if the item is active after this call.</returns>
+    /// <param name="charVariable">The variable character the query uses, such as <c>@</c>.</param>
+    /// <param name="variable">The variable name, without the leading character.</param>
+    /// <param name="value">The value to bind.</param>
+    /// <returns><see langword="true"/> if the name is a value-carrying variable and was set.</returns>
     public bool Use(char charVariable, string variable, object? value);
     /// <summary>
-    /// Activates a variable and assigns it a data value.
+    /// Sets a variable to <paramref name="value"/> and turns it on. A <see langword="null"/> value turns it off.
     /// </summary>
-    /// <param name="variable">The name of the item to activate.</param>
-    /// <param name="value">The data value to assign.</param>
-    /// <returns>True if the item is active after this call.</returns>
+    /// <param name="variable">The variable name.</param>
+    /// <param name="value">The value to bind.</param>
+    /// <returns><see langword="true"/> if the name is a value-carrying variable and was set.</returns>
     bool Use(string variable, object? value);
-    /// <summary>
-    /// Activates a variable and assigns it a data value.
-    /// </summary>
-    /// <param name="variable">The name of the item to activate.</param>
-    /// <param name="value">The data value to assign.</param>
-    /// <returns>True if the item is active after this call.</returns>
+    /// <inheritdoc cref="Use(string, object)"/>
     bool Use(ReadOnlySpan<char> variable, object? value);
     /// <summary>
-    /// Activates a variable and assigns it a data value.
+    /// Sets the variable at <paramref name="variableIndex"/> to <paramref name="value"/>.
     /// </summary>
-    /// <param name="variableIndex">The index of the item to activate.</param>
-    /// <param name="value">The data value to assign.</param>
-    /// <returns>True if the item is active after this call.</returns>
+    /// <param name="variableIndex">The variable index.</param>
+    /// <param name="value">The value to bind.</param>
     void Use(int variableIndex, object? value);
     /// <summary>
-    /// Set the builder state alligned with the parameter object
+    /// Sets every variable and condition at once from <paramref name="parameterObj"/>, matching its members
+    /// to keys by name. The same object you would pass straight to a run, applied to the builder instead.
     /// </summary>
     public void UseWith(object parameterObj);
-    /// <summary>
-    /// Set the builder state alligned with the parameter object
-    /// </summary>
+    /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(T parameterObj) where T : notnull;
-    /// <summary>
-    /// Set the builder state alligned with the parameter object
-    /// </summary>
+    /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull;
 }

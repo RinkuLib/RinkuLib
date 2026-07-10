@@ -5,9 +5,9 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace RinkuLib.Tools;
-/// <summary></summary>
+/// <summary>Converts a value from one type to another at runtime, covering casts, numeric conversions, and parsing, for when a column's type does not match the member's.</summary>
 public static class Caster {
-    /// <summary>A reusable to safely return the value</summary>
+    /// <summary>Converts <paramref name="value"/> to <typeparamref name="TTo"/>, returning <see langword="false"/> when no conversion fits.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     public static bool TryCast<TFrom, TTo>(TFrom value, [MaybeNullWhen(false)] out TTo val) => Caster<TFrom, TTo>.TryCast(value, out val);
     static Caster() {
@@ -98,7 +98,7 @@ public static class Caster {
     }
     internal static bool IsParsable(Type t) => t.IsAssignableTo(typeof(IParsable<>).MakeGenericType(t));
 }
-/// <summary></summary>
+/// <summary>The cached converter from <typeparamref name="TFrom"/> to <typeparamref name="TTo"/>, resolved once per type pair and reused.</summary>
 public static class Caster<TFrom, TTo> {
     private static readonly unsafe delegate* managed<TFrom, out TTo, bool> _ptr;
     static unsafe Caster() {

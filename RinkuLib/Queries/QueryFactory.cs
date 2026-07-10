@@ -3,32 +3,15 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
 /// <summary>
-/// A structural template provider that compiles raw SQL into data-only blueprints.
-/// It defines the geometry of query fragments and establishes the memory contract for data binding.
+/// Reads a SQL template once and produces the pieces a <see cref="QueryCommand"/> runs from, the stripped
+/// text, the parts that can switch on and off, and the map from key names to slots. You meet it when
+/// subclassing <see cref="QueryCommand"/> to change how templates are read, most code never touches it.
 /// </summary>
-/// <remarks>
-/// <para><b>Template Role:</b></para>
-/// <para>The <see cref="QueryFactory"/> is a structural provider. It generates <see cref="QuerySegment"/> 
-/// and <see cref="Condition"/> arrays that serve as instruction sets for an assembly engine. 
-/// These are data-only structures; they provide the offsets, indices, and jump-ahead counts 
-/// required to build a final query string without performing the assembly logic themselves.</para>
-/// 
-/// <para><b>The Mapper Contract:</b></para>
-/// <para>The <see cref="Mapper"/> is the central registry. It enforces a specific tier-ordered index 
-/// for every key (Selects → Comments → Vars → Special → Base). External tools use this Mapper 
-/// to store values or states at specific integer indices. The <see cref="Condition"/> structs 
-/// then use these pre-assigned indices to look up that data in O(1) time during assembly.</para>
-/// 
-/// <para><b>Assembly Model:</b></para>
-/// <para>The design facilitates a co-linear iteration where <see cref="Segments"/> are processed 
-/// sequentially, gated by <see cref="Conditions"/>, until the <b>Sentinel Condition</b> signals 
-/// completion. However, since the output is raw data, alternative engine implementations are 
-/// free to interpret these blueprints in any way that respects the index contract.</para>
-/// </remarks>
 public struct QueryFactory {
     /// <summary>
-    /// The global, mutable registry of base handlers. 
-    /// Users can modify this map to add or change built-in type behaviors globally.
+    /// The built-in handler letters and how each expands, keyed by suffix. <c>S</c> quotes a string, <c>R</c>
+    /// injects raw text, <c>N</c> writes a number. App-wide and mutable, add a letter here to register your
+    /// own handler for every command.
     /// </summary>
     public static readonly LetterMap<HandlerGetter<IQuerySegmentHandler>> BaseHandlerMapper = new(
         ('S', StringVariableHandler.Build),
@@ -36,83 +19,43 @@ public struct QueryFactory {
         ('N', NumberVariableHandler.Build)
     );
 #pragma warning disable CA2211
-    /// <summary>Identifier to indicate a SQL variable</summary>
+    /// <summary>The character that marks a variable when a command does not name its own. <c>@</c> to start.</summary>
     public static char DefaultVariableChar = '@';
 #pragma warning restore CA2211
-    /// <summary>The normalized SQL query string with all markers and metadata stripped.</summary>
+    /// <summary>The template text with the markers stripped, the SQL a run with everything present would send.</summary>
     public string Query;
-    /// <summary>
-    /// A contiguous sequence of <see cref="QuerySegment"/> objects. 
-    /// Together, they form the complete, normalized SQL string.
-    /// </summary>
+    /// <summary>The template broken into the runs of text and handler spots that make up the SQL.</summary>
     public QuerySegment[] Segments;
-    /// <summary>
-    /// A table of pre-calculated jump data. Each entry defines a logical footprint on the 
-    /// <see cref="Segments"/> array and the skip-count for the logic tree.
-    /// </summary>
-    /// <remarks>
-    /// The final entry is a <b>Sentinel Condition</b>, used to define the logical end of the query 
-    /// and prevent out-of-bounds iteration during assembly.
-    /// </remarks>
+    /// <summary>The optional parts and the keys that switch them on or off.</summary>
     public Condition[] Conditions;
-    /// <summary>
-    /// The authoritative index registry. Defines the integer offsets used by <see cref="Condition.CondIndex"/> 
-    /// to retrieve external state/values. This class is fully functional and used to bridge 
-    /// string keys to the factory's internal integer indices.
-    /// </summary>
+    /// <summary>The map from each key name to its slot, the shared numbering the rest of the pieces address.</summary>
     public Mapper Mapper;
-    /// <summary>
-    /// The amount of distinct not handled variables (required and optional)
-    /// </summary>
+    /// <summary>How many plain value-carrying variables the template has, required and optional together.</summary>
     public int NbNormalVar;
-    /// <summary>
-    /// The amount of distinct variables that are handled by a special handler
-    /// </summary>
+    /// <summary>How many variables are expanded by a special handler.</summary>
     public int NbSpecialHandlers;
-    /// <summary>
-    /// The amount of distinct variables that are handled by a base handler
-    /// </summary>
+    /// <summary>How many variables are expanded by a built-in base handler.</summary>
     public int NbBaseHandlers;
-    /// <summary>
-    /// The amount of distinct variables that are required (normal or handled)
-    /// </summary>
+    /// <summary>How many keys are required, so a run must always supply them.</summary>
     public int NbRequired;
-    /// <summary>
-    /// The amount of distinct conditions that are both not from dynamic projections and not a variable
-    /// </summary>
+    /// <summary>How many conditional markers are neither a variable nor a projected column.</summary>
     public int NbNonVarComment;
 
-    /// <summary>
-    /// Bitmask of letters ('a'-'z') representing the <b>non-claimed base handlers</b>.
-    /// Derived at construction by filtering the current state of the <see cref="BaseHandlerMapper"/> letter usage
-    /// against the claimed special handlers.
-    /// </summary>
+    /// <summary>Which base-handler letters are free to use, the ones a special handler has not claimed.</summary>
     public uint BaseHandlerPresenceMap;
-    /// <summary>Determines if a type-suffix character is an available (non-claimed) base handler.</summary>
+    /// <summary>Whether a suffix letter is a base handler that is free to use here.</summary>
     public readonly bool IsBaseHandler(char c) {
         int i = (c | 0x20) - 'a';
         return (uint)i < 26 && (BaseHandlerPresenceMap & (1U << i)) != 0;
     }
     /// <summary>
-    /// Initializes the template blueprints and establishes the <see cref="Mapper"/> index contract.
+    /// Reads a template and fills in the pieces. A suffix letter that <paramref name="specialHandlerPresenceMap"/>
+    /// claims is left for a special handler to bind later, one in <see cref="BaseHandlerMapper"/> binds its
+    /// built-in handler, and a letter that is neither is rejected.
     /// </summary>
-    /// <param name="query">The raw SQL input to be normalized and segmented.</param>
-    /// <param name="variableChar">The prefix for variables (e.g., '@', ':').</param>
-    /// <param name="specialHandlerPresenceMap">
-    /// A bitmask of letters ('A'-'Z') claimed by external specialized logic. 
-    /// </param>
-    /// <remarks>
-    /// <b>Handler Resolution Logic:</b>
-    /// <list type="bullet">
-    /// <item><b>Claimed Letters:</b> If a variable type is in <paramref name="specialHandlerPresenceMap"/>, 
-    /// the segment handler is set to <see cref="IQuerySegmentHandler.NotSet"/> for later binding.</item>
-    /// <item><b>Base Handlers:</b> If not claimed, the system checks <see cref="BaseHandlerMapper"/>. 
-    /// If the letter exists there, it binds the associated default handler.</item>
-    /// <item><b>Unsupported:</b> If a type letter is neither claimed nor found in the base registry, 
-    /// the constructor will fail.</item>
-    /// <item><b>Standard/Not handled Segments:</b> Segments without handler logic have their handler set to <c>null</c>.</item>
-    /// </list>
-    /// </remarks>
+    /// <param name="query">The SQL template to read.</param>
+    /// <param name="variableChar">The character that marks a variable, <c>@</c> when left unset.</param>
+    /// <param name="specialHandlerPresenceMap">The suffix letters a special handler layer claims for itself.</param>
     public QueryFactory(string query, char variableChar = default, uint specialHandlerPresenceMap = 0) {
         if (variableChar == default)
             variableChar = DefaultVariableChar;

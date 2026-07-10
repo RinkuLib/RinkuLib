@@ -4,20 +4,17 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.TypeAccessing;
 /// <summary>
-/// access of an item members
+/// Reads a parameter object one key at a time, by the mapper's index, telling whether the key is present and
+/// what its value is. The uniform view the engine uses over any parameter object, whatever its shape.
 /// </summary>
 public interface ITypeAccessor {
-    /// <summary>
-    /// Check if the value is used
-    /// </summary>
+    /// <summary>Whether the key at <paramref name="index"/> is present on the object.</summary>
     public bool IsUsed(int index);
-    /// <summary>
-    /// Get the used value
-    /// </summary>
+    /// <summary>The value for the key at <paramref name="index"/>.</summary>
     public object GetValue(int index);
 }
 /// <summary>
-/// IL compiled access of an item
+/// The empty accessor, used for a <see langword="null"/> parameter object, every key reads as absent.
 /// </summary>
 public readonly struct NoTypeAccessor : ITypeAccessor {
     /// <inheritdoc/>
@@ -26,7 +23,7 @@ public readonly struct NoTypeAccessor : ITypeAccessor {
     public object GetValue(int index) => null!;
 }
 /// <summary>
-/// IL compiled access of an item
+/// An accessor bound to one object, reading its keys through the compiled readers built for its type.
 /// </summary>
 public readonly ref struct TypeAccessor(object item, Func<object, int, bool> usage, Func<object, int, object> value) : ITypeAccessor {
     private readonly object _item = item;
@@ -38,7 +35,8 @@ public readonly ref struct TypeAccessor(object item, Func<object, int, bool> usa
     public object GetValue(int index) => _getValue(_item, index);
 }
 /// <summary>
-/// IL compiled access of an item
+/// The <see cref="TypeAccessor"/> variant that reads a value type by reference, so a struct parameter object
+/// is read without a copy or boxing.
 /// </summary>
 public readonly ref struct TypeAccessor<T>(ref T item, MemberUsageDelegate<T> usage, MemberValueDelegate<T> value) : ITypeAccessor {
     private readonly ref T _item = ref item;
@@ -50,12 +48,13 @@ public readonly ref struct TypeAccessor<T>(ref T item, MemberUsageDelegate<T> us
     public object GetValue(int index) => _getValue(ref _item, index);
 }
 /// <summary>
-/// Represent a il compiled delegate to get the usage and value of a type based on a mapper
+/// The compiled readers for a type against a mapper, one to test presence and one to fetch a value by index.
+/// Built once per type and reused, so reading a familiar parameter object is cheap.
 /// </summary>
 public class TypeAccessorCache {
-    /// <summary>The delegate to get the usage</summary>
+    /// <summary>Reads whether a key is present on the object.</summary>
     public Func<object, int, bool> GetUsage;
-    /// <summary>The delegate to get the value</summary>
+    /// <summary>Reads a key's value from the object.</summary>
     public Func<object, int, object> GetValue;
     /// <inheritdoc/>
     protected TypeAccessorCache() {
@@ -71,21 +70,18 @@ public class TypeAccessorCache {
         this.GetValue = valueMethod.CreateDelegate<Func<object, int, object>>(null);
     }
 }
-/// <summary>
-/// Fast delegate to switch for usage
-/// </summary>
+/// <summary>Reads whether a key is present on an object passed by reference.</summary>
 public delegate bool MemberUsageDelegate<T>(ref T instance, int index);
-/// <summary>
-/// Fast delegate to switch for value
-/// </summary>
+/// <summary>Reads a key's value from an object passed by reference.</summary>
 public delegate object MemberValueDelegate<T>(ref T instance, int index);
 /// <summary>
-/// Represent a generic il compiled delegate to get the usage and value of a type based on a mapper
+/// The <see cref="TypeAccessorCache"/> for a value type, adding by-reference readers so a struct parameter
+/// object is read without boxing.
 /// </summary>
 public class StructTypeAccessorCache<T> : TypeAccessorCache {
-    /// <summary>The generic delegate to get the value</summary>
+    /// <summary>Reads whether a key is present, taking the struct by reference.</summary>
     public MemberUsageDelegate<T> GenericGetUsage;
-    /// <summary>The generic delegate to get the value</summary>
+    /// <summary>Reads a key's value, taking the struct by reference.</summary>
     public MemberValueDelegate<T> GenericGetValue;
     /// <inheritdoc/>
     public StructTypeAccessorCache((DynamicMethod usageMethod, DynamicMethod valueMethod) methods)
@@ -113,11 +109,12 @@ public class StructTypeAccessorCache<T> : TypeAccessorCache {
     }
 } 
 /// <summary>
-/// IL compiled access of <typeparamref name="T"/>
+/// Builds and caches the compiled readers for <typeparamref name="T"/> against a mapper, once per mapper,
+/// honoring the accessor attributes on the type and its members.
 /// </summary>
 public static class TypeAccessorCacher<T> {
     /// <summary>
-    /// A lock shared to ensure thread safety across multiple <see cref="TypeAccessor"/> instances.
+    /// Guards the shared cache while the readers for a new mapper are compiled.
     /// </summary>
     public static readonly
 #if NET9_0_OR_GREATER
@@ -128,7 +125,8 @@ public static class TypeAccessorCacher<T> {
         SharedLock = new();
     private static (object Key, TypeAccessorCache Cache)[] Variants = [];
     /// <summary>
-    /// Get the compiled accesor
+    /// The compiled readers for <typeparamref name="T"/> against <paramref name="mapper"/>, built on first
+    /// request and reused after.
     /// </summary>
     public static TypeAccessorCache GetOrGenerate(Mapper mapper) {
         var currentVariants = Variants;

@@ -5,7 +5,8 @@ using System.Runtime.InteropServices;
 namespace RinkuLib.Tools;
 
 /// <summary>
-/// Represents the schema and state of a single column received by the engine.
+/// One column of a result, its name, CLR type, and whether it may be null. The unit a mapping matches members
+/// against.
 /// </summary>
 public struct ColumnInfo(string Name, Type Type, bool IsNullable) {
     /// <summary>The name of the column as it appears in the result set.</summary>
@@ -18,7 +19,7 @@ public struct ColumnInfo(string Name, Type Type, bool IsNullable) {
     public bool IsNullable = IsNullable;
 }
 /// <summary>
-/// A simple conparar that compare the array sequence instead of the simple array reference
+/// Compares arrays by their contents rather than by reference, so two arrays with equal elements are equal.
 /// </summary>
 public sealed class ArrayContentComparer<T> : IEqualityComparer<T[]> where T : struct {
     /// <summary>

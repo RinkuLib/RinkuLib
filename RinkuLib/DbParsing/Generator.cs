@@ -19,7 +19,7 @@ namespace RinkuLib.DbParsing;
 /// </remarks>
 public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
 #pragma warning disable CA2211
-    /// <summary></summary>
+    /// <summary>Where the verbose instruction trace is written, the console by default.</summary>
     public static Action<string> Write = Console.WriteLine;
 #pragma warning restore CA2211
     /// <summary>The underlying <see cref="ILGenerator"/></summary>

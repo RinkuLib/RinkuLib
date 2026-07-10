@@ -13,26 +13,26 @@ public class NullValueAssignmentException(Type parentType, Type paramType, strin
     public readonly Type ParameterType = paramType;
 }
 /// <summary>
-/// The abstract base for all emission nodes. Defines how a specific part of the 
-/// object graph generates its IL instructions.
+/// One node in a type's read plan, it knows how to read its own part of a row, whether a single column, a
+/// nested object, or a default. The plan is a tree of these, and the object parser is compiled from it.
 /// </summary>
 public abstract class DbItemParser {
     /// <summary>
-    /// Determines if this node requires a recovery point to handle null values 
-    /// based on the current schema.
+    /// Whether reading this node can hit a <c>NULL</c> that has to collapse the owning object, so a recovery
+    /// point is needed.
     /// </summary>
     public abstract bool NeedNullSetPoint(ColumnInfo[] cols);
     /// <summary>
-    /// Used for optimization to check if column access follows a sequential index order.
+    /// Whether this node reads its columns in order, the condition that lets the result stream sequentially.
     /// </summary>
     public abstract bool IsSequencial(ref int previousIndex);
-    /// /// <summary>
-    /// The core emitter. Generates the IL to fetch data, handle DBNull, and convert types.
+    /// <summary>
+    /// Reads this node's value from the row, handling a <c>NULL</c> and any type conversion.
     /// </summary>
-    /// <param name="cols">Metadata for all available columns.</param>
-    /// <param name="generator">The IL generator wrapper.</param>
-    /// <param name="nullSetPoint">The recovery point when value is null.</param>
-    /// <param name="targetObject">The arg_0 if needed</param>
+    /// <param name="cols">The columns the result carries.</param>
+    /// <param name="generator">The IL generator the read is written into.</param>
+    /// <param name="nullSetPoint">Where to jump when a value is <c>NULL</c> and the object must collapse.</param>
+    /// <param name="targetObject">Set to an object the compiled reader needs passed in, or <see langword="null"/>.</param>
     public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject);
     internal static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(Type), typeof(string)])!;
     internal static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;

@@ -1,15 +1,15 @@
 ﻿namespace RinkuLib.DbParsing;
 /// <summary>
-/// A marker interface. Types implementing this are automatically 
-/// discovered and registered by <see cref="TypeParsingInfo"/>.
+/// Marks a type as one Rinku can read, so it is picked up and registered automatically without a manual call.
 /// </summary>
 public interface IDbReadable;
 /// <summary>
-/// A factory for creating <see cref="ParamInfo"/> instances.
+/// Builds the plan for reading one member or parameter, how it is named, whether it may be null, and how its
+/// value is produced. The seam for taking over a member's mapping.
 /// </summary>
 public interface IParamInfoMaker {
     /// <summary>
-    /// Creates a matcher based on the provided reflection context.
+    /// Builds the read plan for a member or parameter from its reflection metadata.
     /// </summary>
     /// <param name="Type">The type of the member/parameter.</param>
     /// <param name="NullColHandler">The generated colHandler</param>

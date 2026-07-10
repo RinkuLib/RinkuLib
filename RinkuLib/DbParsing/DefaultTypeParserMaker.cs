@@ -8,7 +8,10 @@ using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.DbParsing;
 
-/// <summary></summary>
+/// <summary>
+/// The object parser, the maker that claims any type no other maker did. It maps a result's columns onto a
+/// type's members and constructor by name, the default behind mapping a plain class, record, or struct.
+/// </summary>
 public class DefaultTypeParserMaker : ITypeParserMaker {
     /// <inheritdoc/>
     public bool CanHandle<T>() => true;
@@ -17,17 +20,10 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
     internal static readonly ParamInfo InfoNullable = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo InfoNotNullable = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
     /// <summary>
-    /// The compilation core. Orchestrates the transition from metadata to IL.
+    /// Builds the object parser for <typeparamref name="T"/> over the given columns, matching them to the
+    /// type's members and constructor. It opts the result into sequential reading when the mapping's column
+    /// order allows it.
     /// </summary>
-    /// <remarks>
-    /// <b>Process:</b>
-    /// <list type="number">
-    /// <item>Determines the appropriate <see cref="INullColHandler"/> based on the nullability of <typeparamref name="T"/>.</item>
-    /// <item>Requests a <see cref="DbItemParser"/> (emission tree) from the <see cref="TypeParsingInfo"/> registry.</item>
-    /// <item>Initializes a <see cref="DynamicMethod"/> and uses the emission tree to generate IL via <see cref="Generator"/>.</item>
-    /// <item>Evaluates if the generated logic allows for <see cref="CommandBehavior.SequentialAccess"/> optimization.</item>
-    /// </list>
-    /// </remarks>
     public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
         var t = Nullable.GetUnderlyingType(typeof(T));
         bool isNullable = t is not null;

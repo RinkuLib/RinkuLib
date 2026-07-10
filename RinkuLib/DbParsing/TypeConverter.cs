@@ -4,7 +4,10 @@ using System.Reflection;
 using System.Reflection.Emit;
 
 namespace RinkuLib.DbParsing; 
-/// <summary>Emitting the conversion code to get from one type to another</summary>
+/// <summary>
+/// Converts a column's value from the type the reader gives to the type a member wants, a cast, a parse, a
+/// constructor, an implicit operator. This is how a mapping bridges the gap when the two types differ.
+/// </summary>
 public interface ITypeConverter {
 #pragma warning disable CA2211
     /// <summary>The culture to use for the parsing</summary>
@@ -12,13 +15,15 @@ public interface ITypeConverter {
 #pragma warning restore CA2211
     /// <summary>The field for emit to use for the parsing</summary>
     public static readonly FieldInfo _providerField = typeof(ITypeConverter).GetField(nameof(FormatProvider))!;
-    /// <summary>The final type after conversion</summary>
+    /// <summary>The type produced by the conversion.</summary>
     public Type OutputType { get; }
-    /// <summary>Emit the conversion of the item currently on the stack</summary>
+    /// <summary>Converts the current value to <see cref="OutputType"/>.</summary>
     public void EmitConversion(Generator generator, Type sourceType);
     private const BindingFlags staticFlags = BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy;
     /// <summary>
-    /// Try to get the conversion emiter to convert from source  to output type
+    /// Finds a way to convert from <paramref name="sourceType"/> to <paramref name="outputType"/>, trying
+    /// assignment, primitive casts, string parsing, a matching constructor, and implicit or explicit operators
+    /// in turn. Returns <see langword="false"/> when no path exists.
     /// </summary>
     public static bool TryGetConverter(Type sourceType, Type outputType, [MaybeNullWhen(false)] out ITypeConverter converter) {
         converter = null;

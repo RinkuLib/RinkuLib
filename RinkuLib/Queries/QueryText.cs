@@ -7,44 +7,29 @@ using RinkuLib.TypeAccessing;
 namespace RinkuLib.Queries;
 
 /// <summary>
-/// The execution contract responsible for assembling the final query string.
+/// Renders a template down to the SQL a single run sends, dropping the parts whose values are absent and
+/// filling in the handler spots.
 /// </summary>
 public interface IQueryText {
     /// <summary>
-    /// Processes the input state array to synthesize the final query string based on segment logic.
+    /// The SQL for one run, taking the values from an array. A part stays when its key has a value and drops
+    /// when it does not. When nothing is optional the original template is returned untouched.
     /// </summary>
-    /// <remarks>
-    /// The execution follows a high-performance linear path:
-    /// <list type="bullet">
-    /// <item>Evaluates the nullability of <paramref name="variables"/> against the jump-table to determine segment visibility.</item>
-    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
-    /// <item>Bypasses string allocation and returns QueryString if the logic resolves to the full original template.</item>
-    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="variables">The state array containing logical indicators and data values.</param>
-    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
-    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    /// <param name="variables">The values for this run, one slot per key.</param>
+    /// <returns>The rendered SQL, or the original template when no part was dropped.</returns>
+    /// <exception cref="RequiredHandlerValueException">A required handler spot had no value.</exception>
     public string Parse(object?[] variables);
-    /// <summary>Indicate if a variable index exist in any condition</summary>
+    /// <summary>Whether a key controls any optional part of the template.</summary>
     public bool IsInCondition(int varIndex);
 
     /// <summary>
-    /// Processes the input state array to synthesize the final query string based on segment logic.
+    /// The SQL for one run, taking which keys are present from <paramref name="usageMap"/> and any handler
+    /// values through <paramref name="accessor"/>.
     /// </summary>
-    /// <remarks>
-    /// The execution follows a high-performance linear path:
-    /// <list type="bullet">
-    /// <item>Evaluates the <paramref name="usageMap"/> against the jump-table to determine segment visibility.</item>
-    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
-    /// <item>Bypasses string allocation and returns QueryString if the logic resolves to the full original template.</item>
-    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="usageMap">The state array containing logical indicators</param>
-    /// <param name="accessor">The accessor to get the values</param>
-    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
-    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    /// <param name="usageMap">Which keys are present this run.</param>
+    /// <param name="accessor">Reads a value for a handler spot when one is needed.</param>
+    /// <returns>The rendered SQL, or the original template when no part was dropped.</returns>
+    /// <exception cref="RequiredHandlerValueException">A required handler spot had no value.</exception>
 #if NET9_0_OR_GREATER
     public string Parse<T>(Span<bool> usageMap, T accessor) where T : ITypeAccessor, allows ref struct;
 #else
@@ -52,45 +37,28 @@ public interface IQueryText {
 #endif
 
 #if !NET9_0_OR_GREATER
-    /// <summary>
-    /// Processes the input state array to synthesize the final query string based on segment logic.
-    /// </summary>
-    /// <remarks>
-    /// The execution follows a high-performance linear path:
-    /// <list type="bullet">
-    /// <item>Evaluates the <paramref name="usageMap"/> against the jump-table to determine segment visibility.</item>
-    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
-    /// <item>Bypasses string allocation and returns QueryString if the logic resolves to the full original template.</item>
-    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="usageMap">The state array containing logical indicators</param>
-    /// <param name="accessor">The accessor to get the values</param>
-    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
-    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    /// <inheritdoc cref="Parse(Span{bool}, NoTypeAccessor)"/>
     public string Parse(Span<bool> usageMap, TypeAccessor accessor);
 #endif
 }
-/// <summary>Thrown when a handled variable needs to be used in the final SQL query, but the value was not provided</summary>
+/// <summary>Thrown when a required part of the query needs a handler value that the run did not supply.</summary>
 public class RequiredHandlerValueException(int Index) : Exception($"The variable at index {Index} should be set") {
-    /// <summary>Index of the missing handled variable</summary>
+    /// <summary>The key slot whose value was missing.</summary>
     public int Index = Index;
 }
 /// <summary>
-/// The execution engine responsible for assembling the final query string.
+/// The compiled form of a template, ready to render the SQL for each run. Built once from the template and
+/// held on the <see cref="QueryCommand"/>, it drops the parts a run leaves out and fills the handler spots,
+/// returning the original template untouched when nothing was optional.
 /// </summary>
-/// <remarks>
-/// This engine utilizes a non-recursive, pointer-based traversal of <see cref="Condition"/> 
-/// and <see cref="QuerySegment"/> arrays to minimize CPU overhead and memory pressure.
-/// </remarks>
 public sealed class QueryText : IQueryText {
-    /// <summary> The original normalized template string. </summary>
+    /// <summary> The template as written, with the markers stripped. </summary>
     public readonly string QueryString;
-    /// <summary> The structural metadata defining the query fragments. </summary>
+    /// <summary> The template broken into the runs of text and handler spots a render walks. </summary>
     public readonly QuerySegment[] Segments;
-    /// <summary> The jump-table metadata defining the logical branching. </summary>
+    /// <summary> The optional parts and the keys that switch them on or off. </summary>
     public readonly Condition[] Conditions;
-    /// <summary>Specifies the expected length of the variables array on <see cref="Parse(object[])"/></summary>
+    /// <summary>The number of key slots a run's values array must carry, checked by <see cref="Parse(object[])"/>.</summary>
     public readonly int RequiredVariablesLength;
     private int AverageLengthChunk;
     private int NbExecuted;
@@ -294,22 +262,7 @@ public sealed class QueryText : IQueryText {
         UpdateAvg(sb.Length);
         return sb.ToStringAndDispose();
     }
-    /// <summary>
-    /// Processes the input state array to synthesize the final query string based on segment logic.
-    /// </summary>
-    /// <remarks>
-    /// The execution follows a high-performance linear path:
-    /// <list type="bullet">
-    /// <item>Evaluates the <paramref name="usageMap"/> against the jump-table to determine segment visibility.</item>
-    /// <item>Invokes <see cref="IQuerySegmentHandler.Handle"/> for dynamic segments, passing the current state value.</item>
-    /// <item>Bypasses string allocation and returns <see cref="QueryString"/> if the logic resolves to the full original template.</item>
-    /// <item>Adapts the underlying memory buffer based on previous execution metrics to minimize reallocations.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="usageMap">The state array containing logical indicators</param>
-    /// <param name="accessor">The accessor to get the values</param>
-    /// <returns>The assembled SQL string or the original template if no modifications occurred.</returns>
-    /// <exception cref="RequiredHandlerValueException">Thrown when a required variable is null during handler execution.</exception>
+    /// <inheritdoc cref="Parse(Span{bool}, NoTypeAccessor)"/>
     public unsafe string Parse<T>(Span<bool> usageMap, TypeAccessor<T> accessor) {
         Debug.Assert(usageMap.Length == RequiredVariablesLength);
 
@@ -489,15 +442,6 @@ public sealed class QueryText : IQueryText {
         UpdateAvg(sb.Length);
         return sb.ToStringAndDispose();
     }
-    /// <summary>
-    /// Dynamically adjusts the initial buffer allocation size based on a moving average of 
-    /// previously generated query lengths.
-    /// </summary>
-    /// <remarks>
-    /// This optimization reduces the frequency of internal array resizing within <see cref="ValueStringBuilder"/>.
-    /// It ceases adjustment after <see cref="MaxExecution"/> to stabilize performance in long-running processes.
-    /// </remarks>
-    /// <param name="length">The length of the most recently generated query.</param>
     private void UpdateAvg(int length) {
         if (NbExecuted > MaxExecution)
             return;

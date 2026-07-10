@@ -3,48 +3,42 @@
 namespace RinkuLib.Queries;
 
 #if !NET8_0_OR_GREATER
-/// <summary>Static class to access <see cref="NotSet"/>.</summary>
+/// <summary>Holds <see cref="NotSet"/> on frameworks without static interface members.</summary>
 public static class QuerySegmentHandler {
     /// <summary>
-    /// The global discovery hub for metadata providers.
+    /// A placeholder handler for a spot a special handler will bind later. Trying to render it before that
+    /// throws, so an unbound handler surfaces at once rather than producing wrong SQL.
     /// </summary>
-    /// <remarks>
-    /// This collection stores negotiation delegates that are evaluated via linear search. 
-    /// This design choice prioritizes versatility over strict type-mapping, allowing a 
-    /// single maker to match multiple related command types (e.g., legacy vs. modern 
-    /// drivers or inheritance) through pattern matching.
-    /// </remarks>
     public static readonly IQuerySegmentHandler NotSet = new NotSetHandler();
 }
 #endif
 /// <summary>
-/// Defines the contract for processing variable data into a SQL-ready string format.
+/// Turns a variable's value into the SQL text that stands in its place, quoting a string, expanding a list,
+/// writing a number, or injecting raw text. Register your own under a suffix letter in
+/// <see cref="QueryFactory.BaseHandlerMapper"/> to add a marker of your own.
 /// </summary>
 public interface IQuerySegmentHandler {
 #if NET8_0_OR_GREATER
     /// <summary>
-    /// A sentinel handler used during the factory phase to mark variables requiring special external resolution.
-    /// Attempting to use this handler during assembly will throw a <see cref="NotImplementedException"/>.
+    /// A placeholder handler for a spot a special handler will bind later. Trying to render it before that
+    /// throws, so an unbound handler surfaces at once rather than producing wrong SQL.
     /// </summary>
     public static readonly IQuerySegmentHandler NotSet = new NotSetHandler();
 #endif
     /// <summary>
-    /// Transforms the provided <paramref name="value"/> and appends the result to the <see cref="ValueStringBuilder"/>.
+    /// Writes the SQL for <paramref name="value"/> into the query being built.
     /// </summary>
-    /// <param name="sb">The active string builder for query assembly.</param>
-    /// <param name="value">The raw data value fetched from the external state array.</param>
+    /// <param name="sb">The builder the query is being assembled in.</param>
+    /// <param name="value">The value bound to this spot for the current run.</param>
     public void Handle(ref ValueStringBuilder sb, object value);
 }
 /// <summary>
-/// A factory delegate responsible for instantiating a specific <see cref="IQuerySegmentHandler"/>.
+/// Makes a handler for a specific marker, given the marker's full name as written in the query.
 /// </summary>
-/// <param name="Name">
-/// The full identifier name of the variable as it appears in the query (e.g., "Order_N"). 
-/// This name is expected to include the underscore separator and the type-suffix character.
-/// </param>
+/// <param name="Name">The marker name including its underscore and suffix letter, such as <c>Order_N</c>.</param>
 public delegate T HandlerGetter<out T>(string Name) where T : IQuerySegmentHandler;
 /// <summary>
-/// Internal sentinel implementation that prevents execution of uninitialized special handlers.
+/// The placeholder that throws if a handler spot is rendered before a real handler is bound.
 /// </summary>
 internal class NotSetHandler() : IQuerySegmentHandler {
     public void Handle(ref ValueStringBuilder sb, object? value)

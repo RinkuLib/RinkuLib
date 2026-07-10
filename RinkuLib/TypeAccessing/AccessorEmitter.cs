@@ -3,14 +3,18 @@ using System.Reflection.Emit;
 using RinkuLib.Tools;
 
 namespace RinkuLib.TypeAccessing;
-/// <summary>Handle the population of the emit switch case(s)</summary>
+/// <summary>
+/// The base for an attribute that changes how a parameter object's member is read, its presence rule, its
+/// value, or both. The seam behind attributes like <see cref="ForBoolCondAttribute"/> and
+/// <see cref="NotNullOrWhitespaceAttribute"/>, subclass it to define a custom rule of your own.
+/// </summary>
 public abstract class AccessorEmiterHandler : Attribute {
-    /// <summary>Handle the population of the emit switch case(s)</summary>
+    /// <summary>Installs the presence and value readers for the member (or the whole type) this attribute is on.</summary>
     public abstract void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo? member, Mapper mapper);
 }
-/// <summary>Generate the IL emit to get the usage at a specific index</summary>
+/// <summary>One reader for a single key, the presence test or the value fetch, emitted as IL.</summary>
 public interface IAccessorEmiter {
-    /// <summary>Generate the IL emit to get the usage at a specific index</summary>
+    /// <summary>Emits the IL that reads this key.</summary>
     public abstract void Emit(ILGenerator il);
     /// <summary>
     /// Helper to load the instance and access the specific member.

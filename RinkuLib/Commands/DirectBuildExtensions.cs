@@ -3,11 +3,14 @@ using System.Data.Common;
 using RinkuLib.Queries;
 
 namespace RinkuLib.Commands; 
-/// <summary>Extensions to direcly call a <see cref="QueryCommand"/> with an obj</summary>
+/// <summary>
+/// Runs a <see cref="QueryCommand"/> straight against a connection, taking its values from a parameter
+/// object. This is the primary way to execute a declared command, one call that opens a command, binds the
+/// object, runs, and returns the shape you ask for. The overloads cover every result shape, sync and async,
+/// with an optional <c>out</c> command when you need to read output parameters afterward.
+/// </summary>
 public static class DirectBuildExtensions {
-    /// <summary>
-    /// Extension to get the indexes of the false items
-    /// </summary>
+    /// <summary>Projects the values to a presence map, <see langword="true"/> for each key that carries a value.</summary>
     public static bool[] ToBoolArray(this object?[] variables) {
         var arr = new bool[variables.Length];
         for (int i = 0; i < variables.Length; i++)

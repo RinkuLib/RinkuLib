@@ -2,7 +2,8 @@ using System.Data;
 using System.Data.Common;
 namespace RinkuLib.TypeAccessing;
 /// <summary>
-/// Optionaly parse a type.
+/// The parser behind the optional shapes (<see cref="Optional{T}"/> and kin). It wraps an element parser and
+/// turns a missing row into that shape's empty value instead of throwing.
 /// </summary>
 public sealed class OptionalTypeParser<TOpt, T>(ITypeParser<T> elementParser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly ITypeParser<T> ElementParser = elementParser;
@@ -21,7 +22,7 @@ public sealed class OptionalTypeParser<TOpt, T>(ITypeParser<T> elementParser) : 
         return (canContinue, TOpt.Make(res));
     }
 }
-/// <summary>Optimized wrapping parser that uses a direct delegate.</summary>
+/// <summary>The <see cref="OptionalTypeParser{TOpt, T}"/> fast path, for an element read by a plain row delegate.</summary>
 public sealed class FastOptionalTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser) : BaseTypeParser<TOpt>, ISimpleParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly Func<DbDataReader, T> Parser = parser;
     /// <inheritdoc/>
@@ -42,7 +43,8 @@ public sealed class FastOptionalTypeParser<TOpt, T>(CommandBehavior behavior, Fu
     }
 }
 /// <summary>
-/// Parse a single row and throw when the query provides more.
+/// The parser behind <see cref="Single{T}"/>. It reads one row and throws if the query returned more,
+/// enforcing exactly one result.
 /// </summary>
 public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly ITypeParser<T> ElementParser = elementParser;
@@ -65,7 +67,7 @@ public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : Ba
         return (false, TOpt.Make(res));
     }
 }
-/// <summary>Optimized single-row parser that uses a direct delegate.</summary>
+/// <summary>The <see cref="SingleTypeParser{TOpt, T}"/> fast path, for an element read by a plain row delegate.</summary>
 public sealed class FastSingleTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly Func<DbDataReader, T> Parser = parser;
     /// <inheritdoc/>

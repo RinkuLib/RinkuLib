@@ -76,10 +76,10 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
 }
 
 /// <summary>
-/// A parser that handle a dynaobject generation
+/// Builds a <see cref="DynaObject"/> from a result's columns, the parser behind a untyped dynamic read.
 /// </summary>
 public class DynaObjParser(Type[] Arguments, DbItemParser[] Parameters, Mapper Mapper) : DbItemParser {
-    /// <summary></summary>
+    /// <summary>The most typed columns a <see cref="DynaObject"/> can carry, beyond which extras stay untyped.</summary>
     public static int MaxArguments => DynaTypes.Length - 1;
     private readonly static Type[] DynaTypes = [
         typeof(DynaObject),

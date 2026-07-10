@@ -5,7 +5,9 @@ using System.Runtime.CompilerServices;
 namespace RinkuLib.TypeAccessing; 
 
 /// <summary>
-/// Class that parse a <typeparamref name="T"/> object from the db
+/// The base for parsers, adding the <c>Query</c> plumbing, open the connection if needed, execute, read, and
+/// clean up, on top of a <see cref="Parse"/> you supply. Derive from it to define a new result shape and get
+/// the execution methods for free.
 /// </summary>
 public abstract class BaseTypeParser<T> : ITypeParser<T> {
     bool ITypeParser<T>.InternalProtect => true;

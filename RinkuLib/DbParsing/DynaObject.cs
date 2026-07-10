@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
-/// <summary></summary>
+/// <summary>Serializes a <see cref="DynaObject"/> to JSON as a plain object of its columns. Reading back from JSON is not supported.</summary>
 public class DynaObjectConverter : JsonConverter<DynaObject> {
     /// <inheritdoc/>
     public override void Write(Utf8JsonWriter writer, DynaObject value, JsonSerializerOptions options) {
@@ -21,10 +21,12 @@ public class DynaObjectConverter : JsonConverter<DynaObject> {
     }
 }
 /// <summary>
-/// Represent an object that let dynamic acces to its members
+/// A row read without a type to map to, its columns reachable by name or index. Ask for a <c>DynaObject</c>
+/// when the shape is not known ahead of time, it reads like a dictionary of the result's columns and
+/// serializes to JSON as one. Values keep their column types, read them with <see cref="Get{T}(string)"/>.
 /// </summary>
 public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOnlyDictionary<string, int> {
-    /// <summary>Use to write json as extension</summary>
+    /// <summary>Writes the columns as JSON properties, used by the JSON converter.</summary>
     public abstract void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options);
     ///<inheritdoc/>
     internal DynaObject(Mapper mapper, int len) {
@@ -223,7 +225,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             yield return new(keys[i], val);
         }
     }
-    /// <summary></summary>
+    /// <summary>Stores <paramref name="value"/> into <paramref name="field"/> when its type matches, used while filling a typed slot.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     protected static bool TrySet<T, TField>(T value, ref TField? field) {
         if (value is TField v) {
@@ -297,7 +299,7 @@ internal class DynaObject<T0, T1, T2>(T0 val0, T1 val1, T2 val2, Mapper mapper) 
         JsonSerializer.Serialize(writer, val2, options);
     }
 }
-/// <summary></summary>
+/// <summary>A <see cref="DynaObject"/> with four typed columns.</summary>
 internal class DynaObject<T0, T1, T2, T3>(T0 val0, T1 val1, T2 val2, T3 val3, Mapper mapper) : DynaObject(mapper, 4) {
     private T0? val0 = val0; 
     private T1? val1 = val1; 

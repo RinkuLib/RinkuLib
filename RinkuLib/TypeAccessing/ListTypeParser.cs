@@ -2,7 +2,8 @@ using System.Data;
 using System.Data.Common;
 namespace RinkuLib.TypeAccessing;
 /// <summary>
-/// Parses a List of <typeparamref name="T"/> by repeatedly calling an element parser.
+/// The parser behind <see cref="List{T}"/>, it reads every row through an element parser and buffers them.
+/// No row gives an empty list.
 /// </summary>
 public sealed class ListTypeParser<T>(ITypeParser<T> elementParser) : BaseTypeParser<List<T>> {
     private readonly ITypeParser<T> ElementParser = elementParser;
@@ -31,7 +32,7 @@ public sealed class ListTypeParser<T>(ITypeParser<T> elementParser) : BaseTypePa
         return (false, list);
     }
 }
-/// <summary>Optimized List parser that uses a direct delegate.</summary>
+/// <summary>The <see cref="ListTypeParser{T}"/> fast path, for elements read by a plain row delegate.</summary>
 public sealed class FastListTypeParser<T>(CommandBehavior behavior, Func<DbDataReader, T> parser) : BaseTypeParser<List<T>> {
     private readonly Func<DbDataReader, T> Parser = parser;
     /// <inheritdoc/>

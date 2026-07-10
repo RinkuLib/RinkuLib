@@ -3,7 +3,9 @@ using System.Data.Common;
 using System.Runtime.CompilerServices;
 namespace RinkuLib.TypeAccessing;
 /// <summary>
-/// Parses an IEnumerable of <typeparamref name="T"/> lazily using yield return.
+/// The base for the streamed shape, <see cref="IEnumerable{T}"/>, it yields rows as you enumerate rather than
+/// buffering them, keeping memory flat on large results. It holds the reader open while you iterate and
+/// disposes it when enumeration ends.
 /// </summary>
 public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>, ILazyTypeParser<IEnumerable<T>> {
     bool ITypeParser<IEnumerable<T>>.InternalProtect => true;
@@ -184,7 +186,7 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
     }
 }
 /// <summary>
-/// Parses an IEnumerable of <typeparamref name="T"/> lazily using yield return.
+/// The parser behind <see cref="IEnumerable{T}"/>, streaming each row through an element parser as you enumerate.
 /// </summary>
 public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : BaseEnumerableTypeParser<T> {
     private readonly ITypeParser<T> ElementParser = elementParser;
@@ -194,7 +196,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : Base
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected override (bool CanContinue, T Result) ParseOne(DbDataReader reader) => ElementParser.Parse(reader);
 }
-/// <summary>Optimized Enumerable parser that uses a direct delegate.</summary>
+/// <summary>The <see cref="EnumerableTypeParser{T}"/> fast path, for elements read by a plain row delegate.</summary>
 public sealed class FastEnumerableTypeParser<T>(CommandBehavior behavior, Func<DbDataReader, T> parser) : BaseEnumerableTypeParser<T> {
     private readonly Func<DbDataReader, T> Parser = parser;
     /// <inheritdoc/>

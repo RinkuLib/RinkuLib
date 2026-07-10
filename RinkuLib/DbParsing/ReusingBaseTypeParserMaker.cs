@@ -5,9 +5,14 @@ using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.DbParsing;
-/// <summary></summary>
+/// <summary>Picks the parser type to build for a generic wrapper definition and its element type.</summary>
 public delegate Type GetParserType(Type def, Type itemType, ref object?[] ctorArgs);
-/// <summary></summary>
+/// <summary>
+/// A ready-made <see cref="ITypeParserMaker"/> for a shape that wraps a single element type, like
+/// <c>List&lt;T&gt;</c> or a shape of your own. It builds the element parser and hands it to your wrapper's
+/// constructor, so one registration maps the wrapper for any <c>T</c>. This is the easy road to a new result
+/// shape, implement <see cref="ITypeParserMaker"/> directly only when it is not a generic wrapper.
+/// </summary>
 public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetParserType GetParserType, GetParserType? GetParserTypeWhenSimple = null) : ITypeParserMaker {
     private readonly Type[] acceptedGenericDefinitions = acceptedGenericDefinitions;
     private readonly INullColHandler?[] elementNullability = GetElementNullability(acceptedGenericDefinitions);

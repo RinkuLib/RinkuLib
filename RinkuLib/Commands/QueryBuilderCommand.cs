@@ -6,21 +6,24 @@ using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Commands;
 /// <summary>
-/// A stateful builder that actively synchronizes query state with a live database command.
+/// Holds the values for a run and keeps a live <see cref="System.Data.IDbCommand"/> in step with them. Each
+/// time you set a variable the matching command parameter is added, updated, or dropped on the spot, so the
+/// command is always ready to run. Bind one command and a loop reuses it across a batch without rebuilding
+/// it each pass.
 /// </summary>
 /// <remarks>
-/// This struct manages the "active" state of a query. Unlike a standard builder, 
-/// every call to <see cref="Use(string, object)"/> or <see cref="Remove(string)"/> immediately updates 
-/// the underlying <see cref="Command"/> (e.g., adding, updating, or removing DB parameters).
+/// This is the live-command counterpart to <see cref="QueryBuilder"/>, which keeps its values in memory and
+/// builds a command only when it runs.
 /// </remarks>
 public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, TCommand Command) : IQueryBuilder where TCommand : IDbCommand {
-    /// <summary> The underlying command definition. </summary>
+    /// <summary> The command these values run against. </summary>
     public readonly QueryCommand QueryCommand = QueryCommand;
-    /// <summary> 
-    /// The current state map. Changes here are mirrored in the <see cref="Command"/>'s parameter collection.
+    /// <summary>
+    /// The values for this run, one slot per key. Setting a slot also updates the matching parameter on
+    /// <see cref="Command"/>.
     /// </summary>
     public readonly object?[] Variables = new object?[QueryCommand.Mapper.Count];
-    /// <summary> The live database command being synchronized. </summary>
+    /// <summary> The live command kept in step with the values. </summary>
     public readonly TCommand Command = Command;
     /// <inheritdoc/>
     public readonly void Reset() {
@@ -109,17 +112,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     /// <inheritdoc/>
     public readonly bool Use(char charVariable, string variable, object? value) 
         => Use(QueryCommand.Mapper.GetIndex(charVariable, variable), value);
-    /// <summary>
-    /// Activates a variable and binds its data to the live <see cref="Command"/>.
-    /// </summary>
-    /// <returns>True if the variable was activated and the command parameter was created or updated.</returns>
-    /// <remarks>
-    /// This method performs one of three actions on the <see cref="Command"/>:
-    /// <list type="bullet">
-    /// <item><b>SaveUse:</b> If the variable was inactive, it creates and adds a new parameter.</item>
-    /// <item><b>Update:</b> If the variable was already active, it updates the existing parameter value.</item>
-    /// </list>
-    /// </remarks>
+    /// <inheritdoc/>
     public readonly bool Use(string variable, object? value)
         => Use(QueryCommand.Mapper.GetIndex(variable), value);
     /// <inheritdoc/>

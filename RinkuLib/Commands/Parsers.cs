@@ -4,12 +4,14 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.Commands;
 /// <summary>
-/// A registry for schema metadata extraction.
+/// The columns <typeparamref name="T"/> maps to, worked out once from its shape and cached. A read-only view
+/// of how the mapper sees a type, the column names, their CLR types, and which are nullable, without touching
+/// a database.
 /// </summary>
-/// <typeparam name="T">The type to extract schema from.</typeparam>
+/// <typeparam name="T">The type whose columns to describe.</typeparam>
 public static class TypeSchema<T> {
     /// <summary>
-    /// The extracted schema for <typeparamref name="T"/>.
+    /// The columns of <typeparamref name="T"/>, in the order the mapper reads them.
     /// </summary>
     public static ColumnInfo[] Schema => _schema;
 
@@ -17,10 +19,11 @@ public static class TypeSchema<T> {
 }
 
 /// <summary>
-/// Schema metadata extraction utilities.
+/// Works out the columns a type maps to, its names, CLR types, and nullability, from a type, constructor, or
+/// method. This is the shape <see cref="TypeSchema{T}"/> caches, exposed for describing a type on your own terms.
 /// </summary>
 public static class SchemaExtractor {
-    /// <summary></summary>
+    /// <summary>The columns of <paramref name="type"/>, taken from its longest constructor when it has one, otherwise its public properties and fields.</summary>
     public static ColumnInfo[] FromType(Type type) {
         var nullabilityContext = new NullabilityInfoContext();
         var ctor = FindBestConstructor(type);
@@ -36,10 +39,10 @@ public static class SchemaExtractor {
         }
         return [.. columns];
     }
-    /// <summary></summary>
+    /// <summary>The columns for a set of parameters, one per parameter, taking its bound name and nullability.</summary>
     public static ColumnInfo[] FromParameters(ParameterInfo[] parameters)
         => FromParameters(parameters, new NullabilityInfoContext());
-    /// <summary></summary>
+    /// <inheritdoc cref="FromParameters(ParameterInfo[])"/>
     public static ColumnInfo[] FromParameters(ParameterInfo[] parameters, NullabilityInfoContext ctx) {
         var columns = new List<ColumnInfo>(parameters.Length);
 
@@ -54,7 +57,6 @@ public static class SchemaExtractor {
 
         return [.. columns];
     }
-    /// <summary></summary>
     private static void Add(List<ColumnInfo> columns, string name, Type type, NullabilityInfo nullInfo) {
         Type? underlying = Nullable.GetUnderlyingType(type);
         bool isNullable = underlying != null || nullInfo.WriteState == NullabilityState.Nullable;
@@ -76,10 +78,10 @@ public static class SchemaExtractor {
 
         return best;
     }
-    /// <summary></summary>
+    /// <summary>The columns for a method's parameters, one per parameter.</summary>
     public static ColumnInfo[] FromMethod(MethodBase method)
         => FromParameters(method.GetParameters());
-    /// <summary></summary>
+    /// <summary>The columns for a constructor's parameters, one per parameter.</summary>
     public static ColumnInfo[] FromConstructor(ConstructorInfo ctor)
         => FromParameters(ctor.GetParameters());
 }

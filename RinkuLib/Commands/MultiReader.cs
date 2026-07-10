@@ -12,7 +12,10 @@ using RinkuLib.TypeAccessing;
 namespace RinkuLib.Commands;
 
 /// <summary>
-/// A <see cref="DbDataReader"/> that keep track of the current result set and its associated possible mapping
+/// Reads a command's several result sets in turn, mapping each to a type you pick as you go. Call
+/// <see cref="Query{T}"/> once per set to take the whole set and move on, or <see cref="Get{T}"/> and
+/// <see cref="GetStep{T}"/> to walk a set row by row while keeping hold of the reader. It is itself a
+/// <see cref="DbDataReader"/>, so the raw reader methods stay available underneath.
 /// </summary>
 public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader reader, IDbCommand cmd, bool disposeCmd, bool wasClosed) : DbDataReader, IDisposable {
     private readonly bool[] usage = usage;
