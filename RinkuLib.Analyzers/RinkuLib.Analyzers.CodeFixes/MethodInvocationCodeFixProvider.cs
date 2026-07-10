@@ -38,16 +38,20 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
             ? [single]
             : info.CandidateSymbols.OfType<IMethodSymbol>().ToImmutableArray();
 
+        var actions = new List<CodeAction>();
         foreach (var method in methods) {
             var title = $"Invoke {method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}";
-
-            context.RegisterCodeFix(
-                CodeAction.Create(
-                    title,
-                    ct => ApplyFixForMethodAsync(context.Document, expression, method, ct),
-                    equivalenceKey: title),
-                diagnostic);
+            actions.Add(CodeAction.Create(
+                title,
+                ct => ApplyFixForMethodAsync(context.Document, expression, method, ct),
+                equivalenceKey: title));
         }
+        if (actions.Count == 0)
+            return;
+
+        context.RegisterCodeFix(
+            CodeAction.Create("Generate invocation", [.. actions], isInlinable: false),
+            diagnostic);
     }
     private static async Task<Document> ApplyFixForMethodAsync(Document document, ExpressionSyntax expression, IMethodSymbol method, CancellationToken ct) {
         var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
@@ -75,7 +79,7 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
 
         foreach (var parameter in method.Parameters) {
             var match =
-                TryDirectMatch(parameter, available)
+                TryDirectMatch(parameter, available, callerIsStatic)
                 ?? TryCallerMember(parameter, callerType, callerIsStatic)
                 ?? TryLocalObjectMember(parameter, available);
 
@@ -108,13 +112,6 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
         var newRoot = root.ReplaceNode(caller, updatedCaller.WithAdditionalAnnotations(Formatter.Annotation));
         return document.WithSyntaxRoot(newRoot);
     }
-    private static IMethodSymbol? ResolveMethod(SemanticModel model, ExpressionSyntax expression, CancellationToken ct) {
-        var info = model.GetSymbolInfo(expression, ct);
-
-        return info.Symbol as IMethodSymbol
-            ?? info.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
-    }
-
     private static SyntaxNode? FindCaller(SyntaxNode node)
         => node.Ancestors().FirstOrDefault(n =>
             n is MethodDeclarationSyntax
@@ -141,8 +138,10 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
             .ToList();
     }
 
-    private static ExpressionSyntax? TryDirectMatch(IParameterSymbol parameter, List<ISymbol> available) {
+    private static ExpressionSyntax? TryDirectMatch(IParameterSymbol parameter, List<ISymbol> available, bool callerIsStatic) {
         foreach (var s in available) {
+            if (callerIsStatic && s is IFieldSymbol or IPropertySymbol && !s.IsStatic)
+                continue;
             if (NameMatches(s, parameter) && TypeMatches(s, parameter)) {
                 return SyntaxFactory.IdentifierName(s.Name);
             }
@@ -182,6 +181,9 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
 
             foreach (var member in type.GetMembers().OfType<ISymbol>()) {
                 if (member is not (IFieldSymbol or IPropertySymbol))
+                    continue;
+
+                if (member.IsStatic || member.DeclaredAccessibility != Accessibility.Public)
                     continue;
 
                 if (!NameMatches(member, parameter) || !TypeMatches(member, parameter))

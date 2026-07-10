@@ -38,7 +38,8 @@ public sealed class MethodInvocationCompletionAnalyzer : DiagnosticAnalyzer {
 
         if (!IsRelevantExpression(expression)
          || !IsInsideMethodLikeBody(expression)
-         || IsAlreadyInvoked(expression))
+         || IsAlreadyInvoked(expression)
+         || IsInsideNameOf(expression))
             return;
 
         IMethodSymbol? method = ResolveMethodSymbol(context, expression);
@@ -104,6 +105,16 @@ public sealed class MethodInvocationCompletionAnalyzer : DiagnosticAnalyzer {
             return varDecl.Type.IsVar;
         }
 
+        return false;
+    }
+
+    private static bool IsInsideNameOf(ExpressionSyntax expression) {
+        for (SyntaxNode? current = expression.Parent; current != null; current = current.Parent) {
+            if (current is InvocationExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.ValueText: "nameof" } })
+                return true;
+            if (current is StatementSyntax)
+                break;
+        }
         return false;
     }
 

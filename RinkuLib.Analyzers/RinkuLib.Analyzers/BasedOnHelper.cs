@@ -9,23 +9,8 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace RinkuLib.Analyzers; 
 public static class BasedOnHelper {
     public static bool HasTag(MemberDeclarationSyntax declaration, string tagName) {
-        foreach (var trivia in declaration.GetLeadingTrivia()) {
-            if (trivia.GetStructure() is not DocumentationCommentTriviaSyntax doc)
-                continue;
-
-            foreach (var node in doc.Content) {
-                if (node is XmlEmptyElementSyntax empty &&
-                    empty.Name.LocalName.ValueText == tagName)
-                    return true;
-
-                if (node is XmlElementSyntax element &&
-                    element.StartTag.Name.LocalName.ValueText == tagName)
-                    return true;
-            }
-
-            return false;
-        }
-
+        foreach (var _ in GetTags(declaration, tagName))
+            return true;
         return false;
     }
     public static IEnumerable<XmlNodeSyntax> GetTags(ISymbol symbol, string tagName, CancellationToken cancellationToken) {
@@ -38,22 +23,16 @@ public static class BasedOnHelper {
     }
 
     public static IEnumerable<XmlNodeSyntax> GetTags(MemberDeclarationSyntax declaration, string tagName) {
-        DocumentationCommentTriviaSyntax? documentation = null;
         foreach (var trivia in declaration.GetLeadingTrivia()) {
-            if (trivia.GetStructure() is DocumentationCommentTriviaSyntax doc) {
-                documentation = doc;
-                break;
+            if (trivia.GetStructure() is not DocumentationCommentTriviaSyntax doc)
+                continue;
+
+            foreach (var node in doc.Content) {
+                if (node is XmlEmptyElementSyntax empty && empty.Name.LocalName.ValueText == tagName)
+                    yield return empty;
+                else if (node is XmlElementSyntax element && element.StartTag.Name.LocalName.ValueText == tagName)
+                    yield return element;
             }
-        }
-
-        if (documentation == null)
-            yield break;
-
-        foreach (var node in documentation.Content) {
-            if (node is XmlEmptyElementSyntax empty && empty.Name.LocalName.ValueText == tagName)
-                yield return empty;
-            else if (node is XmlElementSyntax element && element.StartTag.Name.LocalName.ValueText == tagName)
-                yield return element;
         }
     }
     public static IEnumerable<(ISymbol, DateTimeOffset?)> GetBasedOnSymbols(INamedTypeSymbol type, Compilation compilation, CancellationToken cancellationToken) {

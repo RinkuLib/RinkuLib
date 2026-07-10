@@ -22,6 +22,7 @@ public class AddBasedOnAnalyzer : DiagnosticAnalyzer {
         context.RegisterSyntaxNodeAction(AnalyzeNode,
             SyntaxKind.ClassDeclaration,
             SyntaxKind.RecordDeclaration,
+            SyntaxKind.RecordStructDeclaration,
             SyntaxKind.StructDeclaration);
     }
 

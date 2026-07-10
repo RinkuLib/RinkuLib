@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
 using System.Linq;
@@ -46,26 +47,26 @@ public sealed class GenerateCtorCodeFixProvider : CodeFixProvider {
 
         var basedOnSymbols = BasedOnHelper.GetBasedOnSymbols(targetType, semanticModel.Compilation, ct);
 
-        foreach (var (symbol, dt) in basedOnSymbols)
-            foreach (var candidate in GetCandidates(symbol))
-                RegisterCandidateFix(context, document, declaration, candidate);
-    }
+        var actions = new List<CodeAction>();
+        foreach (var (symbol, _) in basedOnSymbols) {
+            foreach (var candidate in GetCandidates(symbol)) {
+                var display = candidate.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                actions.Add(CodeAction.Create(
+                    title: $"From {display}, ctor only",
+                    createChangedDocument: c => GenerateAsync(document, declaration, candidate, false, c),
+                    equivalenceKey: $"{display}-CtorOnly"));
+                actions.Add(CodeAction.Create(
+                    title: $"From {display}, ctor and properties",
+                    createChangedDocument: c => GenerateAsync(document, declaration, candidate, true, c),
+                    equivalenceKey: $"{display}-CtorProps"));
+            }
+        }
+        if (actions.Count == 0)
+            return;
 
-    private static void RegisterCandidateFix(CodeFixContext context, Document document, TypeDeclarationSyntax declaration, IMethodSymbol candidate) {
-        var title = $"Generate constructor from {candidate.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}";
-
-        var ctOnly = CodeAction.Create(
-            title: "Ctor only",
-            createChangedDocument: ct => GenerateAsync(document, declaration, candidate, false, ct),
-            equivalenceKey: $"{title}-CtorOnly");
-
-        var withProps = CodeAction.Create(
-            title: "Ctor and properties",
-            createChangedDocument: ct => GenerateAsync(document, declaration, candidate, true, ct),
-            equivalenceKey: $"{title}-CtorProps");
-
-        var group = CodeAction.Create(title, [ctOnly, withProps], isInlinable: false);
-        context.RegisterCodeFix(group, context.Diagnostics.First());
+        context.RegisterCodeFix(
+            CodeAction.Create("Generate constructor from BasedOn", [.. actions], isInlinable: false),
+            diagnostic);
     }
 
     private static IEnumerable<IMethodSymbol> GetCandidates(ISymbol symbol) {
@@ -98,14 +99,26 @@ public sealed class GenerateCtorCodeFixProvider : CodeFixProvider {
             if (attributes.Length > 0) {
                 var attributeLists = new List<AttributeListSyntax>();
                 foreach (var attr in attributes) {
-                    var name = attr.AttributeClass!.Name.Replace("Attribute", "");
+                    // an unresolved attribute has no class (or an error one); skip it instead of crashing the fix
+                    if (attr.AttributeClass is not { TypeKind: not TypeKind.Error } attrClass)
+                        continue;
+                    var name = attrClass.Name;
+                    if (name.EndsWith("Attribute", StringComparison.Ordinal))
+                        name = name.Substring(0, name.Length - "Attribute".Length);
 
                     AttributeArgumentListSyntax? argList = null;
                     if (attr.ConstructorArguments.Length > 0) {
                         var args = new List<AttributeArgumentSyntax>();
+                        var faithful = true;
                         foreach (var arg in attr.ConstructorArguments) {
+                            if (arg.Kind == TypedConstantKind.Error) {
+                                faithful = false;
+                                break;
+                            }
                             args.Add(SyntaxFactory.AttributeArgument(SyntaxFactory.ParseExpression(arg.ToCSharpString())));
                         }
+                        if (!faithful)
+                            continue;
                         argList = SyntaxFactory.AttributeArgumentList(SyntaxFactory.SeparatedList(args));
                     }
 
@@ -113,7 +126,8 @@ public sealed class GenerateCtorCodeFixProvider : CodeFixProvider {
                         SyntaxFactory.SingletonSeparatedList(
                             SyntaxFactory.Attribute(SyntaxFactory.ParseName(name), argList))));
                 }
-                parameter = parameter.WithAttributeLists(SyntaxFactory.List(attributeLists));
+                if (attributeLists.Count > 0)
+                    parameter = parameter.WithAttributeLists(SyntaxFactory.List(attributeLists));
             }
             parameterSyntaxes.Add(parameter);
         }

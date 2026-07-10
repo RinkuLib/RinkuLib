@@ -1,4 +1,3 @@
-﻿using System;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -20,14 +19,10 @@ namespace RinkuLib.Analyzers {
             context.RegisterSymbolAction(AnalyzeType, SymbolKind.NamedType);
         }
         private static void AnalyzeType(SymbolAnalysisContext context) {
-            if (context.Symbol is not INamedTypeSymbol type)
+            if (context.Symbol is not INamedTypeSymbol type || type.Locations.Length == 0)
                 return;
-            var now = DateTimeOffset.UtcNow;
-            foreach (var (symbol, lastUpdate) in BasedOnHelper.GetBasedOnSymbols(type, context.Compilation, context.CancellationToken)) {
-                if (lastUpdate != null && (now - lastUpdate.Value).Duration() <= TimeSpan.FromMinutes(1))
-                    continue;
+            foreach (var (symbol, _) in BasedOnHelper.GetBasedOnSymbols(type, context.Compilation, context.CancellationToken))
                 context.ReportDiagnostic(Diagnostic.Create(Rule, type.Locations[0], symbol.Name));
-            }
         }
     }
 }
