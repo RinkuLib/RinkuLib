@@ -6,30 +6,32 @@ using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Queries;
 /// <summary>
-/// Represent an cached item used for parsing a <see cref="DbDataReader"/>
+/// One learned row parser, kept with the result shape it was learned for so a later run of the same shape
+/// reuses it instead of inspecting the columns again.
 /// </summary>
 public struct ParsingCacheItem(ITypeParser Parser, int[] CondStates, ColumnInfo[] Schema, int ResultSetIndex) {
     /// <summary>
-    /// The actual parser func
+    /// The parser that reads a row into the target type.
     /// </summary>
     public ITypeParser Parser  = Parser;
     /// <summary>
-    /// The indexes at which the condition muts be false
+    /// The conditional key states this parser is valid for, so it is only reused for a matching run.
     /// </summary>
     public int[] CondStates = CondStates;
     /// <summary>
-    /// The schema for which the <see cref="Parser"/> is for
+    /// The columns the parser was built for.
     /// </summary>
     public ColumnInfo[] Schema = Schema;
     /// <summary>
-    /// The index of the corresponding result set, (non returning set (FieldCount == 0) are not taken into consideration)
+    /// Which result set this parser belongs to, counting only sets that return columns.
     /// </summary>
     public int ResultSetIndex = ResultSetIndex;
 }
-/// <summary></summary>
+/// <summary>Adds a learned parser to a cache, merging it with a matching entry when one is already there.</summary>
 public static class ParsingCacheExtensions {
     /// <summary>
-    /// Update the parsing cache for a given schema
+    /// Returns the cache with the parser for this result's columns folded in, reusing and widening a matching
+    /// entry when one exists, otherwise adding a new one.
     /// </summary>
     public static ParsingCacheItem[] GetUpdatedCache<T>(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ColumnInfo[] schema, ITypeParser<T> cache, int resultSetIndex = 0) {
         for (var i = 0; i < parsingCache.Length; i++) {

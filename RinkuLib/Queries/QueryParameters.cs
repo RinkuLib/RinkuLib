@@ -1,25 +1,20 @@
 ﻿namespace RinkuLib.Queries;
 
 /// <summary>
-/// A registry that manages the metadata and caching state for all variables and special handlers 
-/// associated with a query.
+/// How a command binds each of its parameters, and how much it has learned so far. It holds the per-parameter
+/// binding strategy and answers, for a given run, whether any parameter still needs its provider metadata
+/// learned.
 /// </summary>
-/// <remarks>
-/// This class serves as the central state provider for the query's parameter lifecycle. It tracks 
-/// which parameters have resolved their database-specific metadata and provides an efficient 
-/// mechanism to determine if the query requires further metadata resolution based on the 
-/// current execution's variables.
-/// </remarks>
 public sealed class QueryParameters : IDbParamCache {
     internal DbParamInfo[] _variablesInfo;
-    /// <summary>Direct acces to the cache of the parameters</summary>
+    /// <summary>The binding strategy learned for each plain parameter.</summary>
     public ReadOnlySpan<DbParamInfo> VariablesInfo => _variablesInfo;
     internal SpecialHandler[] _specialHandlers;
-    /// <summary>Direct acces to the cache of the special handlers</summary>
+    /// <summary>The special handlers, the ones that expand into several parameters.</summary>
     public ReadOnlySpan<SpecialHandler> SpecialHandlers => _specialHandlers;
     internal int NbNonCached;
     internal int[] _nonCachedIndexes;
-    /// <summary>Create a new instance of <see cref="QueryParameters"/></summary>
+    /// <summary>Starts with every parameter unsettled, its binding inferred until a run teaches it more.</summary>
     public QueryParameters(int NbNormalVariables, SpecialHandler[] specialHandlers) {
         _variablesInfo = new DbParamInfo[NbNormalVariables];
         for (int i = 0; i < NbNormalVariables; i++)
@@ -86,8 +81,8 @@ public sealed class QueryParameters : IDbParamCache {
         NbNonCached = total;
     }
     /// <summary>
-    /// Evaluates the provided variables to determine if any non-cached parameter 
-    /// currently possesses data that requires metadata resolution.
+    /// Whether this run uses a parameter whose provider metadata is not settled yet, so the command still has
+    /// something to learn on this pass.
     /// </summary>
     public bool NeedToCache(object?[] variables) {
         if (NbNonCached == 0)
@@ -98,8 +93,8 @@ public sealed class QueryParameters : IDbParamCache {
         return false;
     }
     /// <summary>
-    /// Evaluates the provided variables to determine if any non-cached parameter 
-    /// currently possesses data that requires metadata resolution.
+    /// Whether this run uses a parameter whose provider metadata is not settled yet, so the command still has
+    /// something to learn on this pass.
     /// </summary>
     public bool NeedToCache(Span<bool> usageMap) {
         if (NbNonCached == 0)

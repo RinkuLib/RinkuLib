@@ -45,7 +45,7 @@ public abstract class CopyFieldAttribute : Attribute
     /// <param name="clone">The local variable representing the new instance.</param>
     public abstract void Emit(FieldInfo field, ILGenerator il, LocalBuilder clone);
 }
-/// <summary></summary>
+/// <summary>The entry point for copying, <c>source.Copy()</c>, which clones by the strategy registered for the value's actual type.</summary>
 public static class CopyExtensions {
     private static readonly ConcurrentDictionary<Type, Func<object, object?>> Dispatchers = new();
     /// <summary>

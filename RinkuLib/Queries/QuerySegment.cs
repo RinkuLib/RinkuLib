@@ -1,6 +1,7 @@
 ﻿namespace RinkuLib.Queries;
 /// <summary>
-/// A data-only descriptor for a fragment of the query string.
+/// One piece of a compiled template, either a run of literal text or a handler spot. A render walks these in
+/// order to build the SQL.
 /// </summary>
 /// <param name="Start">The absolute start position within the normalized <c>Query</c> string.</param>
 /// <param name="Length">The total length of the segment (including potential excess).</param>
@@ -23,10 +24,10 @@
 /// </param>
 public record struct QuerySegment(int Start, int Length, int ExcessOrInd, bool IsSection, IQuerySegmentHandler? Handler);
 /// <summary>
-/// A data-only descriptor defining logical gates and forward-jumps for query assembly.
+/// One optional part of a compiled template, tying a key to the run of segments it switches on or off.
 /// </summary>
 /// <param name="CondIndex">
-/// The index in the external state array (defined by the <c>Mapper</c> contract) used to 
+/// The index in the external state array (defined by the <c>Mapper</c> contract) used to
 /// determine if this logical branch should be included.
 /// </param>
 /// <param name="SegmentInd">The starting index in the <see cref="QueryFactory.Segments"/> array controlled by this condition.</param>

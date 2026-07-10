@@ -6,22 +6,11 @@ using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.DbParsing;
 /// <summary>
-/// A metadata registry representing a specific <see cref="Type"/>. 
-/// It stores the construction paths and members required to transform a schema into an object.
+/// How a type is read, its constructors and factory methods to try and its members to fill, the recipe the
+/// object parser follows. Register or refine one to change how a type maps, add an alternative name, pin a
+/// construction path, or adjust null handling, once and for the whole app. Registration is by exact type, and
+/// an open generic definition covers every closed form that has no entry of its own.
 /// </summary>
-/// <remarks>
-/// <para><b>I. Instance-Level Configuration:</b></para>
-/// This class provides an API to refine mapping behavior, such as adding alternative names 
-/// for matching or configuring null-handling recovery. It is also responsible for executing 
-/// the resolution logic that produces a parser.
-/// 
-/// <para><b>II. Static Registry &amp; Generic Fallback:</b></para>
-/// Instances are managed through a global cache to ensure metadata consistency. 
-/// The registry logic supports <b>Specialization</b>: it can store metadata for a 
-/// specific closed generic type, but will fall back to the <b>Open Generic Type Definition</b> 
-/// if a specific version isn't registered. All lookups automatically unwrap <see cref="MaybeNull{T}"/>.
-/// 
-/// </remarks>
 public abstract class TypeParsingInfo {
     internal static readonly ParamInfo NullableTransientParamInfo = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo NotNullTransientParamInfo = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
@@ -187,10 +176,10 @@ public abstract class TypeParsingInfo {
     /// </returns>
     public abstract DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
 }
-/// <summary></summary>
+/// <summary>Reshapes a registered type's mapping, its alternative names, null rules, construction paths, and members.</summary>
 public static class TypeParsingInfoHelper {
     /// <summary>
-    /// Maps a property name to a specific database column alias.
+    /// Adjusts how the type's members are matched to column names, when the info supports it.
     /// </summary>
     /// <param name="info"></param>
     /// <param name="modifier">A delegate that will manage both matching with name comparer and 
@@ -319,10 +308,10 @@ public static class TypeParsingInfoHelper {
         return true;
     }
 }
-/// <summary></summary>
+/// <summary>A type mapping that lets its column-name matching be reshaped.</summary>
 public interface ICanUpdateAltNames {
     /// <summary>
-    /// Maps a property name to a specific database column alias.
+    /// Adjusts how each slot is matched to column names.
     /// </summary>
     /// <param name="modifier">A delegate that will manage both matching with name comparer and 
     /// updating it (returning null wount change the current comparer)</param>
@@ -341,7 +330,7 @@ public interface ICanUpdateNullColHandlers {
     /// <see cref="INullColHandler"/> (returning null wount change the current handler)</param>
     public void UpdateNullColHandler(Func<ParamInfo, INullColHandler?> modifier);
 }
-/// <summary></summary>
+/// <summary>A type mapping that can list its slots.</summary>
 public interface ICanProvideParamInfos {
     /// <summary>
     /// Enumerates every slot of the type, constructor parameters and members alike.
@@ -364,14 +353,14 @@ public interface ICanProvideMembers {
     /// <summary>The public fields and properties filled after instantiation.</summary>
     public ReadOnlySpan<MemberParser> AvailableMembers { get; set; }
 }
-/// <summary></summary>
+/// <summary>A type mapping that lets a post-construction member be added by hand.</summary>
 public interface ICanAddMember {
     /// <summary>
     /// Manually add a member to fill after construction, prioritized as it is provided.
     /// </summary>
     public void AddMember(MemberParser member);
 }
-/// <summary></summary>
+/// <summary>A type mapping that lets a construction path be added by hand.</summary>
 public interface ICanAddPossibleConstructor {
     /// <summary>
     /// Mannualy add a possible construction path that will be prioritized as much as possible

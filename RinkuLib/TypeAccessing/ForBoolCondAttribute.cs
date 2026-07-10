@@ -5,11 +5,11 @@ using RinkuLib.Tools;
 namespace RinkuLib.TypeAccessing;
 
 /// <summary>
-/// Identifies a member as a boolean condition for SQL templates rather than a variable.
+/// On a parameter object, marks a <see cref="bool"/> member as a condition toggle rather than a bound value.
+/// The member's name switches a conditional part of the query on when it is <see langword="true"/> and off
+/// when it is <see langword="false"/>, instead of becoming a <c>@name</c> parameter. Valid only on
+/// <see cref="bool"/> fields or properties.
 /// </summary>
-/// <remarks>
-/// <b>Note:</b> Only valid on <see cref="bool"/> fields or properties. 
-/// </remarks>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class ForBoolCondAttribute : AccessorEmiterHandler {
     /// <inheritdoc/>

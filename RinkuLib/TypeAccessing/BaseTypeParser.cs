@@ -5,24 +5,24 @@ using System.Runtime.CompilerServices;
 namespace RinkuLib.TypeAccessing; 
 
 /// <summary>
-/// Class that parse a <typeparamref name="T"/> object from the db
+/// The base for parsers, adding the <c>Query</c> plumbing, open the connection if needed, execute, read, and
+/// clean up, on top of a <see cref="Parse"/> you supply. Derive from it to define a new result shape and get
+/// the execution methods for free.
 /// </summary>
 public abstract class BaseTypeParser<T> : ITypeParser<T> {
     bool ITypeParser<T>.InternalProtect => true;
     /// <inheritdoc/>
     public abstract CommandBehavior Behavior { get; }
-    /// <inheritdoc/>
-    public abstract bool SupportsParsingAsync { get; }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public abstract T Default();
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public abstract T Parse(DbDataReader reader);
+    public abstract (bool CanContinue, T Result) Parse(DbDataReader reader);
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public abstract Task<T> ParseAsync(DbDataReader reader, CancellationToken ct = default);
+    public abstract ValueTask<(bool CanContinue, T Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default);
 
     /// <inheritdoc/>
     public T Query(DbCommand command, bool disposeCommand = false) {
@@ -38,7 +38,9 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
             using var reader = command.ExecuteReader(behavior);
             if (!reader.Read())
                 return Default();
-            return Parse(reader);
+            if (this is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return Parse(reader).Result;
         }
         finally {
             if (wasClosed)
@@ -64,7 +66,9 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
             using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
             if (!reader.Read())
                 return Default();
-            return Parse(reader);
+            if (this is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return Parse(reader).Result;
         }
         finally {
             if (disposeCommand) {
@@ -89,7 +93,9 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
             using var reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return Default();
-            return await ParseAsync(reader, ct).ConfigureAwait(false);
+            if (this is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return (await ParseAsync(reader, ct).ConfigureAwait(false)).Result;
         }
         finally {
             if (disposeCommand) {
@@ -123,7 +129,9 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
             cache.UpdateCache(command);
             if (!reader.Read())
                 return Default();
-            return Parse(reader);
+            if (this is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return Parse(reader).Result;
         }
         finally {
             if (wasClosed)
@@ -150,7 +158,9 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
             cache.UpdateCache(command);
             if (!reader.Read())
                 return Default();
-            return Parse(reader);
+            if (this is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return Parse(reader).Result;
         }
         finally {
             if (disposeCommand) {
@@ -176,7 +186,9 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
             cache.UpdateCache(command);
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return Default();
-            return await ParseAsync(reader, ct).ConfigureAwait(false);
+            if (this is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return (await ParseAsync(reader, ct).ConfigureAwait(false)).Result;
         }
         finally {
             if (disposeCommand) {

@@ -22,7 +22,7 @@ The mapping runs from a single scalar to a nested object graph. Conditional SQL,
 dotnet add package Rinku
 ```
 
-Targets **.NET 8** and **.NET 10**. The compile-time analyzers ship inside the package, no separate install. See [installation](docs/articles/getting-started/installation.md).
+Targets **.NET 8** and **.NET 10**. The compile-time analyzers ship inside the package, no separate install. See [installation](https://rinkulib.github.io/RinkuLib/articles/getting-started/installation.html).
 
 ## Pick the result shape
 
@@ -33,7 +33,7 @@ Album one                 = GetAlbums.Query<Album>(cnn, new { artistId = 1 });  
 IEnumerable<Album> stream = GetAlbums.Query<IEnumerable<Album>>(cnn, new { artistId = 1 }); // streamed
 ```
 
-For a single value, `ExecuteScalar<T>` returns it. See [running queries](docs/articles/running-queries/index.md).
+For a single value, `ExecuteScalar<T>` returns it. See [running queries](https://rinkulib.github.io/RinkuLib/articles/running-queries/index.html).
 
 ## Map onto nested types
 
@@ -64,7 +64,7 @@ List<Album> albums = Search.Query<List<Album>>(cnn, new { artistId = 1 });
 // SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ```
 
-You define the template up front, so your code only decides what's used and never concatenates SQL, the validity of the statement holds wherever a value lands. Mapping works the same way. A configurable negotiation maps a flat database row onto the multi-level shape of your type. A [builder](docs/articles/running-queries/parameters.md) is available when you'd rather toggle conditions in C#.
+You define the template up front, so your code only decides what's used and never concatenates SQL, the validity of the statement holds wherever a value lands. Mapping works the same way. A configurable negotiation maps the flat result onto the shape of your type, and the type decides how the columns nest and how many rows it takes. A [builder](https://rinkulib.github.io/RinkuLib/articles/running-queries/parameters.html) is available when you'd rather toggle conditions in C#.
 
 ## Query from the SQL string
 
@@ -77,14 +77,14 @@ List<Album> albums = cnn.Query<List<Album>>(
 
 ## Documentation
 
-Full docs at <https://rinkulib.github.io/RinkuLib/> (or browse [`docs/`](docs/index.md)).
+Full docs at <https://rinkulib.github.io/RinkuLib/> (or browse [`docs/`](docs/index.md) in the repo).
 
-- [Quick start](docs/articles/getting-started/quick-start.md)
-- [Running queries, by example](docs/articles/running-queries/index.md)
-- [Mapping engine](docs/articles/mapping/index.md). Negotiation, nullability, tuples, `DynaObject`
-- [Conditional SQL](docs/articles/conditional-sql/index.md). One query that adapts to its input
-- [Code generation](docs/articles/codegen/index.md) and [tracking](docs/articles/tracking/index.md)
-- [Coming from Dapper](docs/articles/reference/dapper.md) and the [benchmarks](docs/articles/reference/performance.md)
+- [Quick start](https://rinkulib.github.io/RinkuLib/articles/getting-started/quick-start.html)
+- [Running queries, by example](https://rinkulib.github.io/RinkuLib/articles/running-queries/index.html)
+- [Mapping engine](https://rinkulib.github.io/RinkuLib/articles/mapping/index.html). Negotiation, nullability, tuples, `DynaObject`
+- [Conditional SQL](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/index.html). One query that adapts to its input
+- [Code generation](https://rinkulib.github.io/RinkuLib/articles/codegen/index.html) and [tracking](https://rinkulib.github.io/RinkuLib/articles/tracking/index.html)
+- [Coming from Dapper](https://rinkulib.github.io/RinkuLib/articles/reference/dapper.html) and the [benchmarks](https://rinkulib.github.io/RinkuLib/articles/reference/performance.html)
 
 ## Performance
 
@@ -99,7 +99,7 @@ Measured with BenchmarkDotNet against a real database (lower is better, ratios r
 | Dapper_Execute | 1,476.8 us | 1.00 | 2.33 KB | 1.00 |
 | Rinku_Execute | 1,443.6 us | 0.98 | 1.76 KB | 0.76 |
 
-The full 15-group comparison and how to reproduce it are in [the performance reference](docs/articles/reference/performance.md). RinkuLib began as a Dapper extension. Building the whole `DbCommand` efficiently is what led to adding the mapping side too.
+The full 15-group comparison and how to reproduce it are in [the performance reference](https://rinkulib.github.io/RinkuLib/articles/reference/performance.html). RinkuLib began as a Dapper extension. Building the whole `DbCommand` efficiently is what led to adding the mapping side too.
 
 ## License
 

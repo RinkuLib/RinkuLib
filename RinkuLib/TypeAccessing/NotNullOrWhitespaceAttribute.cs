@@ -5,11 +5,10 @@ using RinkuLib.Tools;
 namespace RinkuLib.TypeAccessing;
 
 /// <summary>
-/// Confirm that the string value is not null or whitespace.
+/// On a parameter object, treats a <see cref="string"/> member as present only when it is not null or
+/// whitespace. A blank value then counts as absent, so its optional clause drops instead of filtering on an
+/// empty string. Valid only on <see cref="string"/> fields or properties.
 /// </summary>
-/// <remarks>
-/// <b>Note:</b> Only valid on <see cref="string"/> fields or properties. 
-/// </remarks>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class NotNullOrWhitespaceAttribute : AccessorEmiterHandler {
     /// <inheritdoc/>
@@ -26,7 +25,8 @@ public sealed class NotNullOrWhitespaceAttribute : AccessorEmiterHandler {
     }
 }
 /// <summary>
-/// Confirm that the value is not the default value of its type
+/// On a parameter object, treats a member as present only when it is not its type's default (zero, or
+/// <see langword="null"/>). A default value then counts as absent and its optional clause drops.
 /// </summary>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class NotDefaultAttribute : AccessorEmiterHandler {

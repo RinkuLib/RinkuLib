@@ -5,37 +5,19 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
 /// <summary>
-/// Defines a contract for handlers that participate in both the database command configuration 
-/// and the SQL string generation phases.
+/// A marker that both binds database parameters and writes SQL, for a variable that expands into several
+/// parameters, such as a list spread into an <c>IN</c> clause. Subclass it and register a letter in
+/// <see cref="SpecialHandlerGetter"/> to add your own.
 /// </summary>
 /// <remarks>
-/// <para><b>Implementation Requirements:</b></para>
-/// <para>This class facilitates a <b>Sequential Dual-Phase Lifecycle</b>. Developers must implement 
-/// logic with the strict understanding that Command Synchronization (parameter binding) 
-/// occurs before Query Assembly (string generation).</para>
-/// 
-/// <para><b>Sequential Lifecycle:</b></para>
-/// <list type="number">
-/// <item>
-/// <description>
-/// <b>Phase 1: Command Synchronization.</b> Methods such as <see cref="Use(IDbCommand, object)"/>, <see cref="SaveUse"/>, 
-/// or <see cref="Update"/> are invoked to synchronize the <see cref="IDbCommand"/> state. 
-/// The architecture <b>specifically allows for destructive value transformation</b> during this phase. 
-/// For example, an implementation may replace a raw <c>IEnumerable</c> with an <c>int</c> count 
-/// in the state array.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// <b>Phase 2: Query Assembly.</b> The <see cref="Handle"/> method is subsequently invoked. 
-/// It is designed to receive the <b>transformed value</b> produced in Phase 1, allowing for 
-/// optimized string rendering without re-processing the original input data.
-/// </description>
-/// </item>
-/// </list>
+/// It works in two passes each run, and an implementation must respect the order. First the binding pass,
+/// <see cref="Use(IDbCommand, object)"/>, <see cref="SaveUse"/>, or <see cref="Update"/>, sets the command's
+/// parameters and may rewrite the value in place (a list, for instance, becomes its element count). Then the
+/// render pass, <see cref="Handle"/>, writes the SQL from that rewritten value, so it never re-reads the
+/// original input.
 /// </remarks>
 public abstract class SpecialHandler : IQuerySegmentHandler {
-    /// <summary>init the special handler values of a query command</summary>
+    /// <summary>Builds a command's special handlers, one per claimed variable, from its parsed template.</summary>
     public static SpecialHandler[] GetHandlers(int startSpecialHandlers, int startBaseHandlers, Mapper mapper, string queryString, QuerySegment[] segments) {
         if (startSpecialHandlers == startBaseHandlers)
             return [];
@@ -58,85 +40,65 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
         return handlers;
     }
     /// <summary>
-    /// Global registry mapping variable type-suffix characters (e.g., 'X' for Multi-Variable) 
-    /// to their corresponding <see cref="SpecialHandler"/> factory delegates.
+    /// The suffix letters that map to a special handler, <c>X</c> for list spread to start. Add a letter here
+    /// to register your own handler for every command.
     /// </summary>
     public static readonly LetterMap<HandlerGetter<SpecialHandler>> SpecialHandlerGetter = new() {
         ['X'] = MultiVariableHandler.Build,
     };
     /// <summary>
-    /// Indicates whether the handler has successfully resolved and cached its 
-    /// parameter metadata (e.g., via <see cref="UpdateCache"/>).
+    /// Whether this handler has settled its parameter metadata, so it binds without further learning.
     /// </summary>
     public bool IsCached;
     /// <summary>
-    /// Synchronizes existing parameters within the <see cref="IDbCommand"/> using the 
-    /// transformation state preserved by a previous <see cref="SaveUse"/> call.
+    /// Re-binds for a new run from the rewritten value a previous <see cref="SaveUse"/> left, adding, changing,
+    /// or dropping parameters to match, and keeping the bound-command road warm.
     /// </summary>
-    /// <param name="cmd">The command whose parameters require synchronization.</param>
-    /// <param name="currentValue">The transformed state stored from a previous <see cref="SaveUse"/>.</param>
-    /// <param name="newValue">The new raw data provided for this execution.</param>
-    /// <returns><c>true</c> if the parameters were successfully synchronized.</returns>
+    /// <param name="cmd">The command to update.</param>
+    /// <param name="currentValue">The rewritten value from the previous <see cref="SaveUse"/>.</param>
+    /// <param name="newValue">The new value for this run.</param>
+    /// <returns><see langword="true"/> when the parameters were updated.</returns>
     public abstract bool Update(IDbCommand cmd, ref object? currentValue, object? newValue);
     /// <summary>
-    /// Binds data to the <see cref="IDbCommand"/> and preserves a detailed transformation 
-    /// state to allow for subsequent <see cref="Update"/> calls on this command instance.
+    /// Binds the value's parameters and rewrites <paramref name="value"/> to what a later <see cref="Update"/>
+    /// needs, so reusing the same command can update in place.
     /// </summary>
-    /// <param name="cmd">The command to receive the parameters.</param>
-    /// <param name="value">
-    /// [In/Out] The value to bind. Replaced with the <b>detailed transformed state</b> 
-    /// (e.g., an array of bound parameter objects) required for future differential updates.
-    /// </param>
-    /// <returns><c>true</c> if the parameters were successfully created and saved.</returns>
+    /// <param name="cmd">The command to bind onto.</param>
+    /// <param name="value">On the way in, the value to bind. On the way out, the state <see cref="Update"/> reuses.</param>
+    /// <returns><see langword="true"/> when the parameters were bound.</returns>
     public abstract bool SaveUse(IDbCommand cmd, ref object? value);
     /// <summary>
-    /// Binds data to the <see cref="IDbCommand"/> for a single execution pass.
+    /// Binds the value's parameters for a single run, without keeping the state a later <see cref="Update"/> would need.
     /// </summary>
-    /// <remarks>
-    /// This method is intended for one-off bindings where no subsequent <see cref="Update"/> 
-    /// will be called on this command instance.
-    /// </remarks>
-    /// <param name="cmd">The command to receive the parameters.</param>
-    /// <param name="value">The raw value to bind.</param>
-    /// <returns><c>true</c> if the parameters were successfully bound.</returns>
+    /// <param name="cmd">The command to bind onto.</param>
+    /// <param name="value">The value to bind.</param>
+    /// <returns><see langword="true"/> when the parameters were bound.</returns>
     public abstract bool Use(IDbCommand cmd, object value);
-    /// <summary> Performs the same logic as <see cref="Use(IDbCommand, object)"/> but specialized for <see cref="DbCommand"/> to reduce interface dispatch overhead. </summary>
+    /// <summary> The <see cref="DbCommand"/> form of <see cref="Use(IDbCommand, object)"/>. </summary>
     public abstract bool Use(DbCommand cmd, object value);
     /// <summary>
-    /// Generates the SQL fragment for this variable. This is called after the 
-    /// command synchronization phase has transformed the input <paramref name="value"/>.
+    /// Writes the SQL for this variable, reading the value the binding pass rewrote rather than the original input.
     /// </summary>
-    /// <param name="sb">The builder used to assemble the final query string.</param>
-    /// <param name="value">The <b>transformed value</b> produced by a synchronization method.</param>
+    /// <param name="sb">The builder the query is being assembled in.</param>
+    /// <param name="value">The value as the binding pass left it.</param>
     public abstract void Handle(ref ValueStringBuilder sb, object value);
     /// <summary>
-    /// Resolves and caches database-specific parameter metadata via an external provider.
+    /// Settles this handler's parameter metadata from a provider reader, so later runs bind without inferring.
     /// </summary>
     public abstract bool UpdateCache<T>(T infoGetter) where T : IDbParamInfoGetter;
 }
 /// <summary>
-/// A specialized handler that expands a collection into a sequence of numbered database parameters.
-/// (e.g., <c>@Items</c> becomes <c>@Items_1, @Items_2, ... @Items_N</c>).
+/// The handler behind the <c>_X</c> marker. It spreads a collection into numbered parameters, so
+/// <c>@Items</c> becomes <c>@Items_1, @Items_2, ... @Items_N</c>, one per element, ready for an <c>IN</c> clause.
 /// </summary>
-/// <remarks>
-/// This implementation fulfills the dual-phase contract by:
-/// <list type="number">
-/// <item><b>Command Phase:</b> Binding collection elements to numbered parameters and 
-/// transforming the input <c>IEnumerable</c> into an <c>int</c> count or <c>object[]</c> state.</item>
-/// <item><b>Query Phase:</b> Using that transformed state to render a comma-separated 
-/// string of parameter names in the SQL.</item>
-/// </list>
-/// </remarks>
 public class MultiVariableHandler(string ParameterName) : SpecialHandler {
-    /// <summary> The base name used to generate numbered parameters. </summary>
+    /// <summary> The base name the numbered parameters are built from. </summary>
     public string ParameterName = ParameterName;
 
-    /// <summary> 
-    /// Cached metadata for generating <see cref="IDataParameter"/> instances efficiently. 
-    /// </summary>
+    /// <summary> How each element parameter is bound. </summary>
     public DbParamInfo CachedParam = InferedDbParamCache.Instance;
     /// <summary>
-    /// Used to create a <see cref="HandlerGetter{SpecialHandler}"/> delegate.
+    /// The factory used to register this handler under a letter in <see cref="SpecialHandler.SpecialHandlerGetter"/>.
     /// </summary>
     public static MultiVariableHandler Build(string Name)
         => new(Name);

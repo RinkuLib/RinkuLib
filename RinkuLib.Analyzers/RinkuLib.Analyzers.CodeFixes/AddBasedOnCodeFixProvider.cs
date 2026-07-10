@@ -114,6 +114,7 @@ public sealed class AddBasedOnCodeFixProvider : CodeFixProvider {
     }
     private static string GetDisplayName(ISymbol symbol) =>
         symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+    // fully qualified so the cref resolves regardless of the target file's usings, {} instead of <> for XML
     private static string GetCref(ISymbol symbol) =>
-        symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        symbol.ToDisplayString().Replace('<', '{').Replace('>', '}');
 }

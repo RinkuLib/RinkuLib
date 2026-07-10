@@ -8,7 +8,10 @@ using RinkuLib.TypeAccessing;
 namespace RinkuLib.Commands; 
 
 /// <summary>
-/// A high-performance, lock-free cache for a single type parser.
+/// A reusable mapping from a <see cref="DbDataReader"/> to <typeparamref name="T"/>, for running a command
+/// you built yourself. Hold one in a <see langword="static"/> field and call <c>Query</c> on your command,
+/// it works out how to read <typeparamref name="T"/> from the first result's columns and reuses that on
+/// every later call. Safe to share across threads.
 /// </summary>
 public sealed class CachedTypeParser<T> : ICacheGivingParser<T> {
     private ITypeParser<T>? _parser;

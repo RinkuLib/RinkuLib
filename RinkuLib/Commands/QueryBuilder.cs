@@ -4,31 +4,27 @@ using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Commands;
 /// <summary>
-/// A stateful builder for configuring a specific query execution.
+/// Holds the values for one run of a <see cref="Queries.QueryCommand"/> in memory. You set variables and
+/// switch conditions on the builder, then run the command off it. Because the values live here and not on
+/// the command, the command stays stateless and shared while each builder is one call's worth of state.
 /// </summary>
 /// <remarks>
-/// This struct manages a state map used to decide which parts of a query are active. 
-/// By default, items are not used and they are activated via the <see cref="Use(string, object)"/> or <see cref="Use(string)"/> methods. 
-/// The builder translates semantic names (like "ActiveOnly") into the specific state 
-/// tracking required by the underlying <see cref="QueryCommand"/>.
+/// Reach for this form when the values come from C# logic rather than a ready-made object. To sync each
+/// change onto a live command instead, so a loop can reuse one <see cref="System.Data.IDbCommand"/>, use
+/// <see cref="QueryBuilderCommand{TCommand}"/>.
 /// </remarks>
 public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <summary>
-    /// A marker used to activate a condition that does not require an associated data value.
+    /// The value stored for a condition that is on but carries no data. Pass it where a value is expected
+    /// to mean "present" for a toggle-only piece.
     /// </summary>
     public static readonly object Used = new();
-    /// <summary> The underlying command definition. </summary>
+    /// <summary> The command these values run against. </summary>
     public readonly QueryCommand QueryCommand = QueryCommand;
-    /// <summary> 
-    /// The state-snapshot that drives SQL generation.
-    /// <list type="bullet">
-    /// <item><b>Data Items (Variables/Handlers):</b> 
-    /// Indices 0 to <see cref="QueryCommand.StartBoolCond"/> - 1. 
-    /// These require a value to be functional.</item>
-    /// <item><b>Binary Items (Comment conditions):</b> 
-    /// Indices <see cref="QueryCommand.StartBoolCond"/> to Count - 1. 
-    /// These signify presence only and carry no data.</item>
-    /// </list>
+    /// <summary>
+    /// The values for this run, one slot per key in the command. A slot is <see langword="null"/> when its
+    /// piece is off, a bound value when a variable is set, and <see cref="Used"/> when a toggle-only
+    /// condition is on.
     /// </summary>
     public readonly object?[] Variables = new object?[QueryCommand.Mapper.Count];
     /// <inheritdoc/>

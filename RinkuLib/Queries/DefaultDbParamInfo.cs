@@ -5,8 +5,8 @@ using System.Runtime.CompilerServices;
 
 namespace RinkuLib.Queries;
 /// <summary>
-/// A provider that extracts parameter metadata from an existing <see cref="IDbCommand"/> 
-/// to populate the query's parameter cache.
+/// Reads parameter metadata off a live <see cref="IDbCommand"/> as-is, the fallback the command uses to learn
+/// its bindings when no provider-specific reader is registered.
 /// </summary>
 public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     /// <summary>The command containing the parameters</summary>
@@ -58,12 +58,13 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     }
 }
 /// <summary>
-/// A provider that extracts parameter metadata from an existing <see cref="IDbCommand"/> 
-/// to populate the query's parameter cache.
+/// Pins every parameter to driver inference and marks it settled, so the command stops trying to learn
+/// provider metadata. Register it for a command type whose metadata you would rather leave to the driver.
 /// </summary>
 public struct ForceInferedParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     /// <summary>
-    /// Delegate that create a getter returning forced infered cache when the cmd is of type T.
+    /// A maker that hands back this getter for commands of type <typeparamref name="T"/>, to register in
+    /// <see cref="IDbParamInfoGetter.ParamGetterMakers"/>.
     /// </summary>
     public static bool GetInfoGetterMaker<T>(IDbCommand cmd, [MaybeNullWhen(false)] out IDbParamInfoGetter getter) where T : IDbCommand {
         if (cmd is not T) {

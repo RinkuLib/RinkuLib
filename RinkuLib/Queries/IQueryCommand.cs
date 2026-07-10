@@ -5,96 +5,45 @@ using RinkuLib.Tools;
 namespace RinkuLib.Queries;
 
 /// <summary>
-/// Defines the contract for an executable query unit, managing the transition 
-/// from a state-snapshot to a configured database command.
+/// What it takes to turn a query and a set of values into a ready-to-run database command. The execution
+/// methods build on this, most code runs a <see cref="QueryCommand"/> through those rather than calling here.
 /// </summary>
 public interface IQueryCommand {
     /// <summary>
-    /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
+    /// Sets <paramref name="cmd"/>'s text and parameters for one run from a pre-built values array, the same
+    /// array a <see cref="Commands.QueryBuilder"/> holds.
     /// </summary>
-    /// <param name="cmd">The command to be populated.</param>
-    /// <param name="variables">
-    /// A unified array representing the state of all query elements (Selects, Conditions, 
-    /// Variables, and Handlers). The array layout must strictly adhere to the <see cref="Mapper"/>.
-    /// </param>
-    /// <returns>True if the command was successfully prepared.</returns>
+    /// <param name="cmd">The command to fill.</param>
+    /// <param name="variables">The values for this run, one slot per key.</param>
+    /// <returns><see langword="true"/> when the command is ready to run.</returns>
     public bool SetCommand(IDbCommand cmd, object?[] variables);
-    /// <summary>
-    /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
-    /// </summary>
-    /// <param name="cmd">The command to be populated.</param>
-    /// <param name="variables">
-    /// A unified array representing the state of all query elements (Selects, Conditions, 
-    /// Variables, and Handlers). The array layout must strictly adhere to the <see cref="Mapper"/>.
-    /// </param>
-    /// <returns>True if the command was successfully prepared.</returns>
+    /// <inheritdoc cref="SetCommand(IDbCommand, object[])"/>
     public bool SetCommand(DbCommand cmd, object?[] variables);
     /// <summary>
-    /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
+    /// Sets <paramref name="cmd"/>'s text and parameters for one run, reading the values from a parameter
+    /// object matched to keys by name, and records which keys were used in <paramref name="usageMap"/>.
     /// </summary>
-    /// <param name="cmd">The command to be populated.</param>
-    /// <param name="parameterObj">
-    /// An object representing the state of all query elements (Selects, Conditions, 
-    /// Variables, and Handlers).</param>
-    /// <param name="usageMap">The map of which item are used</param>
-    /// <returns>True if the command was successfully prepared.</returns>
+    /// <param name="cmd">The command to fill.</param>
+    /// <param name="parameterObj">The object whose members supply the values.</param>
+    /// <param name="usageMap">Filled with which keys ended up used, so the result can be read back correctly.</param>
+    /// <returns><see langword="true"/> when the command is ready to run.</returns>
     public bool SetCommand(IDbCommand cmd, object parameterObj, Span<bool> usageMap);
-    /// <summary>
-    /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
-    /// </summary>
-    /// <param name="cmd">The command to be populated.</param>
-    /// <param name="parameterObj">
-    /// An object representing the state of all query elements (Selects, Conditions, 
-    /// Variables, and Handlers).</param>
-    /// <param name="usageMap">The map of which item are used</param>
-    /// <returns>True if the command was successfully prepared.</returns>
+    /// <inheritdoc cref="SetCommand(IDbCommand, object, Span{bool})"/>
     public bool SetCommand(DbCommand cmd, object parameterObj, Span<bool> usageMap);
-    /// <summary>
-    /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
-    /// </summary>
-    /// <param name="cmd">The command to be populated.</param>
-    /// <param name="parameterObj">
-    /// An object representing the state of all query elements (Selects, Conditions, 
-    /// Variables, and Handlers).</param>
-    /// <param name="usageMap">The map of which item are used</param>
-    /// <returns>True if the command was successfully prepared.</returns>
+    /// <inheritdoc cref="SetCommand(IDbCommand, object, Span{bool})"/>
     public bool SetCommand<T>(IDbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull;
-    /// <summary>
-    /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
-    /// </summary>
-    /// <param name="cmd">The command to be populated.</param>
-    /// <param name="parameterObj">
-    /// An object representing the state of all query elements (Selects, Conditions, 
-    /// Variables, and Handlers).</param>
-    /// <param name="usageMap">The map of which item are used</param>
-    /// <returns>True if the command was successfully prepared.</returns>
+    /// <inheritdoc cref="SetCommand(IDbCommand, object, Span{bool})"/>
     public bool SetCommand<T>(DbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull;
-    /// <summary>
-    /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
-    /// </summary>
-    /// <param name="cmd">The command to be populated.</param>
-    /// <param name="parameterObj">
-    /// An object representing the state of all query elements (Selects, Conditions, 
-    /// Variables, and Handlers).</param>
-    /// <param name="usageMap">The map of which item are used</param>
-    /// <returns>True if the command was successfully prepared.</returns>
+    /// <inheritdoc cref="SetCommand(IDbCommand, object, Span{bool})"/>
     public bool SetCommand<T>(IDbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull;
-    /// <summary>
-    /// Configures the <paramref name="cmd"/> using a full state-snapshot of the query.
-    /// </summary>
-    /// <param name="cmd">The command to be populated.</param>
-    /// <param name="parameterObj">
-    /// An object representing the state of all query elements (Selects, Conditions, 
-    /// Variables, and Handlers).</param>
-    /// <param name="usageMap">The map of which item are used</param>
-    /// <returns>True if the command was successfully prepared.</returns>
+    /// <inheritdoc cref="SetCommand(IDbCommand, object, Span{bool})"/>
     public bool SetCommand<T>(DbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull;
-    /// <summary> The shared coordinate system used to map names to array indices. </summary>
+    /// <summary> Maps the query's key names to their slot in the values array. </summary>
     public Mapper Mapper { get; }
-    /// <summary> The index where literal-injection handlers begin. </summary>
+    /// <summary> The first slot for a literal-injection handler. Slots below it carry parameter values. </summary>
     public int StartBaseHandlers { get; }
-    /// <summary> The index where complex parameter handlers begin. </summary>
+    /// <summary> The first slot for a special handler, the ones that expand into several parameters. </summary>
     public int StartSpecialHandlers { get; }
-    /// <summary> The index where boolean toggle conditions begin. </summary>
+    /// <summary> The first slot for a toggle-only condition, the ones that carry no value. </summary>
     public int StartBoolCond { get; }
 }

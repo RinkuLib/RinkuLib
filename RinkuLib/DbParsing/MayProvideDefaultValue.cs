@@ -2,7 +2,7 @@
 
 namespace RinkuLib.DbParsing;
 /// <summary>
-/// Generate the IL of the default value of the type
+/// Produces the type's default value, the parser used for a member that has no matching column.
 /// </summary>
 public class DefaultEmiter(Type targetType) : DbItemParser {
     private readonly Type targetType = targetType;
@@ -54,7 +54,8 @@ public class FlagUpdater(UsageFlags Flags, bool Subtree = false) : IColModifier 
     }
 }
 /// <summary>
-/// Emmit the default value of the type when no match with the schema
+/// A member read plan that also carries a reading-order tweak and a fallback for when no column matches, the
+/// plan the reading-order and default attributes assemble.
 /// </summary>
 public class ParamInfoPlus(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, IColModifier colModifier, IFallbackParserGetter fallbackParserGetter) : ParamInfo(Type, NullColHandler, NameComparer) {
     /// <inheritdoc/>
@@ -72,11 +73,10 @@ public class ParamInfoPlus(Type Type, INullColHandler NullColHandler, INameCompa
     public override DbItemParser? FallbackTryGetParser(Type type)
         => FallbackParserGetter.FallbackTryGetParser(type);
 }
-/// <summary></summary>
+/// <summary>Adjusts how a member claims its columns, its reading order and reuse, per slot or across a subtree.</summary>
 public interface IColModifier {
-    /// <summary>An instance that does nothing</summary>
+    /// <summary>A modifier that changes nothing.</summary>
     public static readonly IColModifier Nothing = new NothingInst();
-    /// <summary></summary>
     private class NothingInst : IColModifier {
         /// <inheritdoc/>
         public void UpdateColModifier(ref ColModifier mod) { }
@@ -89,18 +89,17 @@ public interface IColModifier {
     /// </summary>
     public void EnterSubtree(ref ColModifier mod, int nbUsed) { }
 }
-/// <summary></summary>
+/// <summary>Supplies a parser for a member when no column matches it, such as one that produces a default value.</summary>
 public interface IFallbackParserGetter {
-    /// <summary>An instance that does nothing</summary>
+    /// <summary>A fallback that supplies nothing, leaving an unmatched member an error.</summary>
     public static readonly IFallbackParserGetter Nothing = new NothingInst();
-    /// <summary></summary>
     private class NothingInst : IFallbackParserGetter {
         /// <inheritdoc/>
         public DbItemParser? FallbackTryGetParser(Type type) => null;
     }
     /// <summary>
-    /// Provide a way to retrieve a <see cref="DbItemParser"/> when the normal way fails
+    /// A parser to use for <paramref name="type"/> when the normal column matching found none, or
+    /// <see langword="null"/> to leave it unmatched.
     /// </summary>
-    /// <returns></returns>
     public DbItemParser? FallbackTryGetParser(Type type);
 }

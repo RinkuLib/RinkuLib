@@ -1,21 +1,21 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 
 namespace RinkuLib.Tracking;
-/// <summary>Contains a count</summary>
+/// <summary>Exposes an item count, the common base of the tracking-list interfaces.</summary>
 public interface ICount {
-    /// <summary>Get the number of elements in the collection</summary>
+    /// <summary>The number of items in the list.</summary>
     public int ItemCount { get; }
 }
-/// <summary>A list track original values removal and presence state</summary>
+/// <summary>A list that remembers which items were removed and keeps each item's original value.</summary>
 public interface ITrackingList<T> : ICount {
-    /// <summary>The collection of removed items</summary>
+    /// <summary>The items removed since the last commit.</summary>
     public IReadOnlyList<T> Removed { get; }
-    /// <summary>Will discard the tracked removed items</summary>
+    /// <summary>Accepts the removals, clearing the tracked removed items.</summary>
     public void CommitRemoved();
-    /// <summary>Check if there is an original value at a given index</summary>
+    /// <summary>The original value at an index, if one is tracked there.</summary>
     bool HasOriginal(int index, [MaybeNullWhen(false)] out T original);
 }
-/// <summary>A list that track the edit state of items</summary>
+/// <summary>A list that tracks which items are being edited, with commit and cancel per item.</summary>
 public interface ITrackingEditList : ICount {
     /// <summary>Indicate if an element in the collection contains an edit</summary>
     public bool HasChanges { get; }
@@ -32,27 +32,27 @@ public interface ITrackingEditList : ICount {
     /// <summary>Cancel the edit of the element at the index</summary>
     public Task<bool> CancelEditAsync(int index);
 }
-/// <summary>A list that track the edit state of items</summary>
+/// <summary>The typed edit list, handing back the editable value for the item at an index.</summary>
 public interface ITrackingEditList<T> : IList<T>, ITrackingEditList {
     int ICount.ItemCount => Count;
-    /// <summary>Check if there is an edit value at a given index</summary>
+    /// <summary>The pending edit value at an index, if the item is being edited.</summary>
     public bool HasEditValue(int index, [MaybeNullWhen(false)] out T editValue);
-    /// <summary>Ensure that the item is in an editing state</summary>
+    /// <summary>Puts the item at an index into editing and hands back its editable value.</summary>
     public bool EnsureEditing(int index, [MaybeNullWhen(false)] out T editValue);
 }
-/// <summary>A list that track metadata of items</summary>
+/// <summary>A list that carries a piece of metadata per item, such as a validation error.</summary>
 public interface IMetadataList<out TMetadata> : ICount {
-    /// <summary>Get the metadata of the item at the specified index</summary>
+    /// <summary>The metadata for the item at an index.</summary>
     public TMetadata? GetMetadata(int index);
 }
-/// <summary>A can provide errors metadata and validation</summary>
+/// <summary>A list that can validate its items and report whether each is currently valid.</summary>
 public interface IValidatableList : ICount {
-    /// <summary>Validate the item at the specified index</summary>
+    /// <summary>Runs validation on the item at an index, recording any error.</summary>
     public bool Validate(int index);
-    /// <summary>Indicate if the current state of the item at the specified index is valid</summary>
+    /// <summary>Whether the item at an index is currently valid.</summary>
     public bool IsValid(int index);
 }
-/// <summary>A can provide errors metadata and validation</summary>
+/// <summary>A validatable list whose validation errors are of type <typeparamref name="TError"/>.</summary>
 public interface IValidatableList<out TError> : IValidatableList, IMetadataList<TError>;
 /// <summary>A combinaison of <see cref="ITrackingList{TOg}"/> and <see cref="ITrackingEditList"/></summary>
 public interface IEditableList<TOg> : ITrackingList<TOg>, ITrackingEditList;

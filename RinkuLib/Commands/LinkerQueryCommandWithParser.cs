@@ -8,7 +8,10 @@ using RinkuLib.TypeAccessing;
 namespace RinkuLib.Commands;
 
 /// <summary>
-/// Uses the <see cref="TypeParser"/> to retrieve or make the complied parser function and cache both the parser and any used parameters
+/// Bridges a <see cref="QueryCommand"/> to <typeparamref name="T"/> the first time it runs, when no parser
+/// is cached yet. It builds the parser from the result's columns and stores it, along with the parameter
+/// metadata, on the command so later runs with the same shape skip the work. Used by the command's own query
+/// methods, not something you construct directly.
 /// </summary>
 public class LinkerQueryCommandWithParser<T>(QueryCommand command, bool[] usageMap) : ICacheGivingParser<T> {
     private readonly QueryCommand Command = command;

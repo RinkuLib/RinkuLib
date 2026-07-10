@@ -11,15 +11,15 @@ using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Queries;
 /// <summary>
-/// The central orchestration engine that integrates SQL text generation (<see cref="Queries.QueryText"/>) 
-/// with parameter metadata management (<see cref="QueryParameters"/>).
+/// A query defined once from a SQL template and reused for the life of the app. It holds no per-call state,
+/// so one instance is safe to share across threads, the values for each run travel in the call. Declare it
+/// in a <see langword="static readonly"/> field and run it with the execution methods (<c>Query</c>,
+/// <c>Execute</c>, and the rest), or open a <see cref="Commands.QueryBuilder"/> on it to set values from code.
 /// </summary>
 /// <remarks>
-/// <para><b>The Nervous System:</b></para>
-/// <para>This class acts as the bridge between the raw user input array and the ADO.NET 
-/// <see cref="IDbCommand"/>. It uses the <see cref="Tools.Mapper"/> as a shared coordinate system 
-/// to partition a single array of variables into standard parameters, special handlers, 
-/// and literal injections.</para>
+/// The template can mark parts optional, so the values a run supplies decide the final SQL. It also learns a
+/// provider's parameter metadata and a result's row parser on first use and reuses them, so a warm command
+/// runs without rediscovering either.
 /// </remarks>
 public class QueryCommand : IQueryCommand, ICache {
     /// <inheritdoc/>
@@ -28,16 +28,16 @@ public class QueryCommand : IQueryCommand, ICache {
     int IQueryCommand.StartBaseHandlers => StartBaseHandlers;
     int IQueryCommand.StartSpecialHandlers => StartSpecialHandlers;
     int IQueryCommand.StartBoolCond => StartBoolCond;
-    /// <summary> The registry for parameter metadata and caching strategies. </summary>
+    /// <summary> How each parameter is bound, and the learned provider metadata behind it. </summary>
     public readonly QueryParameters Parameters;
-    /// <summary> The SQL template and segment parsing logic. </summary>
+    /// <summary> The template, and the rendering of it down to the SQL a run sends. </summary>
     public readonly QueryText QueryText;
-    /// <summary> The parsing items cached </summary>
+    /// <summary> The row parsers learned so far, one per result shape seen, reused across runs. </summary>
     public ParsingCacheItem[] ParsingCache = [];
     private IntPtr[] _handles = [];
     private TypeAccessorCache[] _funcs = [];
     /// <summary>
-    /// A lock shared to ensure thread safety across multiple <see cref="TypeAccessor"/> instances.
+    /// Guards the shared accessor cache while it learns how to read a new parameter object type.
     /// </summary>
     public static readonly
 #if NET9_0_OR_GREATER
@@ -47,7 +47,7 @@ public class QueryCommand : IQueryCommand, ICache {
 #endif
         TypeAccessorSharedLock = new();
     /// <summary>
-    /// A lock shared to ensure thread safety across multiple parsingCache instances.
+    /// Guards the shared parser cache while it learns the row parser for a new result shape.
     /// </summary>
     public static readonly
 #if NET9_0_OR_GREATER
@@ -62,10 +62,15 @@ public class QueryCommand : IQueryCommand, ICache {
     public readonly int StartSpecialHandlers;
     /// <inheritdoc/>
     public readonly int StartBoolCond;
-    /// <summary>Initialization of a query command from a SQL query template</summary>
+    /// <summary>
+    /// Defines a command from a SQL template. The template is read once, here, and the command is then reused
+    /// for every run.
+    /// </summary>
+    /// <param name="query">The SQL, optionally carrying conditional markers.</param>
+    /// <param name="variableChar">The character that marks a variable, <c>@</c> when left unset.</param>
     public QueryCommand(string query, char variableChar = default)
         : this(new QueryFactory(query, variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap)) { }
-    /// <summary>The direct call the the constructor</summary>
+    /// <summary>Defines a command from an already-parsed template, the extension point a subclass builds on.</summary>
     protected QueryCommand(QueryFactory factory) {
         Mapper = factory.Mapper;
         var segments = factory.Segments;
@@ -78,7 +83,8 @@ public class QueryCommand : IQueryCommand, ICache {
         Parameters = new(factory.NbNormalVar, specialHandlers);
     }
     /// <summary>
-    /// Try getting the parsing cache without the schema
+    /// Looks up the row parser already learned for this run's shape, so a warm command can read the result
+    /// without inspecting the columns again. Returns <see langword="false"/> when nothing is cached yet.
     /// </summary>
     public bool TryGetCachedParser<T>(Span<bool> usageMap, [MaybeNullWhen(false)] out ITypeParser<T> parser, int resultSetIndex = 0) {
         ref bool pUsage = ref MemoryMarshal.GetReference(usageMap);
@@ -106,7 +112,8 @@ public class QueryCommand : IQueryCommand, ICache {
         return false;
     }
     /// <summary>
-    /// Try getting the parsing cache without the schema
+    /// Looks up the row parser already learned for this run's shape, so a warm command can read the result
+    /// without inspecting the columns again. Returns <see langword="false"/> when nothing is cached yet.
     /// </summary>
     public bool TryGetCachedParser<T>(object?[] usageMap, [MaybeNullWhen(false)] out ITypeParser<T> parser, int resultSetIndex = 0) {
         ref object? usageBase = ref MemoryMarshal.GetArrayDataReference(usageMap);
@@ -138,7 +145,7 @@ public class QueryCommand : IQueryCommand, ICache {
         return false;
     }
     /// <summary>
-    /// Update the parsing cache for a given schema
+    /// Records the row parser learned for a result's columns so later runs of the same shape reuse it.
     /// </summary>
     public void UpdateParseCache<T>(bool[] usageMap, ColumnInfo[] schema, ITypeParser<T> cache, int resultSetIndex = 0) {
         lock (ParsingCacheSharedLock) { 
@@ -146,26 +153,24 @@ public class QueryCommand : IQueryCommand, ICache {
         }
     }
     /// <summary>
-    /// A fast way to identify if there are parameters that are used for the first time in the given state.
+    /// Whether this run touches a parameter whose provider metadata has not been learned yet, the signal that
+    /// the command still has caching to do on this pass.
     /// </summary>
-    /// <returns><see langword="false"/> no parameters are used for the first time</returns>
+    /// <returns><see langword="false"/> when every used parameter is already cached.</returns>
     public bool NeedToCache(Span<bool> usageMap)
         => Parameters.NeedToCache(usageMap);
     /// <summary>
-    /// A fast way to identify if there are parameters that are used for the first time in the given state.
+    /// Whether this run touches a parameter whose provider metadata has not been learned yet, the signal that
+    /// the command still has caching to do on this pass.
     /// </summary>
-    /// <returns><see langword="false"/> no parameters are used for the first time</returns>
+    /// <returns><see langword="false"/> when every used parameter is already cached.</returns>
     public bool NeedToCache(object?[] variables)
         => Parameters.NeedToCache(variables);
     /// <summary>
-    /// Synchronizes the command with a database provider's metadata. 
-    /// Or any overrided comportement
+    /// Learns how this command's parameters should be bound from a live command that has just run, so later
+    /// runs bind them the same way without the guesswork. Prefers a provider-specific reader when one is
+    /// registered in <see cref="IDbParamInfoGetter.ParamGetterMakers"/>, otherwise reads the parameters as-is.
     /// </summary>
-    /// <remarks>
-    /// Attempts to find a specialized <see cref="IDbParamInfoGetter"/> from 
-    /// <see cref="IDbParamInfoGetter.ParamGetterMakers"/>. If no provider-specific 
-    /// match is found, it falls back to the <see cref="DefaultParamCache"/>.
-    /// </remarks>
     public void UpdateCache(IDbCommand cmd) {
         var makers = CollectionsMarshal.AsSpan(IDbParamInfoGetter.ParamGetterMakers);
         for (int i = 0; i < makers.Length; i++) {
@@ -193,8 +198,10 @@ public class QueryCommand : IQueryCommand, ICache {
         return true;
     }
     /// <summary>
-    /// Provide a manual way to set a cache for a specific parameter
+    /// Sets how one parameter is bound by hand, in place of letting the command learn it from a run. Use this
+    /// to pin a type, size, or provider quirk the automatic path would get wrong.
     /// </summary>
+    /// <returns><see langword="true"/> if <paramref name="paramName"/> names a bindable parameter.</returns>
     public bool UpdateParamCache(string paramName, DbParamInfo paramInfo) {
         var ind = Mapper.GetIndex(paramName);
         if (ind < 0 || ind >= StartBaseHandlers)
@@ -203,22 +210,7 @@ public class QueryCommand : IQueryCommand, ICache {
         return true;
 
     }
-    /// <summary>
-    /// Synchronizes the database command with the current state of the entire query context.
-    /// </summary>
-    /// <param name="cmd">The command to be populated with parameters and SQL text.</param>
-    /// <param name="variables">
-    /// An array representing the full state of the query, including selects, conditions, 
-    /// variables, and special handlers. This array must strictly follow the layout 
-    /// defined by the <see cref="Mapper"/>.
-    /// </param>
-    /// <returns>True if the command was successfully prepared for execution.</returns>
-    /// <remarks>
-    /// This method consumes the <paramref name="variables"/> array as a unified state-snapshot. 
-    /// While only the "Variable" and "Special Handler" sections of the array are used to 
-    /// populate database parameters, the entire array (including "Select" and "Condition" states) 
-    /// is passed to the <see cref="QueryText"/> parser to determine the final SQL structure.
-    /// </remarks>
+    /// <inheritdoc/>
     public bool SetCommand(IDbCommand cmd, object?[] variables) {
         Debug.Assert(variables.Length == Mapper.Count);
         var varInfos = Parameters._variablesInfo;
@@ -366,7 +358,8 @@ public class QueryCommand : IQueryCommand, ICache {
         return ActualSetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
     }
     /// <summary>
-    /// Unsafe getter to get the cached accessor
+    /// The cached plan for reading a parameter object of the given type, its members mapped to this command's
+    /// keys. Built on first sight of the type and reused after, so binding a familiar object type is cheap.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TypeAccessorCache GetAccessorCache(IntPtr handle, Type type) {

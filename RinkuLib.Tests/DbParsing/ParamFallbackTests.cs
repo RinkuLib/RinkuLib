@@ -2,9 +2,7 @@ using System.Data;
 using RinkuLib.DbParsing;
 using RinkuLib.Tools;
 using Xunit;
-
 namespace RinkuLib.Tests.DbParsing;
-
 // The runtime equivalent of a `= default` parameter: an IFallbackParserGetter on the slot.
 public class ParamFallbackTests {
     private static DataTableReader Reader(ColumnInfo[] columns, object[] row) {
@@ -18,9 +16,8 @@ public class ParamFallbackTests {
         using var r = Reader(cols, row);
         var p = TypeParser.GetTypeParser<T>(ref cols);
         r.Read();
-        return p.Parse(r);
+        return p.Parse(r).Result;
     }
-
     // Code has no C# default, so it is required. Attaching DefaultValueFallback at runtime makes it optional.
     [Fact]
     public void DefaultValueFallback_makes_required_slot_optional() {
@@ -36,5 +33,4 @@ public class ParamFallbackTests {
         Assert.Equal(0, v.Code);   // no Code column, fell back to the type default
     }
 }
-
 public record struct PfTrack(int Id, string Name, int Code);
