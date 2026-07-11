@@ -5,9 +5,14 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  test:
+    name: Build and test
     runs-on: ubuntu-latest
 
     steps:
@@ -19,7 +24,9 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0
+          dotnet-version: |
+            8.0
+            10.0
 
       - name: Restore dependencies
         run: dotnet restore RinkuLib.slnx
@@ -29,3 +36,6 @@ jobs:
 
       - name: Run unit tests
         run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --no-build --verbosity normal --framework net10.0
+
+      - name: Run analyzer tests
+        run: dotnet test RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj --configuration Release --no-build --verbosity normal
