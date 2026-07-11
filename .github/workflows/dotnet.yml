@@ -35,7 +35,7 @@ jobs:
         run: dotnet build RinkuLib.slnx --configuration Release --no-restore
 
       - name: Run unit tests
-        run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --no-build --verbosity normal --framework net10.0
+        run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --verbosity normal --framework net10.0
 
       - name: Run analyzer tests
-        run: dotnet test RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj --configuration Release --no-build --verbosity normal
+        run: dotnet test RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj --configuration Release --verbosity normal

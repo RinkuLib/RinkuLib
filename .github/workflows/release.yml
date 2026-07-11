@@ -59,13 +59,13 @@ jobs:
         run: dotnet build RinkuLib.slnx --configuration Release --no-restore
 
       - name: Test
-        run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --no-build --framework net10.0
+        run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --framework net10.0
 
       - name: Test analyzers
-        run: dotnet test RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj --configuration Release --no-build
+        run: dotnet test RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj --configuration Release
 
       - name: Pack
-        run: dotnet pack RinkuLib/RinkuLib.csproj --configuration Release --no-build --output artifacts
+        run: dotnet pack RinkuLib/RinkuLib.csproj --configuration Release --output artifacts
 
       - name: Upload package for review
         uses: actions/upload-artifact@v4
