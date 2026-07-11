@@ -30,15 +30,11 @@ namespace RinkuLib.Benchmarks;
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
 [CategoriesColumn]
 public class BaseBenchmark : IAsyncDisposable {
-    // Rows seeded and cycled through, matching the Dapper suite's 5000-row Posts table.
     private const int RowCount = 5000;
 
     private DBFixture<SqlConnection> _fixture = null!;
     private SqlConnection cnn = null!;
 
-    // Rotating row id. Every single-row benchmark advances it so no one row stays hot in the
-    // buffer/plan cache; equivalent to the Dapper suite's Step(). Held at 1 during validation so
-    // the Dapper and Rinku sides of each pair read the same row.
     private int _i;
     private bool _fixId;
     private int NextId() {
@@ -50,7 +46,6 @@ public class BaseBenchmark : IAsyncDisposable {
         return _i;
     }
 
-    // --- SQL & Blueprints ---
     private const string SelectPostSql = "SELECT * FROM Posts WHERE Id = @id";
     private const string SelectAllPostsSql = "SELECT * FROM Posts";
     private const string SelectComplexSql = "SELECT p.Id, p.Name, c.Id, c.Name, c.Description FROM Products p INNER JOIN Categories c ON p.CategoryId = c.Id WHERE p.Id = @id";
@@ -77,8 +72,6 @@ public class BaseBenchmark : IAsyncDisposable {
         _fixture = new DBFixture<SqlConnection>();
         await _fixture.InitializeAsync();
 
-        // Schema and seed run on a throwaway connection, through raw ADO.NET so the setup SQL
-        // (DDL, a WHILE-loop batch) never passes through either ORM's SQL parser.
         await using (var seed = _fixture.GetConnection()) {
             await seed.OpenAsync();
 
@@ -110,7 +103,6 @@ public class BaseBenchmark : IAsyncDisposable {
             CategoryId INT REFERENCES Categories(Id)
         );");
 
-            // 5000 wide rows, matching the Dapper suite's seed (2000-char text, counters left null).
             await Exec($@"
         SET NOCOUNT ON;
         DECLARE @i INT = 0;
@@ -124,7 +116,6 @@ public class BaseBenchmark : IAsyncDisposable {
             await Exec("INSERT INTO Products (Id, Name, CategoryId) VALUES (1, 'Laptop', 1)");
         }
 
-        // The connection every benchmark reuses, opened once and left open.
         cnn = _fixture.GetConnection();
         await cnn.OpenAsync();
         if (!withValidate)
@@ -450,9 +441,6 @@ public class BaseBenchmark : IAsyncDisposable {
         return sum;
     }
 
-    // 16. Scalar. A single value off the reader (COUNT(*)). Rinku_Scalar goes through the row
-    // mapper (Query<int>), Rinku2_Scalar through the dedicated ExecuteScalar path, so the two
-    // measure the mapper's overhead against the raw scalar read.
     [Benchmark(Baseline = true), BenchmarkCategory("16. Scalar Async")]
     public Task<int> Dapper_Scalar() => cnn.ExecuteScalarAsync<int>(CountSql, param: null);
 
@@ -462,8 +450,6 @@ public class BaseBenchmark : IAsyncDisposable {
     [Benchmark, BenchmarkCategory("16. Scalar Async")]
     public Task<int> Rinku2_Scalar() => cnn.ExecuteScalarAsync<int>(CountSql);
 
-    // 17. Scalar sequence. Every row is one value (SELECT Id), mapped into a List<int>. A common
-    // shape with a very different allocation profile from object materialization.
     [Benchmark(Baseline = true), BenchmarkCategory("17. Scalar Sequence Async")]
     public async Task<List<int>> Dapper_ScalarSequence() => (await cnn.QueryAsync<int>(SelectIdsSql, param: null)).AsList();
 
@@ -473,8 +459,6 @@ public class BaseBenchmark : IAsyncDisposable {
     [Benchmark, BenchmarkCategory("17. Scalar Sequence Async")]
     public Task<List<int>> Rinku2_ScalarSequence() => cnn.QueryAsync<List<int>>(SelectIdsSql);
     
-    // 18. Multiple result sets. One command, two result sets, one Post read from each. Dapper's
-    // QueryMultiple against Rinku's MultiReader.
     [Benchmark(Baseline = true), BenchmarkCategory("18. Multiple Result Sets Async")]
     public async Task<int> Dapper_MultiResultSet() {
         using var grid = await cnn.QueryMultipleAsync(MultiSql, new { a = NextId(), b = NextId() });

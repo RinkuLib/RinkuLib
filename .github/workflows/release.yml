@@ -1,0 +1,108 @@
+name: Release (NuGet)
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which version part to bump
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-nuget
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: ver
+        run: |
+          git fetch --tags --force
+          latest=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+          base="${latest#v}"
+          [ -z "$base" ] && base="0.10.1"
+          IFS='.' read -r major minor patch <<< "$base"
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          next="$major.$minor.$patch"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=v$next" >> "$GITHUB_OUTPUT"
+          echo "MinVerVersionOverride=$next" >> "$GITHUB_ENV"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0
+            10.0
+
+      - name: Restore
+        run: dotnet restore RinkuLib.slnx
+
+      - name: Build
+        run: dotnet build RinkuLib.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --no-build --framework net10.0
+
+      - name: Pack
+        run: dotnet pack RinkuLib/RinkuLib.csproj --configuration Release --no-build --output artifacts
+
+      - name: Upload package for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-${{ steps.ver.outputs.version }}
+          path: artifacts/*.nupkg
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: nuget
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download the built package
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-${{ needs.build.outputs.version }}
+          path: artifacts
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0
+
+      - name: Push to NuGet.org
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Tag the release
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ needs.build.outputs.tag }}" -m "Release ${{ needs.build.outputs.tag }}"
+          git push origin "${{ needs.build.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ needs.build.outputs.tag }}" artifacts/*.nupkg --title "${{ needs.build.outputs.tag }}" --generate-notes

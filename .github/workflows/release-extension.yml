@@ -1,0 +1,94 @@
+name: Release (VS Extension)
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which version part to bump
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+      publish_marketplace:
+        description: Also publish to the VS Marketplace
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-extension
+  cancel-in-progress: false
+
+env:
+  EXTENSION_SLN: RinkuPowerTools/RinkuPowerTools.slnx
+  EXTENSION_PROJECT: RinkuPowerTools/RinkuPowerTools.VisualStudio/RinkuPowerTools.VisualStudio.csproj
+  MANIFEST: RinkuPowerTools/RinkuPowerTools.VisualStudio/source.extension.vsixmanifest
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: ver
+        shell: bash
+        run: |
+          git fetch --tags --force
+          latest=$(git tag -l 'ext-v*' --sort=-v:refname | head -n1)
+          base="${latest#ext-v}"
+          [ -z "$base" ] && base="0.1.0"
+          IFS='.' read -r major minor patch <<< "$base"
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          next="$major.$minor.$patch"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=ext-v$next" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp the VSIX manifest version
+        shell: pwsh
+        run: |
+          [xml]$m = Get-Content "$env:MANIFEST"
+          $m.PackageManifest.Metadata.Identity.Version = "${{ steps.ver.outputs.version }}"
+          $m.Save((Resolve-Path "$env:MANIFEST"))
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore
+        run: nuget restore ${{ env.EXTENSION_SLN }}
+
+      - name: Build VSIX
+        run: msbuild ${{ env.EXTENSION_PROJECT }} /p:Configuration=Release /p:DeployExtension=false
+
+      - name: Find the VSIX
+        id: vsix
+        shell: bash
+        run: echo "path=$(find . -name '*.vsix' -not -path '*/obj/*' | head -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.ver.outputs.tag }}" -m "Extension ${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ steps.ver.outputs.tag }}" "${{ steps.vsix.outputs.path }}" --title "${{ steps.ver.outputs.tag }}" --generate-notes
+
+      - name: Publish to VS Marketplace
+        if: ${{ inputs.publish_marketplace }}
+        shell: pwsh
+        run: |
+          $vsix = "${{ steps.vsix.outputs.path }}"
+          $publisher = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VSSDK\VisualStudioIntegration\Tools\Bin\VsixPublisher.exe" | Select-Object -First 1
+          & $publisher.FullName publish -payload "$vsix" -publishManifest "$env:EXTENSION_PROJECT/../publish-manifest.json" -personalAccessToken "${{ secrets.VS_MARKETPLACE_PAT }}"

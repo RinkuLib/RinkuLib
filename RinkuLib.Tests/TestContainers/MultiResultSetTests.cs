@@ -6,9 +6,7 @@ using Xunit;
 namespace RinkuLib.Tests.TestContainers;
 
 public class MultiResultSetFixture : DBFixture<SqlConnection> {
-    // Two result sets, each filtered to a parameter. The shape the benchmark's category 18 runs.
     public QueryCommand TwoSets = new("SELECT Id FROM #mrs WHERE Id = @a; SELECT Id FROM #mrs WHERE Id = @b");
-    // Single-statement control: proves parameter binding works outside the multi-reader path.
     public QueryCommand OneSet = new("SELECT Id FROM #mrs WHERE Id = @a");
 }
 
