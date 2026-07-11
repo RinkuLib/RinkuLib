@@ -8,10 +8,6 @@ on:
         type: choice
         default: patch
         options: [patch, minor, major]
-      publish_marketplace:
-        description: Also publish to the VS Marketplace
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -80,10 +76,3 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release create "${{ steps.ver.outputs.tag }}" "${{ steps.vsix.outputs.path }}" --title "${{ steps.ver.outputs.tag }}" --generate-notes
-
-      - name: Publish to VS Marketplace
-        if: ${{ inputs.publish_marketplace }}
-        shell: pwsh
-        run: |
-          $publisher = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VSSDK\VisualStudioIntegration\Tools\Bin\VsixPublisher.exe" | Select-Object -First 1
-          & $publisher.FullName publish -payload "${{ steps.vsix.outputs.path }}" -publishManifest "$env:EXTENSION_DIR/publish-manifest.json" -personalAccessToken "${{ secrets.VS_MARKETPLACE_PAT }}"
