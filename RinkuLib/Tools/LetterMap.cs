@@ -86,7 +86,7 @@ public class LetterMap<T> : IDictionary<char, T> {
 #endif
     }
     /// <summary>
-    /// Gets or sets the value associated with the specified letter.
+    /// The value associated with the specified letter.
     /// </summary>
     /// <param name="key">The letter (A-Z or a-z).</param>
     /// <exception cref="KeyNotFoundException">Thrown on retrieval if the letter is missing.</exception>
@@ -171,7 +171,7 @@ public class LetterMap<T> : IDictionary<char, T> {
     /// <summary>
     /// Removes a letter from the map.
     /// </summary>
-    /// <returns>True if the letter was found and removed; otherwise, false.</returns>
+    /// <returns>True if the letter was found and removed, otherwise false.</returns>
     public bool Remove(char key) {
         int i = Idx(key);
         uint bit = 1u << i;

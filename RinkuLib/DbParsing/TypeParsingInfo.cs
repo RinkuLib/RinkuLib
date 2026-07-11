@@ -172,7 +172,7 @@ public abstract class TypeParsingInfo {
     /// <see cref="DefaultTypeParsingInfo.AvailableMembers"/> against the provided <paramref name="columns"/> schema.
     /// </remarks>
     /// <returns>
-    /// A configured <see cref="DbItemParser"/> if the schema satisfies a construction path; otherwise, null.
+    /// A configured <see cref="DbItemParser"/> if the schema satisfies a construction path, otherwise null.
     /// </returns>
     public abstract DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
 }
@@ -197,7 +197,7 @@ public static class TypeParsingInfoHelper {
         return false;
     }
     /// <summary>
-    /// The shared road every null-handling helper travels: the info's own
+    /// The shared road every null-handling helper travels, the info's own
     /// <see cref="ICanUpdateNullColHandlers"/> capability when it has one, otherwise any info that can
     /// provide its slots via <see cref="ICanProvideParamInfos"/>. Returns <see langword="false"/> only
     /// when neither is available.
@@ -262,7 +262,7 @@ public static class TypeParsingInfoHelper {
         return true;
     }
     /// <summary>
-    /// Manually add a member to fill after construction: a public field or writable property, or a
+    /// Manually add a member to fill after construction, a public field or writable property, or a
     /// setter method (<c>static (instance, value)</c> or instance <c>(value)</c>). The value's
     /// <see cref="ParamInfo"/> is derived the same way discovery derives it.
     /// </summary>

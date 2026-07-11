@@ -14,7 +14,7 @@ public interface IUsageFlagModifier {
 public sealed class InvalidOnNullAttribute : Attribute;
 /// <summary>
 /// The member may look anywhere in the schema to find its column, not only the one following the last
-/// consumed. On a complex-typed slot this frees only the subtree's first consumed column; the rest keep
+/// consumed. On a complex-typed slot this frees only the subtree's first consumed column. The rest keep
 /// the inherited regime. Use <see cref="CanLookAnywhereSubtreeAttribute"/> to free the whole subtree.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
@@ -25,7 +25,7 @@ public sealed class CanLookAnywhereAttribute : Attribute, IUsageFlagModifier {
 }
 /// <summary>
 /// The member must <b>not</b> look anywhere and must take only the column following the last consumed.
-/// On a complex-typed slot this constrains only the subtree's first consumed column; the rest keep the
+/// On a complex-typed slot this constrains only the subtree's first consumed column. The rest keep the
 /// inherited regime. Use <see cref="CanNotLookAnywhereSubtreeAttribute"/> to constrain the whole subtree.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
@@ -36,7 +36,7 @@ public sealed class CanNotLookAnywhereAttribute : Attribute, IUsageFlagModifier 
 }
 /// <summary>
 /// Specifies that an an allready used column may be used to match. On a complex-typed slot this applies
-/// to the subtree's first consumed column; use <see cref="MayReuseColSubtreeAttribute"/> for the whole subtree.
+/// to the subtree's first consumed column. Use <see cref="MayReuseColSubtreeAttribute"/> for the whole subtree.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class MayReuseColAttribute : Attribute, IUsageFlagModifier {

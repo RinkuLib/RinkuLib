@@ -13,12 +13,8 @@ public class MultiResultSetFixture : DBFixture<SqlConnection> {
 }
 
 /// <summary>
-/// Correctness tests for the multi-reader path, prompted by the benchmark's category 18. They confirm
-/// parameters bind and each SELECT filters to one row, so the "dropped params, full table scan" idea
-/// is wrong. They seed ids 1..5 and ask each set to filter to a NON-first id (2 and 4), since reading
-/// the first row alone would pass on the lowest id either way. Allocation is measured separately in
-/// <see cref="MultiReaderIsolationTests"/>. The #mrs temp table is connection-scoped, so each test
-/// seeds and queries on one open connection.
+/// Checks the multi-reader binds parameters and filters each result set to its own rows. Seeds ids 1
+/// to 5 and asks each set for a non-first id (2 and 4), so a query that dropped the parameter shows up.
 /// </summary>
 public class MultiResultSetTests(MultiResultSetFixture Fixture) : IClassFixture<MultiResultSetFixture> {
     private readonly MultiResultSetFixture Fixture = Fixture;

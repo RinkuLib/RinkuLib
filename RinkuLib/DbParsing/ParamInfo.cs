@@ -139,7 +139,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         return maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
     }
     /// <summary>
-    /// Resolves the nullability that a set of attributes declares: a custom
+    /// Resolves the nullability that a set of attributes declares, a custom
     /// <see cref="INullColHandlerMaker"/>, <see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>,
     /// composed with <see cref="InvalidOnNullAttribute"/>. This is the resolution <see cref="Create"/> uses
     /// before falling back to the type's own nullability.

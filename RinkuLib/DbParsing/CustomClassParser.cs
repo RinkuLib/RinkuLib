@@ -6,7 +6,7 @@ using RinkuLib.Tools;
 namespace RinkuLib.DbParsing;
 
 /// <summary>
-/// A composite parser responsible for instantiating complex types and populating their members.
+/// A composite parser that builds complex types and fills their members.
 /// It coordinates the evaluation stack to satisfy constructor parameters and setter methods.
 /// </summary>
 public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters, List<(MemberInfo, DbItemParser)>? Members = null) : DbItemParser {

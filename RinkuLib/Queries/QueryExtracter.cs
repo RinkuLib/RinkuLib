@@ -14,7 +14,7 @@ internal enum CondFlags : byte {
     Finished = 0b_1000_0000,
 }
 /// <summary>
-/// Represents the footprint of a condition marker within the query.
+/// The footprint of a condition marker within the query.
 /// Maps a condition key to the specific segment of the parsed string it influences.
 /// </summary>
 /// <remarks>
@@ -55,7 +55,7 @@ internal struct CondInfo {
     public int VarIndex { get; private set; }
     /// <summary>
     /// The category of the condition (e.g., None, Comment-based, Select-based, Special...).
-    /// Used to determine how the segment should be processed in the next phase.
+    /// Decides how the segment is processed in the next phase.
     /// </summary>
     public char Type { get; private set; }
     /// <summary>
@@ -187,7 +187,7 @@ public unsafe ref struct QueryExtracter {
     }
     /// <summary>
     /// The primary scanning loop. It uses a single pass with raw pointers to minimize allocations.
-    /// The 'Builder' serves as a normalization buffer, while 'Conditions' tracks the metadata
+    /// The 'Builder' is a normalization buffer, while 'Conditions' tracks the metadata
     /// for segments that can be toggled later.
     /// </summary>
     private PooledArray<CondInfo>.Locked SegmentQuery(string query, char variableChar, out string newQuery) {

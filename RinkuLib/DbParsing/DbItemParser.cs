@@ -113,7 +113,7 @@ public abstract class DbItemParser {
     }
 }
 /// <summary>
-/// Represents a recovery location (Jump Point) used during IL emission to handle null values.
+/// A recovery location (Jump Point) used during IL emission to handle null values.
 /// </summary>
 public readonly struct NullSetPoint(Label Label, int NbOnStack) {
     /// <summary>

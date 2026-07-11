@@ -47,13 +47,13 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// Returns the stable index associated with the provided key.
     /// </summary>
     /// <param name="key">The case-insensitive key to locate.</param>
-    /// <returns>The zero-based index of the key if it exists; otherwise, -1.</returns>
+    /// <returns>The zero-based index of the key if it exists, otherwise -1.</returns>
     public abstract int GetIndex(ReadOnlySpan<char> key);
     /// <summary>
     /// Returns the stable index associated with the provided key.
     /// </summary>
     /// <param name="key">The case-insensitive key to locate.</param>
-    /// <returns>The zero-based index of the key if it exists; otherwise, -1.</returns>
+    /// <returns>The zero-based index of the key if it exists, otherwise -1.</returns>
     public abstract int GetIndex(string key);
     /// <summary>
     /// Gets the number of unique keys defined in this schema.
@@ -65,7 +65,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// </summary>
     /// <param name="ind">The index of the key to look up.</param>
     /// <returns>
-    /// The internal <see cref="string"/> instance if a match is found; otherwise, <see langword="throw"/>.
+    /// The internal <see cref="string"/> instance if a match is found, otherwise <see langword="throw"/>.
     /// </returns>
     /// <remarks>
     /// This is a high-performance optimization tool. By retrieving the internal string reference, 
@@ -80,7 +80,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// </summary>
     /// <param name="key">The key to look up.</param>
     /// <returns>
-    /// The internal <see cref="string"/> instance if a match is found; otherwise, <see langword="null"/>.
+    /// The internal <see cref="string"/> instance if a match is found, otherwise <see langword="null"/>.
     /// </returns>
     /// <remarks>
     /// This is a high-performance optimization tool. By retrieving the internal string reference, 
@@ -97,7 +97,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// </summary>
     /// <param name="key">The key to look up.</param>
     /// <returns>
-    /// The internal <see cref="string"/> instance if a match is found; otherwise, <see langword="null"/>.
+    /// The internal <see cref="string"/> instance if a match is found, otherwise <see langword="null"/>.
     /// </returns>
     /// <remarks>
     /// This is a high-performance optimization tool. By retrieving the internal string reference, 
@@ -121,14 +121,14 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// Returns the stable index associated with the provided key.
     /// </summary>
     /// <param name="key">The case-insensitive key to locate.</param>
-    /// <returns>The zero-based index of the key if it exists; otherwise, -1.</returns>
+    /// <returns>The zero-based index of the key if it exists, otherwise -1.</returns>
     public int this[string key] => GetIndex(key);
 
     /// <summary>
     /// Returns the stable index associated with the provided key.
     /// </summary>
     /// <param name="key">The case-insensitive key to locate.</param>
-    /// <returns>The zero-based index of the key if it exists; otherwise, -1.</returns>
+    /// <returns>The zero-based index of the key if it exists, otherwise -1.</returns>
     public int this[ReadOnlySpan<char> key] => GetIndex(key);
     /// <inheritdoc/>
     public bool ContainsKey(string key) => GetIndex(key) >= 0;

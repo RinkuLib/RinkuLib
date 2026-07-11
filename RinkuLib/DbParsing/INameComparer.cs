@@ -14,7 +14,7 @@ public interface INameComparer {
 
     /// <summary>
     /// Attempts to extract an override name from a provided attribute instance.
-    /// This is adaptive: it uses the first public string property found on the attribute.
+    /// This is adaptive, it uses the first public string property found on the attribute.
     /// </summary>
     static bool TryGetTrueName(object attribute, [MaybeNullWhen(false)] out string trueName) {
         trueName = null;
@@ -39,37 +39,34 @@ public interface INameComparer {
     /// </summary>
     /// <param name="colName">The remaining portion of the column name to match.</param>
     /// <param name="nameComparers">The preceding chain of comparers to validate against.</param>
-    /// <returns><c>true</c> if the full path matches; otherwise, <c>false</c>.</returns>
+    /// <returns><c>true</c> if the full path matches, otherwise <c>false</c>.</returns>
     bool Match(ReadOnlySpan<char> colName, Span<INameComparer> nameComparers);
     /// <summary>Checks if this comparer or its children contains the specified name.</summary>
     public bool Contains(string name);
 }
 /// <summary>Defines the ability to incorporate a simple alternative name with span 1.</summary>
 public interface INameComparerThatCanAdd : INameComparer {
-    /// <summary>Attempts to add a standard alternative. Returns a new instance if successful; otherwise <c>null</c>.</summary>
+    /// <summary>Attempts to add a standard alternative. Returns a new instance if successful, otherwise <c>null</c>.</summary>
     public INameComparer? TryAdd(string name);
 }
 
 /// <summary>Defines the ability to absorb another entire <see cref="INameComparer"/> into the current structure.</summary>
 public interface INameComparerThatCanAddAComparer : INameComparer {
-    /// <summary>Attempts to merge another comparer. Returns the consolidated result if successful; otherwise <c>null</c>.</summary>
+    /// <summary>Attempts to merge another comparer. Returns the consolidated result if successful, otherwise <c>null</c>.</summary>
     public INameComparer? TryAdd(INameComparer other);
 }
 /// <summary>Defines the ability to remove a specific string identifier from the matching logic.</summary>
 public interface INameComparerThatCanRemove : INameComparer {
-    /// <summary>Attempts to remove a name. Returns the updated comparer if the name was removed; otherwise <c>null</c>.</summary>
+    /// <summary>Attempts to remove a name. Returns the updated comparer if the name was removed, otherwise <c>null</c>.</summary>
     public INameComparer? TryRemove(string name);
 }
 
 /// <summary>Defines the ability to remove a specific comparer instance from a group or chain.</summary>
 public interface INameComparerThatCanRemoveAComparer : INameComparer {
-    /// <summary>Attempts to remove the target comparer. Returns the updated structure if found; otherwise <c>null</c>.</summary>
+    /// <summary>Attempts to remove the target comparer. Returns the updated structure if found, otherwise <c>null</c>.</summary>
     public INameComparer? TryRemove(INameComparer other);
 }
-/// <summary>
-/// Combines all mutative capabilities. Standard implementations will implement this 
-/// to ensure they can be fully managed by the orchestration logic.
-/// </summary>
+/// <summary>The mutating comparer, gathering the add, merge, and remove operations into one interface.</summary>
 public interface IMutatableNameComparer :
     INameComparerThatCanAdd,
     INameComparerThatCanAddAComparer,

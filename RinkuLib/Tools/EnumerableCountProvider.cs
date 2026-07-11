@@ -56,16 +56,12 @@ public static class EnumerableCountProvider {
     ///     When this method returns, contains the count of <paramref name="source" /> if successful,
     ///     or zero if the method failed to determine the count.</param>
     /// <returns>
-    ///   <see langword="true" /> if the count of <paramref name="source"/> can be determined without enumeration;
-    ///   otherwise, <see langword="false" />.
+    ///   <see langword="true" /> if the count of <paramref name="source"/> can be found without enumerating it,
+    ///   <see langword="false" /> if not.
     /// </returns>
     /// <remarks>
-    ///   The method performs a series of type tests, identifying common subtypes whose
-    ///   count can be determined without enumerating; this includes <see cref="ICollection{T}"/>,
-    ///   <see cref="ICollection"/> as well as internal types used in the LINQ implementation.
-    ///
-    ///   The method is typically a constant-time operation, but ultimately this depends on the complexity
-    ///   characteristics of the underlying collection implementation.
+    ///   Tests the type of <paramref name="source"/> for the ones that expose a count without enumerating,
+    ///   <see cref="ICollection{T}"/>, <see cref="ICollection"/>, and a few internal LINQ types.
     /// </remarks>
     public static bool TryGetNonEnumeratedCount(this IEnumerable source, out int count) {
         var concreteType = source.GetType();

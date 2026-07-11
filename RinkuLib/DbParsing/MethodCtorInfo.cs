@@ -16,7 +16,7 @@ public class CanCompleteWithMembersAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
 public sealed class AreReadableAttribute : Attribute;
 /// <summary>
-/// Represents a validated candidate for object instantiation, wrapping a 
+/// A validated candidate for object instantiation, wrapping a 
 /// <see cref="ConstructorInfo"/> or static <see cref="MethodInfo"/>.
 /// </summary>
 public class MethodCtorInfo {
@@ -131,7 +131,7 @@ public class MethodCtorInfo {
     /// <summary>
     /// Validates that the provided matchers are compatible with the method's parameters.
     /// </summary>
-    /// <returns>An <see cref="Exception"/> if invalid; otherwise, null.</returns>
+    /// <returns>An <see cref="Exception"/> if invalid, otherwise null.</returns>
     public static Exception? Validate(MethodBase methodBase, ParamInfo[]? parameters) {
         if (parameters is null)
             return new Exception("parameters cant be null");

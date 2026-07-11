@@ -23,7 +23,7 @@ public struct ColModifier(params INameComparer[] Comparers) {
     /// <summary>
     /// The <see cref="ColumnUsage.NbUsed"/> captured when a slot-scope subtree was entered, or -1 when
     /// no such scope is active. The subtree's first consumed column (the read where <c>NbUsed</c> still
-    /// equals this) applies <see cref="SwapFirstFlags"/>; every later read falls back to <see cref="Flags"/>.
+    /// equals this) applies <see cref="SwapFirstFlags"/>. Every later read falls back to <see cref="Flags"/>.
     /// </summary>
     public int SwapFirstAt = -1;
     /// <summary>The flags applied to a slot-scope subtree's first consumed column.</summary>

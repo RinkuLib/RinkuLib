@@ -29,7 +29,7 @@ public class DefaultValueFallback : IFallbackParserGetter {
 public class FlagUpdater(UsageFlags Flags, bool Subtree = false) : IColModifier {
     /// <summary>The flag that will be added to the current modifyer</summary>
     public UsageFlags Flags = Flags;
-    /// <summary>When true the flags govern a complex slot's whole subtree; otherwise only its first column.</summary>
+    /// <summary>When true the flags govern a complex slot's whole subtree, otherwise only its first column.</summary>
     public readonly bool Subtree = Subtree;
     /// <summary>Singleton</summary>
     public static readonly FlagUpdater CanReuse = new(UsageFlags.CanReuse);
@@ -84,7 +84,7 @@ public interface IColModifier {
     /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
     public void UpdateColModifier(ref ColModifier mod);
     /// <summary>
-    /// Set up the modifier as a complex slot's subtree is entered: a subtree-scope flag applies across
+    /// Set up the modifier as a complex slot's subtree is entered, a subtree-scope flag applies across
     /// the subtree, a slot-scope one arms the swap for the subtree's first consumed column.
     /// </summary>
     public void EnterSubtree(ref ColModifier mod, int nbUsed) { }

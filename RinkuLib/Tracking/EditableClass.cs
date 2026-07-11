@@ -3,7 +3,7 @@
 namespace RinkuLib.Tracking;
 
 /// <summary>
-/// Represents a reference-type editable item that tracks an original value and supports
+/// A reference-type editable item that tracks an original value and supports
 /// a lazy editable copy of that value.
 /// </summary>
 public struct EditableClass<T> : IEditableItem<T, T>, IEditableItemFromOriginal<T, EditableClass<T>>, IEditableItemFromEdit<T, EditableClass<T>> where T : class {
@@ -68,7 +68,7 @@ public struct EditableClass<T> : IEditableItem<T, T>, IEditableItemFromOriginal<
         => Task.FromResult(CancelEdit());
 }
 /// <summary>
-/// Represents a value-type editable item that tracks an original value and supports
+/// A value-type editable item that tracks an original value and supports
 /// a lazy editable copy of that value.
 /// </summary>
 public struct EditableStruct<T> : IEditableItem<T, T>, IEditableItemFromOriginal<T, EditableStruct<T>>, IEditableItemFromEdit<T, EditableStruct<T>> where T : struct {
@@ -143,7 +143,7 @@ public struct EditableStruct<T> : IEditableItem<T, T>, IEditableItemFromOriginal
         => Task.FromResult(CancelEdit());
 }
 /// <summary>
-/// Represents a reference-type editable item with attached metadata.
+/// A reference-type editable item with attached metadata.
 /// </summary>
 /// <typeparam name="T">The reference type being tracked.</typeparam>
 /// <typeparam name="TMetadata">The aditional data being kept alongside the tracked item</typeparam>
@@ -185,7 +185,7 @@ public struct EditableClass<T, TMetadata> : IEditableItem<T, T>, IMetadata<TMeta
     public void SetMetadata(TMetadata? metadata) => Metadata = metadata;
 }
 /// <summary>
-/// Represents a value-type editable item with attached metadata.
+/// A value-type editable item with attached metadata.
 /// </summary>
 /// <typeparam name="T">The value type being tracked.</typeparam>
 /// <typeparam name="TMetadata">The aditional data being kept alongside the tracked item</typeparam>

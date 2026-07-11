@@ -88,7 +88,7 @@ public static class Helper {
     }
     /// <summary>
     /// Compares two schema arrays for structural equality. 
-    /// This is used to determine if a cached parser can be reused for a new request.
+    /// Decides whether a cached parser can be reused for a new request.
     /// </summary>
     public static bool EquivalentTo(this ColumnInfo[] candidate, ColumnInfo[] stored) {
         if (candidate.Length != stored.Length)

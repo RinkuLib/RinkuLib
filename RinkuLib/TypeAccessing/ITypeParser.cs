@@ -51,7 +51,7 @@ public interface ISimpleParser : ITypeParser {
 /// <summary>
 /// A parser whose value is one self-delimited step of rows. It is called on the first row of the step,
 /// leaves the reader on the last row of it and never reads further, so the caller owns the advance
-/// between steps. The rows a step takes are decided by the parser alone; a parser that must look past
+/// between steps. The rows a step takes are decided by the parser alone. A parser that must look past
 /// its own rows to find its end (a List gathering every row) cannot be one
 /// </summary>
 public interface IStepParser<T> : ITypeParser<T> {
