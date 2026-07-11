@@ -93,6 +93,8 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (int i = 0; i < cacheLen; i++) {
             ref var entry = ref cacheArray[i];
+            if (entry.ResultSetIndex != resultSetIndex)
+                goto NextEntry;
             int idxLen = entry.CondStates.Length;
             ref int pBase = ref MemoryMarshal.GetReference(entry.CondStates);
             for (int j = 0; j < idxLen; j++) {
@@ -101,8 +103,6 @@ public class QueryCommand : IQueryCommand, ICache {
                     goto NextEntry;
             }
             parser = entry.Parser as ITypeParser<T>;
-            if (entry.ResultSetIndex != resultSetIndex)
-                return false;
             if (parser is not null)
                 return !NeedToCache(usageMap);
         NextEntry:

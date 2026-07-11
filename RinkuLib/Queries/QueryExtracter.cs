@@ -247,7 +247,7 @@ public unsafe ref struct QueryExtracter {
                     UpdateCurrentStart(BuilderInd + 1, 0);
                 else if (IsEnd(CurrentChar))
                     LowerParentesis();
-                else if (IsCase(CurrentChar)) {
+                else if (IsCaseOrBegin(CurrentChar)) {
                     RaiseParentesis(false);
                     ParMap |= 1;
                     CurrentChar++;
@@ -544,8 +544,9 @@ public unsafe ref struct QueryExtracter {
     private static bool IsValues(char* ptr)
         => (*ptr | 0x20) == 'v' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 'l'
         && (ptr[3] | 0x20) == 'u' && (ptr[4] | 0x20) == 'e' && (ptr[5] | 0x20) == 's';
-    private static bool IsCase(char* ptr)
-        => (*ptr | 0x20) == 'c' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 's' && (ptr[3] | 0x20) == 'e';
+    private static bool IsCaseOrBegin(char* ptr)
+        => ((*ptr | 0x20) == 'c' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 's' && (ptr[3] | 0x20) == 'e')
+        || ((*ptr | 0x20) == 'b' && (ptr[1] | 0x20) == 'e' && (ptr[2] | 0x20) == 'g' && (ptr[3] | 0x20) == 'i' && (ptr[4] | 0x20) == 'n');
     private static bool IsEnd(char* ptr)
         => (*ptr | 0x20) == 'e' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 'd' && IsBoundary(ptr[3]);
     private static bool IsOr(char* ptr)
