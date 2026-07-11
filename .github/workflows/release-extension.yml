@@ -22,8 +22,7 @@ concurrency:
 
 env:
   EXTENSION_SLN: RinkuPowerTools/RinkuPowerTools.slnx
-  EXTENSION_PROJECT: RinkuPowerTools/RinkuPowerTools.VisualStudio/RinkuPowerTools.VisualStudio.csproj
-  MANIFEST: RinkuPowerTools/RinkuPowerTools.VisualStudio/source.extension.vsixmanifest
+  EXTENSION_DIR: RinkuPowerTools/RinkuPowerTools.VisualStudio
 
 jobs:
   release:
@@ -52,26 +51,23 @@ jobs:
           echo "version=$next" >> "$GITHUB_OUTPUT"
           echo "tag=ext-v$next" >> "$GITHUB_OUTPUT"
 
-      - name: Stamp the VSIX manifest version
-        shell: pwsh
-        run: |
-          [xml]$m = Get-Content "$env:MANIFEST"
-          $m.PackageManifest.Metadata.Identity.Version = "${{ steps.ver.outputs.version }}"
-          $m.Save((Resolve-Path "$env:MANIFEST"))
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0
+            10.0
 
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Restore
-        run: nuget restore ${{ env.EXTENSION_SLN }}
-
-      - name: Build VSIX
-        run: msbuild ${{ env.EXTENSION_PROJECT }} /p:Configuration=Release /p:DeployExtension=false
+      - name: Build the extension
+        run: msbuild ${{ env.EXTENSION_SLN }} /restore /p:Configuration=Release /p:Version=${{ steps.ver.outputs.version }}
 
       - name: Find the VSIX
         id: vsix
         shell: bash
-        run: echo "path=$(find . -name '*.vsix' -not -path '*/obj/*' | head -n1)" >> "$GITHUB_OUTPUT"
+        run: echo "path=$(find ${{ env.EXTENSION_DIR }}/bin -name '*.vsix' | head -n1)" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
         run: |
@@ -89,6 +85,5 @@ jobs:
         if: ${{ inputs.publish_marketplace }}
         shell: pwsh
         run: |
-          $vsix = "${{ steps.vsix.outputs.path }}"
           $publisher = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VSSDK\VisualStudioIntegration\Tools\Bin\VsixPublisher.exe" | Select-Object -First 1
-          & $publisher.FullName publish -payload "$vsix" -publishManifest "$env:EXTENSION_PROJECT/../publish-manifest.json" -personalAccessToken "${{ secrets.VS_MARKETPLACE_PAT }}"
+          & $publisher.FullName publish -payload "${{ steps.vsix.outputs.path }}" -publishManifest "$env:EXTENSION_DIR/publish-manifest.json" -personalAccessToken "${{ secrets.VS_MARKETPLACE_PAT }}"
