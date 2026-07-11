@@ -3,7 +3,7 @@ using System.Reflection;
 
 namespace RinkuLib.DbParsing;
 /// <summary>
-/// Represents a validated mapping between a class member (Property, Field, or Method) 
+/// A validated mapping between a class member (Property, Field, or Method) 
 /// and a database column matcher.
 /// </summary>
 /// <remarks>
@@ -16,7 +16,7 @@ public record class MemberParser {
     /// </summary>
     public readonly MemberInfo Member;
     /// <summary>
-    /// The matcher responsible for negotiating the data type and column name for this member.
+    /// The matcher that negotiates the data type and column name for this member.
     /// </summary>
     public readonly ParamInfo Param;
     /// <summary>
@@ -50,8 +50,8 @@ public record class MemberParser {
     /// </summary>
     /// <param name="member">The candidate member for parsing.</param>
     /// <param name="param">The matcher to associate with the member.</param>
-    /// <param name="memberParser">When this method returns, contains the parser if successful; otherwise, null.</param>
-    /// <returns><c>true</c> if the member is a valid, writable target; otherwise, <c>false</c>.</returns>
+    /// <param name="memberParser">When this method returns, contains the parser if successful, otherwise null.</param>
+    /// <returns><c>true</c> if the member is a valid, writable target, otherwise <c>false</c>.</returns>
     public static bool TryNew(MemberInfo member, ParamInfo param,  [MaybeNullWhen(false)] out MemberParser memberParser) {
         var val = Validate(member, param);
         if (val is not Type t) {
@@ -66,7 +66,7 @@ public record class MemberParser {
     /// </summary>
     /// <param name="member">The member to check.</param>
     /// <param name="param">The matcher to compare against.</param>
-    /// <returns>The <see cref="Type"/> of the declaring object if valid; otherwise, an <see cref="Exception"/>.</returns>
+    /// <returns>The <see cref="Type"/> of the declaring object if valid, otherwise an <see cref="Exception"/>.</returns>
     private static object Validate(MemberInfo member, ParamInfo param) {
         bool isWriteable = false;
         Type? detectedMemberType = null;

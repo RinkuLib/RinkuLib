@@ -14,7 +14,7 @@ namespace RinkuLib.Commands;
 /// <summary>
 /// Reads a command's several result sets in turn, mapping each to a type you pick as you go. Call
 /// <see cref="Query{T}"/> once per set to take the whole set and move on, or <see cref="Get{T}"/> and
-/// <see cref="GetStep{T}"/> to walk a set row by row while keeping hold of the reader. It is itself a
+/// <see cref="GetCurrentSetParser{T}"/> to walk a set row by row while keeping hold of the reader. It is itself a
 /// <see cref="DbDataReader"/>, so the raw reader methods stay available underneath.
 /// </summary>
 public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader reader, IDbCommand cmd, bool disposeCmd, bool wasClosed) : DbDataReader, IDisposable {
@@ -30,31 +30,14 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
     /// The parser advances the reader, and <c>CanContinue</c> reports its state on return,
     /// <see langword="true"/> when it is left on an untreated row
     /// </summary>
-    public (bool CanContinue, T? Result) Get<T>() => GetCache<T>().Parse(reader);
+    public (bool CanContinue, T Result) Get<T>() => GetCurrentSetParser<T>().Parse(reader);
     /// <inheritdoc cref="Get{T}"/>
     /// <param name="ct">The fowarded cancellation token</param>
-    public async ValueTask<(bool CanContinue, T? Result)> GetAsync<T>(CancellationToken ct = default)
-        => await GetCache<T>().ParseAsync(reader, ct).ConfigureAwait(false);
-    /// <summary>
-    /// Parses one <typeparamref name="T"/> as a self-delimited step, from the row a manual <c>Read()</c>
-    /// put you on, leaving the reader on the last row of the step. A plain row type is a one row step.
-    /// Only an <see cref="IStepParser{T}"/> can parse this way; a parser that must look past its own rows
-    /// to find its end (a List gathering every row) throws, that mode belongs to <see cref="Get{T}"/>
-    /// </summary>
-    public T? GetStep<T>() {
-        if (GetCache<T>() is IStepParser<T> step)
-            return step.ParseStep(reader);
-        throw new Exception($"The parser for {typeof(T).ShortName()} must look past its own rows to find its end, use {nameof(Get)} instead");
-    }
-    /// <inheritdoc cref="GetStep{T}"/>
-    /// <param name="ct">The fowarded cancellation token</param>
-    public async ValueTask<T?> GetStepAsync<T>(CancellationToken ct = default) {
-        if (GetCache<T>() is IStepParser<T> step)
-            return await step.ParseStepAsync(reader, ct).ConfigureAwait(false);
-        throw new Exception($"The parser for {typeof(T).ShortName()} must look past its own rows to find its end, use {nameof(GetAsync)} instead");
-    }
+    public async ValueTask<(bool CanContinue, T Result)> GetAsync<T>(CancellationToken ct = default)
+        => await GetCurrentSetParser<T>().ParseAsync(reader, ct).ConfigureAwait(false);
+    /// <summary>The current set's parser, to parse rows yourself while keeping control of the reader.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal ITypeParser<T> GetCache<T>() {
+    public ITypeParser<T> GetCurrentSetParser<T>() {
         if (command.TryGetCachedParser<T>(usage, out var cache, nbResultSetPassedMinusOne))
             return cache;
         var schema = reader.GetColumns();
@@ -64,15 +47,15 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
     }
     /// <summary>
     /// Automaticaly skip non-returning set, parse the current result set to return an instance of <typeparamref name="T"/> or the default if no result, then move to the next result set.
-    /// To parse a set row by row and keep control of the reader, use <see cref="Get{T}"/> or <see cref="GetStep{T}"/>
+    /// To parse a set row by row and keep control of the reader, use <see cref="Get{T}"/> or <see cref="GetCurrentSetParser{T}"/>
     /// </summary>
-    public T? Query<T>() {
+    public T Query<T>() {
         while (reader.FieldCount == 0)
             reader.NextResult();
         nbResultSetPassedMinusOne++;
         bool goToNextResultSet = true;
         try {
-            var cache = GetCache<T>();
+            var cache = GetCurrentSetParser<T>();
             if (!reader.Read())
                 return cache.Default();
             if (cache is ILazyTypeParser<T> lazyParser) {
@@ -90,16 +73,16 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
     }
     /// <summary>
     /// Asynchronously, automaticaly skip non-returning set, parse the current result set to return an instance of <typeparamref name="T"/> or the default if no result, then move to the next result set.
-    /// To parse a set row by row and keep control of the reader, use <see cref="GetAsync{T}"/> or <see cref="GetStep{T}"/>
+    /// To parse a set row by row and keep control of the reader, use <see cref="GetAsync{T}"/> or <see cref="GetCurrentSetParser{T}"/>
     /// </summary>
     /// <param name="ct">The fowarded cancellation token</param>
-    public async Task<T?> QueryAsync<T>(CancellationToken ct = default) {
+    public async Task<T> QueryAsync<T>(CancellationToken ct = default) {
         while (reader.FieldCount == 0)
             await reader.NextResultAsync(ct).ConfigureAwait(false);
         nbResultSetPassedMinusOne++;
         bool goToNextResultSet = true;
         try {
-            var cache = GetCache<T>();
+            var cache = GetCurrentSetParser<T>();
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return cache.Default();
             if (cache is ILazyTypeParser<T> lazyParser) {
@@ -124,7 +107,7 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         while (reader.FieldCount == 0)
             await reader.NextResultAsync(ct).ConfigureAwait(false);
         nbResultSetPassedMinusOne++;
-        var cache = GetCache<T>();
+        var cache = GetCurrentSetParser<T>();
         if (cache is ISimpleParser<T> simple) {
             var rowParser = simple.RowParser;
             while (await reader.ReadAsync(ct).ConfigureAwait(false))

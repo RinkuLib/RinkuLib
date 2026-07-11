@@ -49,6 +49,8 @@
     "globalMetadata": {
       "_appName": "RinkuLib",
       "_appTitle": "RinkuLib Documentation",
+      "_appLogoPath": "images/logo.png",
+      "_appFaviconPath": "images/logo.png",
       "_enableSearch": true,
       "_disableContribution": false
     }

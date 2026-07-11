@@ -1,7 +1,7 @@
 ﻿namespace RinkuLib.Tracking;
 
 /// <summary>
-/// Represents a processor responsible for validating and/or committing edit operations.
+/// A processor that validates and commits edit operations.
 /// </summary>
 /// <typeparam name="TEdit">The type of editable value being processed.</typeparam>
 /// <typeparam name="TMetadata">
@@ -52,12 +52,12 @@ public interface IEditProcessor<TEdit, TMetadata> {
     /// </summary>
     /// <param name="metadata">The metadata to evaluate.</param>
     /// <returns>
-    /// <see langword="true"/> if the metadata represents a valid result; otherwise, <see langword="false"/>.
+    /// <see langword="true"/> if the metadata represents a valid result, otherwise <see langword="false"/>.
     /// </returns>
     bool IsValid(TMetadata? metadata);
 }
 /// <summary>
-/// Represents a list of items that support editing and tracking of original values. (expose <typeparamref name="TEdit"/>)
+/// A list of items that support editing and tracking of original values. (expose <typeparamref name="TEdit"/>)
 /// </summary>
 public class TrackingEditList<TOg, TEdit, TEditItem>(IEnumerable<TOg> items, int initialCapacity = 4)
     : TrackingEditListBase<TOg, TEdit, TEditItem>(items.Select(TEditItem.FromOriginal),
@@ -67,7 +67,7 @@ public class TrackingEditList<TOg, TEdit, TEditItem>(IEnumerable<TOg> items, int
     public override TEditItem MakeNewEditItem(TEdit newItem) => TEditItem.CreateNew(newItem);
 }
 /// <summary>
-/// Represents a list of items that support editing and tracking of original values. (expose <typeparamref name="TEdit"/>)
+/// A list of items that support editing and tracking of original values. (expose <typeparamref name="TEdit"/>)
 /// </summary>
 public class TrackingEditList<TOg, TEdit, TEditItem, TMetadata, TEditProcessor>(TEditProcessor processor, IEnumerable<TOg> items, int initialCapacity = 4)
     : TrackingEditListBase<TOg, TEdit, TEditItem>(items.Select(TEditItem.FromOriginal),

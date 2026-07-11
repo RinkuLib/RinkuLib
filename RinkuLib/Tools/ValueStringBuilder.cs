@@ -26,7 +26,7 @@ public ref partial struct ValueStringBuilder {
         _chars = _arrayToReturnToPool;
         _pos = 0;
     }
-    /// <summary>Gets or sets the current number of characters in the builder.</summary>
+    /// <summary>The current number of characters in the builder.</summary>
     public int Length {
         readonly get => _pos;
         set {
@@ -119,7 +119,7 @@ public ref partial struct ValueStringBuilder {
     /// </summary>
     public readonly ReadOnlySpan<char> AsSpan(int start, int length) => _chars.Slice(start, length);
     /// <summary>Copies the content to a destination and releases pooled resources.</summary>
-    /// <returns>True if the destination was large enough; otherwise, false.</returns>
+    /// <returns>True if the destination was large enough, otherwise false.</returns>
     public bool TryCopyTo(Span<char> destination, out int charsWritten) {
         if (_chars[.._pos].TryCopyTo(destination)) {
             charsWritten = _pos;

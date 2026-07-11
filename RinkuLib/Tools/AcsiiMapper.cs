@@ -150,7 +150,7 @@ public unsafe interface ICaseComparer {
     /// The caller MUST ensure that <paramref name="keyPtr"/> is pinned and has a valid range of at least <paramref name="len"/>, 
     /// and that <c>candidate.Length == len</c>. 
     /// </remarks>
-    /// <returns><see langword="true"/> if the sequences match based on the strategy; otherwise, <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> if the sequences match based on the strategy, otherwise <see langword="false"/>.</returns>
     static abstract bool Equals(char* keyPtr, string candidate, int len);
 }
 /// <summary>

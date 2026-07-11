@@ -14,7 +14,7 @@ internal enum CondFlags : byte {
     Finished = 0b_1000_0000,
 }
 /// <summary>
-/// Represents the footprint of a condition marker within the query.
+/// The footprint of a condition marker within the query.
 /// Maps a condition key to the specific segment of the parsed string it influences.
 /// </summary>
 /// <remarks>
@@ -55,7 +55,7 @@ internal struct CondInfo {
     public int VarIndex { get; private set; }
     /// <summary>
     /// The category of the condition (e.g., None, Comment-based, Select-based, Special...).
-    /// Used to determine how the segment should be processed in the next phase.
+    /// Decides how the segment is processed in the next phase.
     /// </summary>
     public char Type { get; private set; }
     /// <summary>
@@ -187,7 +187,7 @@ public unsafe ref struct QueryExtracter {
     }
     /// <summary>
     /// The primary scanning loop. It uses a single pass with raw pointers to minimize allocations.
-    /// The 'Builder' serves as a normalization buffer, while 'Conditions' tracks the metadata
+    /// The 'Builder' is a normalization buffer, while 'Conditions' tracks the metadata
     /// for segments that can be toggled later.
     /// </summary>
     private PooledArray<CondInfo>.Locked SegmentQuery(string query, char variableChar, out string newQuery) {
@@ -247,7 +247,7 @@ public unsafe ref struct QueryExtracter {
                     UpdateCurrentStart(BuilderInd + 1, 0);
                 else if (IsEnd(CurrentChar))
                     LowerParentesis();
-                else if (IsCase(CurrentChar)) {
+                else if (IsCaseOrBegin(CurrentChar)) {
                     RaiseParentesis(false);
                     ParMap |= 1;
                     CurrentChar++;
@@ -544,8 +544,9 @@ public unsafe ref struct QueryExtracter {
     private static bool IsValues(char* ptr)
         => (*ptr | 0x20) == 'v' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 'l'
         && (ptr[3] | 0x20) == 'u' && (ptr[4] | 0x20) == 'e' && (ptr[5] | 0x20) == 's';
-    private static bool IsCase(char* ptr)
-        => (*ptr | 0x20) == 'c' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 's' && (ptr[3] | 0x20) == 'e';
+    private static bool IsCaseOrBegin(char* ptr)
+        => ((*ptr | 0x20) == 'c' && (ptr[1] | 0x20) == 'a' && (ptr[2] | 0x20) == 's' && (ptr[3] | 0x20) == 'e')
+        || ((*ptr | 0x20) == 'b' && (ptr[1] | 0x20) == 'e' && (ptr[2] | 0x20) == 'g' && (ptr[3] | 0x20) == 'i' && (ptr[4] | 0x20) == 'n');
     private static bool IsEnd(char* ptr)
         => (*ptr | 0x20) == 'e' && (ptr[1] | 0x20) == 'n' && (ptr[2] | 0x20) == 'd' && IsBoundary(ptr[3]);
     private static bool IsOr(char* ptr)

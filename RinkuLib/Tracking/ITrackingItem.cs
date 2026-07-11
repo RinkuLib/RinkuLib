@@ -2,7 +2,7 @@
 
 namespace RinkuLib.Tracking;
 /// <summary>
-/// Represents an item that tracks an original value
+/// An item that tracks an original value
 /// </summary>
 public interface ITrackingItem<T> {
     /// <summary>
@@ -21,7 +21,7 @@ public interface ITrackingItem<T> {
     bool HasOriginal([MaybeNullWhen(false)] out T original);
 }
 /// <summary>
-/// Represents an item that exposes a value and optionally supports editing it through
+/// An item that exposes a value and optionally supports editing it through
 /// a dedicated editable representation.
 /// </summary>
 public interface IEditableItem<T> {
@@ -67,7 +67,7 @@ public interface IEditableItem<T> {
     Task<bool> CancelEditAsync(CancellationToken cancellationToken = default);
 }
 /// <summary>
-/// Represents an item that exposes a value for editing while also tracking an original value
+/// An item that exposes a value for editing while also tracking an original value
 /// </summary>
 /// <typeparam name="TOg">
 /// The type of the original tracked value.

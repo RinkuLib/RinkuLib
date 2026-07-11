@@ -8,7 +8,8 @@
 	    <LangVersion>latest</LangVersion>
 
         <PackageId>Rinku</PackageId>
-        <Version>0.10.1</Version>
+        <!-- Version comes from the latest git tag (vX.Y.Z) via MinVer, see the release workflow. -->
+        <MinVerTagPrefix>v</MinVerTagPrefix>
         <Authors>adam.therrien.marois</Authors>
 	    <Product>Rinku</Product>
 	    <Title>Rinku</Title>
@@ -54,5 +55,9 @@
     <ItemGroup>
         <None Include="..\readmeNuGet.md" Pack="true" PackagePath="\" />
         <None Include="..\logo.png" Pack="true" PackagePath="\" />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Sets Version/AssemblyVersion from the latest vX.Y.Z git tag at build time. -->
+        <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
     </ItemGroup>
 </Project>

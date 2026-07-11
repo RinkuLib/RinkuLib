@@ -33,27 +33,26 @@ using (cmd) {
 | `Query<T>()` | Parse the current set as `T`, then advance to the next set. |
 | `QueryAsync<T>(CancellationToken ct = default)` | Async form. |
 | `StreamQueryAsync<T>(bool goToNextResultSet = true, CancellationToken ct = default)` | Stream the current set's rows, advance when enumeration completes. |
-| `GetStep<T>()` | Parse one step from the row a manual `Read()` put you on, ending on the step's last row. Throws when the parser must look past its own rows. |
-| `GetStepAsync<T>(CancellationToken ct = default)` | Async form. |
 | `Get<T>()` | Parse starting at the current row, advancing the reader. `CanContinue` reports whether it is left on an untreated row. |
 | `GetAsync<T>(CancellationToken ct = default)` | Async form. |
+| `GetCurrentSetParser<T>()` | The current set's parser, to run yourself. `Parse` reads the next row (`CanContinue` reports whether it exists); an `IStepParser<T>` leaves the next `Read` to you. |
 
 ## Mixing with manual reading
 
-`MultiReader` is itself a `DbDataReader`, so the raw reader surface (`Read`, `NextResult`, indexers) is available. `Query<T>` does the reading itself and always finishes the set, so parsing a set step by step belongs to `GetStep<T>` and `Get<T>`. Useful when the row's content decides how to parse it.
+`MultiReader` is itself a `DbDataReader`, so the raw reader surface (`Read`, `NextResult`, indexers) is available. `Query<T>` does the reading itself and always finishes the set, so parsing a set row by row belongs to `GetCurrentSetParser<T>` and `Get<T>`. Useful when the row's content decides how to parse it.
 
-`GetStep<T>` parses one step from the row you are standing on and ends on the step's last row, never looking further. A plain row type is a one row step, so the reader does not move at all. The rows a step takes are decided by the parser alone, which keeps the advance yours, and a parser that must look past its own rows to find its end (`List<T>`, `Single<T>`) throws.
+Every parser starts on the row you are on; they differ on the next row. `GetCurrentSetParser<T>` hands you the parser to run yourself. A parser that takes one row at a time is an `IStepParser<T>`, which every plain row type is; test for it and call `ParseStep` to parse the current row without reading past it, so the next `Read` stays yours. That control is the reason to take the parser; when you do not need it, `Query<T>` reads for you.
 
 ```csharp
 while (multi.Read()) {
     if (multi.GetInt32(0) == (int)RowKind.Refund)
-        refunds.Add(multi.GetStep<Refund>()!);
+        refunds.Add(((IStepParser<Refund>)multi.GetCurrentSetParser<Refund>()).ParseStep(multi)!);
     else
-        payments.Add(multi.GetStep<Payment>()!);
+        payments.Add(((IStepParser<Payment>)multi.GetCurrentSetParser<Payment>()).ParseStep(multi)!);
 }
 ```
 
-`Get<T>` runs the full parser from the row you are standing on. The parser advances the reader, and `CanContinue` reports its state afterwards, `true` when it sits on an untreated row, so the loop runs on that flag instead of calling `Read()` between rows.
+`Get<T>` runs the full parser from the row you are standing on. It reads the next row as it goes, so `CanContinue` reports its state afterwards, `true` when it sits on an untreated row, and the loop runs on that flag instead of calling `Read()` between rows.
 
 ```csharp
 var reading = multi.Read();

@@ -86,7 +86,8 @@ public sealed class QueryText : IQueryText {
     public unsafe string Parse(Span<bool> usageMap, NoTypeAccessor accessor) {
 #endif
         Debug.Assert(usageMap.Length == RequiredVariablesLength);
-
+        if (Conditions.Length == 1 && Segments.Length == 1)
+            return QueryString;
         ValueStringBuilder sb = AverageLengthChunk <= 512
                 ? new ValueStringBuilder(stackalloc char[512])
                 : new ValueStringBuilder(AverageLengthChunk);

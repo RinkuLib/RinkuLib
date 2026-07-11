@@ -10,7 +10,7 @@ public struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
     /// Transfers ownership of the underlying array to a <see cref="Locked"/> handle.
     /// </summary>
     /// <remarks>The pooled array (current instance) is render unusable after this operation.</remarks>
-    /// <returns>A <see cref="Locked"/> handle responsible for returning the array to the pool.</returns>
+    /// <returns>A <see cref="Locked"/> handle that returns the array to the pool.</returns>
     public Locked LockTransfer() {
         var res = new Locked(_array, _count);
         _array = null!;
