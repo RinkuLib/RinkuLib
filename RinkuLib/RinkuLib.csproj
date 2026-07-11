@@ -1,0 +1,63 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+	    <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
+	    <ImplicitUsings>enable</ImplicitUsings>
+	    <Nullable>enable</Nullable>
+	    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	    <LangVersion>latest</LangVersion>
+
+        <PackageId>Rinku</PackageId>
+        <!-- Version comes from the latest git tag (vX.Y.Z) via MinVer, see the release workflow. -->
+        <MinVerTagPrefix>v</MinVerTagPrefix>
+        <Authors>adam.therrien.marois</Authors>
+	    <Product>Rinku</Product>
+	    <Title>Rinku</Title>
+        <AssemblyName>Rinku</AssemblyName>
+		<PackageTags>orm;sql;micro-orm;database;mapper</PackageTags>
+
+        <Description>
+            A modular micro-ORM with SQL templating and complex object mapping
+        </Description>
+
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <Deterministic>true</Deterministic>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+	    <PackageProjectUrl>https://github.com/RinkuLib/RinkuLib</PackageProjectUrl>
+	    <RepositoryUrl>https://github.com/RinkuLib/RinkuLib</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageReadmeFile>readmeNuGet.md</PackageReadmeFile>
+        <PackageIcon>logo.png</PackageIcon>
+
+        <DebugSymbols>true</DebugSymbols>
+        <DebugType>embedded</DebugType>
+        <EmbedAllSources>true</EmbedAllSources>
+    </PropertyGroup>
+	<!-- Analyzer references are packed into the NuGet but are not part of the public API.
+	     DocFX sets DocsApiBuild=true so it doesn't load them when generating the API reference
+	     (avoids duplicate-source and missing-metadata-reference warnings). -->
+	<ItemGroup Condition="'$(DocsApiBuild)' != 'true'">
+		<ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers\RinkuLib.Analyzers.csproj" PrivateAssets="all" ReferenceOutputAssembly="false"/>
+		<ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\RinkuLib.Analyzers.CodeFixes.csproj" PrivateAssets="all" ReferenceOutputAssembly="false"/>
+	</ItemGroup>
+
+	<Target Name="BuildAnalyzers" BeforeTargets="Pack">
+		<MSBuild Projects="..\RinkuLib.Analyzers\RinkuLib.Analyzers\RinkuLib.Analyzers.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
+		<MSBuild Projects="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\RinkuLib.Analyzers.CodeFixes.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
+	</Target>
+	<ItemGroup>
+		<None Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers\bin\$(Configuration)\netstandard2.0\RinkuLib.Analyzers.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
+		<None Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\bin\$(Configuration)\netstandard2.0\RinkuLib.Analyzers.CodeFixes.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
+	</ItemGroup>
+    <ItemGroup>
+        <None Include="..\readmeNuGet.md" Pack="true" PackagePath="\" />
+        <None Include="..\logo.png" Pack="true" PackagePath="\" />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Sets Version/AssemblyVersion from the latest vX.Y.Z git tag at build time. -->
+        <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
+    </ItemGroup>
+</Project>

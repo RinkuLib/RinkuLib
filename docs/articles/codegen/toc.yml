@@ -1,0 +1,6 @@
+- name: Code Generation
+  href: index.md
+- name: Configuration
+  href: configuration.md
+- name: Analyzers
+  href: analyzers.md

@@ -1,0 +1,78 @@
+name: Release (VS Extension)
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which version part to bump
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-extension
+  cancel-in-progress: false
+
+env:
+  EXTENSION_SLN: RinkuPowerTools/RinkuPowerTools.slnx
+  EXTENSION_DIR: RinkuPowerTools/RinkuPowerTools.VisualStudio
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: ver
+        shell: bash
+        run: |
+          git fetch --tags --force
+          latest=$(git tag -l 'ext-v*' --sort=-v:refname | head -n1)
+          base="${latest#ext-v}"
+          [ -z "$base" ] && base="0.1.0"
+          IFS='.' read -r major minor patch <<< "$base"
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          next="$major.$minor.$patch"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=ext-v$next" >> "$GITHUB_OUTPUT"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0
+            10.0
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build the extension
+        run: msbuild ${{ env.EXTENSION_SLN }} /restore /p:Configuration=Release /p:Version=${{ steps.ver.outputs.version }}
+
+      - name: Find the VSIX
+        id: vsix
+        shell: bash
+        run: echo "path=$(find ${{ env.EXTENSION_DIR }}/bin -name '*.vsix' | head -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.ver.outputs.tag }}" -m "Extension ${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ steps.ver.outputs.tag }}" "${{ steps.vsix.outputs.path }}" --title "${{ steps.ver.outputs.tag }}" --generate-notes

@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="RinkuPowerTools.Compiler/RinkuPowerTools.Compiler.csproj" Id="95e98e07-9b0e-4981-8787-957a86c0cff4" />
+  <Project Path="RinkuPowerTools.VisualStudio/RinkuPowerTools.VisualStudio.csproj">
+    <Deploy />
+  </Project>
+  <Project Path="RinkuPowerTools/RinkuPowerTools.csproj" />
+</Solution>
