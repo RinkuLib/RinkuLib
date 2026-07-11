@@ -13,6 +13,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  deployments: write
 
 # Allow one concurrent deployment; let an in-progress run finish.
 concurrency:
@@ -57,3 +58,14 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Prune old deployment records
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest=$(gh api "repos/${{ github.repository }}/deployments?environment=github-pages&per_page=1" --jq '.[0].id')
+          gh api --paginate "repos/${{ github.repository }}/deployments?environment=github-pages&per_page=100" --jq '.[].id' | while read -r id; do
+            [ "$id" = "$latest" ] && continue
+            gh api -X POST "repos/${{ github.repository }}/deployments/$id/statuses" -f state=inactive --silent || true
+            gh api -X DELETE "repos/${{ github.repository }}/deployments/$id" --silent || true
+          done
