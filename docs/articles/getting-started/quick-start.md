@@ -6,7 +6,7 @@ Create a `QueryCommand` from a SQL string, then call an execution method on it.
 using RinkuLib.Queries;
 using RinkuLib.Commands;
 
-// Your own type. Nothing about it is special to Rinku.
+// Your own type.
 public record Artist(int Id, string Name);
 
 // Create once, in a static readonly field.

@@ -14,7 +14,7 @@ List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 1 });
 // GetAlbums.Query<IEnumerable<Album>>(cnn, ...)  -> streamed
 ```
 
-The result shape follows the type argument. `Album` is one of your own types, nothing about it is special to Rinku. Reach for the capabilities one at a time or together.
+The result shape follows the type argument. `Album` is one of your own types, any class, record, or struct works, with no attributes and no configuration. Reach for the capabilities one at a time or together.
 
 - **Object mapping.** Compile a mapping from the result schema to your type through a configurable negotiation.
 - **Conditional SQL.** One template that adapts to the values you pass, valid without string concatenation.
