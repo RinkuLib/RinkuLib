@@ -26,7 +26,7 @@ Targets **.NET 8** and **.NET 10**. The compile-time analyzers ship inside the p
 
 ## Pick the result shape
 
-The type argument decides what comes back. `Album` is one of your own types, nothing about it is special to Rinku.
+The type argument decides what comes back. `Album` is one of your own types, any class, record, or struct works, with no attributes and no configuration.
 
 ```csharp
 Album one                 = GetAlbums.Query<Album>(cnn, new { artistId = 1 });              // one row
