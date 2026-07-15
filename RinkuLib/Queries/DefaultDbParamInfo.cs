@@ -198,7 +198,6 @@ public class SizedDbParamCache : DbParamInfo {
         this.Type = type;
         this.Size = size;
     }
-    // Dedicated caches for the most common sized types
     private static SizedDbParamCache[] _stringCache = [];
     private static SizedDbParamCache[] _ansiStringCache = [];
     private static SizedDbParamCache[] _binaryCache = [];

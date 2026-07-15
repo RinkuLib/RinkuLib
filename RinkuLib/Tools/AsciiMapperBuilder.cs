@@ -1,5 +1,6 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -238,7 +239,7 @@ private static readonly byte[] DeBruijnLookup64 = [
             if (keysStart == keysEnd)
                 return true;
         }
-        return false;
+        throw new UnreachableException();
     }
     private uint MakeStep(int keysStart, int nb) {
         var (counter, charIndex) = GetBestBitCounter(keysStart, nb);
@@ -255,16 +256,14 @@ private static readonly byte[] DeBruijnLookup64 = [
         return step;
     }
     private static bool AllEqualIgnoreCase(ReadOnlySpan<string> span) {
-        // COVERAGE unreachable: MakeStep only calls this with a group of nb >= 2 keys.
-        if (span.Length < 2)
-            return true;
+        Debug.Assert(span.Length >= 2, "Error: Must have at least 2 keys in the group");
         string first = span[0];
         int len = first.Length;
         for (int i = 1; i < span.Length; i++) {
             string s = span[i];
             if (ReferenceEquals(s, first))
                 continue;
-            if (s == null || s.Length != len)
+            if (s.Length != len)
                 return false;
             var a = first.AsSpan();
             var b = s.AsSpan();

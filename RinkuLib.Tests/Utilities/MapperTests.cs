@@ -243,9 +243,6 @@ public class MapperTests {
 
     [Fact]
     public void Deeply_nested_keys_navigate_many_steps() {
-        // Every combination of two letters across a range of lengths: no single character separates them,
-        // so the builder steps through position after position. Mixing lengths makes keys resolve at a
-        // range of depths, exercising each unrolled navigation step and the trailing loop.
         var keys = Enumerable.Range(4, 4).SelectMany(BinaryCombinations).ToArray();
         using var mapper = Mapper.GetMapper(keys.AsSpan());
         Assert.Equal(keys.Length, mapper.Count);
@@ -256,8 +253,6 @@ public class MapperTests {
 
     [Fact]
     public void Long_key_misses_compare_the_full_candidate() {
-        // Keys long enough to take the vectorised comparison path; the queries share a prefix so they
-        // navigate onto a real candidate and then fail the full comparison.
         using var mapper = Mapper.GetMapper(["Alphabet_Long", "Betabet_Longer", "Gammabet_Longs"]);
         Assert.Equal(0, mapper.GetIndex("Alphabet_Long"));
         Assert.Equal(-1, mapper.GetIndex("Alphabet_LonZ"));
@@ -287,29 +282,157 @@ public class MapperTests {
     }
 
     [Fact]
+    public void A_null_key_in_the_set_is_rejected() {
+        Assert.Throws<NullReferenceException>(() => Mapper.GetMapper(["A", null!, "B", "C"]));
+    }
+
+    [Fact]
+    public void An_empty_string_is_a_valid_distinct_key() {
+        string[] keys = ["", "aX", "bX", "cX"];
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(keys.Length, mapper.Count);
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+        Assert.Equal(0, mapper.GetIndex(""));
+        Assert.Equal(-1, mapper.GetIndex("zzz"));
+    }
+
+    [Fact]
     public void Keys_the_perfect_hash_cannot_separate_fall_back_to_a_dictionary() {
-        // These differ only at a character whose case fold is not the ASCII +32 shift (dotless i, micro
-        // sign), which the perfect-hash builder cannot key on, so it falls back to a dictionary mapper.
         var keys = new[] { "colı", "colµ", "colX", "colY", "colZ" };
         using var mapper = Mapper.GetMapper(keys.AsSpan());
         Assert.Equal(keys.Length, mapper.Count);
         for (int i = 0; i < keys.Length; i++) {
-            Assert.Equal(i, mapper.GetIndex(keys[i]));            // string lookup
-            Assert.Equal(i, mapper.GetIndex(keys[i].AsSpan()));   // span lookup
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+            Assert.Equal(i, mapper.GetIndex(keys[i].AsSpan()));
         }
         Assert.Equal(-1, mapper.GetIndex("colW"));
         Assert.Equal(-1, mapper.GetIndex("colW".AsSpan()));
-        Assert.Equal(2, mapper.GetIndex("COLX"));                 // case-insensitive
+        Assert.Equal(2, mapper.GetIndex("COLX"));
     }
 
     [Fact]
     public void Dictionary_fallback_collapses_when_duplicates_fold_away() {
-        var keys = new[] { "colı", "colµ", "COLı" };              // COLı folds onto colı: two unique keys
+        var keys = new[] { "colı", "colµ", "COLı" };
         using var mapper = Mapper.GetMapper(keys.AsSpan());
         Assert.Equal(2, mapper.Count);
         Assert.Equal(0, mapper.GetIndex("colı"));
         Assert.Equal(0, mapper.GetIndex("COLı"));
         Assert.Equal(1, mapper.GetIndex("colµ"));
+    }
+
+    [Fact]
+    public void Long_key_misses_through_the_span_path() {
+        using var mapper = Mapper.GetMapper(["Alphabet_Long", "Betabet_Longer", "Gammabet_Longs"]);
+        Assert.Equal(0, mapper.GetIndex("Alphabet_Long".AsSpan()));
+        Assert.Equal(-1, mapper.GetIndex("Alphabet_LonZ".AsSpan()));
+        Assert.Equal(-1, mapper.GetIndex("AlXXXbet_Long".AsSpan()));
+        Assert.Equal(-1, mapper.GetIndex("Alphabet".AsSpan()));
+    }
+
+    [Fact]
+    public void A_wide_character_range_at_one_position_uses_a_big_mask() {
+        string[] keys = ["`", "@", "A", "1", " ", "1`", "1@", "1A", "11", "2`", "2@", "2A", "21"];
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+    }
+
+    [Fact]
+    public void A_wide_character_range_spanning_the_full_ascii_set_builds() {
+        var keys = Enumerable.Range(32, 65).Select(i => "p" + (char)i + "s").ToArray();
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(keys.Length, mapper.Count);
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+    }
+
+    [Fact]
+    public void Every_distinct_length_up_to_255_builds() {
+        var keys = Enumerable.Range(0, 256).Select(i => new string('0', i)).ToArray();
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(256, mapper.Count);
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+    }
+
+    [Fact]
+    public void More_distinct_lengths_than_a_step_table_can_hold_still_resolve() {
+        var keys = Enumerable.Range(0, 257).Select(i => new string('0', i)).ToArray();
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(257, mapper.Count);
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+    }
+
+    [Fact]
+    public void An_extremely_long_shared_prefix_resolves() {
+        string prefix = new('z', 5000);
+        string[] keys = [prefix + "Alpha", prefix + "Beta", prefix + "Gamma", prefix + "Delta"];
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(keys.Length, mapper.Count);
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+        Assert.Equal(-1, mapper.GetIndex(prefix + "Zeta"));
+    }
+
+    [Fact]
+    public void Interleaved_case_variants_dedup_to_the_first_occurrence() {
+        string[] keys = ["Key1", "Key2", "KEY1", "Key3", "key2", "KEY3"];
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(3, mapper.Count);
+        Assert.Equal(0, mapper.GetIndex("key1"));
+        Assert.Equal(1, mapper.GetIndex("KEY2"));
+        Assert.Equal(2, mapper.GetIndex("key3"));
+    }
+
+    [Fact]
+    public void Groups_that_differ_only_by_case_collapse() {
+        string[] keys = ["Ab", "aB", "AB", "ab", "cd", "CD", "Cd"];
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(2, mapper.Count);
+        Assert.Equal(0, mapper.GetIndex("AB"));
+        Assert.Equal(1, mapper.GetIndex("cD"));
+    }
+
+    [Fact]
+    public void Repeated_string_instances_dedup_by_reference() {
+        var shared = "CommonKey";
+        string[] keys = [shared, shared, shared, "Unique1", "Unique2"];
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(3, mapper.Count);
+        Assert.Equal(0, mapper.GetIndex("commonkey"));
+        Assert.Equal(1, mapper.GetIndex("Unique1"));
+    }
+
+    [Fact]
+    public void A_letter_colliding_with_a_control_character_slot_falls_back() {
+        string[] keys = ["pA", "p" + (char)0x81, "pB", "pC"];
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(keys.Length, mapper.Count);
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+    }
+
+    [Fact]
+    public void A_nested_group_the_builder_cannot_split_falls_back() {
+        string[] keys = ["Aı", "Aµ", "AX", "Bı", "Bµ", "BX"];
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(keys.Length, mapper.Count);
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
+    }
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(32)]
+    [InlineData(64)]
+    public void Distinct_length_counts_pick_each_length_comparer_tier(int count) {
+        var keys = Enumerable.Range(0, count).Select(i => new string('0', i)).ToArray();
+        using var mapper = Mapper.GetMapper(keys.AsSpan());
+        Assert.Equal(count, mapper.Count);
+        for (int i = 0; i < keys.Length; i++)
+            Assert.Equal(i, mapper.GetIndex(keys[i]));
     }
 
     static string[] BinaryCombinations(int len) {

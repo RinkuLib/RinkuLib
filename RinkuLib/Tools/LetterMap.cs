@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -241,8 +241,6 @@ public class LetterMap<T> : IDictionary<char, T> {
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    /* ================= Core ================= */
-
     void Set(char key, T value) {
         int i = Idx(key);
         uint bit = 1u << i;
@@ -254,12 +252,9 @@ public class LetterMap<T> : IDictionary<char, T> {
         }
 
         var arr = _values;
-        var newArr = new T[arr == null ? 1 : arr.Length + 1];
-
-        if (arr != null) {
-            Array.Copy(arr, 0, newArr, 0, r);
-            Array.Copy(arr, r, newArr, r + 1, arr.Length - r);
-        }
+        var newArr = new T[arr.Length + 1];
+        Array.Copy(arr, 0, newArr, 0, r);
+        Array.Copy(arr, r, newArr, r + 1, arr.Length - r);
 
         newArr[r] = value;
         _values = newArr;

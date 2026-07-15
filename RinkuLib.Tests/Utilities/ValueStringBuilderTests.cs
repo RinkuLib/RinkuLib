@@ -82,7 +82,12 @@ public class ValueStringBuilderTests {
     [InlineData(10, 2)]
     [InlineData(99, 2)]
     [InlineData(100, 3)]
+    [InlineData(1_000, 4)]
+    [InlineData(10_000, 5)]
+    [InlineData(100_000, 6)]
     [InlineData(1000000, 7)]
+    [InlineData(10_000_000, 8)]
+    [InlineData(100_000_000, 9)]
     [InlineData(int.MaxValue, 10)]
     public void DigitCount_counts_decimal_digits(int value, int expected)
         => Assert.Equal(expected, ValueStringBuilder.DigitCount(value));
@@ -203,4 +208,60 @@ public class ValueStringBuilderTests {
         sb.Append('A');
         Assert.Equal("A", sb.ToStringAndDispose());
     }
+
+    [Fact]
+    public void GetPinnableReference_points_at_the_first_char() {
+        var sb = new ValueStringBuilder(stackalloc char[8]);
+        sb.Append("hi");
+        ref char first = ref sb.GetPinnableReference();
+        Assert.Equal('h', first);
+    }
+
+    [Fact]
+    public void GetPinnableReference_can_null_terminate() {
+        var sb = new ValueStringBuilder(stackalloc char[4]);
+        sb.Append("abcd");
+        ref char first = ref sb.GetPinnableReference(true);
+        Assert.Equal('a', first);
+        Assert.Equal('\0', sb.RawChars[sb.Length]);
+        ref char again = ref sb.GetPinnableReference(false);
+        Assert.Equal('a', again);
+        sb.Dispose();
+    }
+
+    [Fact]
+    public void AsSpan_can_null_terminate() {
+        var sb = new ValueStringBuilder(stackalloc char[4]);
+        sb.Append("wxyz");
+        Assert.Equal("wxyz", sb.AsSpan(true).ToString());
+        Assert.Equal('\0', sb.RawChars[sb.Length]);
+        Assert.Equal("wxyz", sb.AsSpan(false).ToString());
+        sb.Dispose();
+    }
+
+    [Fact]
+    public void Insert_string_grows_when_the_buffer_is_too_small() {
+        var sb = new ValueStringBuilder(stackalloc char[4]);
+        sb.Append("ac");
+        sb.Insert(1, "XXXXX");
+        Assert.Equal("aXXXXXc", sb.ToStringAndDispose());
+    }
+
+    [Fact]
+    public void Appending_a_single_char_string_uses_the_fast_path() {
+        var sb = new ValueStringBuilder(stackalloc char[8]);
+        sb.Append("x");
+        sb.Append("yz");
+        Assert.Equal("xyz", sb.ToStringAndDispose());
+    }
+
+    [Fact]
+    public unsafe void Appending_from_a_char_pointer_grows_and_copies() {
+        var sb = new ValueStringBuilder(stackalloc char[2]);
+        char[] src = "hello".ToCharArray();
+        fixed (char* p = src)
+            sb.Append(p, src.Length);
+        Assert.Equal("hello", sb.ToStringAndDispose());
+    }
+
 }
