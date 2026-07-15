@@ -86,6 +86,15 @@ public class ValueStringBuilderTests {
         }
         Assert.Equal("Poin", sb.ToStringAndDispose());
     }
+    [Fact]
+    public unsafe void Append_Ptr_CopiesMemory_and_grows_when_longer() {
+        var sb = new ValueStringBuilder(stackalloc char[2]);
+        string test = "Pointer";
+        fixed (char* p = test) {
+            sb.Append(p, 4);
+        }
+        Assert.Equal("Poin", sb.ToStringAndDispose());
+    }
 
     [Fact]
     public void AppendSpan_ReturnsWriteableSegment() {

@@ -156,7 +156,7 @@ public unsafe interface ICaseComparer {
 /// <summary>
 /// ASCII comparison strategy using SIMD (Vector128) acceleration.
 /// </summary>
-public unsafe struct AsciiStrategy : ICaseComparer {
+public struct AsciiStrategy : ICaseComparer {
     /// <inheritdoc />
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -164,10 +164,8 @@ public unsafe struct AsciiStrategy : ICaseComparer {
         fixed (char* cPtr = candidate) {
             int i = 0;
 
-            // --- SIMD Path ---
             if (Vector128.IsHardwareAccelerated && len >= 8) {
                 Vector128<ushort> caseBit = Vector128.Create((ushort)0x20);
-                // We use lowercase range for normalization check
                 Vector128<ushort> lowA = Vector128.Create((ushort)'a');
                 Vector128<ushort> lowZ = Vector128.Create((ushort)'z');
 
@@ -177,17 +175,10 @@ public unsafe struct AsciiStrategy : ICaseComparer {
 
                     if (v1 == v2)
                         continue;
-
-                    // Normalize BOTH to lowercase
-                    // (c | 0x20) only if it's a letter
                     var v1L = v1 | caseBit;
                     var v2L = v2 | caseBit;
-
-                    // Safety: Ensure it's actually a letter
                     var isLetter = Vector128.GreaterThanOrEqual(v1L, lowA) &
                                    Vector128.LessThanOrEqual(v1L, lowZ);
-
-                    // If it's a letter, compare normalized. If not, compare original.
                     var finalV1 = Vector128.ConditionalSelect(isLetter, v1L, v1);
                     var finalV2 = Vector128.ConditionalSelect(isLetter, v2L, v2);
 
@@ -196,7 +187,6 @@ public unsafe struct AsciiStrategy : ICaseComparer {
                 }
             }
 
-            // --- Scalar Path ---
             for (; i < len; i++) {
                 uint c1 = keyPtr[i];
                 uint c2 = cPtr[i];

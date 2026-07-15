@@ -1,74 +1,62 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 
 namespace RinkuLib.Tools;
-/// <summary>Converts a value from one type to another at runtime, covering casts, numeric conversions, and parsing, for when a column's type does not match the member's.</summary>
+/// <summary>A conversion that writes its result through the out parameter and returns whether it succeeded.</summary>
+public delegate bool CastFunc<TFrom, TTo>(TFrom value, out TTo result);
+/// <summary>
+/// Converts a value from one type to another at runtime, covering casts, numeric conversions, enum
+/// conversions, and parsing, for when a value's type does not match the one a caller wants. Each type pair
+/// resolves its conversion once, emitting a specialized method for it, and reuses it. A custom parser
+/// registered with <see cref="AddParser"/> replaces that emitted conversion for the pair and takes effect
+/// even after the pair was first used.
+/// </summary>
 public static class Caster {
+    private static readonly BindingFlags PublicStatic = BindingFlags.Public | BindingFlags.Static;
+    /// <summary>Register a custom conversion from <typeparamref name="TFrom"/> to <typeparamref name="TTo"/>. It takes priority over the built-in paths.</summary>
+    public static void AddParser<TFrom, TTo>(CastFunc<TFrom, TTo> parser) => Caster<TFrom, TTo>.SetCustom(parser);
     /// <summary>Converts <paramref name="value"/> to <typeparamref name="TTo"/>, returning <see langword="false"/> when no conversion fits.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryCast<TFrom, TTo>(TFrom value, [MaybeNullWhen(false)] out TTo val) => Caster<TFrom, TTo>.TryCast(value, out val);
     static Caster() {
-        AddTypeParser(v => Convert.ToSByte(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToInt16(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToInt32(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToInt64(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToByte(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToUInt16(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToUInt32(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToUInt64(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToSingle(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToDouble(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToDecimal(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToChar(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => v.ToString() ?? string.Empty);
-        AddTypeParser(v => Convert.ToBoolean(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => Convert.ToDateTime(v, CultureInfo.InvariantCulture));
-        AddTypeParser(v => DateTimeOffset.Parse(v.ToString()!, CultureInfo.InvariantCulture));
-        AddTypeParser(v => TimeSpan.Parse(v.ToString()!, CultureInfo.InvariantCulture));
-        AddTypeParser(v => v switch {
-            Guid g => g,
-            string s => Guid.Parse(s),
-            byte[] b => new Guid(b),
-            _ => Guid.Parse(v.ToString()!)
+        AddParser((object v, out DateTimeOffset r) => { r = DateTimeOffset.Parse(v.ToString()!, CultureInfo.InvariantCulture); return true; });
+        AddParser((object v, out TimeSpan r) => { r = TimeSpan.Parse(v.ToString()!, CultureInfo.InvariantCulture); return true; });
+        AddParser((object v, out Guid r) => {
+            r = v switch {
+                string s => Guid.Parse(s),
+                byte[] b => new Guid(b),
+                _ => Guid.Parse(v.ToString()!)
+            };
+            return true;
         });
+        _ = 1;
     }
-    private static readonly Dictionary<Type, object> TypeParsers = [];
-    /// <summary>Add a value to parse from object to a type</summary>
-    public static void AddTypeParser<T>(Func<object, T> parser) => TypeParsers[typeof(T)] = parser;
-    /// <summary>Parse an object value to <typeparamref name="T"/></summary>
-    public static T Parse<T>(this object? value) {
-        if (value is null || value is DBNull)
-            return default!;
-        if (value is T t)
-            return t;
-        var type = typeof(T);
-        type = Nullable.GetUnderlyingType(type) ?? type;
-        if (type.IsEnum) {
-            if (value is float || value is double || value is decimal) {
-                value = Convert.ChangeType(value, Enum.GetUnderlyingType(type), CultureInfo.InvariantCulture);
-            }
-            return (T)Enum.ToObject(type, value);
-        }
-        if (TypeParsers.TryGetValue(type, out object? parser))
-            return Unsafe.As<object, Func<object, T>>(ref parser)(value);
-        return (T)Convert.ChangeType(value, type, CultureInfo.InvariantCulture);
-    }
-    internal static IntPtr GetOpPtr(Type from, Type to) {
-        TryGetOperator(from, to, out var m);
-        return m!.MethodHandle.GetFunctionPointer();
+    /// <summary>Parse an object value to <typeparamref name="T"/>.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [return: NotNullIfNotNull(nameof(value))]
+    public static T? Parse<T>(this object? value) {
+        if (Caster<object?, T>.TryCast(value, out var val))
+            return val!;
+        throw new Exception($"Unable to parse from {value} (object : {value!.GetType()}) to {typeof(T)}");
     }
     internal static bool TryGetOperator(Type f, Type t, [NotNullWhen(true)] out MethodInfo? m) {
-        const BindingFlags flags = BindingFlags.Static | BindingFlags.Public;
-        m = f.GetMethod("op_Explicit", flags, [f]) ?? f.GetMethod("op_Implicit", flags, [f])
-         ?? t.GetMethod("op_Explicit", flags, [f]) ?? t.GetMethod("op_Implicit", flags, [f]);
+        m = f.GetMethod("op_Explicit", PublicStatic, [f]) ?? f.GetMethod("op_Implicit", PublicStatic, [f])
+         ?? t.GetMethod("op_Explicit", PublicStatic, [f]) ?? t.GetMethod("op_Implicit", PublicStatic, [f]);
         return m != null && m.ReturnType == t;
     }
+    /// <summary>
+    /// Whether a value type is a plain number, so it can go through <see cref="INumberBase{TSelf}.CreateTruncating{TOther}"/>.
+    /// Only ever asked about the non-enum value types the resolver reaches (see <c>Repr</c>), so it takes the
+    /// built-in numeric type codes, rejects the value types that share a code but are not numbers
+    /// (<see cref="DateTime"/>, <see cref="Guid"/>, <see cref="TimeSpan"/>), and finally accepts a user type
+    /// that implements the generic-math interface (e.g. <see cref="Half"/>, <see cref="Int128"/>).
+    /// </summary>
     internal static bool IsNumeric(Type t) {
-        var code = Type.GetTypeCode(t);
-        switch (code) {
+        switch (Type.GetTypeCode(t)) {
             case TypeCode.SByte:
             case TypeCode.Byte:
             case TypeCode.Int16:
@@ -82,115 +70,301 @@ public static class Caster {
             case TypeCode.Decimal:
                 return true;
         }
-
-        if (!t.IsValueType || t == typeof(DateTime) || t == typeof(Guid) || t == typeof(TimeSpan))
+        if (t == typeof(DateTime) || t == typeof(Guid) || t == typeof(TimeSpan))
             return false;
-
-        // Custom INumberBase check
-        foreach (var i in t.GetInterfaces()) {
-            if (i.IsGenericType &&
-                i.GetGenericTypeDefinition() == typeof(INumberBase<>) &&
-                i.GetGenericArguments()[0] == t) {
+        foreach (var i in t.GetInterfaces())
+            if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INumberBase<>) && i.GetGenericArguments()[0] == t)
                 return true;
-            }
-        }
         return false;
     }
-    internal static bool IsParsable(Type t) => t.IsAssignableTo(typeof(IParsable<>).MakeGenericType(t));
+    internal static bool IsParsable(Type t) {
+        foreach (var i in t.GetInterfaces())
+            if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IParsable<>))
+                return true;
+        return false;
+    }
 }
 /// <summary>The cached converter from <typeparamref name="TFrom"/> to <typeparamref name="TTo"/>, resolved once per type pair and reused.</summary>
 public static class Caster<TFrom, TTo> {
-    private static readonly unsafe delegate* managed<TFrom, out TTo, bool> _ptr;
-    static unsafe Caster() {
-        Type f = typeof(TFrom), t = typeof(TTo);
+    private static volatile CastFunc<TFrom, TTo> _convert = CasterEmit.Build<TFrom, TTo>();
+
+    /// <summary>Replaces the conversion with a custom parser. Rebuild through <see cref="CasterEmit"/> to return to the default.</summary>
+    internal static void SetCustom(CastFunc<TFrom, TTo> parser) => _convert = parser;
+
+    /// <summary>Converts <paramref name="value"/>, returning <see langword="false"/> when no conversion fits.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryCast(TFrom value, [MaybeNullWhen(false)] out TTo result) {
+        if (typeof(TFrom) == typeof(TTo)) {
+            result = Unsafe.As<TFrom, TTo>(ref value);
+            return true;
+        }
+        if (!typeof(TFrom).IsValueType && value is TTo cast) {
+            result = cast;
+            return true;
+        }
+        return _convert(value, out result);
+    }
+}
+/// <summary>
+/// Emits, once per type pair, a specialized method with the signature <c>bool(TFrom, out TTo)</c> that
+/// performs the conversion directly. Value conversions (numbers, enums, nullables, operators) compile to
+/// straight-line IL with no boxing; the reference and parsing paths call the small bridge helpers below.
+/// </summary>
+internal static class CasterEmit {
+    internal static CastFunc<TFrom, TTo> Build<TFrom, TTo>() {
+        var dm = new DynamicMethod(
+            $"Cast_{typeof(TFrom).Name}_{typeof(TTo).Name}",
+            typeof(bool),
+            [typeof(TFrom), typeof(TTo).MakeByRefType()],
+            typeof(Caster).Module,
+            skipVisibility: true);
+        Emit(dm.GetILGenerator(), typeof(TFrom), typeof(TTo));
+        return dm.CreateDelegate<CastFunc<TFrom, TTo>>();
+    }
+
+    private static void Emit(ILGenerator il, Type f, Type t) {
         Type? uF = Nullable.GetUnderlyingType(f), uT = Nullable.GetUnderlyingType(t);
         Type cF = uF ?? f, cT = uT ?? t;
+        bool fromNull = uF is not null, toNull = uT is not null;
 
-        if (t.IsAssignableFrom(f)) {
-            _ptr = (f.IsValueType && !t.IsValueType) ? &BoxedIdentity : &Identity;
+        if (!f.IsValueType && !t.IsValueType && t.IsAssignableFrom(f)) {
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Ldarg_0);
+            Store(il, t);
+            Return(il, true);
+            return;
         }
-        else if (cF == cT) {
-            var bridge = typeof(NullableBridge<>).MakeGenericType(cF);
-            var name = uF == null ? nameof(NullableBridge<>.ToNullable) : nameof(NullableBridge<>.FromNullable);
-            _ptr = (delegate* managed<TFrom, out TTo, bool>)bridge.GetMethod(name)!.MethodHandle.GetFunctionPointer();
+        if (f.IsValueType && !t.IsValueType && t.IsAssignableFrom(f)) {
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Box, f);
+            il.Emit(OpCodes.Stind_Ref);
+            Return(il, true);
+            return;
         }
-        else if (Caster.IsNumeric(cF) && Caster.IsNumeric(cT)) {
-            var bridge = typeof(NumericBridge<,>).MakeGenericType(cF, cT);
-            var name = (uF != null, uT != null) switch {
-                (false, false) => nameof(NumericBridge<,>.Direct),
-                (true, false) => nameof(NumericBridge<,>.FromNull),
-                (false, true) => nameof(NumericBridge<,>.ToNull),
-                (true, true) => nameof(NumericBridge<,>.BothNull)
-            };
-            _ptr = (delegate* managed<TFrom, out TTo, bool>)bridge.GetMethod(name)!.MethodHandle.GetFunctionPointer();
+        if (cF == cT && cF.IsValueType) {
+            EmitLifted(il, cF, cT, fromNull, toNull, static _ => { });
+            return;
         }
-        else if (f == typeof(string) && Caster.IsParsable(cT)) {
-            var bridgeType = (uT == null) ? typeof(ParseBridge<>) : typeof(NullableParseBridge<>);
-            _ptr = (delegate* managed<TFrom, out TTo, bool>)bridgeType
-                .MakeGenericType(cT).GetMethod(nameof(ParseBridge<>.Execute))!
-                .MethodHandle.GetFunctionPointer();
+        if (cF.IsValueType && cT.IsValueType) {
+            Type? reprF = Repr(cF), reprT = Repr(cT);
+            if (reprF is not null && reprT is not null) {
+                EmitLifted(il, cF, cT, fromNull, toNull, l => EmitNumeric(l, reprF, reprT));
+                return;
+            }
         }
-        else if (Caster.TryGetOperator(cF, cT, out _)) {
-            Type bridgeType = (uF != null, uT != null) switch {
-                (false, false) => typeof(OpBridgeDirect<,>).MakeGenericType(cF, cT),
-                (true, false) => typeof(OpBridgeFromNull<,>).MakeGenericType(cF, cT),
-                (false, true) => typeof(OpBridgeToNull<,>).MakeGenericType(cF, cT),
-                (true, true) => typeof(OpBridgeBothNull<,>).MakeGenericType(cF, cT)
-            };
+        if (f == typeof(string)) {
+            if (cT.IsEnum) {
+                EmitStringToEnum(il, cT, toNull);
+                return;
+            }
+            if (Caster.IsParsable(cT)) {
+                EmitParse(il, cT, toNull);
+                return;
+            }
+        }
+        if (Caster.TryGetOperator(cF, cT, out var op)) {
+            EmitLifted(il, cF, cT, fromNull, toNull, l => l.Emit(OpCodes.Call, op));
+            return;
+        }
+        if (f == typeof(object)) {
+            EmitObject(il, cT, toNull);
+            return;
+        }
+        if (typeof(IConvertible).IsAssignableFrom(f)) {
+            var bridge = typeof(ConvertibleBridge<,>).MakeGenericType(f, t);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Call, bridge.GetMethod("Execute")!);
+            il.Emit(OpCodes.Ret);
+            return;
+        }
 
-            _ptr = (delegate* managed<TFrom, out TTo, bool>)bridgeType
-                .GetMethod(nameof(OpBridgeDirect<,>.Execute))!
-                .MethodHandle.GetFunctionPointer();
+        if (t == typeof(string)) {
+            EmitToString(il, f);
+            return;
         }
-        else if (f == typeof(object)) {
-            var bridgeType = (uT == null) ? typeof(ObjectBridge<>) : typeof(ObjectNullableBridge<>);
-            _ptr = (delegate* managed<TFrom, out TTo, bool>)bridgeType
-                .MakeGenericType(cT).GetMethod(nameof(ObjectBridge<>.Execute))!
-                .MethodHandle.GetFunctionPointer();
+        StoreDefault(il, t);
+        Return(il, false);
+    }
+
+    /// <summary>
+    /// Wraps a value-to-value conversion into the four nullability combinations. <paramref name="convert"/>
+    /// assumes the present <paramref name="cF"/> value is on the stack and leaves a <paramref name="cT"/>
+    /// value; the wrapper adds the missing-input checks and the result wrap or unwrap around it.
+    /// </summary>
+    private static void EmitLifted(ILGenerator il, Type cF, Type cT, bool fromNull, bool toNull, Action<ILGenerator> convert) {
+        Type? nullT = toNull ? typeof(Nullable<>).MakeGenericType(cT) : null;
+
+        if (!fromNull) {
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Ldarg_0);
+            convert(il);
+            StoreResult(il, cT, nullT);
+            Return(il, true);
+            return;
         }
-        else if (t == typeof(string)) {
-            _ptr = (delegate* managed<TFrom, out TTo, bool>)typeof(ToStringBridge<>)
-                .MakeGenericType(f).GetMethod(nameof(ToStringBridge<>.Execute))!
-                .MethodHandle.GetFunctionPointer();
+
+        Type nullF = typeof(Nullable<>).MakeGenericType(cF);
+        Label absent = il.DefineLabel();
+        il.Emit(OpCodes.Ldarga_S, (byte)0);
+        il.Emit(OpCodes.Call, nullF.GetMethod("get_HasValue")!);
+        il.Emit(OpCodes.Brfalse, absent);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Ldarga_S, (byte)0);
+        il.Emit(OpCodes.Call, nullF.GetMethod("get_Value")!);
+        convert(il);
+        StoreResult(il, cT, nullT);
+        Return(il, true);
+
+        il.MarkLabel(absent);
+        if (toNull) {
+            StoreDefault(il, nullT!);
+            Return(il, true);
         }
         else {
-            _ptr = &Fail;
+            StoreDefault(il, cT);
+            Return(il, false);
         }
     }
 
-    /// <summary>A reusable to safely return the value</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-    public static unsafe bool TryCast(TFrom value, [MaybeNullWhen(false)] out TTo result) => _ptr(value, out result);
-
-    private static bool Identity(TFrom v, out TTo r) { r = Unsafe.As<TFrom, TTo>(ref v); return true; }
-    private static bool BoxedIdentity(TFrom v, out TTo r) { r = (TTo)(object)v!; return true; }
-    private static bool Fail(TFrom v, out TTo r) { r = default!; return false; }
-}
-internal static class NumericBridge<TIn, TOut>
-    where TIn : struct, INumberBase<TIn>
-    where TOut : struct, INumberBase<TOut> {
-    public static bool Direct(TIn v, out TOut r) { r = TOut.CreateTruncating(v); return true; }
-    public static bool FromNull(TIn? v, out TOut r) { if (v is TIn vv) { r = TOut.CreateTruncating(vv); return true; } r = default; return false; }
-    public static bool ToNull(TIn v, out TOut? r) { r = TOut.CreateTruncating(v); return true; }
-    public static bool BothNull(TIn? v, out TOut? r) { r = v is TIn vv ? TOut.CreateTruncating(vv) : null; return true; }
-}
-
-internal static class NullableBridge<T> where T : struct {
-    public static bool ToNullable(T val, out T? v) { v = val; return true; }
-    public static bool FromNullable(T? val, out T v) {
-        if (val is T vv) {
-            v = vv;
-            return true;
+    /// <summary>Stores a <paramref name="cT"/> value already on the stack into the result, wrapping it when the target is nullable.</summary>
+    private static void StoreResult(ILGenerator il, Type cT, Type? nullT) {
+        if (nullT is not null) {
+            il.Emit(OpCodes.Newobj, nullT.GetConstructor([cT])!);
+            il.Emit(OpCodes.Stobj, nullT);
         }
-        v = default;
-        return false;
+        else {
+            Store(il, cT);
+        }
+    }
+
+    /// <summary>Reinterprets a numeric or enum representation to another, truncating the value. Same representations need no work.</summary>
+    private static void EmitNumeric(ILGenerator il, Type reprF, Type reprT) {
+        if (reprF == reprT)
+            return;
+        var create = typeof(INumberBase<>).MakeGenericType(reprT).GetMethod("CreateTruncating")!.MakeGenericMethod(reprF);
+        il.Emit(OpCodes.Constrained, reprT);
+        il.Emit(OpCodes.Call, create);
+    }
+
+    private static void EmitStringToEnum(ILGenerator il, Type cT, bool toNull) {
+        var tryParse = typeof(Enum).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(m => m.Name == "TryParse" && m.IsGenericMethodDefinition
+                && m.GetParameters() is [var p0, var p1, _] && p0.ParameterType == typeof(string) && p1.ParameterType == typeof(bool))
+            .MakeGenericMethod(cT);
+        if (!toNull) {
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldc_I4_1);
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Call, tryParse);
+            il.Emit(OpCodes.Ret);
+            return;
+        }
+        EmitParseIntoNullable(il, cT, l => {
+            l.Emit(OpCodes.Ldarg_0);
+            l.Emit(OpCodes.Ldc_I4_1);
+        }, tryParse, constrainedOn: null);
+    }
+
+    private static void EmitParse(ILGenerator il, Type cT, bool toNull) {
+        var tryParse = typeof(IParsable<>).MakeGenericType(cT).GetMethod("TryParse")!;
+        var invariant = typeof(CultureInfo).GetProperty("InvariantCulture")!.GetGetMethod()!;
+        if (!toNull) {
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Call, invariant);
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Constrained, cT);
+            il.Emit(OpCodes.Call, tryParse);
+            il.Emit(OpCodes.Ret);
+            return;
+        }
+        EmitParseIntoNullable(il, cT, l => {
+            l.Emit(OpCodes.Ldarg_0);
+            l.Emit(OpCodes.Call, invariant);
+        }, tryParse, constrainedOn: cT);
+    }
+
+    /// <summary>
+    /// Runs a <c>bool TryParse(..., out cT)</c> into a temporary and, on success, wraps it into the nullable
+    /// result. <paramref name="pushArgs"/> pushes every argument before the out parameter.
+    /// </summary>
+    private static void EmitParseIntoNullable(ILGenerator il, Type cT, Action<ILGenerator> pushArgs, MethodInfo tryParse, Type? constrainedOn) {
+        Type nullT = typeof(Nullable<>).MakeGenericType(cT);
+        var tmp = il.DeclareLocal(cT);
+        var fail = il.DefineLabel();
+        pushArgs(il);
+        il.Emit(OpCodes.Ldloca_S, (byte)tmp.LocalIndex);
+        if (constrainedOn is not null)
+            il.Emit(OpCodes.Constrained, constrainedOn);
+        il.Emit(OpCodes.Call, tryParse);
+        il.Emit(OpCodes.Brfalse, fail);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Ldloc, tmp);
+        il.Emit(OpCodes.Newobj, nullT.GetConstructor([cT])!);
+        il.Emit(OpCodes.Stobj, nullT);
+        Return(il, true);
+        il.MarkLabel(fail);
+        StoreDefault(il, nullT);
+        Return(il, false);
+    }
+
+    private static void EmitObject(ILGenerator il, Type cT, bool toNull) {
+        if (cT == typeof(string)) {
+            EmitToString(il, typeof(object));
+            return;
+        }
+        var bridge = (toNull ? typeof(ObjectNullableBridge<>) : typeof(ObjectBridge<>)).MakeGenericType(cT);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Call, bridge.GetMethod("Execute")!);
+        il.Emit(OpCodes.Ret);
+    }
+
+    private static void EmitToString(ILGenerator il, Type f) {
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Call, typeof(ToStringBridge<>).MakeGenericType(f).GetMethod("Execute")!);
+        il.Emit(OpCodes.Ret);
+    }
+
+    /// <summary>The numeric or enum underlying type used to reinterpret a value, or null when it is neither.</summary>
+    private static Type? Repr(Type t)
+        => t.IsEnum ? Enum.GetUnderlyingType(t) : Caster.IsNumeric(t) ? t : null;
+
+    private static void Store(ILGenerator il, Type type) {
+        if (type.IsValueType)
+            il.Emit(OpCodes.Stobj, type);
+        else
+            il.Emit(OpCodes.Stind_Ref);
+    }
+
+    private static void StoreDefault(ILGenerator il, Type type) {
+        il.Emit(OpCodes.Ldarg_1);
+        if (type.IsValueType) {
+            il.Emit(OpCodes.Initobj, type);
+        }
+        else {
+            il.Emit(OpCodes.Ldnull);
+            il.Emit(OpCodes.Stind_Ref);
+        }
+    }
+
+    private static void Return(ILGenerator il, bool value) {
+        il.Emit(value ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
+        il.Emit(OpCodes.Ret);
     }
 }
 internal static class ObjectBridge<TTo> {
+    private static readonly bool IsEnum = typeof(TTo).IsEnum;
+    private static readonly Type EnumUnderlying = IsEnum ? Enum.GetUnderlyingType(typeof(TTo)) : typeof(TTo);
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Execute(object input, out TTo? output) {
-        if (input is null) { output = default; return true; }
-        if (input is TTo direct) { output = direct; return true; }
+    public static bool Execute(object? input, out TTo output) {
+        if (input is null || input is DBNull) { output = default!; return true; }
+        if (IsEnum && TryReadEnum(input, out var asEnum)) {
+            output = asEnum;
+            return true;
+        }
         if (input is IConvertible conv) {
             try {
                 output = Dispatch(conv);
@@ -198,34 +372,57 @@ internal static class ObjectBridge<TTo> {
             }
             catch { }
         }
-        output = default;
+        output = default!;
         return false;
     }
+    internal static bool TryReadEnum(object input, [MaybeNullWhen(false)] out TTo output) {
+        try {
+            if (input is string s) {
+                if (Enum.TryParse(typeof(TTo), s, true, out var parsed)) {
+                    output = (TTo)parsed;
+                    return true;
+                }
+                output = default;
+                return false;
+            }
+            object val = input;
+            if (val is float || val is double || val is decimal)
+                val = Convert.ChangeType(val, EnumUnderlying, CultureInfo.InvariantCulture);
+            output = (TTo)Enum.ToObject(typeof(TTo), val);
+            return true;
+        }
+        catch {
+            output = default;
+            return false;
+        }
+    }
     internal static TTo Dispatch(IConvertible conv) {
-        if (typeof(TTo) == typeof(bool)) { var v = conv.ToBoolean(null); return Unsafe.As<bool, TTo>(ref v); }
-        if (typeof(TTo) == typeof(byte)) { var v = conv.ToByte(null); return Unsafe.As<byte, TTo>(ref v); }
-        if (typeof(TTo) == typeof(char)) { var v = conv.ToChar(null); return Unsafe.As<char, TTo>(ref v); }
-        if (typeof(TTo) == typeof(short)) { var v = conv.ToInt16(null); return Unsafe.As<short, TTo>(ref v); }
-        if (typeof(TTo) == typeof(int)) { var v = conv.ToInt32(null); return Unsafe.As<int, TTo>(ref v); }
-        if (typeof(TTo) == typeof(long)) { var v = conv.ToInt64(null); return Unsafe.As<long, TTo>(ref v); }
-        if (typeof(TTo) == typeof(float)) { var v = conv.ToSingle(null); return Unsafe.As<float, TTo>(ref v); }
-        if (typeof(TTo) == typeof(double)) { var v = conv.ToDouble(null); return Unsafe.As<double, TTo>(ref v); }
-        if (typeof(TTo) == typeof(decimal)) { var v = conv.ToDecimal(null); return Unsafe.As<decimal, TTo>(ref v); }
-        if (typeof(TTo) == typeof(DateTime)) { var v = conv.ToDateTime(null); return Unsafe.As<DateTime, TTo>(ref v); }
-        if (typeof(TTo) == typeof(sbyte)) { var v = conv.ToSByte(null); return Unsafe.As<sbyte, TTo>(ref v); }
-        if (typeof(TTo) == typeof(ushort)) { var v = conv.ToUInt16(null); return Unsafe.As<ushort, TTo>(ref v); }
-        if (typeof(TTo) == typeof(uint)) { var v = conv.ToUInt32(null); return Unsafe.As<uint, TTo>(ref v); }
-        if (typeof(TTo) == typeof(ulong)) { var v = conv.ToUInt64(null); return Unsafe.As<ulong, TTo>(ref v); }
-        if (typeof(TTo) == typeof(string)) { var v = conv.ToString(null); return Unsafe.As<string, TTo>(ref v); }
-        return (TTo)conv.ToType(typeof(TTo), null);
+        if (typeof(TTo) == typeof(bool)) { var v = conv.ToBoolean(CultureInfo.InvariantCulture); return Unsafe.As<bool, TTo>(ref v); }
+        if (typeof(TTo) == typeof(byte)) { var v = conv.ToByte(CultureInfo.InvariantCulture); return Unsafe.As<byte, TTo>(ref v); }
+        if (typeof(TTo) == typeof(char)) { var v = conv.ToChar(CultureInfo.InvariantCulture); return Unsafe.As<char, TTo>(ref v); }
+        if (typeof(TTo) == typeof(short)) { var v = conv.ToInt16(CultureInfo.InvariantCulture); return Unsafe.As<short, TTo>(ref v); }
+        if (typeof(TTo) == typeof(int)) { var v = conv.ToInt32(CultureInfo.InvariantCulture); return Unsafe.As<int, TTo>(ref v); }
+        if (typeof(TTo) == typeof(long)) { var v = conv.ToInt64(CultureInfo.InvariantCulture); return Unsafe.As<long, TTo>(ref v); }
+        if (typeof(TTo) == typeof(float)) { var v = conv.ToSingle(CultureInfo.InvariantCulture); return Unsafe.As<float, TTo>(ref v); }
+        if (typeof(TTo) == typeof(double)) { var v = conv.ToDouble(CultureInfo.InvariantCulture); return Unsafe.As<double, TTo>(ref v); }
+        if (typeof(TTo) == typeof(decimal)) { var v = conv.ToDecimal(CultureInfo.InvariantCulture); return Unsafe.As<decimal, TTo>(ref v); }
+        if (typeof(TTo) == typeof(DateTime)) { var v = conv.ToDateTime(CultureInfo.InvariantCulture); return Unsafe.As<DateTime, TTo>(ref v); }
+        if (typeof(TTo) == typeof(sbyte)) { var v = conv.ToSByte(CultureInfo.InvariantCulture); return Unsafe.As<sbyte, TTo>(ref v); }
+        if (typeof(TTo) == typeof(ushort)) { var v = conv.ToUInt16(CultureInfo.InvariantCulture); return Unsafe.As<ushort, TTo>(ref v); }
+        if (typeof(TTo) == typeof(uint)) { var v = conv.ToUInt32(CultureInfo.InvariantCulture); return Unsafe.As<uint, TTo>(ref v); }
+        if (typeof(TTo) == typeof(ulong)) { var v = conv.ToUInt64(CultureInfo.InvariantCulture); return Unsafe.As<ulong, TTo>(ref v); }
+        return (TTo)conv.ToType(typeof(TTo), CultureInfo.InvariantCulture);
     }
 }
-
 internal static class ObjectNullableBridge<TTo> where TTo : struct {
+    private static readonly bool IsEnum = typeof(TTo).IsEnum;
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Execute(object input, out TTo? output) {
-        if (input is null) { output = null; return true; }
-        if (input is TTo direct) { output = direct; return true; }
+    public static bool Execute(object? input, out TTo? output) {
+        if (input is null || input is DBNull) { output = null; return true; }
+        if (IsEnum && ObjectBridge<TTo>.TryReadEnum(input, out var enumValue)) {
+            output = enumValue;
+            return true;
+        }
         if (input is IConvertible conv) {
             try {
                 output = ObjectBridge<TTo>.Dispatch(conv);
@@ -237,156 +434,25 @@ internal static class ObjectNullableBridge<TTo> where TTo : struct {
         return false;
     }
 }
-internal static class ParseBridge<TTo> where TTo : IParsable<TTo> {
-    public static bool Execute(string input, out TTo output)
-        => TTo.TryParse(input, null, out output!);
-}
 
-internal static class NullableParseBridge<TTo> where TTo : IParsable<TTo> {
-    public static bool Execute(string input, out TTo? output) {
-        if (TTo.TryParse(input, null, out TTo? res)) {
-            output = res;
+internal static class ConvertibleBridge<TFrom, TTo> where TFrom : IConvertible {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool Execute(TFrom input, out TTo output) {
+        try {
+            output = ObjectBridge<TTo>.Dispatch(input);
             return true;
         }
-        output = default;
-        return false;
+        catch {
+            output = default!;
+            return false;
+        }
     }
 }
 
 internal static class ToStringBridge<TIn> {
-    public static bool Execute(TIn input, out string output) {
-        output = input?.ToString()!;
-        return output != null;
-    }
-}
-internal static class OpBridgeDirect<TIn, TOut> {
-    private static readonly unsafe delegate* managed<TIn, TOut> _op;
-    static unsafe OpBridgeDirect() => _op = (delegate* managed<TIn, TOut>)Caster.GetOpPtr(typeof(TIn), typeof(TOut));
-
-    public unsafe static bool Execute(TIn input, out TOut output) {
-        output = _op(input);
+    public static bool Execute(TIn input, out string? output) {
+        if (input is null || input is DBNull) { output = null; return true; }
+        output = input.ToString();
         return true;
     }
 }
-
-// 2. TIn? -> TOut
-internal static class OpBridgeFromNull<TIn, TOut> where TIn : struct {
-    private static readonly unsafe delegate* managed<TIn, TOut> _op;
-    static unsafe OpBridgeFromNull() => _op = (delegate* managed<TIn, TOut>)Caster.GetOpPtr(typeof(TIn), typeof(TOut));
-
-    public unsafe static bool Execute(TIn? input, out TOut output) {
-        if (input is TIn inp) {
-            output = _op(inp);
-            return true;
-        }
-        output = default!;
-        return false;
-    }
-}
-
-// 3. TIn -> TOut?
-internal static class OpBridgeToNull<TIn, TOut> where TOut : struct {
-    private static readonly unsafe delegate* managed<TIn, TOut> _op;
-    static unsafe OpBridgeToNull() => _op = (delegate* managed<TIn, TOut>)Caster.GetOpPtr(typeof(TIn), typeof(TOut));
-
-    public unsafe static bool Execute(TIn input, out TOut? output) {
-        output = _op(input);
-        return true;
-    }
-}
-
-// 4. TIn? -> TOut?
-internal static class OpBridgeBothNull<TIn, TOut> where TIn : struct where TOut : struct {
-    private static readonly unsafe delegate* managed<TIn, TOut> _op;
-    static unsafe OpBridgeBothNull() => _op = (delegate* managed<TIn, TOut>)Caster.GetOpPtr(typeof(TIn), typeof(TOut));
-
-    public unsafe static bool Execute(TIn? input, out TOut? output) {
-        if (input is TIn inp) {
-            output = _op(inp);
-            return true;
-        }
-        output = null;
-        return true;
-    }
-}
-/*
-/// <summary></summary>
-public static class Caster<TFrom, TTo> {
-    private static readonly unsafe delegate* managed<TFrom, out TTo, bool> _castPtr;
-    static unsafe Caster() {
-        Type fromT = typeof(TFrom);
-        Type toT = typeof(TTo);
-        Type? uFrom = Nullable.GetUnderlyingType(fromT);
-        Type? uTo = Nullable.GetUnderlyingType(toT);
-
-        if (IsNumeric(uFrom ?? fromT) && IsNumeric(uTo ?? toT)) {
-            _castPtr = GetBridgePointer(typeof(NumericBridge<,>), uFrom ?? fromT, uTo ?? toT, uFrom != null, uTo != null);
-        }
-        else if (toT.IsAssignableFrom(fromT))
-            _castPtr = (fromT.IsValueType && !toT.IsValueType) ? &BoxedCast : &RawReinterpret;
-        else if (uFrom == toT && uFrom is not null) {
-            var bridge = typeof(NullableBridge<>).MakeGenericType(toT);
-            _castPtr = (delegate* managed<TFrom, out TTo, bool>)bridge.GetMethod(nameof(NullableBridge<>.FromNullable))!.MethodHandle.GetFunctionPointer();
-        }
-        else if (uTo == fromT && uTo is not null) {
-            var bridge = typeof(NullableBridge<>).MakeGenericType(fromT);
-            _castPtr = (delegate* managed<TFrom, out TTo, bool>)bridge.GetMethod(nameof(NullableBridge<>.ToNullable))!.MethodHandle.GetFunctionPointer();
-        }
-        else 
-            _castPtr = &ReturnDefault;
-    }
-
-    #region Helpers
-    private static unsafe delegate* managed<TFrom, out TTo, bool> GetBridgePointer(Type bridgeOpenType, Type? t1, Type t2, bool fromNull, bool toNull, MethodInfo? customMethod = null) {
-        Type closed = t1 != null ? bridgeOpenType.MakeGenericType(t1, t2) : bridgeOpenType.MakeGenericType(t2);
-    string name = (fromNull, toNull) switch {
-        (false, false) => "Direct",
-        (true, false) => "FromNullable",
-        (false, true) => "ToNullable",
-        _ => "BothNullable"
-    };
-
-    var method = customMethod ?? closed.GetMethod(name, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-        return (delegate* managed<TFrom, out TTo, bool>) method!.MethodHandle.GetFunctionPointer();
-    }
-    private static bool IsNumeric(Type t) => t.IsPrimitive || t == typeof(decimal) || t == typeof(Int128) || t == typeof(UInt128);
-    private static bool RawReinterpret(TFrom val, out TTo v) { v = Unsafe.As<TFrom, TTo>(ref val); return true; }
-    private static bool BoxedCast(TFrom val, out TTo v) { v = (TTo)(object)val!; return true; }
-    private static bool ReturnDefault(TFrom val, out TTo v) { v = default!; return false; }
-    #endregion
-
-    /// <summary>A reusable to safely return the value</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-    public static unsafe bool TryCast(TFrom value, [MaybeNullWhen(false)] out TTo val) => _castPtr(value, out val);
-}
-internal static class NumericBridge<TIn, TOut>
-    where TIn : struct, INumber<TIn>
-    where TOut : struct, INumber<TOut> {
-    public static bool Direct(TIn val, out TOut v) { v = TOut.CreateTruncating(val); return true; }
-
-    public static bool FromNullable(TIn? val, out TOut v) { 
-        if (val is TIn vv) { v = TOut.CreateTruncating(vv); return true; }
-        v = default; return false;
-    }
-
-    public static bool ToNullable(TIn val, out TOut? v) { v = TOut.CreateTruncating(val); return true; }
-
-    public static bool BothNullable(TIn? val, out TOut? v) {
-        v = val is TIn vv ? TOut.CreateTruncating(vv) : default;
-        return true;
-    }
-}
-internal static class NullableBridge<T> where T : struct {
-    public static bool ToNullable(T val, out T? v) {
-        v = val;
-        return true;
-    }
-    public static bool FromNullable(T? val, out T v) {
-        if (val is T vv) {
-            v = vv;
-            return true;
-        }
-        v = default;
-        return false;
-    }
-}*/

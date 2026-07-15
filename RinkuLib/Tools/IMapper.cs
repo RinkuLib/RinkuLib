@@ -1,5 +1,5 @@
 ﻿using System.Buffers;
-using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -29,6 +29,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// The internal storage of unique, deduplicated keys.
     /// </summary>
     protected string[] _keys = Keys;
+    [ExcludeFromCodeCoverage]
     internal string[] GetKeysArray() => _keys;
     /// <summary>
     /// Gets a managed reference to the start of the key array. 
@@ -163,6 +164,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// </summary>
     protected abstract void DisposeUnmanaged();
     /// <inheritdoc/>
+    [ExcludeFromCodeCoverage]
     ~Mapper() => Dispose();
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
@@ -180,10 +182,8 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         Span<string> k;
         if (keys is string[] arr)
             k = arr;
-#if NET5_0_OR_GREATER
         else if (keys is List<string> list)
             k = CollectionsMarshal.AsSpan(list);
-#endif
         else if (keys is IReadOnlyList<string> ro) {
             pooledArr = ArrayPool<string>.Shared.Rent(ro.Count);
             for (int i = 0; i < ro.Count; i++)
@@ -211,11 +211,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// Input order is preserved. If duplicate keys (case-insensitive) are present, 
     /// only the first occurrence is stored, and its position becomes the fixed index for that key.
     /// </remarks>
-    public static Mapper GetMapper(
-#if NET8_0_OR_GREATER
-        params
-#endif
-        Span<string> keys) {
+    public static Mapper GetMapper(params Span<string> keys) {
         if (keys.Length == 0)
             return EmptyMapper;
         if (keys.Length == 1)
@@ -225,31 +221,20 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         var builder = new AsciiMapperBuilder(keys);
         if (builder.MaxDepth >= 0 || builder.UsedKeys is not null) {
             var usedKeys = builder.UsedKeys;
-            if (usedKeys.Length == 0)
-                return EmptyMapper;
             if (usedKeys.Length == 1)
                 return GetOneKeyMapper(usedKeys[0]);
             if (usedKeys.Length == 2)
                 return GetTwoKeyMapper(usedKeys[0], usedKeys[1]);
-#if NET8_0_OR_GREATER
             return IsAllAscii(builder.UsedKeys) 
                 ? new OptiMapper<AsciiStrategy>(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth)
                 : new OptiMapper<UnicodeStrategy>(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth);
-#else
-            return new AsciiMapper(builder.UsedKeys, builder.LengthMask, builder.Steps, builder.MaxDepth);
-#endif
         }
         var dict = new DictMapper(keys);
         var uKeys = dict.Keys;
-        if (uKeys.Length == 0)
-            return EmptyMapper;
-        if (uKeys.Length == 1)
-            return GetOneKeyMapper(uKeys[0]);
         if (uKeys.Length == 2)
             return GetTwoKeyMapper(uKeys[0], uKeys[1]);
         return dict;
     }
-#if NET8_0_OR_GREATER
     /// <summary>
     /// Checks if all strings in the array contain only ASCII characters.
     /// </summary>
@@ -259,7 +244,6 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
                 return false;
         return true;
     }
-#endif
     /// <summary>
     /// Instance of a <see cref="Mapper"/> without any keys.
     /// </summary>
@@ -297,6 +281,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         return new Two(key1, key2);
     }
     internal sealed class Empty() : Mapper([]) {
+        [ExcludeFromCodeCoverage]
         protected override void DisposeUnmanaged() { }
         public override int GetIndex(string _) => -1;
         public override int GetIndex(ReadOnlySpan<char> _) => -1;
@@ -327,7 +312,6 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
 #if NET9_0_OR_GREATER
         private readonly Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> _spanDict;
 #else
-    // For Legacy, we store the data in a way that we can manually probe
     private readonly int[] _buckets;
     private readonly Entry[] _entries;
     private readonly int _mask;
@@ -345,12 +329,11 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
 #if NET9_0_OR_GREATER
             _spanDict = dict.GetAlternateLookup<ReadOnlySpan<char>>();
 #else
-        // Build a minimal internal hash table for Span lookups
         int size = HashHelper.GetPrime(dict.Count);
         _buckets = new int[size];
         for (int i = 0; i < size; i++) _buckets[i] = -1;
         _entries = new Entry[dict.Count];
-        _mask = size; // Used for modulo
+        _mask = size;
 
         int index = 0;
         foreach (var kvp in dict) {
@@ -384,7 +367,6 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         }
 
 #if !NET9_0_OR_GREATER
-    // Manual OrdinalIgnoreCase Hash for netstandard2.0
     private static int GetOrdinalIgnoreCaseHash(ReadOnlySpan<char> span) {
         unchecked {
             int hash = 5381;
@@ -404,15 +386,9 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         private static string[] Init(Span<string> keys, out Dictionary<string, int> dict) {
             dict = new Dictionary<string, int>(keys.Length, StringComparer.OrdinalIgnoreCase);
             int i = 0;
-            foreach (var k in keys) {
-                if (k == null)
-                    throw new NullReferenceException();
-#if NET8_0_OR_GREATER
-                if (dict.TryAdd(k, i)) { i++; }
-#else
-                if (!dict.ContainsKey(k)) { dict.Add(k, i); i++; }
-#endif
-            }
+            foreach (var k in keys)
+                if (dict.TryAdd(k, i)) 
+                    i++;
             var arr = new string[dict.Count];
             foreach (var kvp in dict)
                 arr[kvp.Value] = kvp.Key;
@@ -422,7 +398,6 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
 }
 #if !NET9_0_OR_GREATER
 internal static class HashHelper {
-    // A small subset of primes used by the .NET Dictionary
     private static readonly int[] Primes = [
         3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
         1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103
@@ -433,7 +408,6 @@ internal static class HashHelper {
             if (Primes[i] >= min)
                 return Primes[i];
         }
-        // Fallback for extremely large tables (rare for ORM mappers)
         return min | 1;
     }
 }

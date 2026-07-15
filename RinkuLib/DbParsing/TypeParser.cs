@@ -14,9 +14,10 @@ namespace RinkuLib.DbParsing;
 /// </summary>
 public static class TypeParser {
     /// <summary>
-    /// The cache for parsers requested and root nullability.
+    /// The cache for parsers requested and root nullability. Copy-on-write so readers scan lock-free
+    /// while writers swap in a grown array under <see cref="DefaultTypeParsingInfo.WriteLock"/>.
     /// </summary>
-    internal static readonly List<(ColumnInfo[] Schema, INullColHandler NullColHandler, object Parser)> ReadingInfos = [];
+    internal static (ColumnInfo[] Schema, INullColHandler NullColHandler, object Parser)[] ReadingInfos = [];
     /// <summary>The fallback maker, the object parser, that claims any <c>T</c> no other maker did.</summary>
     public static readonly DefaultTypeParserMaker DefaultTypeParserMaker = new();
     /// <summary>
@@ -65,8 +66,19 @@ public static class TypeParser {
             }
         }
         lock (DefaultTypeParsingInfo.WriteLock) {
+            var current = ReadingInfos;
+            for (int i = readingInfos.Length; i < current.Length; i++) {
+                var (schema, nullCol, p) = current[i];
+                if (p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
+                    cols = schema;
+                    return parser;
+                }
+            }
             var unusual = MakeParser<T>(cols, nullColHandler);
-            ReadingInfos.Add(new(cols, nullColHandler, unusual));
+            var updated = new (ColumnInfo[], INullColHandler, object)[current.Length + 1];
+            current.CopyTo(updated, 0);
+            updated[current.Length] = (cols, nullColHandler, unusual);
+            ReadingInfos = updated;
             return unusual;
         }
     }

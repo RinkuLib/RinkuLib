@@ -57,14 +57,15 @@ public struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
         public readonly Span<T> AsSpan(int start) => RawArray.AsSpan(start, Length - start);
         /// <summary>Returns the rented array</summary>
         public void Dispose() {
-            if (_array != null && _array.Length > 0) {
+            if (_array is null)
+                return;
+            if (_array.Length > 0)
                 ArrayPool<T>.Shared.Return(
                     _array,
                     clearArray: RuntimeHelpers.IsReferenceOrContainsReferences<T>()
                 );
-                _array = null!;
-                _count = 0;
-            }
+            _array = null!;
+            _count = 0;
         }
     }
     private T[] _array = initialCapacity == 0 ? [] : ArrayPool<T>.Shared.Rent(initialCapacity);
@@ -152,14 +153,15 @@ public struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
     }
     /// <summary>Returns the rented array</summary>
     public void Dispose() {
-        if (_array != null && _array.Length > 0) {
+        if (_array is null)
+            return;
+        if (_array.Length > 0)
             ArrayPool<T>.Shared.Return(
                 _array,
                 clearArray: RuntimeHelpers.IsReferenceOrContainsReferences<T>()
             );
-            _array = null!;
-            _count = 0;
-        }
+        _array = null!;
+        _count = 0;
     }
     /// <summary>
     /// Removes the element at the specified index by shifting subsequent elements.

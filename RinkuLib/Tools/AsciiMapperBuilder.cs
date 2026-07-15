@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -50,8 +51,7 @@ internal struct AsciiMapperBuilder {
     private static MaskedCharComparer? SharedComparer;
     internal AsciiMapperBuilder(Span<string> Keys) {
         var length = Keys.Length;
-        if (length <= 1)
-            throw new Exception();
+        Debug.Assert(length > 2, "Error: Must have more than 2 keys");
         MaxDepth = -1;
         Steps = [];
         UsedKeys = ArrayPool<string>.Shared.Rent(length);
@@ -61,8 +61,6 @@ internal struct AsciiMapperBuilder {
         Interlocked.CompareExchange(ref SharedComparer, CharComparer, null);
         ArrayPool<string>.Shared.Return(UsedKeys);
         UsedKeys = null!;
-        if (Steps.Length == 0)
-            return;
         uint[] newArr = new uint[MaxReserved];
         Array.Copy(Steps, newArr, MaxReserved);
         ArrayPool<uint>.Shared.Return(Steps);
@@ -257,6 +255,7 @@ private static readonly byte[] DeBruijnLookup64 = [
         return step;
     }
     private static bool AllEqualIgnoreCase(ReadOnlySpan<string> span) {
+        // COVERAGE unreachable: MakeStep only calls this with a group of nb >= 2 keys.
         if (span.Length < 2)
             return true;
         string first = span[0];

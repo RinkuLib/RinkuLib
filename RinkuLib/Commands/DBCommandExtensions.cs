@@ -64,7 +64,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public T ExecuteScalar<T>(bool disposeCommand, ICache? cache = null) {
+        public T? ExecuteScalar<T>(bool disposeCommand, ICache? cache = null) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -89,7 +89,7 @@ public static class DBCommandExtensions {
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public async Task<T> ExecuteScalarAsync<T>(bool disposeCommand, ICache? cache = null, CancellationToken ct = default) {
+        public async Task<T?> ExecuteScalarAsync<T>(bool disposeCommand, ICache? cache = null, CancellationToken ct = default) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -384,7 +384,7 @@ public static class DBCommandExtensions {
         /// </summary>
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
-        public T ExecuteScalar<T>(bool disposeCommand, ICache? cache = null) {
+        public T? ExecuteScalar<T>(bool disposeCommand, ICache? cache = null) {
             var cnn = cmd.Connection ?? throw new Exception("no connections was set with the command");
             var wasClosed = cnn.State != ConnectionState.Open;
             try {
@@ -409,7 +409,7 @@ public static class DBCommandExtensions {
         /// <param name="cache">A cache to be used after execution</param>
         /// <param name="disposeCommand">Indicate if the command should be properly disposed after execution</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T> ExecuteScalarAsync<T>(bool disposeCommand, ICache? cache = null, CancellationToken ct = default) {
+        public Task<T?> ExecuteScalarAsync<T>(bool disposeCommand, ICache? cache = null, CancellationToken ct = default) {
             if (cmd is DbCommand c)
                 return c.ExecuteScalarAsync<T>(disposeCommand, cache, ct);
             return Task.FromResult(cmd.ExecuteScalar<T>(disposeCommand, cache));
