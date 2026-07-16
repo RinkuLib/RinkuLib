@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using RinkuLib.Tools;
-using static System.Collections.Specialized.BitVector32;
 
 namespace RinkuLib.Queries;
 
@@ -106,7 +107,7 @@ internal struct CondInfo {
         EndIndex = endIndex;
     }
     public override readonly string ToString()
-        => $"{Cond}, {(Type < (char)32 ? (int)Type : Type)}, {StartIndex}, {EndIndex}";
+        => $"{Cond}, {(Type < (char)32 ? (object)(int)Type : Type)}, {StartIndex}, {EndIndex}";
     public void UpdateSelectCond(string cond, int currentStart, int prevSegExcess) {
         if (StartIndex < 0)
             StartIndex = currentStart;
@@ -204,9 +205,9 @@ public unsafe ref struct QueryExtracter {
         var excesses = ArrayPool<int>.Shared.Rent(64);
         ParMap = 1;
 
-        fixed (int* ps = startIndexes)
-        fixed (int* pe = excesses)
-        fixed (char* p = query) {
+        fixed (int* ps = &MemoryMarshal.GetReference(startIndexes.AsSpan()))
+        fixed (int* pe = &MemoryMarshal.GetReference(excesses.AsSpan()))
+        fixed (char* p = &MemoryMarshal.GetReference(query.AsSpan())) {
             CurrentChar = p;
             CurrentStart = ps;
             CurrentExcess = pe;
@@ -308,17 +309,15 @@ public unsafe ref struct QueryExtracter {
         return true;
     }
 
-    private const ulong BoundaryMask = 0x800930100002601;
+    private const ulong BoundaryMask = 0x800938500002601;
     private static bool IsBoundary(char c)
-        => c < 64 && (BoundaryMask >> c & 1) == 1;
+        => c < 64 ? (BoundaryMask >> c & 1) == 1 : c == '[' || c == ']' || c == '`';
     private void ManageBoundary() {
         var c = *CurrentChar;
         if (ManageQuote(c)) {
             PrevBoundary = true;
             return;
         }
-        if (CurrentQuote != 0)
-            return;
         if (TryManageComment(true)) {
             CurrentChar--;
             return;
@@ -442,8 +441,7 @@ public unsafe ref struct QueryExtracter {
         }
         CurrentChar += 2;
         SkipWhiteSpace();
-        if (nbCond <= 0)
-            return true;
+        Debug.Assert(nbCond > 0, "the marker loop always collects at least one condition");
         if (MatchSection(CurrentChar, out var secLen)) { }
         else if (*CurrentChar == OptionalVariableIdentifier && IsSelect(CurrentChar + 1))
             secLen = 6;
@@ -487,8 +485,9 @@ public unsafe ref struct QueryExtracter {
         return new string(start, 0, i);
     }
     private bool ManageQuote(char c) {
-        if (c == CurrentQuote) {
-            CurrentQuote = 0;
+        if (CurrentQuote != 0) {
+            if (c == CurrentQuote)
+                CurrentQuote = 0;
             return true;
         }
         if (c == '[') {
@@ -644,7 +643,7 @@ public unsafe ref struct QueryExtracter {
         if (quote != 0) {
             end--;
             start--;
-            while (Builder[start] == quote)
+            while (Builder[start] != quote)
                 start--;
         }
         else {

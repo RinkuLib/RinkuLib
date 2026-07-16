@@ -95,8 +95,8 @@ public sealed class QueryText : IQueryText {
         var length = 0;
         var prevExcess = 0;
 
-        fixed (char* ptr = QueryString)
-        fixed (Condition* conditions = Conditions) {
+        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
+        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
             var cond = conditions;
             int i = 0;
             while (true) {
@@ -185,8 +185,8 @@ public sealed class QueryText : IQueryText {
         var length = 0;
         var prevExcess = 0;
 
-        fixed (char* ptr = QueryString)
-        fixed (Condition* conditions = Conditions) {
+        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
+        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
             var cond = conditions;
             int i = 0;
             while (true) {
@@ -274,8 +274,8 @@ public sealed class QueryText : IQueryText {
         var length = 0;
         var prevExcess = 0;
 
-        fixed (char* ptr = QueryString)
-        fixed (Condition* conditions = Conditions) {
+        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
+        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
             var cond = conditions;
             int i = 0;
             while (true) {
@@ -365,8 +365,8 @@ public sealed class QueryText : IQueryText {
         var length = 0;
         var prevExcess = 0;
 
-        fixed (char* ptr = QueryString)
-        fixed (Condition* conditions = Conditions) {
+        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
+        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
             var cond = conditions;
             int i = 0;
             while (true) {

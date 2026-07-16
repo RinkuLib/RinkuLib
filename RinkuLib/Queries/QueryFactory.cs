@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Diagnostics;
 using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
@@ -82,9 +83,8 @@ public struct QueryFactory {
             var endIndex = seg.Start + seg.Length - seg.ExcessOrInd;
             if (endIndex <= seg.Start)
                 continue;
-            if (Query[endIndex] == ';')
-                Segments[i].ExcessOrInd = 0;
-            else if (char.IsWhiteSpace(Query[endIndex - 1]))
+            Debug.Assert(Query[endIndex] != ';', "an excess trim point can never land on a statement separator");
+            if (char.IsWhiteSpace(Query[endIndex - 1]))
                 Segments[i].ExcessOrInd++;
         }
     }

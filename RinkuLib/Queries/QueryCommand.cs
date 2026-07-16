@@ -206,9 +206,7 @@ public class QueryCommand : IQueryCommand, ICache {
         var ind = Mapper.GetIndex(paramName);
         if (ind < 0 || ind >= StartBaseHandlers)
             return false;
-        Parameters.UpdateCache(ind, paramInfo);
-        return true;
-
+        return Parameters.UpdateCache(ind, paramInfo);
     }
     /// <inheritdoc/>
     public bool SetCommand(IDbCommand cmd, object?[] variables) {
@@ -285,13 +283,21 @@ public class QueryCommand : IQueryCommand, ICache {
                 return false;
             return true;
         }
+        // a lazy sequence has no reusable count, so it is materialized once here: the binding pass and the
+        // render pass both need to walk it
         var e = source.GetEnumerator();
-        if (e.MoveNext()) {
-            value = new PeekableWrapper(e.Current, e);
+        try {
+            if (!e.MoveNext())
+                return false;
+            var items = new List<object?> { e.Current };
+            while (e.MoveNext())
+                items.Add(e.Current);
+            value = items.ToArray();
             return true;
         }
-        (e as IDisposable)?.Dispose();
-        return false;
+        finally {
+            (e as IDisposable)?.Dispose();
+        }
     }
 
     /// <inheritdoc/>
@@ -404,7 +410,7 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
+                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -430,7 +436,7 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
+                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -453,7 +459,7 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
+                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -475,7 +481,7 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
+                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -497,7 +503,7 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
+                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -519,7 +525,7 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
+                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -530,30 +536,3 @@ public class QueryCommand : IQueryCommand, ICache {
 #endif
 }
 
-internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {
-    private object? _first = first;
-    private IEnumerator? _enumerator = enumerator;
-
-    public IEnumerator<object> GetEnumerator() {
-        if (_enumerator == null)
-            yield break;
-
-        yield return _first!;
-        _first = null;
-
-        while (_enumerator.MoveNext())
-            yield return _enumerator.Current;
-        Dispose();
-    }
-    public void Dispose() {
-        if (_enumerator is not null) {
-            (_enumerator as IDisposable)?.Dispose();
-            _enumerator = null;
-            _first = null;
-        }
-        GC.SuppressFinalize(this);
-    }
-    ~PeekableWrapper() => Dispose();
-
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-}

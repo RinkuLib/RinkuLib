@@ -44,10 +44,11 @@ public class RawVariableHandler() : IQuerySegmentHandler {
         => sb.Append(value.ToString());
 }
 /// <summary>
-/// Injects an integer directly into the SQL text.
+/// Injects a number directly into the SQL text.
 /// </summary>
 /// <remarks>
-/// Optimized for numeric values that do not require quotes or escaping.
+/// Optimized for numeric values that do not require quotes or escaping. An enum writes its numeric value, a
+/// bool writes 1 or 0, and any other numeric type is written with invariant formatting.
 /// </remarks>
 public class NumberVariableHandler() : IQuerySegmentHandler {
     /// <summary>Singleton for <see cref="NumberVariableHandler"/></summary>
@@ -57,6 +58,20 @@ public class NumberVariableHandler() : IQuerySegmentHandler {
     /// </summary>
     public static NumberVariableHandler Build(string _) => Instance;
     /// <inheritdoc/>
-    public void Handle(ref ValueStringBuilder sb, object value)
-        => sb.Append((int)value);
+    public void Handle(ref ValueStringBuilder sb, object value) {
+        switch (value) {
+            case int i:
+                sb.Append(i);
+                break;
+            case bool b:
+                sb.Append(b ? '1' : '0');
+                break;
+            case Enum e:
+                sb.Append(Convert.ToInt64(e).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                break;
+            default:
+                sb.Append(((IFormattable)value).ToString(null, System.Globalization.CultureInfo.InvariantCulture));
+                break;
+        }
+    }
 }
