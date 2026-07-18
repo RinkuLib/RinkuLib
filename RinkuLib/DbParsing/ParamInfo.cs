@@ -216,7 +216,7 @@ internal class DefaultParamInfoMaker : IParamInfoMaker {
     public ParamInfo MakeMatcher(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, string? name, object[] attributes, UsageFlags usageFlags, object? param) {
         var fallback = param is ParameterInfo pp && pp.IsTypeDefault() ? DefaultValueFallback.Instance : IFallbackParserGetter.Nothing;
         if (usageFlags != default || fallback != IFallbackParserGetter.Nothing) {
-            var modeFlags = usageFlags & ~UsageFlags.Subtree;   // the reading-order mode, without the scope marker
+            var modeFlags = usageFlags & ~UsageFlags.Subtree;  
             var colModifier = modeFlags == default
                 ? IColModifier.Nothing
                 : new FlagUpdater(modeFlags, usageFlags.HasFlag(UsageFlags.Subtree));

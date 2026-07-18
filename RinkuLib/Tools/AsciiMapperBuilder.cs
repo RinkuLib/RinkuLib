@@ -114,7 +114,7 @@ internal struct AsciiMapperBuilder {
     private readonly unsafe int GetTerminalStepIndex(string key, out bool hasAlt, out int depth) {
         hasAlt = false;
         var len = key.Length;
-        fixed (char* p = key) {
+        fixed (char* p = &System.Runtime.InteropServices.MemoryMarshal.GetReference(key.AsSpan())) {
             char* keyPtr = p;
             uint step = Steps[len & LengthMask];
             uint lastStep = 0;
@@ -161,7 +161,6 @@ internal struct AsciiMapperBuilder {
     private static (int charInd, int mask, int decal) Decode(uint step)
         => ((int)(step >> 24), (int)((step >> 16) & 0xFF), (ushort)step);
 #if !NETCOREAPP3_0_OR_GREATER
-// This table must be present in the class for the legacy path
 private static readonly byte[] DeBruijnLookup64 = [
     0,  1,  48, 2,  57, 49, 28, 3,  61, 58, 50, 42, 38, 29, 17, 4,
     62, 54, 59, 36, 51, 47, 43, 25, 41, 39, 33, 30, 24, 18, 12, 5,

@@ -138,7 +138,6 @@ public class UseWithTests {
         var builder = query.StartBuilder();
         builder.UseWith(new { ID = 1, OtherID = 2 });
         builder.UseWith(new { ID = 3 });
-        // OtherID was not on the second object, so its slot clears
         Render.Expect(builder, "SELECT * FROM u WHERE u.ID = @ID", ("@ID", 3));
     }
 }

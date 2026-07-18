@@ -32,6 +32,7 @@ public class BasicParser(Type ParentType, ITypeConverter TypeConverter, string P
             generator.Emit(OpCodes.Ldarg_1);
             generator.Emit(OpCodes.Ldc_I4, Index);
             generator.Emit(OpCodes.Callvirt, meth);
+            EmitUnwrap(generator, meth, col.Type);
             TypeConverter.EmitConversion(generator, col.Type);
             return;
         }
@@ -48,8 +49,21 @@ public class BasicParser(Type ParentType, ITypeConverter TypeConverter, string P
         generator.Emit(OpCodes.Ldarg_1);
         generator.Emit(OpCodes.Ldc_I4, Index);
         generator.Emit(OpCodes.Callvirt, meth);
+        EmitUnwrap(generator, meth, col.Type);
         TypeConverter.EmitConversion(generator, col.Type);
         if (endLabel.HasValue)
             generator.MarkLabel(endLabel.Value);
+    }
+    /// <summary>
+    /// A column type outside the reader's typed getters is fetched as <see cref="Nullable{T}"/>; the value is
+    /// known non-null here, so it is unwrapped to leave the column type itself on the stack.
+    /// </summary>
+    private static void EmitUnwrap(Generator generator, System.Reflection.MethodInfo meth, Type colType) {
+        if (meth.ReturnType == colType)
+            return;
+        var local = generator.DeclareLocal(meth.ReturnType);
+        generator.Emit(OpCodes.Stloc, local);
+        generator.Emit(OpCodes.Ldloca, local);
+        generator.Emit(OpCodes.Call, meth.ReturnType.GetMethod(nameof(Nullable<int>.GetValueOrDefault), Type.EmptyTypes)!);
     }
 }

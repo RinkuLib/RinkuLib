@@ -21,8 +21,6 @@ public class DapperLiteralParityTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(1, q.Query<int>(cnn, new { x = AnEnum.B }));
     }
 
-    // GAP: currently FAILS. NumberVariableHandler.Handle does (int)value, so a decimal literal throws
-    // InvalidCastException. Dapper's {=y} inlines any numeric literal; _N should handle decimal too.
     [Fact]
     public void Decimal_number_literal_inlines_its_value() {
         var q = new QueryCommand("SELECT @y_N AS V");
@@ -39,11 +37,8 @@ public class DapperLiteralParityTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal("Rinku", q.Query<string>(cnn, new { s = "Rinku" }));
     }
 
-    // GAP: currently FAILS. NumberVariableHandler.Handle does (int)value, so a bool literal throws
-    // InvalidCastException. Dapper's LiteralReplacementBoolean inlines a bool; _N should handle it.
     [Fact]
     public void Boolean_number_literal_gates_a_row() {
-        // Dapper's LiteralReplacementBoolean: "select 42 where 1 = {=val}" returns the row only when true.
         var q = new QueryCommand("SELECT COUNT(*) FROM Users WHERE 1 = @val_N");
         using var cnn = Db.GetConnection();
         Assert.Equal(3, q.Query<int>(cnn, new { val = true }));

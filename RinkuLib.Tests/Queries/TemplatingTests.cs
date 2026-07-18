@@ -73,7 +73,6 @@ public class TemplatingTests {
         var sql = "WITH/*cte*/ parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = 1) SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
-        // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
             new SegmentVerify("WITH", 4, false),
             new SegmentVerify(" parentTable AS (SELECT column1, column2 FROM table_name WHERE cond = 1)", 0, false),
@@ -91,12 +90,10 @@ public class TemplatingTests {
         var sql = "SELECT /*~ optimizer hint */ ID, Username, Email FROM Users WHERE IsActive = @Active";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
-        // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
             new SegmentVerify("SELECT /* optimizer hint */ ID, Username, Email FROM Users WHERE IsActive = @Active", 0, false)
         };
 
-        // No conditional keys are extracted.
         var expectedConditions = Array.Empty<ConditionVerify>();
 
         Verify(factory, expectedSegments, expectedConditions, ["@Active"]);
@@ -106,7 +103,6 @@ public class TemplatingTests {
         var sql = "SELECT /*~ optimizer hint *//*ID*/ ID, Username, Email FROM Users WHERE IsActive = @Active";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
-        // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
             new SegmentVerify("SELECT", 6, false),
             new SegmentVerify(" /* optimizer hint */ ID,", 0, false),
@@ -125,12 +121,10 @@ public class TemplatingTests {
         var sql = "SELECT ID, Username, Email FROM Users WHERE IsActive = @Active";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
-        // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
             new SegmentVerify("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active", 0, false)
         };
 
-        // No conditional keys are extracted.
         var expectedConditions = Array.Empty<ConditionVerify>();
 
         Verify(factory, expectedSegments, expectedConditions, ["@Active"]);
@@ -140,7 +134,6 @@ public class TemplatingTests {
         var sql = "SELECT TOP (1)??? /*ID*/ID, Username, Email FROM Users WHERE IsActive = @Active";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
-        // No markers mean the entire query is one "Always" segment.
         var expectedSegments = new[] {
             new SegmentVerify("SELECT TOP (1)", 0, false),
             new SegmentVerify(" ID,", 0, false),
@@ -234,7 +227,6 @@ public class TemplatingTests {
             new SegmentVerify(" Price * @Modifier > @Minimum", 0, false)
         };
 
-        // Shared footprint means one condition segment, but two keys mapped to it
         var expectedConditions = new[] {
             new ConditionVerify("@Modifier", " Price * @Modifier > @Minimum", 2),
             new ConditionVerify("@Minimum", " Price * @Modifier > @Minimum", 2)
@@ -336,7 +328,6 @@ public class TemplatingTests {
 
     [Fact]
     public void Example11_PassengerDependency_Enclosure() {
-        // Both variables share a segment because FETCH is not a keyword anchor
         var sql = "SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 
@@ -569,7 +560,6 @@ public class TemplatingTests {
     }
     [Fact]
     public void ConditionInCase_Variable() {
-        // If the optional @Category matches the Category column, check if Active = 1
         var sql = "SELECT * FROM Products WHERE CASE WHEN Category = ?@Category THEN 1 WHEN Category = 0 THEN ?@NoCategory_S ELSE 0 END = ?@CatFlag";
         var factory = new QueryFactory(sql, '@', SpecialHandler.SpecialHandlerGetter.PresenceMap);
 

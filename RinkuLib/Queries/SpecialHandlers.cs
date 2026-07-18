@@ -11,7 +11,7 @@ namespace RinkuLib.Queries;
 /// </summary>
 /// <remarks>
 /// It works in two passes each run, and an implementation must respect the order. First the binding pass,
-/// <see cref="Use(IDbCommand, object)"/>, <see cref="SaveUse"/>, or <see cref="Update"/>, sets the command's
+/// <see cref="Use(IDbCommand, ref object?)"/>, <see cref="SaveUse"/>, or <see cref="Update"/>, sets the command's
 /// parameters and may rewrite the value in place (a list, for instance, becomes its element count). Then the
 /// render pass, <see cref="Handle"/>, writes the SQL from that rewritten value, so it never re-reads the
 /// original input.
@@ -68,14 +68,16 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// <returns><see langword="true"/> when the parameters were bound.</returns>
     public abstract bool SaveUse(IDbCommand cmd, ref object? value);
     /// <summary>
-    /// Binds the value's parameters for a single run, without keeping the state a later <see cref="Update"/> would need.
+    /// Binds the value's parameters for a single run, without keeping the state a later <see cref="Update"/>
+    /// would need. When the value cannot report a count without being walked again, the implementation
+    /// rewrites it to what the render pass needs, so a lazy sequence is enumerated exactly once.
     /// </summary>
     /// <param name="cmd">The command to bind onto.</param>
-    /// <param name="value">The value to bind.</param>
+    /// <param name="value">On the way in, the value to bind. On the way out, what <see cref="Handle"/> reads.</param>
     /// <returns><see langword="true"/> when the parameters were bound.</returns>
-    public abstract bool Use(IDbCommand cmd, object value);
-    /// <summary> The <see cref="DbCommand"/> form of <see cref="Use(IDbCommand, object)"/>. </summary>
-    public abstract bool Use(DbCommand cmd, object value);
+    public abstract bool Use(IDbCommand cmd, ref object? value);
+    /// <summary> The <see cref="DbCommand"/> form of <see cref="Use(IDbCommand, ref object?)"/>. </summary>
+    public abstract bool Use(DbCommand cmd, ref object? value);
     /// <summary>
     /// Writes the SQL for this variable, reading the value the binding pass rewrote rather than the original input.
     /// </summary>
@@ -140,28 +142,26 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             currentValue = array.Length <= 0 ? null : array;
             return true;
         }
-        if (array.Length > arr.Length) {
-            for (int i = 0; i < arr.Length; i++) {
-                if (!cached.Update(cmd, ref arr[i]!, array[i]))
-                    return false;
-                array[i] = arr[i];
-            }
-            int nbDigits = ValueStringBuilder.DigitCount(arr.Length);
-            int lastWithSameNbDidgit = 1;
-            for (int j = 0; j < nbDigits; j++) lastWithSameNbDidgit *= 10;
-            lastWithSameNbDidgit -= 1;
-            for (int i = arr.Length; i < array.Length; i++) {
-                if (i >= lastWithSameNbDidgit) {
-                    nbDigits++;
-                    lastWithSameNbDidgit = ((lastWithSameNbDidgit + 1) * 10) - 1;
-                }
-                if (!cached.SaveUse(BuildName(ParameterName, i+1, nbDigits), cmd, ref array[i]))
-                    return false;
-            }
-            currentValue = array;
-            return true;
+        System.Diagnostics.Debug.Assert(array.Length > arr.Length);
+        for (int i = 0; i < arr.Length; i++) {
+            if (!cached.Update(cmd, ref arr[i]!, array[i]))
+                return false;
+            array[i] = arr[i];
         }
-        return false;
+        int nbDigits = ValueStringBuilder.DigitCount(arr.Length);
+        int lastWithSameNbDidgit = 1;
+        for (int j = 0; j < nbDigits; j++) lastWithSameNbDidgit *= 10;
+        lastWithSameNbDidgit -= 1;
+        for (int i = arr.Length; i < array.Length; i++) {
+            if (i >= lastWithSameNbDidgit) {
+                nbDigits++;
+                lastWithSameNbDidgit = ((lastWithSameNbDidgit + 1) * 10) - 1;
+            }
+            if (!cached.SaveUse(BuildName(ParameterName, i+1, nbDigits), cmd, ref array[i]))
+                return false;
+        }
+        currentValue = array;
+        return true;
     }
     /// <inheritdoc/>
     public override bool UpdateCache<T>(T infoGetter) {
@@ -204,11 +204,13 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
         return true;
     }
     /// <summary>
-    /// Binds the collection for a single pass and replaces <paramref name="value"/> 
-    /// with an <c>int</c> representing the count of bound items.
+    /// Binds the collection for a single pass. A collection that can report its count is left in place for
+    /// the render pass to count; a lazy sequence is walked only here, and <paramref name="value"/> becomes
+    /// the <c>int</c> count of bound items instead.
     /// </summary>
-    public override bool Use(IDbCommand cmd, object value) {
+    public override bool Use(IDbCommand cmd, ref object? value) {
         if (value is not System.Collections.IEnumerable e) return false;
+        bool cheapCount = HasCheapCount(e);
         int i = 1;
         int nbDigits = 1;
         int nextPow10 = 10;
@@ -221,11 +223,14 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             cached.Use(BuildName(ParameterName, i, nbDigits), cmd, item);
             i++;
         }
+        if (!cheapCount)
+            value = i - 1;
         return true;
     }
     /// <inheritdoc/>
-    public override bool Use(DbCommand cmd, object value) {
+    public override bool Use(DbCommand cmd, ref object? value) {
         if (value is not System.Collections.IEnumerable e) return false;
+        bool cheapCount = HasCheapCount(e);
         int i = 1;
         int nbDigits = 1;
         int nextPow10 = 10;
@@ -238,8 +243,14 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             cached.Use(BuildName(ParameterName, i, nbDigits), cmd, item);
             i++;
         }
+        if (!cheapCount)
+            value = i - 1;
         return true;
     }
+    private static bool HasCheapCount(System.Collections.IEnumerable value)
+        => value is System.Collections.ICollection
+        || (value is IEnumerable<object> g && g.TryGetNonEnumeratedCount(out _))
+        || value.TryGetNonEnumeratedCount(out _);
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static string BuildName(string parameterName, int index, int digitCount) {
         return string.Create(
@@ -266,9 +277,17 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
         if (value is not IEnumerable<object> enumerable || !enumerable.TryGetNonEnumeratedCount(out var nb)) {
             if (value is System.Collections.ICollection collection)
                 nb = collection.Count;
-            else if (value is System.Collections.IEnumerable e && e.TryGetNonEnumeratedCount(out nb)) { }
             else if (value is int c)
                 nb = c;
+            else if (value is System.Collections.IEnumerable e) {
+                if (!e.TryGetNonEnumeratedCount(out nb)) {
+                    nb = 0;
+                    var en = e.GetEnumerator();
+                    while (en.MoveNext())
+                        nb++;
+                    (en as IDisposable)?.Dispose();
+                }
+            }
             else
                 throw new ArgumentException("The value must provide a count");
         }

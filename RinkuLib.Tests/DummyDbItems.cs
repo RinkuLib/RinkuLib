@@ -40,8 +40,6 @@ public class DummyParameterCollection : DbParameterCollection {
     public override void Insert(int index, object value) => _parameters.Insert(index, (DummyParameter)value);
     public override void Remove(object value) => _parameters.Remove((DummyParameter)value);
     public override void RemoveAt(int index) => _parameters.RemoveAt(index);
-
-    // Better string-based lookup
     public override bool Contains(string value) => _parameters.Any(p => p.ParameterName == value);
     public override int IndexOf(string value) => _parameters.FindIndex(p => p.ParameterName == value);
     public override void RemoveAt(string parameterName) {
@@ -185,7 +183,7 @@ public class SchemaDataReader : DbDataReader, IDbColumnSchemaGenerator {
             _ when t == typeof(double) => rng.NextDouble() * 1000,
             _ when t == typeof(float) => (float)(rng.NextDouble() * 1000),
             _ when t == typeof(Guid) => Guid.NewGuid(),
-            _ when t == typeof(char) => (char)rng.Next(65, 90), // A-Z
+            _ when t == typeof(char) => (char)rng.Next(65, 90),
             _ when t == typeof(byte[]) => GenerateRandomBytes(16),
             _ => throw new NotSupportedException($"Type {t.Name} is not implemented in the dummy generator.")
         };
@@ -196,9 +194,6 @@ public class SchemaDataReader : DbDataReader, IDbColumnSchemaGenerator {
         DummyConnection.Random.NextBytes(bytes);
         return bytes;
     }
-
-    // --- Specific Get Implementations ---
-    // These throw InvalidCastException if the data is DBNull, matching real SqlClient behavior.
 
     public override bool GetBoolean(int ordinal) => (bool)Get(ordinal);
     public override byte GetByte(int ordinal) => (byte)Get(ordinal);
@@ -213,7 +208,6 @@ public class SchemaDataReader : DbDataReader, IDbColumnSchemaGenerator {
     public override string GetString(int ordinal) => (string)Get(ordinal);
     public override char GetChar(int ordinal) => (char)Get(ordinal);
     public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length) {
-        // We call Get with throwWhenNull: true because you can't GetBytes on a NULL
         var val = Get(ordinal);
         if (val is not byte[] data)
             throw new InvalidCastException($"Column {ordinal} is not a byte array.");
@@ -268,8 +262,6 @@ public class SchemaDataReader : DbDataReader, IDbColumnSchemaGenerator {
             throw new InvalidCastException($"Column '{_columns[ordinal].Name}' is null. Check IsDBNull first.");
         return val;
     }
-
-    // --- Essential Overrides ---
     public override bool IsDBNull(int ordinal) => Get(ordinal, false, true) == DBNull.Value;
     public override object GetValue(int ordinal) => Get(ordinal, false);
     public override int FieldCount => _columns.Length;
@@ -277,8 +269,6 @@ public class SchemaDataReader : DbDataReader, IDbColumnSchemaGenerator {
     public override int GetOrdinal(string name) => Array.FindIndex(_columns, c => c.Name == name);
     public override Type GetFieldType(int ordinal) => _columns[ordinal].Type;
     public override string GetDataTypeName(int ordinal) => GetFieldType(ordinal).Name;
-
-    // --- Boilerplate ---
     public override bool HasRows => _maxRows > 0;
     public override object this[int ordinal] => GetValue(ordinal);
     public override object this[string name] => GetValue(GetOrdinal(name));

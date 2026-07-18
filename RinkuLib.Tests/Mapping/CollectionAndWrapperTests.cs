@@ -42,7 +42,6 @@ public class CollectionAndWrapperTests {
         ColumnInfo[] cols = [new("V", typeof(string), false)];
         using var reader = Rows.Reader(cols);
         var parser = TypeParser.GetTypeParser<Optional<string>>(ref cols);
-        // no Read() succeeded: the wrapper represents the absent row
         Assert.False(reader.Read());
         string? value = parser.Default();
         Assert.Null(value);

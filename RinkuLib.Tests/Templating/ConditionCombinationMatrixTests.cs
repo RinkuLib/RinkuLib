@@ -6,21 +6,18 @@ namespace RinkuLib.Tests.Templating;
 
 /// <summary>
 /// Exhaustive matrix over the marker key expressions (single, <c>!</c>, <c>&amp;</c>, <c>|</c>, and their
-/// left-to-right mixes) crossed with every on/off state of the keys involved, at each footprint placement.
-/// The expected SQL comes from the documented rule (keys read left to right, no precedence, <c>!</c> flips,
-/// the footprint stays when the formula holds), evaluated by a tiny reference evaluator in the generator,
-/// never from the current output. Each row renders through both paths, the values array and the usage map.
+/// mixes) crossed with every on/off state of the keys involved, at each footprint placement. The expected
+/// SQL comes from the marker rule (<c>&amp;</c> separates groups that must all hold, each group is an
+/// <c>|</c>-chain where one key suffices, <c>!</c> flips its key; <c>/*A|B&amp;C*/</c> is (A or B) and C),
+/// evaluated by a reference evaluator in the generator, never from the current output. Each row renders
+/// through both paths, the values array and the usage map.
 /// </summary>
 public class ConditionCombinationMatrixTests {
-    /// <summary>The documented evaluation: left to right, no precedence, <c>!</c> negates its key.</summary>
+    /// <summary>The marker rule: <c>&amp;</c>-separated groups all hold, a group holds when one of its <c>|</c> keys does.</summary>
     static bool Eval(string expr, HashSet<string> on) {
-        var tokens = expr.Split(['|', '&'], StringSplitOptions.TrimEntries);
-        var ops = expr.Where(c => c is '|' or '&').ToArray();
         bool KeyOn(string t) => t.StartsWith('!') ? !on.Contains(t[1..]) : on.Contains(t);
-        bool result = KeyOn(tokens[0]);
-        for (int i = 0; i < ops.Length; i++)
-            result = ops[i] == '|' ? result || KeyOn(tokens[i + 1]) : result && KeyOn(tokens[i + 1]);
-        return result;
+        return expr.Split('&', StringSplitOptions.TrimEntries)
+            .All(group => group.Split('|', StringSplitOptions.TrimEntries).Any(KeyOn));
     }
 
     static IEnumerable<string> Keys(string expr)
@@ -36,7 +33,6 @@ public class ConditionCombinationMatrixTests {
     ];
     static readonly string[] ShortExprs = ["Ka|Kb", "!Ka|Kb", "Ka|Kb|Kc", "Ka|Kb&Kc"];
 
-    // (name, template with {K}, kept SQL, pruned SQL)
     static readonly (string Template, string Kept, string Pruned)[] Placements = [
         ("SELECT * FROM t WHERE /*{K}*/x = 1",
          "SELECT * FROM t WHERE x = 1",
@@ -68,7 +64,6 @@ public class ConditionCombinationMatrixTests {
         var rows = new TheoryData<string, string, string>();
         for (int p = 0; p < Placements.Length; p++) {
             var (template, kept, pruned) = Placements[p];
-            // the full expression set on the plain predicate, a representative set everywhere else
             foreach (var expr in p == 0 ? AllExprs : ShortExprs) {
                 var keys = Keys(expr).ToArray();
                 for (int bits = 0; bits < 1 << keys.Length; bits++) {
@@ -87,13 +82,11 @@ public class ConditionCombinationMatrixTests {
         var on = onCsv.Length == 0 ? [] : onCsv.Split(',');
         int len = query.QueryText.RequiredVariablesLength;
 
-        // the values-array path (what a builder drives)
         var variables = new object?[len];
         foreach (var key in on)
             variables[query.Mapper.GetIndex(key)] = key;
         Assert.Equal(expected, query.QueryText.Parse(variables));
 
-        // the usage-map path (what a parameter object drives)
         Span<bool> usageMap = stackalloc bool[len];
         foreach (var key in on)
             usageMap[query.Mapper.GetIndex(key)] = true;

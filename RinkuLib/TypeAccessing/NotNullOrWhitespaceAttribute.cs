@@ -82,12 +82,13 @@ public class NotDefaultUsageEmitter(Type targetType, MemberInfo member) : IAcces
         var defaultProp = eqType.GetProperty(nameof(EqualityComparer<>.Default))!;
         var equalsMethod = eqType.GetMethod(nameof(EqualityComparer<>.Equals), [mType, mType])!;
 
+        LocalBuilder value = il.DeclareLocal(mType);
+        il.Emit(OpCodes.Stloc, value);
+        il.Emit(OpCodes.Call, defaultProp.GetGetMethod()!);
+        il.Emit(OpCodes.Ldloc, value);
         LocalBuilder tempDefault = il.DeclareLocal(mType);
         il.Emit(OpCodes.Ldloca_S, tempDefault);
         il.Emit(OpCodes.Initobj, mType);
-        il.Emit(OpCodes.Ldloc, tempDefault);
-
-        il.Emit(OpCodes.Call, defaultProp.GetGetMethod()!);
         il.Emit(OpCodes.Ldloc, tempDefault);
         il.Emit(OpCodes.Callvirt, equalsMethod);
 

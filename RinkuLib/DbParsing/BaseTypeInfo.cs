@@ -20,7 +20,7 @@ public class BaseTypeInfo : TypeParsingInfo {
         paramInfo.UpdateColModifier(ref colModifier);
         var flags = colModifier.Flags;
         if (colModifier.SwapFirstAt >= 0 && colUsage.NbUsed == colModifier.SwapFirstAt)
-            flags |= colModifier.SwapFirstFlags;   // the first consumed column of a slot-scope subtree
+            flags |= colModifier.SwapFirstFlags;
         bool canReuse = flags.HasFlag(UsageFlags.CanReuse);
         if (flags.HasFlag(UsageFlags.SequentialRead) && !flags.HasFlag(UsageFlags.RemoveSequentialRead)) {
             i = colUsage.LastIndexUsed + 1;
@@ -57,7 +57,11 @@ public class DbConstructorAttribute : Attribute { }
 /// <summary>Handling using a parameterized ctor ignoring parameters names and only considering order and types</summary>
 public class CtorTypeInfo : TypeParsingInfo {
     /// <summary>Singleton</summary>
-    public static readonly CtorTypeInfo Instance = new();
+    public static readonly CtorTypeInfo Instance;
+    static CtorTypeInfo() {
+        Instance = new();
+        RegisterTuples(Instance);
+    }
     private CtorTypeInfo() { }
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type targetType) {

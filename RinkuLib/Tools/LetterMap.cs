@@ -72,14 +72,11 @@ public class LetterMap<T> : IDictionary<char, T> {
     }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static int Rank(uint mask, int idx) {
-        // mask & ((1u << idx) - 1) zeroes out everything above the index
         uint target = mask & ((1u << idx) - 1);
 
 #if NETCOREAPP3_0_OR_GREATER
         return System.Numerics.BitOperations.PopCount(target);
 #else
-    // Software fallback: SWAR (SIMD Within A Register) algorithm
-    // This is the fastest way to count bits without hardware intrinsics
     target = target - ((target >> 1) & 0x55555555);
     target = (target & 0x33333333) + ((target >> 2) & 0x33333333);
     return (int)((((target + (target >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24);

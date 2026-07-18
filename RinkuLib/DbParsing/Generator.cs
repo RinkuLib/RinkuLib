@@ -35,9 +35,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
 
     private int labelCounter = 0;
 
-    // ----------------------------------------
-    // LOCALS
-    // ----------------------------------------
     /// <summary>
     /// An wrapper to reuse locals instead of creating a new one each time
     /// </summary>
@@ -61,16 +58,11 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // LABELS
-    // ----------------------------------------
     /// <inheritdoc/>
     public override Label DefineLabel() {
         var label = Il.DefineLabel();
         var name = $"L{labelCounter++:000}";
         LabelNames[label] = name;
-
-        //Write($"[IL] DefineLabel {name}");
         return label;
     }
 
@@ -82,9 +74,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // BASIC EMITS
-    // ----------------------------------------
     /// <inheritdoc/>
     public override int ILOffset => Il.ILOffset;
 
@@ -146,9 +135,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // COMPLEX EMITS
-    // ----------------------------------------
     /// <inheritdoc/>
     public override void Emit(OpCode opcode, Label label) {
         var name = LabelNames.TryGetValue(label, out var n) ? n : "(unknown)";
@@ -196,9 +182,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // CALL EMITS
-    // ----------------------------------------
     /// <inheritdoc/>
     public override void EmitCall(OpCode opcode, MethodInfo methodInfo, Type[]? optionalParameterTypes) {
         Write($"[IL] EmitCall {opcode} method={methodInfo.DeclaringType.ShortName()}.{methodInfo.Name}({ShortParams(methodInfo)})");
@@ -218,9 +201,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // EXCEPTIONS + SCOPE
-    // ----------------------------------------
     /// <inheritdoc/>
     public override Label BeginExceptionBlock() {
         Write("[IL] BeginExceptionBlock");

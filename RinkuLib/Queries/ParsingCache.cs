@@ -36,7 +36,7 @@ public static class ParsingCacheExtensions {
     public static ParsingCacheItem[] GetUpdatedCache<T>(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ColumnInfo[] schema, ITypeParser<T> cache, int resultSetIndex = 0) {
         for (var i = 0; i < parsingCache.Length; i++) {
             ref var item = ref parsingCache[i];
-            if (item.ResultSetIndex == resultSetIndex && item.Parser is Func<DbDataReader, T> && schema.EquivalentTo(item.Schema)) {
+            if (item.ResultSetIndex == resultSetIndex && item.Parser is ITypeParser<T> && schema.EquivalentTo(item.Schema)) {
                 var currentLen = item.CondStates.Length;
                 item.CondStates = GetUpdatedStates(usageMap, item.CondStates);
                 if (item.CondStates.Length < currentLen) {

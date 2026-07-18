@@ -36,7 +36,7 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
             <= 100 => 100,
             <= 500 => 500,
             <= 4000 => 4000,
-            _ => -1 // Maps to MAX/Unlimited
+            _ => -1
         };
         return SizedDbParamCache.GetOrAdd(ref arr, type, inferredSize);
     }

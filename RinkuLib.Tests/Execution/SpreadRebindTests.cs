@@ -17,25 +17,25 @@ public class SpreadRebindTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         using var cnn = Db.Open();
         var b = query.StartBuilder(cnn.CreateCommand());
 
-        b.Use("@Ids", new[] { 1, 2, 3 });                       // first bind
+        b.Use("@Ids", new[] { 1, 2, 3 });                      
         Assert.Equal(3, b.ExecuteScalar<int>());
 
-        b.Use("@Ids", new[] { 3, 2, 9 });                       // same count, values change
+        b.Use("@Ids", new[] { 3, 2, 9 });                     
         Assert.Equal(2, b.ExecuteScalar<int>());
 
-        b.Use("@Ids", new[] { 2 });                             // shrink
+        b.Use("@Ids", new[] { 2 });                           
         Assert.Equal(1, b.ExecuteScalar<int>());
 
-        b.Use("@Ids", Enumerable.Range(1, 11).ToArray());       // grow across the 9 -> 10 digit boundary
+        b.Use("@Ids", Enumerable.Range(1, 11).ToArray());     
         Assert.Equal(3, b.ExecuteScalar<int>());
 
-        b.Use("@Ids", new[] { 1 });                             // shrink from a two-digit tail
+        b.Use("@Ids", new[] { 1 });                    
         Assert.Equal(1, b.ExecuteScalar<int>());
 
-        b.Use("@Ids", null);                                    // absent: parameters stripped, clause pruned
+        b.Use("@Ids", null);                                
         Assert.Equal(3, b.ExecuteScalar<int>());
 
-        b.Use("@Ids", new[] { 2, 3 });                          // back from absent
+        b.Use("@Ids", new[] { 2, 3 });                   
         Assert.Equal(2, b.ExecuteScalar<int>());
     }
 
@@ -48,7 +48,7 @@ public class SpreadRebindTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         b.Use("@Ids", new[] { 1, 2 });
         Assert.Equal(2, b.ExecuteScalar<int>());
 
-        b.Use("@Ids", Array.Empty<int>());                      // empty counts as absent
+        b.Use("@Ids", Array.Empty<int>());                
         Assert.Equal(3, b.ExecuteScalar<int>());
 
         b.Use("@Ids", new[] { 3 });
@@ -69,11 +69,14 @@ public class SpreadRebindTests(SqliteDb Db) : IClassFixture<SqliteDb> {
 
         Assert.True(query.Parameters.NeedToCache(variables));
         query.UpdateCache(cmd);
-        query.Parameters.UpdateCachedIndexes();
-        Assert.False(query.Parameters.NeedToCache(variables));
 
-        // a second learning pass finds everything already settled
+        var activeOnly = new object?[query.Mapper.Count];
+        activeOnly[query.Mapper.GetIndex("@Active")] = 1;
+        Assert.False(query.Parameters.NeedToCache(activeOnly));
+
+        Assert.True(query.Parameters.NeedToCache(variables));
+
         query.UpdateCache(cmd);
-        Assert.False(query.Parameters.NeedToCache(variables));
+        Assert.False(query.Parameters.NeedToCache(activeOnly));
     }
 }

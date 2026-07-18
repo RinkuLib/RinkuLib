@@ -77,24 +77,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             Interlocked.Exchange(ref Members, value.ToArray());
         }
     }
-    private MethodBase? ParameterlessConstructor {
-        get => field; set {
-            if (value is ConstructorInfo) {
-                if (value.DeclaringType != Type)
-                    throw new InvalidOperationException($"the constructor must be of type {Type}");
-            }
-            else {
-                if (value is not MethodInfo method)
-                    throw new InvalidOperationException("the value must be a ctor or a method");
-                if (method.ReturnType != Type)
-                    throw new InvalidOperationException($"the method must return {Type}");
-                var ex = MethodCtorInfo.ValidateMethodReturn(method);
-                if (ex is not null)
-                    throw ex;
-            }
-            Interlocked.Exchange(ref field, value);
-        }
-    }
+    private MethodBase? ParameterlessConstructor { get; set; }
     /// <summary>
     /// Scans the type via reflection to find all public constructors, static methods, 
     /// properties, and fields for automatic mapping.
@@ -146,9 +129,8 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                 else {
                     var mp = CollectionsMarshal.AsSpan(memberParsers);
                     var result = new MemberParser[Members.Length + mp.Length];
-                    for (int i = 0; i < mp.Length; i++)
-                        result[i] = mp[i];
-                    Array.Copy(Members, 0, result, Members.Length, Members.Length);
+                    Array.Copy(Members, 0, result, 0, Members.Length);
+                    mp.CopyTo(result.AsSpan(Members.Length));
                     Members = result;
                 }
             }
@@ -212,7 +194,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         if (!previousUsages.CanContinue(actualType, colUsage.NbUsed, out previousUsages))
             return null;
         colModifier = colModifier.Add(paramInfo.NameComparer);
-        paramInfo.EnterSubtree(ref colModifier, colUsage.NbUsed);   // a reading-order flag on this slot governs its subtree
+        paramInfo.EnterSubtree(ref colModifier, colUsage.NbUsed);
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
         colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
         var mcis = MCIs;

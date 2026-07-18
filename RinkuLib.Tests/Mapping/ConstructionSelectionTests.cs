@@ -143,7 +143,6 @@ public class ConstructionSelectionTests {
     [Fact]
     public void CtorTypeInfo_uses_the_marked_constructor_positionally() {
         TypeParsingInfo.AddOrSet<PickyBuilt>(CtorTypeInfo.Instance);
-        // names are ignored under CtorTypeInfo, only order and types count
         ColumnInfo[] cols = [new("Anything", typeof(int), false)];
         var picked = Rows.ParseOne<PickyBuilt>(cols, 5);
         Assert.True(picked.CameFromMarkedCtor);

@@ -227,7 +227,7 @@ public class QueryCommand : IQueryCommand, ICache {
         for (int i = 0; i < handlers.Length; i++) {
             ref var currentVar = ref Unsafe.Add(ref pSpecialVar, i);
             if (currentVar is not null)
-                handlers[i].Use(cmd, currentVar);
+                handlers[i].Use(cmd, ref currentVar);
         }
 
         cmd.CommandText = QueryText.Parse(variables);
@@ -258,7 +258,7 @@ public class QueryCommand : IQueryCommand, ICache {
                 currentVar = null;
                 continue;
             }
-            handlers[i].Use(cmd, currentVar);
+            handlers[i].Use(cmd, ref currentVar);
         }
 
         cmd.CommandText = QueryText.Parse(variables);
@@ -266,8 +266,7 @@ public class QueryCommand : IQueryCommand, ICache {
         return true;
     }
     internal static bool HasAny(ref IEnumerable value) {
-        if (value is not IEnumerable source)
-            return true;
+        var source = value;
         if (source is IEnumerable<object> enu && enu.TryGetNonEnumeratedCount(out var nb)) {
             if (nb <= 0)
                 return false;
@@ -283,21 +282,13 @@ public class QueryCommand : IQueryCommand, ICache {
                 return false;
             return true;
         }
-        // a lazy sequence has no reusable count, so it is materialized once here: the binding pass and the
-        // render pass both need to walk it
         var e = source.GetEnumerator();
-        try {
-            if (!e.MoveNext())
-                return false;
-            var items = new List<object?> { e.Current };
-            while (e.MoveNext())
-                items.Add(e.Current);
-            value = items.ToArray();
+        if (e.MoveNext()) {
+            value = new PeekableWrapper(e.Current, e);
             return true;
         }
-        finally {
-            (e as IDisposable)?.Dispose();
-        }
+        (e as IDisposable)?.Dispose();
+        return false;
     }
 
     /// <inheritdoc/>
@@ -394,56 +385,67 @@ public class QueryCommand : IQueryCommand, ICache {
     }
 #if NET9_0_OR_GREATER
     private bool ActualSetCommand<T>(IDbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
+        Debug.Assert(usageMap.Length == Mapper.Count);
+        var varInfos = Parameters._variablesInfo;
+        var handlers = Parameters._specialHandlers;
+
+        ref string pKeys = ref Mapper.KeysStartPtr;
+        var total = Mapper.Count;
+        int i = 0;
+        for (; i < StartSpecialHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
+
+        for (; i < StartBaseHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i)) {
+                var handled = accessor.GetValue(i);
+                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+            }
+
+        for (; i < total; i++)
+            usageMap[i] = accessor.IsUsed(i);
+
+        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        return true;
+    }
+    private bool ActualSetCommand<T>(DbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
+        Debug.Assert(usageMap.Length == Mapper.Count);
+        var varInfos = Parameters._variablesInfo;
+        var handlers = Parameters._specialHandlers;
+
+        ref string pKeys = ref Mapper.KeysStartPtr;
+        var total = Mapper.Count;
+        int i = 0;
+        for (; i < StartSpecialHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
+
+        for (; i < StartBaseHandlers; i++)
+            if (usageMap[i] = accessor.IsUsed(i)) {
+                var handled = accessor.GetValue(i);
+                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+            }
+
+        for (; i < total; i++)
+            usageMap[i] = accessor.IsUsed(i);
+
+        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        return true;
+    }
 #else
     private bool ActualSetCommand(IDbCommand cmd, NoTypeAccessor accessor, Span<bool> usageMap) {
-#endif
         Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
+        usageMap.Clear();
         cmd.CommandText = QueryText.Parse(usageMap, accessor);
         return true;
     }
-#if NET9_0_OR_GREATER
-    private bool ActualSetCommand<T>(DbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
-#else
     private bool ActualSetCommand(DbCommand cmd, NoTypeAccessor accessor, Span<bool> usageMap) {
-#endif
         Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
+        usageMap.Clear();
         cmd.CommandText = QueryText.Parse(usageMap, accessor);
         return true;
     }
+#endif
 #if !NET9_0_OR_GREATER
     private bool ActualSetCommand(IDbCommand cmd, TypeAccessor accessor, Span<bool> usageMap) {
         Debug.Assert(usageMap.Length == Mapper.Count);
@@ -458,8 +460,10 @@ public class QueryCommand : IQueryCommand, ICache {
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
         for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
+            if (usageMap[i] = accessor.IsUsed(i)) {
+                var handled = accessor.GetValue(i);
+                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+            }
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -480,8 +484,10 @@ public class QueryCommand : IQueryCommand, ICache {
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
         for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
+            if (usageMap[i] = accessor.IsUsed(i)) {
+                var handled = accessor.GetValue(i);
+                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+            }
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -502,8 +508,10 @@ public class QueryCommand : IQueryCommand, ICache {
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
         for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
+            if (usageMap[i] = accessor.IsUsed(i)) {
+                var handled = accessor.GetValue(i);
+                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+            }
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -524,8 +532,10 @@ public class QueryCommand : IQueryCommand, ICache {
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
         for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i - StartSpecialHandlers].Use(cmd, accessor.GetValue(i));
+            if (usageMap[i] = accessor.IsUsed(i)) {
+                var handled = accessor.GetValue(i);
+                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+            }
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
@@ -534,5 +544,33 @@ public class QueryCommand : IQueryCommand, ICache {
         return true;
     }
 #endif
+}
+
+internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {
+    private object? _first = first;
+    private IEnumerator? _enumerator = enumerator;
+
+    public IEnumerator<object> GetEnumerator() {
+        if (_enumerator == null)
+            yield break;
+
+        yield return _first!;
+        _first = null;
+
+        while (_enumerator.MoveNext())
+            yield return _enumerator.Current;
+        Dispose();
+    }
+    public void Dispose() {
+        if (_enumerator is not null) {
+            (_enumerator as IDisposable)?.Dispose();
+            _enumerator = null;
+            _first = null;
+        }
+        GC.SuppressFinalize(this);
+    }
+    ~PeekableWrapper() => Dispose();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 

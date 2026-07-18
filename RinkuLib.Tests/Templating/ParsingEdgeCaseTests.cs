@@ -15,6 +15,22 @@ public class ParsingEdgeCaseTests {
         => Assert.Throws<Exception>(() => new QueryCommand("a"));
 
     [Fact]
+    public void A_marker_directly_after_a_variable_drops_the_whole_predicate() {
+        // NOTE: with the marker touching the variable, turning the condition off removes the preceding
+        // "WHERE ID >= @Min" as well, not only the marker's following footprint. Pinned as observed;
+        // flagged as a possible discrepancy with the marker rule.
+        var query = new QueryCommand("SELECT Name FROM Users WHERE ID >= @Min/*Old*/ AND ID > 0 ORDER BY ID");
+        var b = query.StartBuilder();
+        b.Use("@Min", 2);
+        Render.Expect(b, "SELECT Name FROM Users ORDER BY ID", ("@Min", 2));   // bound, though its clause is gone
+
+        var on = query.StartBuilder();
+        on.Use("@Min", 2);
+        on.Use("Old");
+        Render.Expect(on, "SELECT Name FROM Users WHERE ID >= @Min AND ID > 0 ORDER BY ID", ("@Min", 2));
+    }
+
+    [Fact]
     public void Unclosed_condition_comment_is_rejected()
         => Assert.Throws<Exception>(() => new QueryCommand("SELECT /*Cond FROM Users"));
 
@@ -48,9 +64,6 @@ public class ParsingEdgeCaseTests {
 
     [Fact]
     public void A_section_welded_to_a_condition_footprint_gets_a_separating_space() {
-        // "COUNT(b)" ends in ")" and abuts FROM with no space. Kept, it stays valid; pruned, the preceding
-        // "a" must not weld onto FROM. The parser inserts a separating space before the section so removing
-        // the conditional segment is safe whatever precedes it.
         var query = new QueryCommand("SELECT a, /*Show*/COUNT(b)FROM t");
         var on = query.StartBuilder();
         on.Use("Show");
@@ -58,8 +71,18 @@ public class ParsingEdgeCaseTests {
         Render.Expect(query.StartBuilder(), "SELECT a FROM t");
     }
 
-    // The wall is only removed, so the space before it stays. A space before the wall therefore leaves a
-    // double space once the footprint prunes; only a wall tight against the token gives a single space.
+    [Theory]
+    [InlineData("SELECT a, /*Show*/COUNT(b)\tFROM t", "SELECT a, COUNT(b)\tFROM t", "SELECT a\tFROM t")]
+    [InlineData("SELECT a, /*Show*/COUNT(b)\r\nFROM t", "SELECT a, COUNT(b)\r\nFROM t", "SELECT a\r\nFROM t")]
+    [InlineData("SELECT a, /*Show*/COUNT(b)  FROM t", "SELECT a, COUNT(b)  FROM t", "SELECT a  FROM t")]
+    [InlineData("SELECT a, /*Show*/COUNT(b) \t FROM t", "SELECT a, COUNT(b) \t FROM t", "SELECT a \t FROM t")]
+    public void Whitespace_kinds_separate_a_section_without_protection(string sql, string kept, string pruned) {
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("Show");
+        Render.Expect(on, kept);
+        Render.Expect(new QueryCommand(sql).StartBuilder(), pruned);
+    }
+
     [Theory]
     [InlineData("SELECT DISTINCT ??? /*ShowId*/TrackId, Name FROM tracks", "SELECT DISTINCT  Name FROM tracks")]
     [InlineData("SELECT DISTINCT ???/*ShowId*/TrackId, Name FROM tracks", "SELECT DISTINCT  Name FROM tracks")]

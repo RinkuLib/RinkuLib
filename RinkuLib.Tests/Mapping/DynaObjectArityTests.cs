@@ -15,14 +15,13 @@ public class DynaObjectArityTests {
         var cols = new ColumnInfo[arity];
         var row = new object[arity];
         for (int i = 0; i < arity; i++) {
-            // odd slots are nullable, giving each arity two generic argument kinds
             cols[i] = new($"Col{i + 1}", typeof(int), i % 2 == 1);
             row[i] = (i + 1) * 10;
         }
         return (cols, row);
     }
 
-    public static TheoryData<int> Arities => new() { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+    public static TheoryData<int> Arities => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
     [Theory]
     [MemberData(nameof(Arities))]
@@ -84,9 +83,28 @@ public class DynaObjectArityTests {
 
     [Fact]
     public void Typed_get_into_a_nullable_target_keeps_the_value() {
-        // rides on Caster.TryCast<int, int?>, which currently corrupts the value
         var (cols, row) = Make(4);
         var dyna = Rows.ParseOne<DynaObject>(cols, row);
         Assert.Equal(10, dyna.Get<int?>(0));
+    }
+
+    [Theory]
+    [MemberData(nameof(Arities))]
+    public void A_mismatched_type_is_refused_on_every_slot(int arity) {
+        var (cols, row) = Make(arity);
+        var dyna = Rows.ParseOne<DynaObject>(cols, row);
+        for (int i = 0; i < arity; i++) {
+            Assert.False(dyna.TryGet<Version>(i, out _));
+            if (i < 12)
+                Assert.False(dyna.Set(i, new Version(1, 0)));
+            else {
+                Assert.True(dyna.Set(i, new Version(1, 0)));
+                Assert.Equal(new Version(1, 0), dyna.Get<Version>(i));
+            }
+        }
+        Assert.False(dyna.TryGet<int>(arity, out _));
+        Assert.False(dyna.Set(arity, 1));
+        Assert.False(dyna.TryGet<int>(-1, out _));
+        Assert.False(dyna.Set(-1, 1));
     }
 }

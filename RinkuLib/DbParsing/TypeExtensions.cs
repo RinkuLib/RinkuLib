@@ -84,7 +84,6 @@ public static class TypeExtensions {
         if (!t.IsGenericType)
             return t.Name;
 
-        // Formats Reference`2[[Int32...]] into Reference<Int32, String>
         var args = string.Join(", ", t.GetGenericArguments().Select(ShortName));
         string name = t.Name.Split('`')[0];
         return $"{name}<{args}>";
@@ -95,8 +94,10 @@ public static class TypeExtensions {
     public static bool IsBaseType(this Type type) {
         return type == typeof(int) || type == typeof(string) || type == typeof(DateTime)
             || type == typeof(bool) || type == typeof(long) || type == typeof(decimal)
-            || type == typeof(Guid) || type == typeof(object) || type == typeof(float) || type == typeof(double) 
-            || type == typeof(char) || type == typeof(byte) || type == typeof(short) || type == typeof(byte[]);
+            || type == typeof(Guid) || type == typeof(object) || type == typeof(float) || type == typeof(double)
+            || type == typeof(char) || type == typeof(byte) || type == typeof(short) || type == typeof(byte[])
+            || type == typeof(sbyte) || type == typeof(ushort) || type == typeof(uint) || type == typeof(ulong)
+            || type == typeof(TimeSpan) || type == typeof(DateTimeOffset);
     }
     /// <summary>
     /// Check if the type can hold a <see langword="null"/> value
@@ -217,7 +218,7 @@ public static class TypeExtensions {
         if (!closedType.IsGenericType)
             return member;
         if (member is FieldInfo fi)
-            return FieldInfo.GetFieldFromHandle(fi.FieldHandle, closedType.TypeHandle);
+            return closedType.GetMemberWithSameMetadataDefinitionAs(fi);
         if (member is ConstructorInfo ci)
             return ConstructorInfo.GetMethodFromHandle(ci.MethodHandle, closedType.TypeHandle)!;
         if (member is PropertyInfo pi)

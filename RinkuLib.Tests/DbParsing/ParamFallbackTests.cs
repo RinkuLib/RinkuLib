@@ -3,7 +3,6 @@ using RinkuLib.DbParsing;
 using RinkuLib.Tools;
 using Xunit;
 namespace RinkuLib.Tests.DbParsing;
-// The runtime equivalent of a `= default` parameter: an IFallbackParserGetter on the slot.
 public class ParamFallbackTests {
     private static DataTableReader Reader(ColumnInfo[] columns, object[] row) {
         DataTable table = new();
@@ -18,7 +17,6 @@ public class ParamFallbackTests {
         r.Read();
         return p.Parse(r).Result;
     }
-    // Code has no C# default, so it is required. Attaching DefaultValueFallback at runtime makes it optional.
     [Fact]
     public void DefaultValueFallback_makes_required_slot_optional() {
         if (TypeParsingInfo.GetOrAdd<PfTrack>() is ICanProvideConstructions info) {
@@ -30,7 +28,7 @@ public class ParamFallbackTests {
         var v = Parse<PfTrack>([new("Id", typeof(int), false), new("Name", typeof(string), false)], [1, "x"]);
         Assert.Equal(1, v.Id);
         Assert.Equal("x", v.Name);
-        Assert.Equal(0, v.Code);   // no Code column, fell back to the type default
+        Assert.Equal(0, v.Code);
     }
 }
 public record struct PfTrack(int Id, string Name, int Code);

@@ -62,6 +62,93 @@ public class DynaObjectTests {
     }
 
     [Fact]
+    public void Every_accessor_form_reads_and_writes_the_same_slot() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
+        var row = Rows.ParseOne<DynaObject>(cols, 5, "first");
+
+        Assert.Equal(5, row.Get<int>(0));
+        Assert.Equal(5, row.Get<int>("Id"));
+        Assert.Equal(5, row.Get<int>("Id".AsSpan()));
+        Assert.Equal(5, row[0]);
+        Assert.Equal(5, row["Id"]);
+        Assert.Equal(5, row["Id".AsSpan()]);
+
+        row[0] = 6;
+        Assert.Equal(6, row[0]);
+        row["Id"] = 7;
+        Assert.Equal(7, row["Id"]);
+        row["Id".AsSpan()] = 8;
+        Assert.Equal(8, row["Id".AsSpan()]);
+        Assert.True(row.Set("Id".AsSpan(), 9));
+        Assert.Equal(9, row.Get<int>("Id".AsSpan()));
+        Assert.False(row.Set("Nope", 1));
+        Assert.False(row.Set("Nope".AsSpan(), 1));
+
+        Assert.True(row.TryGetValue("Name", out string? name));
+        Assert.Equal("first", name);
+        Assert.True(row.TryGetValue("Name".AsSpan(), out object? boxedName));
+        Assert.Equal("first", boxedName);
+        Assert.True(row.TryGetValue("Name".AsSpan(), out string? spanName));
+        Assert.Equal("first", spanName);
+        Assert.False(row.TryGetValue("Nope", out string? _));
+        Assert.False(row.TryGetValue("Nope".AsSpan(), out object? _));
+        Assert.False(row.TryGetValue("Nope".AsSpan(), out string? _));
+
+        Assert.True(row.ContainsKey("Name"));
+        Assert.True(row.ContainsKey("Name".AsSpan()));
+        Assert.False(row.ContainsKey("Nope"));
+        Assert.Equal(["Id", "Name"], row.Keys.ToArray());
+        Assert.Equal([9, "first"], row.Values);
+    }
+
+    [Fact]
+    public void A_backing_shape_refuses_a_mapper_of_the_wrong_width() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
+        var row = Rows.ParseOne<DynaObject>(cols, 5, "first");
+        Assert.Throws<Exception>(() => new DynaObject<int>(5, row.Mapper));
+    }
+
+    [Fact]
+    public void Misses_throw_with_the_key_or_index() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false)];
+        var row = Rows.ParseOne<DynaObject>(cols, 5);
+        Assert.Throws<KeyNotFoundException>(() => row["Nope"]);
+        Assert.Throws<KeyNotFoundException>(() => row["Nope".AsSpan()]);
+        Assert.Throws<KeyNotFoundException>(() => row["Nope"] = 1);
+        Assert.Throws<KeyNotFoundException>(() => { var span = "Nope".AsSpan(); row[span] = 1; });
+        Assert.Throws<KeyNotFoundException>(() => row.Get<int>("Nope"));
+        Assert.Throws<KeyNotFoundException>(() => row.Get<int>("Nope".AsSpan()));
+        Assert.Throws<IndexOutOfRangeException>(() => row[5]);
+        Assert.Throws<IndexOutOfRangeException>(() => row[-1] = 1);
+        Assert.ThrowsAny<Exception>(() => row.Get<Version>(0));
+        Assert.ThrowsAny<Exception>(() => row.Get<Version>("Id"));
+        Assert.ThrowsAny<Exception>(() => row.Get<Version>("Id".AsSpan()));
+    }
+
+    [Fact]
+    public void Both_dictionary_views_enumerate_the_row() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
+        var row = Rows.ParseOne<DynaObject>(cols, 5, "first");
+
+        var asValues = (IReadOnlyDictionary<string, object?>)row;
+        Assert.Equal(["Id", "Name"], asValues.Keys);
+        Assert.Equal([5, "first"], asValues.Values);
+        Assert.Equal([new("Id", 5), new KeyValuePair<string, object?>("Name", "first")], asValues.ToList());
+
+        var asIndexes = (IReadOnlyDictionary<string, int>)row;
+        Assert.Equal(1, asIndexes["Name"]);
+        Assert.Equal(["Id", "Name"], asIndexes.Keys);
+        Assert.Equal([0, 1], asIndexes.Values);
+        Assert.Equal([new("Id", 0), new KeyValuePair<string, int>("Name", 1)], asIndexes.ToList());
+        Assert.True(row.TryGetValue("Name", out int index));
+        Assert.Equal(1, index);
+        Assert.False(row.TryGetValue("Nope", out int _));
+
+        var untyped = ((System.Collections.IEnumerable)row).GetEnumerator();
+        Assert.True(untyped.MoveNext());
+    }
+
+    [Fact]
     public void Get_converts_via_implicit_operators() {
         ColumnInfo[] cols = [new("Nb1", typeof(int), false), new("Nb2", typeof(long), true)];
         var row = Rows.ParseOne<DynaObject>(cols, 1, 1L);

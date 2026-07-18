@@ -20,7 +20,6 @@ public class OverloadSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private const string InsertSql = "INSERT INTO Scratch (Val) VALUES (@Val)";
     private static readonly CancellationToken Ct = TestContext.Current.CancellationToken;
 
-    // ---- QueryCommand over DbConnection ----
 
     [Fact]
     public void Command_execute_overloads_on_DbConnection() {
@@ -176,7 +175,6 @@ public class OverloadSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
             Assert.Equal(2, v);
     }
 
-    // ---- QueryCommand over IDbConnection ----
 
     [Fact]
     public void Command_execute_overloads_on_IDbConnection() {
@@ -312,7 +310,6 @@ public class OverloadSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(2, await Count.QueryAsync<int, ActiveFilter>(cnn, ref filter, ct: Ct));
     }
 
-    // ---- string SQL over DbConnection ----
 
     [Fact]
     public async Task Sql_string_overloads_on_DbConnection() {
@@ -398,7 +395,6 @@ public class OverloadSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         }
     }
 
-    // ---- string SQL over IDbConnection ----
 
     [Fact]
     public async Task Sql_string_overloads_on_IDbConnection() {

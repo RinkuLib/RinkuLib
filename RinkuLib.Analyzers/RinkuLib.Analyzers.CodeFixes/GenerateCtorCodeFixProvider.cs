@@ -99,7 +99,6 @@ public sealed class GenerateCtorCodeFixProvider : CodeFixProvider {
             if (attributes.Length > 0) {
                 var attributeLists = new List<AttributeListSyntax>();
                 foreach (var attr in attributes) {
-                    // an unresolved attribute has no class (or an error one); skip it instead of crashing the fix
                     if (attr.AttributeClass is not { TypeKind: not TypeKind.Error } attrClass)
                         continue;
                     var name = attrClass.Name;

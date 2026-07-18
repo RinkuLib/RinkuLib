@@ -42,10 +42,8 @@ public ref partial struct ValueStringBuilder {
     /// </summary>
     /// <param name="capacity">The total minimum capacity required.</param>
     public void EnsureCapacity(int capacity) {
-        // This is not expected to be called this with negative capacity
         Debug.Assert(capacity >= 0);
 
-        // If the caller has a bug and calls this with negative capacity, make sure to call Grow to throw an exception.
         if ((uint)capacity > (uint)_chars.Length)
             Grow(capacity - _pos);
     }
@@ -189,7 +187,7 @@ public ref partial struct ValueStringBuilder {
         }
 
         int pos = _pos;
-        if (s.Length == 1 && (uint)pos < (uint)_chars.Length) // very common case, e.g. appending strings from NumberFormatInfo like separators, percent symbols, etc.
+        if (s.Length == 1 && (uint)pos < (uint)_chars.Length)
         {
             _chars[pos] = s[0];
             _pos = pos + 1;
@@ -285,7 +283,6 @@ public ref partial struct ValueStringBuilder {
         Debug.Assert(additionalCapacityBeyondPos > 0);
         Debug.Assert(_pos > _chars.Length - additionalCapacityBeyondPos, "Grow called incorrectly, no resize is needed.");
 
-        // Make sure to let Rent throw an exception if the caller has a bug and the desired capacity is negative
         char[] poolArray = ArrayPool<char>.Shared.Rent((int)Math.Max((uint)(_pos + additionalCapacityBeyondPos), (uint)_chars.Length * 2));
 
         _chars[.._pos].CopyTo(poolArray);
@@ -300,7 +297,7 @@ public ref partial struct ValueStringBuilder {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Dispose() {
         char[]? toReturn = _arrayToReturnToPool;
-        this = default; // for safety, to avoid using pooled array if this instance is erroneously appended to again
+        this = default;
         if (toReturn != null) {
             ArrayPool<char>.Shared.Return(toReturn);
         }

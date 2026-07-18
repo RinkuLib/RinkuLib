@@ -67,7 +67,6 @@ public class DapperParityMappingTests {
 
     [Fact]
     public void Richest_satisfiable_constructor_wins_over_the_parameterless_one() {
-        // Dapper prefers the default ctor plus members; Rinku goes through the parameterized ctor
         ColumnInfo[] cols = [new("A", typeof(int), false), new("B", typeof(string), false)];
         var row = Rows.ParseOne<TwoCtors>(cols, 0, "Rinku");
         Assert.Equal(1, row.A);
@@ -86,21 +85,19 @@ public class DapperParityMappingTests {
         Assert.Equal("n", row.Name);
         Assert.Equal(5, row.Extra);
     }
-    /*
+    
     [Fact]
     public void Unsigned_integer_scalar_reads_from_a_signed_column() {
-        // Dapper reads unsigned integers; the scalar type list does not include them yet
         ColumnInfo[] cols = [new("V", typeof(long), false)];
         Assert.Equal(300u, Rows.ParseOne<uint>(cols, 300L));
     }
 
     [Fact]
     public void TimeSpan_scalar_reads_from_a_string_column() {
-        // Dapper reads TimeSpan; the scalar type list does not include it yet
         ColumnInfo[] cols = [new("V", typeof(string), false)];
         Assert.Equal(TimeSpan.FromMinutes(90), Rows.ParseOne<TimeSpan>(cols, "01:30:00"));
     }
-    */
+    
     [Fact]
     public void Nullable_float_and_guid_ctor_parameters_read_their_values() {
         var guid = Guid.NewGuid();

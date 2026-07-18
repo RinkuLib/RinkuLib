@@ -13,8 +13,6 @@ namespace RinkuLib.Tests.Templating;
 public class ExtracterBranchTests {
     static QueryBuilder Build(string sql) => new QueryCommand(sql).StartBuilder();
 
-    // ---- dynamic projection: how the column key is extracted (FindSelectName) ----
-
     [Fact]
     public void Projection_key_ignores_space_before_the_comma() {
         var q = new QueryCommand("?SELECT Name , Email FROM Users");
@@ -33,7 +31,6 @@ public class ExtracterBranchTests {
 
     [Fact]
     public void Projection_key_strips_bracket_quotes() {
-        // The key of a quoted column is the quoted name itself.
         var q = new QueryCommand("?SELECT [Full Name], Email FROM Users");
         var b = q.StartBuilder();
         b.Use("Full Name");
@@ -56,12 +53,8 @@ public class ExtracterBranchTests {
         Render.Expect(b, "SELECT Name AS \"Nick\" FROM Users");
     }
 
-    // ---- the always-used "!" bookkeeping while scanning the list backward ----
-
     [Fact]
     public void Always_column_with_a_finished_variable_before_it() {
-        // (?@V) finishes at the closing paren, so the "!" walk skips a finished condition. The variable's
-        // own footprint grows out of the parens, so without @V the whole column drops despite the "!".
         var q = new QueryCommand("?SELECT (?@V) AS X!, Name FROM Users");
         var withVar = q.StartBuilder();
         withVar.Use("@V", 1);
@@ -73,8 +66,6 @@ public class ExtracterBranchTests {
 
     [Fact]
     public void Always_column_with_a_marker_and_a_pending_condition_behind_it() {
-        // At the "!" comma the walk passes the finished (?@V) condition and the unfinished marker K before
-        // finding the column's own entry, exercising both directions of the bookkeeping loop.
         var q = new QueryCommand("?SELECT /*K*/(?@V) AS X!, Name FROM Users");
         var b = q.StartBuilder();
         b.Use("K");
@@ -87,13 +78,10 @@ public class ExtracterBranchTests {
 
     [Fact]
     public void Always_column_with_a_marker_finished_inside_parens() {
-        // K's footprint is bounded by the parens and finishes at the ')', so the "!" bookkeeping walks
-        // past an already finished condition when it re-anchors.
         var q = new QueryCommand("?SELECT (a /*K*/+ b) AS X!, Name FROM Users");
         var on = q.StartBuilder();
         on.Use("K");
         Render.Expect(on, "SELECT (a + b) AS X FROM Users");
-        // "+" is not a footprint boundary, so the whole parenthesized term is one footprint.
         Render.Expect(q.StartBuilder(), "SELECT () AS X FROM Users");
     }
 
@@ -107,13 +95,11 @@ public class ExtracterBranchTests {
 
     [Fact]
     public void Always_marker_inside_deeper_parens_is_rejected() {
-        // "!" belongs after a column of the projection itself; inside function arguments it has no column.
         Assert.Throws<Exception>(() => new QueryCommand("?SELECT a, fn(x!, y) AS B FROM t"));
     }
 
     [Fact]
     public void Marker_on_an_always_column_replaces_always() {
-        // From the doc: a marker on an always-kept column replaces "always" with the marker's keys.
         var q = new QueryCommand("?SELECT /*Manual*/Id!, Username FROM users");
         var manual = q.StartBuilder();
         manual.Use("Manual");
@@ -123,17 +109,12 @@ public class ExtracterBranchTests {
         Render.Expect(userOnly, "SELECT Username FROM users");
     }
 
-    // ---- a section comment right after an opening parenthesis ----
-
     [Fact]
     public void Clause_marker_on_a_subquery_select_is_rejected() {
-        // A clause marker directly on a subquery's SELECT has no way to close its footprint inside the
-        // parens, so the template is refused at construction.
         var ex = Assert.Throws<Exception>(() => new QueryCommand("SELECT * FROM t WHERE id IN (/*K*/SELECT id FROM u)"));
         Assert.Contains("not finished", ex.Message);
     }
 
-    // ---- "?" followed by a word that is not quite SELECT (each prefix length) ----
 
     [Theory]
     [InlineData("SELECT * FROM t WHERE /*K*/?x = 1")]
@@ -149,7 +130,6 @@ public class ExtracterBranchTests {
         Render.Expect(Build(sql), "SELECT * FROM t");
     }
 
-    // ---- factory error and trimming paths ----
 
     [Fact]
     public void Footprint_ending_on_a_semicolon_keeps_the_semicolon() {
@@ -160,8 +140,6 @@ public class ExtracterBranchTests {
         Render.Expect(b, "SELECT a FROM t WHERE x = 1;SELECT b FROM u");
     }
 
-    // Pruning the footprint trims the dangling comma and, with it, a trailing space, so the SQL before the
-    // separator stays tidy whichever way the footprint was written.
     [Theory]
     [InlineData("SELECT a, /*K*/b;SELECT c FROM u", "SELECT a;SELECT c FROM u", "SELECT a, b;SELECT c FROM u")]
     [InlineData("SELECT a, /*K*/b ;SELECT c FROM u", "SELECT a;SELECT c FROM u", "SELECT a, b ;SELECT c FROM u")]
@@ -178,10 +156,6 @@ public class ExtracterBranchTests {
         var ex = Assert.Throws<Exception>(() => new QueryCommand("SELECT a FROM t WHERE /*@Nope*/x = 1"));
         Assert.Contains("must exist", ex.Message);
     }
-
-    // ---- quoted text is inert: the scanner tracks quotes (doc: index.md, "the sections, parentheses,
-    // quotes, and CASE depth"). A template with markers or variables only inside quotes has no keys at
-    // all. These FAIL until quote characters count as boundaries. ----
 
     [Fact]
     public void A_variable_inside_a_string_literal_is_not_a_variable() {

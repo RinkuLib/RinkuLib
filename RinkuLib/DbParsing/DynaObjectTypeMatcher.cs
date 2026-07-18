@@ -3,7 +3,11 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
 internal class DynaObjectTypeInfo : TypeParsingInfo {
-    public static readonly DynaObjectTypeInfo Instance = new();
+    public static readonly DynaObjectTypeInfo Instance;
+    static DynaObjectTypeInfo() {
+        Instance = new();
+        RegisterDynaObject(Instance);
+    }
     private DynaObjectTypeInfo() { }
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type TargetType) {

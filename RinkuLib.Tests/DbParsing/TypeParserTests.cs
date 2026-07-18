@@ -200,7 +200,6 @@ public class TypeParserTests {
             new("WarehouseZone", typeof(char), false)
         ];
 
-        // Row 1: Has weight, Row 2: Weight is NULL
         using var reader = CreateReader(columns, [
             [500, 12.5, true, 'A'],
             [501, DBNull.Value, false, 'B']
@@ -222,11 +221,9 @@ public class TypeParserTests {
         ColumnInfo[] columns = [
             new("ShipmentID", typeof(int), false),
             
-            // Package (contents) - Testing JumpIfNull on TrackingId
             new("ContentsTrackingID", typeof(int), true),
             new("ContentsWeight", typeof(double), true),
             
-            // Label (routing) - Testing Property Hydration + NotNull
             new("RoutingServiceLevel", typeof(string), false),
             new("RoutingNotes", typeof(string), true)
         ];
@@ -238,7 +235,6 @@ public class TypeParserTests {
 
         var parser = TypeParser.GetTypeParser<Shipment>(ref columns);
 
-        // --- Execute Row 1 ---
         reader.Read();
         var s1 = parser.Parse(reader).Result;
         Assert.Equal(100, s1.ShipmentId);
@@ -248,18 +244,14 @@ public class TypeParserTests {
         Assert.Equal("Overnight", s1.Routing.ServiceLevel);
         Assert.Equal("Fragile", s1.Routing.Notes);
 
-        // --- Execute Row 2 (JumpIfNull Test) ---
         var s2 = parser.Parse(reader).Result;
         Assert.Equal(200, s2.ShipmentId);
-        // TrackingId was null, so the Package struct should be null in the parent
         Assert.Null(s2.Contents);
-        // Label should still hydrate normally
         Assert.Equal("Ground", s2.Routing.ServiceLevel);
         Assert.Null(s2.Routing.Notes);
     }
     [Fact]
     public void Test_With_Interface_Overload() {
-        // We provide columns that satisfy Overload 2 of IPayment.Create
         ColumnInfo[] columns = [
             new("OrderID", typeof(int), false),
             new("PaymentIban", typeof(string), false),
@@ -273,7 +265,6 @@ public class TypeParserTests {
         reader.Read();
         var result = parser.Parse(reader).Result;
 
-        // ASSERT
         Assert.Equal(99, result.OrderId);
         Assert.IsType<Transfer>(result.Payment);
         var transfer = (Transfer)result.Payment;
@@ -286,7 +277,6 @@ public class TypeParserTests {
             .AddPossibleConstruction(typeof(ExternalIDPayment)
             .GetConstructor(BindingFlags.Public | BindingFlags.Instance, [typeof(int)]) 
             ?? throw new Exception("method not found"));
-        // We provide columns that satisfy Overload 2 of IPayment.Create
         ColumnInfo[] columns = [
             new("OrderID", typeof(int), false),
             new("PaymentExternalID", typeof(int), false)
@@ -299,7 +289,6 @@ public class TypeParserTests {
         reader.Read();
         var result = parser.Parse(reader).Result;
 
-        // ASSERT
         Assert.Equal(99, result.OrderId);
         Assert.IsType<ExternalIDPayment>(result.Payment);
         var transfer = (ExternalIDPayment)result.Payment;
@@ -307,18 +296,15 @@ public class TypeParserTests {
     }
     [Fact]
     public void Test_Generic_Factory_Manual_Add() {
-        // an external generic factory registered against the open definition
         TypeParsingInfo.GetOrAdd(typeof(Wrapped<>))
             .AddPossibleConstruction(typeof(WrappedFactory).GetMethod(nameof(WrappedFactory.Create))!);
 
-        // one registration serves every closed form: Create<int>
         ColumnInfo[] intCols = [new("Value", typeof(int), false)];
         using (var reader = CreateReader(intCols, [[7]])) {
             reader.Read();
             Assert.Equal(7, TypeParser.GetTypeParser<Wrapped<int>>(ref intCols).Parse(reader).Result.Value);
         }
 
-        // and Create<string>
         ColumnInfo[] strCols = [new("Value", typeof(string), false)];
         using (var reader = CreateReader(strCols, [["hi"]])) {
             reader.Read();
@@ -340,7 +326,6 @@ public class TypeParserTests {
         reader.Read();
         var result = parser.Parse(reader).Result;
 
-        // ASSERT
         Assert.Equal(321, result.OrderId);
         Assert.IsType<CardDetailed>(result.Payment);
         var transfer = (CardDetailed)result.Payment;
@@ -349,7 +334,6 @@ public class TypeParserTests {
     }
     [Fact]
     public void Test_With_Interface_Overload_DifferentMatch() {
-        // We provide columns that satisfy Overload 2 of IPayment.Create
         ColumnInfo[] columns = [
             new("OrderID", typeof(int), false),
             new("PaymentIban", typeof(string), false),
@@ -366,7 +350,6 @@ public class TypeParserTests {
         reader.Read();
         var result = parser.Parse(reader).Result;
 
-        // ASSERT
         Assert.Equal(99, result.OrderId);
         Assert.IsType<Transfer>(result.Payment);
         var transfer = (Transfer)result.Payment;
@@ -374,7 +357,6 @@ public class TypeParserTests {
         Assert.Equal("GENEDEBK", transfer.Bic);
         result = parser.Parse(reader).Result;
 
-        // ASSERT
         Assert.Equal(100, result.OrderId);
         Assert.IsType<Card>(result.Payment);
         var transfer2 = (Card)result.Payment;
@@ -385,32 +367,25 @@ public class TypeParserTests {
         ColumnInfo[] columns = [
             new("ProductId", typeof(int), false),
         
-            // Price<decimal> mapping: ListingPrice (param) + Amount/Currency
             new("ListingPriceAmount", typeof(decimal), true),
             new("ListingPriceCurrency", typeof(byte), true),
         
-            // Metadata<string> mapping: Info (param) + Value/Source
             new("InfoValue", typeof(string), false),
             new("InfoSource", typeof(string), true)
         ];
 
-        // Row 1: Fully populated with decimal and string
-        // Row 2: Price Amount is null -> JumpIfNull should make ListingPrice null
         using var reader = CreateReader(columns, [
             [1, 99.99m, DBNull.Value, "Premium Grade", "Warehouse A"]
         ]);
 
-        // Testing BoxedProduct with <decimal, string>
         var parser = TypeParser.GetTypeParser<BoxedProduct<decimal, string>>(ref columns);
 
-        // --- Row 1 ---
         reader.Read();
         Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
     }
 
     [Fact]
     public void Test_Generic_Type_Switching() {
-        // Same structure, different Generic types: <double, int>
         ColumnInfo[] columns = [
             new("ProductId", typeof(int), false),
             new("ListingPriceAmount", typeof(double), false),
@@ -438,28 +413,21 @@ public class TypeParserTests {
         ColumnInfo[] columns = [
             new("ProductId", typeof(int), false),
             
-            // Price<decimal> - Parameters: Amount, Currency
             new("ListingPriceAmount", typeof(decimal), true),
             new("ListingPriceCurrency", typeof(int), true),
             
-            // Metadata<int, string> - Ctor: Value, Prop: Source
             new("InfoValue", typeof(int), false),
             new("InfoSource", typeof(string), true)
         ];
 
-        // Row 1: All present (Normal Case)
-        // Row 2: Price Amount is NULL (JumpIfNull Case)
-        // Row 3: Info Source is NULL (Optional Property Case)
         using var reader = CreateReader(columns, [
             [101, 99.50m, 1, 500, "Warehouse_Alpha"],
             [102, DBNull.Value, 2, 600, "Warehouse_Beta"],
             [103, 10.00m, 3, 700, DBNull.Value]
         ]);
 
-        // Closing with <decimal, int>
         var parser = TypeParser.GetTypeParser<BoxedProduct<decimal, int>>(ref columns);
 
-        // --- VALIDATE ROW 1: Normal Operation ---
         reader.Read();
         var p1 = parser.Parse(reader).Result;
         Assert.Equal(101, p1.ProductId);
@@ -468,14 +436,12 @@ public class TypeParserTests {
         Assert.Equal(500, p1.Info.Value);
         Assert.Equal("Warehouse_Alpha", p1.Info.Source);
 
-        // --- VALIDATE ROW 2: JumpIfNull in Generic Price ---
         var p2 = parser.Parse(reader).Result;
         Assert.Equal(102, p2.ProductId);
         Assert.Null(p2.ListingPrice);
         Assert.Equal(600, p2.Info.Value);
         Assert.Equal("Warehouse_Beta", p2.Info.Source);
 
-        // --- VALIDATE ROW 3: Hybrid Hydration (Property is Null) ---
         var p3 = parser.Parse(reader).Result;
         Assert.Equal(103, p3.ProductId);
         Assert.Equal(10.00m, p3.ListingPrice!.Value.Amount);
@@ -490,10 +456,9 @@ public class TypeParserTests {
             new("ProductId", typeof(int), false),
             new("ListingPriceAmount", typeof(double), false),
             new("ListingPriceCurrency", typeof(int), false),
-            new("InfoValue", typeof(string), true) // Database allows NULL
+            new("InfoValue", typeof(string), true)
         ];
 
-        // Metadata.Value is [NotNull] T. If DB gives us NULL, it must fail.
         using var reader = CreateReader(columns, [[201, 15.0d, 2, "Trusted"], [202, 15.0, 1, DBNull.Value]]);
 
         var parser = TypeParser.GetTypeParser<BoxedProduct<double, string>>(ref columns);
@@ -505,13 +470,11 @@ public class TypeParserTests {
         Assert.Equal(CurrencyCode.EUR, p1.ListingPrice.Value.Currency);
         Assert.Equal("Trusted", p1.Info.Value);
         Assert.Null(p1.Info.Source);
-        // Should throw because Metadata.Value is marked [NotNull]
         Assert.ThrowsAny<Exception>(() => parser.Parse(reader));
     }
 
     [Fact]
     public void Recursive_User() {
-        // Same structure, different Generic types: <double, int>
         ColumnInfo[] columns = [
             new("ID", typeof(int), false),
             new("Name", typeof(string), false),
@@ -542,7 +505,6 @@ public class TypeParserTests {
     }
     [Fact]
     public void Recursive_User_InvalidOnNull() {
-        // Same structure, different Generic types: <double, int>
         ColumnInfo[] columns = [
             new("ID", typeof(int), false),
             new("Name", typeof(string), false),
@@ -571,7 +533,6 @@ public class TypeParserTests {
     }
     [Fact]
     public void Multi_Level_Jump() {
-        // Same structure, different Generic types: <double, int>
         ColumnInfo[] columns = [
             new("id", typeof(int), false),
             new("MiddleID", typeof(int), false),
@@ -598,7 +559,6 @@ public class TypeParserTests {
     }
     [Fact]
     public void Multi_Level_Jump_Alt2() {
-        // Same structure, different Generic types: <double, int>
         ColumnInfo[] columns = [
             new("id", typeof(int), false),
             new("MiddleID", typeof(int), false),
@@ -621,7 +581,6 @@ public class TypeParserTests {
     }
     [Fact]
     public void Multi_Level_Jump_Alt3() {
-        // Same structure, different Generic types: <double, int>
         ColumnInfo[] columns = [
             new("id", typeof(int), false),
             new("MiddleID", typeof(int), false),
@@ -651,7 +610,6 @@ public class TypeParserTests {
             new("Salary", typeof(decimal), true),
             new("JoinedAt", typeof(DateTime), true)
         ];
-        //var t = new DynaObject<Guid, string, decimal?, DateTime?>(badge, "Engineering", 95000.50m, joinDate, Mapper.GetMapper(columns.Select(c => c.Name)));
         using var reader = CreateReader(columns, [
             [badge, "Engineering", 95000.50m, joinDate],
             [badge, "Engineeringg", DBNull.Value, DBNull.Value]
@@ -1078,7 +1036,6 @@ public class Shipment(int shipmentId, Package? contents, Label routing) : IDbRea
     public Package? Contents { get; } = contents;
     public Label Routing { get; } = routing;
 }
-// The Sub-type Interface - Marker is required here
 public interface IPayment : IDbReadable {
     public static IPayment CreateCard(string cardNumber) => new Card(cardNumber);
     public static IPayment CreateCard(string cardNumber, string owner) => new CardDetailed(cardNumber, owner);
@@ -1092,7 +1049,6 @@ public record CardDetailed(string CardNumber, string Owner) : IPayment;
 public record Transfer(string Iban, string Bic) : IPayment;
 public record ExternalIDPayment(int ExternalID) : IPayment;
 
-// The Root Type - NO marker interface needed here
 public class Order {
     public int OrderId { get; }
     public IPayment Payment { get; }
@@ -1121,7 +1077,6 @@ public class Metadata<T, TSource>([NotNull] T Value) : IDbReadable where T : not
     public TSource? Source { get; set; }
 }
 
-// Complex root using Generics
 public class BoxedProduct<TAmount, TMeta>(int productId, Price<TAmount>? listingPrice, Metadata<TMeta, string> info) where TAmount : struct where TMeta : notnull {
     public int ProductId { get; } = productId;
     public Price<TAmount>? ListingPrice { get; } = listingPrice;
@@ -1134,7 +1089,6 @@ public record class TestMiddle2(int ID, TestBottom? Bottom) : IDbReadable;
 public record class TestTop3(int ID, TestMiddle3 Middle) : IDbReadable;
 public record class TestMiddle3(int ID, [InvalidOnNull] TestBottom Bottom) : IDbReadable;
 public record struct TestBottom([InvalidOnNull]int ID, string Name) : IDbReadable;
-// Types exercising the instance-level customization helpers (distinct per test to keep the global registry isolated)
 public record class CfgTrackA(int Id, string Name) : IDbReadable;
 public record class CfgTrackB(int Id, string Name) : IDbReadable;
 public record struct CfgPackage(int TrackingId, double Weight) : IDbReadable;
@@ -1142,7 +1096,6 @@ public record class CfgShipment(int Id, CfgPackage? Contents) : IDbReadable;
 public class CfgSecretTarget : IDbReadable {
     public int Id { get; set; }
     public string? Secret { get; private set; }
-    // an external-style static setter: (instance, value)
     public static void SetSecret(CfgSecretTarget target, string secret) => target.Secret = secret;
 }
 
@@ -1151,7 +1104,7 @@ public record struct MM(int Amount) {
     public static implicit operator MM([NoName]long amount) => new((int)amount);
 }
 public class Wrapped<T> {
-    internal Wrapped(T value) { Value = value; }   // no public ctor: the factory is the only path
+    internal Wrapped(T value) { Value = value; }
     public T Value { get; }
 }
 public static class WrappedFactory {

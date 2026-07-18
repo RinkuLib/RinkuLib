@@ -43,7 +43,7 @@ public class ValueStringBuilderTests {
     [Theory]
     [InlineData('a', 1)]
     [InlineData('z', 10)]
-    [InlineData('!', 100)] // Stress growth
+    [InlineData('!', 100)]
     public void Append_Char_Theories(char c, int count) {
         var sb = new ValueStringBuilder(stackalloc char[1]);
         for (int i = 0; i < count; i++)
@@ -65,8 +65,8 @@ public class ValueStringBuilderTests {
     [Fact]
     public void Append_String_Variations() {
         var sb = new ValueStringBuilder(stackalloc char[2]);
-        sb.Append("A");      // Single char optimization
-        sb.Append("BCDE");   // Multi char + Grow
+        sb.Append("A");
+        sb.Append("BCDE");
         Assert.Equal("ABCDE", sb.ToStringAndDispose());
     }
 
@@ -156,7 +156,7 @@ public class ValueStringBuilderTests {
     public void Grow_StackToHeap_Transition() {
         Span<char> stack = stackalloc char[2];
         var sb = new ValueStringBuilder(stack);
-        sb.Append("ABC"); // Spill to ArrayPool
+        sb.Append("ABC");
 
         Assert.True(sb.Capacity >= 4);
         Assert.Equal("ABC", sb.ToStringAndDispose());
@@ -208,7 +208,6 @@ public class ValueStringBuilderTests {
         var sb = new ValueStringBuilder(stackalloc char[2]);
         sb.Append("AB");
 
-        // This requires space for '\0' at index 2
         var span = sb.AsSpan(terminate: true);
 
         Assert.Equal(2, span.Length);
@@ -243,26 +242,24 @@ public class ValueStringBuilderTests {
 
     [Fact]
     public void TryCopyTo_SuccessAndFail_Paths() {
-        // Fail Path
         var sb = new ValueStringBuilder(10);
         sb.Append("TooLong");
         bool success = sb.TryCopyTo(new char[2], out _);
         Assert.False(success);
-        Assert.Equal(0, sb.Capacity); // Verify disposal
+        Assert.Equal(0, sb.Capacity); 
 
-        // Success Path
         var sb2 = new ValueStringBuilder(10);
         sb2.Append("Ok");
         bool success2 = sb2.TryCopyTo(new char[2], out _);
         Assert.True(success2);
-        Assert.Equal(0, sb2.Capacity); // Verify disposal
+        Assert.Equal(0, sb2.Capacity);
     }
 
     [Fact]
     public void Dispose_IsIdempotent() {
         var sb = new ValueStringBuilder(10);
         sb.Dispose();
-        sb.Dispose(); // Should not throw
+        sb.Dispose();
     }
 
     #endregion

@@ -65,7 +65,6 @@ public sealed class SqliteDb : IDisposable {
             File.Delete(_path);
         }
         catch (IOException) {
-            // best effort, the temp directory gets cleaned by the OS eventually
         }
     }
 }

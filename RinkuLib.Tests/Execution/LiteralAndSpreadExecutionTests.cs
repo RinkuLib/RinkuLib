@@ -53,7 +53,6 @@ public class LiteralAndSpreadExecutionTests(SqliteDb Db) : IClassFixture<SqliteD
     public void Empty_spread_renders_the_sql_it_produces() {
         var query = new QueryCommand("SELECT COUNT(*) FROM Users WHERE IsActive = 1 &AND ID IN (?@ids_X)");
         var cmd = Render.From(query, new { ids = Array.Empty<int>() });
-        // pin the rendered SQL so the empty-collection spread behavior is documented rather than assumed
         Assert.Equal("SELECT COUNT(*) FROM Users WHERE IsActive = 1 AND ID IN ()", cmd.CommandText);
         Assert.Empty(cmd.BoundParameters);
     }

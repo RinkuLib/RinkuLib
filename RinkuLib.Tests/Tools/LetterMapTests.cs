@@ -41,7 +41,6 @@ public class LetterMapTests {
 
     [Fact]
     public void Constructor_Populates_Alphabetical_Order() {
-        // Even if added out of order, iteration should be alphabetical
         var items = new[] { ('z', 100), ('a', 1), ('m', 50) };
         var map = new LetterMap<int>(items.Select(x => new ValueTuple<char, int>(x.Item1, x.Item2)).ToArray());
 
@@ -71,9 +70,7 @@ public class LetterMapTests {
 
     [Fact]
     public void Adding_Middle_Letter_Shifts_Internal_Values_Correctly() {
-        // Initial: A and Z
         var map = new LetterMap<string>([('a', "Apple"), ('z', "Zebra")]) {
-            // Add 'M' in the middle. Rank logic must correctly shift 'Zebra' in the array.
             ['m'] = "Mango"
         };
 
@@ -87,7 +84,6 @@ public class LetterMapTests {
     public void PresenceMap_Reflects_Correct_Bits() {
         var map = new LetterMap<int>([('a', 1), ('b', 2), ('z', 26)]);
 
-        // Bit 0 (a), Bit 1 (b), Bit 25 (z)
         uint expectedMask = (1u << 0) | (1u << 1) | (1u << 25);
         Assert.Equal(expectedMask, map.PresenceMap);
     }
@@ -129,7 +125,6 @@ public class LetterMapTests {
         Assert.Equal(1, map['a']);
         Assert.Equal(3, map['c']);
 
-        // Verify PresenceMap bit 1 is cleared
         Assert.Equal(0u, (map.PresenceMap & (1u << 1)));
     }
 
@@ -141,7 +136,7 @@ public class LetterMapTests {
         map.ResetWith(items);
 
         Assert.Equal(2, map.Count);
-        Assert.Equal(10, map['a']); // The 'A' (10) overwrote 'a' (1)
+        Assert.Equal(10, map['a']);
     }
 
     [Fact]

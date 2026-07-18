@@ -122,7 +122,6 @@ public class AltNamesAndScopeTests {
 
     [Fact]
     public void AltSkippingSegments_matches_across_one_nesting_prefix() {
-        // a span of 2 lets the flat name stand in for parent-prefix + own name
         ColumnInfo[] cols = [new("First", typeof(int), false), new("Flat", typeof(int), false)];
         var outer = Rows.ParseOne<SkipOuter>(cols, 1, 2);
         Assert.Equal(1, outer.First);

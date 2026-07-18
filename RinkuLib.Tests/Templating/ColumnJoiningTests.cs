@@ -46,7 +46,6 @@ public class ColumnJoiningTests {
         builder.Use("@Bio", "Hi");
         builder.Use("@Web", "site.com");
         builder.Use("@UID", 5);
-        // @Img missing: the whole chained block drops, but set values still bind
         Render.Expect(builder, "INSERT INTO Profiles (UserID) VALUES (@UID)",
             ("@UID", 5), ("@Bio", "Hi"), ("@Web", "site.com"));
     }
@@ -127,7 +126,6 @@ public class ColumnJoiningTests {
         builder.Use("ID");
         builder.Use("Username");
         builder.Use("Email");
-        // #Admin was never used, so Email stays out
         Render.Expect(builder, "SELECT ID, Username FROM Users");
     }
 

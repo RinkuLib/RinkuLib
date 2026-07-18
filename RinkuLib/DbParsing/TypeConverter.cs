@@ -81,10 +81,11 @@ public interface ITypeConverter {
         }
 
         if (sourceType == typeof(string)) {
-            Type parsable = typeof(IParsable<>).MakeGenericType(outputType);
-            if (parsable.IsAssignableFrom(outputType)) {
-                converter = new ParsableConverter(outputType);
-                return true;
+            foreach (var itf in outputType.GetInterfaces()) {
+                if (itf.IsGenericType && itf.GetGenericTypeDefinition() == typeof(IParsable<>) && itf.GetGenericArguments()[0] == outputType) {
+                    converter = new ParsableConverter(outputType);
+                    return true;
+                }
             }
             var parse = outputType.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, null, [typeof(string)], null);
             if (parse != null) {
@@ -191,24 +192,21 @@ public class ToStringConverter : ITypeConverter {
     public Type OutputType => typeof(string);
     /// <inheritdoc/>
     public void EmitConversion(Generator generator, Type sourceType) {
+        if (!sourceType.IsValueType) {
+            generator.Emit(OpCodes.Callvirt, typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes)!);
+            return;
+        }
+        var local = generator.DeclareLocal(sourceType);
+        generator.Emit(OpCodes.Stloc, local);
+        generator.Emit(OpCodes.Ldloca, local);
         var method = sourceType.GetMethod(nameof(ToString), [typeof(IFormatProvider)]);
         if (method is not null && method.ReturnType == typeof(string)) {
             generator.Emit(OpCodes.Ldsfld, ITypeConverter._providerField);
             generator.Emit(OpCodes.Call, method);
             return;
         }
-        method = sourceType.GetMethod(nameof(ToString), Type.EmptyTypes);
-        if (method is not null && method.ReturnType == typeof(string)) {
-            generator.Emit(OpCodes.Call, method);
-            return;
-        }
-        method = typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes);
-        if (method is not null && method.ReturnType == typeof(string)) {
-            generator.Emit(OpCodes.Box);
-            generator.Emit(OpCodes.Callvirt, method);
-            return;
-        }
-        throw new NotImplementedException();
+        generator.Emit(OpCodes.Constrained, sourceType);
+        generator.Emit(OpCodes.Callvirt, typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes)!);
     }
 }
 /// <summary>Calls a constructor that accepts the source type as its single argument.</summary>

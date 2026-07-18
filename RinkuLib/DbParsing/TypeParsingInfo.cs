@@ -17,16 +17,23 @@ public abstract class TypeParsingInfo {
     /// <summary>Identify if the instance can actualy handle the <see cref="Type"/> of <paramref name="TargetType"/></summary>
     public abstract void ValidateCanUseType(Type TargetType);
     static TypeParsingInfo() {
-        AddOrSet(typeof(ValueTuple<>), CtorTypeInfo.Instance);
-        AddOrSet(typeof(ValueTuple<,>), CtorTypeInfo.Instance);
-        AddOrSet(typeof(ValueTuple<,,>), CtorTypeInfo.Instance);
-        AddOrSet(typeof(ValueTuple<,,,>), CtorTypeInfo.Instance);
-        AddOrSet(typeof(ValueTuple<,,,,>), CtorTypeInfo.Instance);
-        AddOrSet(typeof(ValueTuple<,,,,,>), CtorTypeInfo.Instance);
-        AddOrSet(typeof(ValueTuple<,,,,,,>), CtorTypeInfo.Instance);
-        AddOrSet(typeof(ValueTuple<,,,,,,,>), CtorTypeInfo.Instance);
-        AddOrSet<DynaObject>(DynaObjectTypeInfo.Instance);
+        if (CtorTypeInfo.Instance is { } tuples)
+            RegisterTuples(tuples);
+        if (DynaObjectTypeInfo.Instance is { } dyna)
+            RegisterDynaObject(dyna);
     }
+    internal static void RegisterTuples(CtorTypeInfo instance) {
+        AddOrSet(typeof(ValueTuple<>), instance);
+        AddOrSet(typeof(ValueTuple<,>), instance);
+        AddOrSet(typeof(ValueTuple<,,>), instance);
+        AddOrSet(typeof(ValueTuple<,,,>), instance);
+        AddOrSet(typeof(ValueTuple<,,,,>), instance);
+        AddOrSet(typeof(ValueTuple<,,,,,>), instance);
+        AddOrSet(typeof(ValueTuple<,,,,,,>), instance);
+        AddOrSet(typeof(ValueTuple<,,,,,,,>), instance);
+    }
+    internal static void RegisterDynaObject(DynaObjectTypeInfo instance)
+        => AddOrSet<DynaObject>(instance);
     /// <summary>
     /// Global cache of type metadata. Access is managed through static methods 
     /// to ensure thread-safety and proper initialization.

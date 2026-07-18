@@ -91,7 +91,8 @@ public struct QueryFactory {
 
     private readonly Condition MakeSentinel() => new(Mapper.Count, Segments.Length, -1, 0, true);
     private readonly void UpdateCondToSkip() {
-        Array.Sort(Conditions);
+        var sorted = Conditions.OrderBy(c => c).ToArray();
+        sorted.CopyTo(Conditions.AsSpan());
         var len = Conditions.Length - 1;
         for (int i = 0; i < len; i++) {
             ref var cond = ref Conditions[i];

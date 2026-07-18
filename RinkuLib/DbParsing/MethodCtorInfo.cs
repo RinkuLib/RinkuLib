@@ -233,7 +233,7 @@ public class MethodCtorInfo {
             return false;
         for (int i = 0; i < Parameters.Length; i++) {
             if (Parameters[i].Type != b.Parameters[i].Type ||
-                string.Equals(Parameters[i].NameComparer.GetDefaultName(), b.Parameters[i].NameComparer.GetDefaultName(), StringComparison.OrdinalIgnoreCase)) {
+                !string.Equals(Parameters[i].NameComparer.GetDefaultName(), b.Parameters[i].NameComparer.GetDefaultName(), StringComparison.OrdinalIgnoreCase)) {
                 return false;
             }
         }

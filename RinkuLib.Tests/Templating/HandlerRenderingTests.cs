@@ -16,7 +16,6 @@ namespace RinkuLib.Tests.Templating;
 public class HandlerRenderingTests {
     static QueryBuilder Build(string sql) => new QueryCommand(sql).StartBuilder();
 
-    // ---- _N number injection ----
 
     [Fact]
     public void Number_handler_doc_example_offset_fetch() {
@@ -52,7 +51,6 @@ public class HandlerRenderingTests {
         Render.Expect(b3, "SELECT 3 AS X");
     }
 
-    // ---- _S string literal ----
 
     [Fact]
     public void String_handler_quotes_the_value() {
@@ -79,7 +77,6 @@ public class HandlerRenderingTests {
         Render.Expect(b, "SELECT * FROM artists WHERE Name = ''");
     }
 
-    // ---- _R raw injection ----
 
     [Fact]
     public void Raw_handler_writes_the_value_verbatim() {
@@ -88,7 +85,6 @@ public class HandlerRenderingTests {
         Render.Expect(b, "SELECT Id, Name FROM tracks WHERE IsActive = 1");
     }
 
-    // ---- errors at generation ----
 
     [Fact]
     public void Missing_required_handler_value_throws_at_generation() {
@@ -114,7 +110,6 @@ public class HandlerRenderingTests {
         Assert.ThrowsAny<Exception>(() => new QueryCommand("SELECT * FROM t WHERE x = @V_Q"));
     }
 
-    // ---- registering custom letters (doc examples) ----
 
     class UpperHandler : IQuerySegmentHandler {
         public void Handle(ref ValueStringBuilder sb, object value) => sb.Append(value.ToString()!.ToUpperInvariant());
@@ -133,7 +128,6 @@ public class HandlerRenderingTests {
         }
     }
 
-    // ---- _X spread: value shapes and the two command interfaces ----
 
     [Fact]
     public void Spread_renders_numbered_parameters() {
@@ -164,7 +158,6 @@ public class HandlerRenderingTests {
 
     [Fact]
     public void Spread_of_a_lazy_enumerable_binds_and_renders() {
-        // The doc says _X expands an IEnumerable; a lazy sequence with no snapshot count must still work.
         var b = Build("SELECT * FROM t WHERE Id IN (@Ids_X)");
         b.Use("@Ids", LazyItems());
         Render.Expect(b, "SELECT * FROM t WHERE Id IN (@Ids_1, @Ids_2)", ("@Ids_1", 5), ("@Ids_2", 6));
@@ -180,7 +173,6 @@ public class HandlerRenderingTests {
 
     [Fact]
     public void Empty_required_spread_counts_as_absent_and_throws() {
-        // The doc: an empty collection counts as absent, and a required value missing at generation throws.
         var b = Build("SELECT * FROM t WHERE x IN (@A, @Ids_X)");
         b.Use("@A", 1);
         b.Use("@Ids", Array.Empty<int>());
@@ -189,7 +181,6 @@ public class HandlerRenderingTests {
 
     [Fact]
     public void Empty_spread_in_a_list_trims_its_comma() {
-        // The IDbCommand road hands the empty collection to the handler, which trims the dangling comma.
         var b = Build("SELECT * FROM t WHERE x IN (@A, @Ids_X)");
         b.Use("@A", 1);
         b.Use("@Ids", Array.Empty<int>());
@@ -208,7 +199,6 @@ public class HandlerRenderingTests {
         Assert.Equal("@Ids_12", cmd.BoundParameters[^1].ParameterName);
     }
 
-    // ---- parameter objects: classes, structs, and the explicit interface surface ----
 
     struct SpanArgs {
         public int Min { get; set; }
@@ -273,12 +263,10 @@ public class HandlerRenderingTests {
             barrier.SignalAndWait();
             var cmd = new FakeCommand();
             var usage = new bool[query.Mapper.Count];
-            query.SetCommand((System.Data.Common.DbCommand)cmd, new SpanArgs { Min = 1 }, usage);
+            query.SetCommand(cmd, new SpanArgs { Min = 1 }, usage);
             Assert.Equal("SELECT * FROM t WHERE a > @Min", cmd.CommandText);
         });
     }
-
-    // ---- the parameters ledger ----
 
     [Fact]
     public void Parameter_ledger_exposes_its_infos_and_rejects_out_of_range_updates() {
@@ -287,11 +275,9 @@ public class HandlerRenderingTests {
         Assert.Equal(1, query.Parameters.SpecialHandlers.Length);
         var info = SizedDbParamCache.Get(DbType.String, 64);
         Assert.False(query.UpdateParamCache("@Nope", info));
-        Assert.False(query.UpdateParamCache("@B", info));   // a spread is not a plain parameter
+        Assert.False(query.UpdateParamCache("@B", info));
         Assert.True(query.UpdateParamCache("@A", info));
     }
-
-    // ---- rendering internals that need size and repetition ----
 
     [Fact]
     public void A_template_longer_than_the_stack_buffer_renders_whole() {

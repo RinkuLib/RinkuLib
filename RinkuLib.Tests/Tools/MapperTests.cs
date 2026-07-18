@@ -13,12 +13,12 @@ public class MapperTests {
     [InlineData("Alpha", 0)]
     [InlineData("BETA", 1)]
     [InlineData("gamma", 2)]
-    [InlineData("Delta", -1)] // Not in set
+    [InlineData("Delta", -1)]
     public void GetIndex_String_Returns_Correct_Index_Or_Negative_One(string key, int expected) {
         using var mapper = Mapper.GetMapper(["Alpha", "Beta", "Gamma"]);
 
         Assert.Equal(expected, mapper.GetIndex(key));
-        Assert.Equal(expected, mapper[key]); // Indexer parity
+        Assert.Equal(expected, mapper[key]);
     }
 
     [Fact]
@@ -98,16 +98,13 @@ public class MapperTests {
     [Fact]
     public void GetSameKey_Returns_Original_Instance_Memory_Address() {
         string original = "Canonical_Reference";
-        // Create a new string instance with same content but different address
         string search = new("CANONICAL_REFERENCE".ToCharArray());
 
         using var mapper = Mapper.GetMapper([original, "Filler1", "Filler2"]);
 
         string result = mapper.GetSameKey(search);
 
-        // Character check
         Assert.Equal(original, result);
-        // Critical Reference Identity check (Reference Equals)
         Assert.Same(original, result);
         Assert.True(ReferenceEquals(original, result));
     }
@@ -133,7 +130,6 @@ public class MapperTests {
 
         ref string start = ref mapper.KeysStartPtr;
 
-        // Verify we can navigate the memory block linearly
         Assert.Same(inputs[0], start);
         Assert.Same(inputs[1], Unsafe.Add(ref start, 1));
         Assert.Same(inputs[2], Unsafe.Add(ref start, 2));
@@ -186,9 +182,7 @@ public class MapperTests {
         var mapper = Mapper.GetMapper(["A", "B", "C"]);
         mapper.Dispose();
 
-        // Count should reflect DeadKeys.Length (1)
         Assert.Single(mapper);
-        // The first key in DeadKeys is null (per your DeadKeys = [null!] definition)
         Assert.Null(mapper.GetKey(0));
     }
 
@@ -196,7 +190,6 @@ public class MapperTests {
     public void Dispose_Is_ThreadSafe_And_Idempotent() {
         var mapper = Mapper.GetMapper(["X", "Y", "Z"]);
 
-        // Concurrent disposal shouldn't throw or corrupt state
         Parallel.Invoke(
             mapper.Dispose,
             mapper.Dispose,

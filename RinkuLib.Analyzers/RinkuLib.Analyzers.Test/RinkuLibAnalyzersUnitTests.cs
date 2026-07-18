@@ -84,9 +84,6 @@ namespace MyApp.Api.Models
             }
         }
 
-        // RK0000 is the always-on codegen anchor, so it legitimately remains after the fix;
-        // declare it in the fixed state. Negative iteration counts are upper bounds: inserting the
-        // attribute shifts the diagnostic's span, which the framework counts as a second pass.
         private static async Task RunCodeFixAsync(string testCode, DiagnosticResult expectedDiagnostic, string fixedCode) {
             var test = new VerifyFix.Test {
                 TestCode = testCode,

@@ -171,10 +171,13 @@ public record JoinedNameComparer(INameComparer Comparer, INameComparer AltCompar
     public bool Contains(string name) => Comparer.Contains(name) || AltComparer.Contains(name);
 
     /// <inheritdoc/>
-    public INameComparer? TryAdd(string name) 
-        => (AltComparer as INameComparerThatCanAdd)?.TryAdd(name)
-            ?? (Comparer as INameComparerThatCanAdd)?.TryAdd(name)
-            ?? new NameComparerGroup([Comparer, AltComparer, new NameComparer(name)]);
+    public INameComparer? TryAdd(string name) {
+        if ((AltComparer as INameComparerThatCanAdd)?.TryAdd(name) is INameComparer alt)
+            return new JoinedNameComparer(Comparer, alt);
+        if ((Comparer as INameComparerThatCanAdd)?.TryAdd(name) is INameComparer main)
+            return new JoinedNameComparer(main, AltComparer);
+        return new NameComparerGroup([Comparer, AltComparer, new NameComparer(name)]);
+    }
     /// <inheritdoc/>
     public INameComparer? TryAdd(INameComparer other) => new NameComparerGroup([Comparer, AltComparer, other]);
     /// <inheritdoc/>
@@ -243,9 +246,9 @@ public record NameComparerGroup(INameComparer[] Children) : IMutatableNameCompar
     /// <inheritdoc/>
     public INameComparer? TryRemove(string name) {
         for (int i = 0; i < Children.Length; i++) {
-            if (Children[i] is not INameComparerThatCanAdd c)
+            if (Children[i] is not INameComparerThatCanRemove c)
                 continue;
-            var nc = c.TryAdd(name);
+            var nc = c.TryRemove(name);
             if (nc is null)
                 continue;
             if (nc is NoNameComparer) {

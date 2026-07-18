@@ -43,6 +43,11 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     /// Get the value at the corresponding index
     /// </summary>
     public abstract bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val);
+    /// <summary>The miss road of <see cref="TryGet{T}(int, out T)"/>, shared by the generated shapes.</summary>
+    private protected static bool Fail<T>([MaybeNullWhen(false)] out T val) {
+        val = default;
+        return false;
+    }
     /// <summary>
     /// Get the value with the corresponding index
     /// </summary>
@@ -104,8 +109,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         get {
             if (ind < 0 || ind >= Mapper.Count)
                 throw new IndexOutOfRangeException();
-            if (!TryGet<object?>(ind, out var val))
-                throw new Exception($"Unable to get value at index {ind} of type {typeof(object)}");
+            TryGet<object?>(ind, out var val);
             return val;
         }
         set {
@@ -120,8 +124,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             var ind = Mapper.GetIndex(key);
             if (ind < 0)
                 throw new KeyNotFoundException(key);
-            if (!TryGet<object?>(ind, out var val))
-                throw new Exception($"Unable to get value for {key} of type {typeof(object)}");
+            TryGet<object?>(ind, out var val);
             return val;
         }
         set {
@@ -137,8 +140,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             var ind = Mapper.GetIndex(key);
             if (ind < 0)
                 throw new KeyNotFoundException(key.ToString());
-            if (!TryGet<object?>(ind, out var val))
-                throw new Exception($"Unable to get value for {key} of type {typeof(object)}");
+            TryGet<object?>(ind, out var val);
             return val;
         }
         set {
@@ -163,8 +165,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     public IEnumerable<object?> Values { get {
         var count = Mapper.Count;
         for (int i = 0; i < count; i++) {
-            if (!TryGet<object?>(i, out var val))
-                throw new Exception($"Unable to get value for {i} of type {typeof(object)}");
+            TryGet<object?>(i, out var val);
             yield return val;
         }
     } }
@@ -220,8 +221,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() {
         var keys = Mapper.GetKeysArray();
         for (int i = 0; i < keys.Length; i++) {
-            if (!TryGet<object?>(i, out var val))
-                throw new Exception($"Unable to get value for {i} of type {typeof(object)}");
+            TryGet<object?>(i, out var val);
             yield return new(keys[i], val);
         }
     }
@@ -258,13 +258,13 @@ internal class DynaObject<T0, T1>(T0 val0, T1 val1, Mapper mapper) : DynaObject(
     public override bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val) => index switch {
         0 => Caster.TryCast(val0, out val),
         1 => Caster.TryCast(val1, out val),
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
         0 => TrySet(value, ref val0),
         1 => TrySet(value, ref val1),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -281,14 +281,14 @@ internal class DynaObject<T0, T1, T2>(T0 val0, T1 val1, T2 val2, Mapper mapper) 
         0 => Caster.TryCast(val0, out val),
         1 => Caster.TryCast(val1, out val),
         2 => Caster.TryCast(val2, out val),
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
         0 => TrySet(value, ref val0),
         1 => TrySet(value, ref val1),
         2 => TrySet(value, ref val2),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -310,7 +310,7 @@ internal class DynaObject<T0, T1, T2, T3>(T0 val0, T1 val1, T2 val2, T3 val3, Ma
         1 => Caster.TryCast(val1, out val), 
         2 => Caster.TryCast(val2, out val), 
         3 => Caster.TryCast(val3, out val),
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -318,7 +318,7 @@ internal class DynaObject<T0, T1, T2, T3>(T0 val0, T1 val1, T2 val2, T3 val3, Ma
         1 => TrySet(value, ref val1),
         2 => TrySet(value, ref val2),
         3 => TrySet(value, ref val3),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -344,7 +344,7 @@ internal class DynaObject<T0, T1, T2, T3, T4>(T0 val0, T1 val1, T2 val2, T3 val3
         2 => Caster.TryCast(val2, out val), 
         3 => Caster.TryCast(val3, out val),
         4 => Caster.TryCast(val4, out val), 
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -353,7 +353,7 @@ internal class DynaObject<T0, T1, T2, T3, T4>(T0 val0, T1 val1, T2 val2, T3 val3
         2 => TrySet(value, ref val2),
         3 => TrySet(value, ref val3),
         4 => TrySet(value, ref val4),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -383,7 +383,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5>(T0 val0, T1 val1, T2 val2, T3 
         3 => Caster.TryCast(val3, out val),
         4 => Caster.TryCast(val4, out val), 
         5 => Caster.TryCast(val5, out val), 
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -393,7 +393,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5>(T0 val0, T1 val1, T2 val2, T3 
         3 => TrySet(value, ref val3),
         4 => TrySet(value, ref val4),
         5 => TrySet(value, ref val5),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -427,7 +427,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6>(T0 val0, T1 val1, T2 val2,
         4 => Caster.TryCast(val4, out val), 
         5 => Caster.TryCast(val5, out val), 
         6 => Caster.TryCast(val6, out val), 
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -438,7 +438,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6>(T0 val0, T1 val1, T2 val2,
         4 => TrySet(value, ref val4),
         5 => TrySet(value, ref val5),
         6 => TrySet(value, ref val6),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -476,7 +476,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7>(T0 val0, T1 val1, T2 v
         5 => Caster.TryCast(val5, out val), 
         6 => Caster.TryCast(val6, out val), 
         7 => Caster.TryCast(val7, out val),
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -488,7 +488,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7>(T0 val0, T1 val1, T2 v
         5 => TrySet(value, ref val5),
         6 => TrySet(value, ref val6),
         7 => TrySet(value, ref val7),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -530,7 +530,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8>(T0 val0, T1 val1, 
         6 => Caster.TryCast(val6, out val), 
         7 => Caster.TryCast(val7, out val),
         8 => Caster.TryCast(val8, out val), 
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -543,7 +543,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8>(T0 val0, T1 val1, 
         6 => TrySet(value, ref val6),
         7 => TrySet(value, ref val7),
         8 => TrySet(value, ref val8),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -589,7 +589,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(T0 val0, T1 va
         7 => Caster.TryCast(val7, out val),
         8 => Caster.TryCast(val8, out val), 
         9 => Caster.TryCast(val9, out val), 
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -603,7 +603,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(T0 val0, T1 va
         7 => TrySet(value, ref val7),
         8 => TrySet(value, ref val8),
         9 => TrySet(value, ref val9),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -653,7 +653,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(T0 val0, 
         8 => Caster.TryCast(val8, out val), 
         9 => Caster.TryCast(val9, out val), 
         10 => Caster.TryCast(val10, out val), 
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -668,7 +668,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(T0 val0, 
         8 => TrySet(value, ref val8),
         9 => TrySet(value, ref val9),
         10 => TrySet(value, ref val10),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -722,7 +722,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>(T0 v
         9 => Caster.TryCast(val9, out val),
         10 => Caster.TryCast(val10, out val),
         11 => Caster.TryCast(val11, out val),
-        _ => throw new IndexOutOfRangeException()
+        _ => Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -738,7 +738,7 @@ internal class DynaObject<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>(T0 v
         9 => TrySet(value, ref val9),
         10 => TrySet(value, ref val10),
         11 => TrySet(value, ref val11),
-        _ => throw new Exception("Unable to set the value"),
+        _ => false,
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));
@@ -794,7 +794,9 @@ internal class DynaObjectInfinite<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T
         9 => Caster.TryCast(val9, out val),
         10 => Caster.TryCast(val10, out val),
         11 => Caster.TryCast(val11, out val),
-        _ => Caster.TryCast(additionalValues[index - 12], out val)
+        _ => (uint)(index - 12) < (uint)additionalValues.Length
+            ? Caster.TryCast(additionalValues[index - 12], out val)
+            : Fail(out val)
     };
 
     public override bool Set<T>(int index, T value) => index switch {
@@ -810,7 +812,7 @@ internal class DynaObjectInfinite<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T
         9 => TrySet(value, ref val9),
         10 => TrySet(value, ref val10),
         11 => TrySet(value, ref val11),
-        _ => TrySet(value, ref additionalValues[index - 12])
+        _ => (uint)(index - 12) < (uint)additionalValues.Length && TrySet(value, ref additionalValues[index - 12])
     };
     public override void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options) {
         writer.WritePropertyName(Mapper.GetKey(0));

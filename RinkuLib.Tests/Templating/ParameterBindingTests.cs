@@ -171,7 +171,6 @@ public class ParameterBindingTests {
         var second = Render.From(builder);
         Assert.Equal(DbType.Int32, second.BoundParameters[0].DbType);
         Assert.Equal(DbType.String, second.BoundParameters[1].DbType);
-        // sizes round up to the next threshold so plans stay shared
         Assert.Equal(100, second.BoundParameters[1].Size);
     }
 

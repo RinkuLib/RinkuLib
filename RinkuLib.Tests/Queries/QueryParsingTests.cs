@@ -44,7 +44,6 @@ public class QueryParsingTests {
     public void Example1_UnaviableParams() {
         var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE IsActive = @Active");
         var builder = query.StartBuilder();
-        // @Status is not provided
         Assert.False(builder.Use("NotInQuery", true));
         Assert.False(builder.Use("@NotInQuery", true));
         Assert.False(builder.Use("NotInQuery"));
@@ -53,7 +52,6 @@ public class QueryParsingTests {
     public void Example2_OptionalVariableFilter_NotProvided() {
         var query = new QueryCommand("SELECT ID, Username FROM Users WHERE IsActive = 1 AND Status = ?@Status");
         var builder = query.StartBuilder();
-        // @Status is not provided
         Verify(builder, "SELECT ID, Username FROM Users WHERE IsActive = 1", []);
     }
     [Fact]
@@ -85,7 +83,6 @@ public class QueryParsingTests {
     public void Example3_BooleanToggle_NotProvided() {
         var query = new QueryCommand("SELECT ID, Username, Email FROM Users WHERE /*ActiveOnly*/Active = 1 ORDER BY Username");
         var builder = query.StartBuilder();
-        // ActiveOnly not used
         Verify(builder, "SELECT ID, Username, Email FROM Users ORDER BY Username", []);
     }
     [Fact]
@@ -115,7 +112,6 @@ public class QueryParsingTests {
         var query = new QueryCommand("SELECT ID, Name FROM Products WHERE Price * ?@Modifier > ?@Minimum");
         var builder = query.StartBuilder();
         builder.Use("@Modifier", 1.1);
-        // @Minimum is missing, segment fails
         Verify(builder, "SELECT ID, Name FROM Products", [("@Modifier", 1.1)]);
     }
     [Fact]
@@ -161,7 +157,6 @@ public class QueryParsingTests {
         var query = new QueryCommand("SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users");
         var builder = query.StartBuilder();
         builder.Use("Internal");
-        // Authorized missing
         Verify(builder, "SELECT ID, Username, Email FROM Users", []);
     }
     [Fact]
@@ -169,7 +164,6 @@ public class QueryParsingTests {
         var query = new QueryCommand("SELECT ID, Username, Email, /*Internal&Authorized*/SocialSecurityNumber FROM Users");
         var builder = query.StartBuilder();
         builder.Use("Authorized");
-        // Internal missing
         Verify(builder, "SELECT ID, Username, Email FROM Users", []);
     }
     [Fact]
@@ -225,7 +219,6 @@ public class QueryParsingTests {
         var query = new QueryCommand("SELECT Name FROM Products ORDER BY ID OFFSET ?@Skip_N ROWS FETCH NEXT @Take_N ROWS ONLY");
         var builder = query.StartBuilder();
         builder.Use("@Skip", 50);
-        // @Take is not provided but is required inside the activated segment
         var cmd = DummyCnn.CreateDummyCommand();
         Assert.Throws<RequiredHandlerValueException>(() => builder.QueryCommand.SetCommand(cmd, builder.Variables));
     }
@@ -261,7 +254,6 @@ public class QueryParsingTests {
         var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("Agg");
-        // NotAgg is missing, but Agg is present
         Verify(builder, "SELECT COUNT(*) AS Total, SUM(Price) AS Revenue, p.CategoryName FROM Products p WHERE p.IsActive = 1 GROUP BY p.CategoryName, p.BrandName", []);
     }
     [Fact]
@@ -296,7 +288,6 @@ public class QueryParsingTests {
         var builder = query.StartBuilder();
         builder.Use("@Username", "jdoe");
         builder.Use("@ID", 1);
-        // @Email missing
         Verify(builder, "UPDATE Users SET LastModified = GETDATE(), Username = @Username WHERE ID = @ID", [("@Username", "jdoe"), ("@ID", 1)]);
     }
     [Fact]
@@ -315,7 +306,6 @@ public class QueryParsingTests {
         var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Username", "jdoe");
-        // @Email missing
         Verify(builder, "UPDATE Users SET LastModified = GETDATE(), Username = @Username WHERE ID = @ID", [("@Username", "jdoe")]);
     }
 
@@ -421,7 +411,6 @@ public class QueryParsingTests {
         var query = new QueryCommand(template);
         var builder = query.StartBuilder();
         builder.Use("@Sort", "Price");
-        // @Dir is missing, footprint @Sort_R @Dir_R fails, leaving ORDER BY empty
         Verify(builder, "SELECT * FROM Products WHERE IsActive = 1", []);
     }
     [Fact]

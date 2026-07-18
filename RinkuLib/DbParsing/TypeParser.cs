@@ -95,8 +95,8 @@ public static class TypeParser {
     }
     /// <summary>The parser for <typeparamref name="T"/> over the columns of <typeparamref name="TSchema"/>, taken from its shape rather than a result.</summary>
     public static ITypeParser<T> GetTypeParser<TSchema, T>(out ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
-        var res = GetTypeParser<T>(ref TypeSchema<T>._schema, nullColHandler);
-        cols = TypeSchema<T>._schema;
+        var res = GetTypeParser<T>(ref TypeSchema<TSchema>._schema, nullColHandler);
+        cols = TypeSchema<TSchema>._schema;
         return res;
     }
     /// <summary>The parser for <typeparamref name="T"/> over the columns derived from <paramref name="type"/>.</summary>

@@ -41,11 +41,11 @@ internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerato
         return new ReadOnlyCollection<DbColumn>(columnSchema);
     }
     public WrappedBasicReader(IDataReader reader) {
-        Debug.Assert(reader is not DbDataReader); // or we wouldn't be here!
+        Debug.Assert(reader is not DbDataReader);
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
     }
 
-    public override bool HasRows => true; // have to assume that we do
+    public override bool HasRows => true;
     public override void Close() => _reader.Close();
     public override DataTable? GetSchemaTable() => _reader.GetSchemaTable();
 
@@ -67,7 +67,7 @@ internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerato
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _reader.Dispose();
-            _reader = DisposedReader.Instance; // all future ops are no-ops
+            _reader = DisposedReader.Instance; 
         }
     }
 
@@ -133,7 +133,7 @@ internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerato
         return Task.FromResult(GetFieldValue<T>(ordinal));
     }
     public override IEnumerator GetEnumerator() => _reader is IEnumerable e ? e.GetEnumerator()
-        : throw new NotImplementedException();
+        : new DbEnumerator(this);
     public override Type GetProviderSpecificFieldType(int ordinal) => _reader.GetFieldType(ordinal);
     public override object GetProviderSpecificValue(int ordinal) => _reader.GetValue(ordinal);
     public override int GetProviderSpecificValues(object[] values) => _reader.GetValues(values);
@@ -189,7 +189,7 @@ internal sealed class DisposedReader : DbDataReader {
     [MethodImpl(MethodImplOptions.NoInlining)]
     private async static Task<T> ThrowDisposedAsync<T>() {
         var result = ThrowDisposed<T>();
-        await Task.Yield(); // will never hit this - already thrown and handled
+        await Task.Yield();
         return result;
     }
     public override void Close() { }

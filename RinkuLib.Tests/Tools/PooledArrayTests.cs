@@ -32,10 +32,10 @@ public class PooledArrayTests {
     #region Add & Growth Logic (Good Paths)
 
     [Theory]
-    [InlineData(0, 1)]      // Empty to 1
-    [InlineData(1, 2)]      // Boundary growth
-    [InlineData(2, 10)]     // Multiple jumps
-    [InlineData(100, 1000)] // Large scale
+    [InlineData(0, 1)]     
+    [InlineData(1, 2)]    
+    [InlineData(2, 10)]   
+    [InlineData(100, 1000)]
     public void Add_GrowthDynamics_ShouldBeConsistent(int initialCapacity, int addCount) {
         using var list = new PooledArray<int>(initialCapacity);
 
@@ -53,13 +53,11 @@ public class PooledArrayTests {
     public void Add_TriggersGrowth_WhenCapacityReached() {
         using var array = new PooledArray<int>(1);
 
-        // Fill the array to its ACTUAL physical capacity
         int physicalCapacity = array.Capacity;
         for (int i = 0; i < physicalCapacity; i++) {
             array.Add(i);
         }
 
-        // This is the guaranteed trigger point
         array.Add(999);
 
         Assert.True(array.Capacity > physicalCapacity);
@@ -71,9 +69,9 @@ public class PooledArrayTests {
     #region Set & Indexer (Good Paths)
 
     [Theory]
-    [InlineData(10, 0, 999, 1)]   // Set first
-    [InlineData(10, 5, 999, 6)]   // Set middle (updates length)
-    [InlineData(10, 9, 999, 10)]  // Set last within capacity
+    [InlineData(10, 0, 999, 1)]  
+    [InlineData(10, 5, 999, 6)]  
+    [InlineData(10, 9, 999, 10)]
     public void Set_StateTransitions_UpdatesLengthCorrectly(int initialCap, int index, int value, int expectedLength) {
         using var list = new PooledArray<int>(initialCap);
 
@@ -86,8 +84,8 @@ public class PooledArrayTests {
     [Fact]
     public void Set_DoesNotShrinkLength_WhenSettingLowerIndex() {
         using var list = new PooledArray<int>(10);
-        list.Set(8, 80); // Length becomes 9
-        list.Set(2, 20); // Length stays 9
+        list.Set(8, 80);
+        list.Set(2, 20);
 
         Assert.Equal(9, list.Length);
         Assert.Equal(80, list[8]);
@@ -99,11 +97,9 @@ public class PooledArrayTests {
         using var array = new PooledArray<int>(4);
         array.Add(10);
 
-        // Act
         ref int val = ref array[0];
         val += 90;
 
-        // Assert
         Assert.Equal(100, array[0]);
     }
 
@@ -118,7 +114,6 @@ public class PooledArrayTests {
         var internalPointer = array.RawArray;
 
         using var locked = array.LockTransfer();
-        // Locked owns it now
         Assert.Equal(1, locked.Length);
         Assert.Same(internalPointer, locked.RawArray);
         Assert.Equal(100, locked[0]);
@@ -134,7 +129,7 @@ public class PooledArrayTests {
         using (var array = new PooledArray<int>(4)) {
             array.Add(7);
             lockedInstance = array.LockTransfer();
-        } // array.Dispose() called here, but it's empty
+        }
 
         Assert.Equal(1, lockedInstance.Length);
         Assert.Equal(7, lockedInstance[0]);
@@ -160,20 +155,18 @@ public class PooledArrayTests {
     #region Slicing & Spans (Theories)
 
     [Theory]
-    [InlineData(10, 0, 10)] // Full
-    [InlineData(10, 5, 5)]  // Half
-    [InlineData(10, 0, 1)]  // Single start
-    [InlineData(10, 9, 1)]  // Single end
-    [InlineData(10, 2, 3)]  // Middle
+    [InlineData(10, 0, 10)] 
+    [InlineData(10, 5, 5)]  
+    [InlineData(10, 0, 1)] 
+    [InlineData(10, 9, 1)]
+    [InlineData(10, 2, 3)]  
     public void AsSpan_Slicing_MatchesExpectedRanges(int count, int start, int length) {
         using var list = new PooledArray<int>(count);
         for (int i = 0; i < count; i++)
             list.Add(i);
 
-        // Test Span property
         Assert.Equal(count, list.Span.Length);
 
-        // Test AsSpan methods
         var span1 = list.AsSpan(start);
         Assert.Equal(count - start, span1.Length);
 
@@ -195,10 +188,9 @@ public class PooledArrayTests {
 
     [Fact]
     public void ReferenceTypes_CorrectlyInvokeClearArray_ToPreventLeaking() {
-        // Tests that T as a reference type works and doesn't crash growth logic
         using var array = new PooledArray<string>(1);
         array.Add("Data1");
-        array.Add("Data2"); // Return original to pool with clearArray: true
+        array.Add("Data2");
 
         Assert.Equal(2, array.Length);
         Assert.Equal("Data1", array[0]);
@@ -213,7 +205,7 @@ public class PooledArrayTests {
         array.Dispose();
         var ex = Record.Exception(() => array.Dispose());
 
-        Assert.Null(ex); // No exception on second call
+        Assert.Null(ex);
         Assert.Null(array.RawArray);
         Assert.Equal(0, array.Length);
     }
@@ -224,7 +216,7 @@ public class PooledArrayTests {
 
     [Theory]
     [InlineData(-1)]
-    [InlineData(1)] // Count is 1, index 1 is OOB
+    [InlineData(1)]
     public void Indexer_OutOfBounds_Throws_IndexOutOfRangeException(int index) {
         using var array = new PooledArray<int>(4);
         array.Add(10);
@@ -233,28 +225,25 @@ public class PooledArrayTests {
     }
 
     [Theory]
-    [InlineData(-1, 0)]   // Start is negative (Always fails)
-    [InlineData(5, 1)]    // Start is OOB (Always fails)
+    [InlineData(-1, 0)]
+    [InlineData(5, 1)]
     public void AsSpan_InvalidStart_Throws(int start, int length) {
         using var array = new PooledArray<int>(1);
         array.Add(1);
 
-        // Both of these will throw because 'start' itself is illegal
         Assert.Throws<ArgumentOutOfRangeException>(() => array.AsSpan(start));
         Assert.Throws<ArgumentOutOfRangeException>(() => array.AsSpan(start, length));
     }
 
     [Theory]
-    [InlineData(0, 100)]  // Start is 0 (Valid), but Length is 100 (OOB)
+    [InlineData(0, 100)]
     public void AsSpan_InvalidLength_Throws(int start, int length) {
         using var array = new PooledArray<int>(1);
         array.Add(1);
 
-        // This SUCCEEDS (it returns a span of length 1)
         var validSpan = array.AsSpan(start);
         Assert.Equal(1, validSpan.Length);
 
-        // This THROWS (because 0 + 100 > 1)
         Assert.Throws<ArgumentOutOfRangeException>(() => array.AsSpan(start, length));
     }
 
@@ -277,7 +266,6 @@ public class PooledArrayTests {
 
     [Fact]
     public void Set_BeyondInternalArrayCapacity_Throws_IndexOutOfRangeException() {
-        // This confirms 'Set' requires enough pre-rented capacity
         using var array = new PooledArray<int>(1);
         Assert.Throws<IndexOutOfRangeException>(() => array.Set(1000, 1));
     }

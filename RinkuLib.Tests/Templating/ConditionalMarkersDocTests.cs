@@ -166,9 +166,6 @@ public class ConditionalMarkersDocTests {
     [Fact]
     public void The_wall_stops_a_footprint_from_sweeping_distinct() {
         Render.Expect(Build("SELECT DISTINCT /*ShowId*/TrackId, Name FROM tracks"), "SELECT Name FROM tracks");
-        // The wall and the marker are only removed, so the space on each side stays: DISTINCT keeps its
-        // trailing space and the wall keeps its leading one, leaving two. (The doc's single space is a doc
-        // error; to end with one space, put the space on only one side.)
         Render.Expect(Build("SELECT DISTINCT ??? /*ShowId*/TrackId, Name FROM tracks"), "SELECT DISTINCT  Name FROM tracks");
     }
 

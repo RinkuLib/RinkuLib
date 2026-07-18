@@ -285,6 +285,9 @@ public unsafe ref struct QueryExtracter {
         var endInd = BuilderInd - 2;
         if (needSpace)
             endInd++;
+        else
+            while (endInd > 0 && char.IsWhiteSpace(Builder[endInd - 1]))
+                endInd--;
         if ((secLen == 6 || secLen == 11) && (IsInsert(CurrentChar) || IsValues(CurrentChar)))
             ContainingParantesis = true;
         else if (ContainingParantesis && ParMap == 1)
@@ -449,6 +452,8 @@ public unsafe ref struct QueryExtracter {
             return true;
         LastCondSectionLength = (uint)nbCond << 16 | (uint)secLen;
         ind = BuilderInd - 1;
+        while (ind > 0 && char.IsWhiteSpace(Builder[ind - 1]) && char.IsWhiteSpace(Builder[ind]))
+            ind--;
         if (ind < 0)
             ind = 0;
         for (; nbCond > 0; nbCond--) {
