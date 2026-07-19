@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
@@ -52,7 +52,7 @@ public class MethodCtorInfo {
     /// Resolves the type that this method/constructor produces.
     /// </summary>
     public Type TargetType => MethodBase is MethodInfo method ? method.ReturnType : MethodBase.DeclaringType
-                ?? throw new InvalidOperationException($"{nameof(MethodBase)} must be a {nameof(MethodInfo)} or a {nameof(ConstructorInfo)} and have a DeclaringType.");
+                ?? throw new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, $"{nameof(MethodBase)} must be a {nameof(MethodInfo)} or a {nameof(ConstructorInfo)} and have a DeclaringType");
     /// <summary>
     /// Initializes a new instance of <see cref="MethodCtorInfo"/>.
     /// </summary>
@@ -134,19 +134,19 @@ public class MethodCtorInfo {
     /// <returns>An <see cref="Exception"/> if invalid, otherwise null.</returns>
     public static Exception? Validate(MethodBase methodBase, ParamInfo[]? parameters) {
         if (parameters is null)
-            return new Exception("parameters cant be null");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "parameters cant be null");
         if (parameters.Length == 0)
-            return new Exception("cannot use parameterless ctor or method");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "cannot use parameterless ctor or method");
         var methodParameters = methodBase.GetParameters();
         if (methodParameters.Length != parameters.Length)
-            return new Exception("all the parameters must match with the ctor or method parameters");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "all the parameters must match with the ctor or method parameters");
         for (int i = 0; i < parameters.Length; i++)
             if (methodParameters[i].ParameterType != parameters[i].Type)
-                return new Exception("all the parameters must match with the ctor or method parameters");
+                return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "all the parameters must match with the ctor or method parameters");
         if (methodBase is ConstructorInfo)
             return null;
         if (methodBase is not MethodInfo method)
-            return new Exception("methodBase base must be constructorInfo or methodInfo");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "methodBase base must be constructorInfo or methodInfo");
         return ValidateMethodReturn(method);
     }
     /// <summary>
@@ -154,26 +154,26 @@ public class MethodCtorInfo {
     /// </summary>
     public static Exception? ValidateMethodReturn(MethodInfo method) {
         if (!method.IsStatic)
-            return new Exception("method must be static");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must be static");
         if (method.DeclaringType == method.ReturnType) {
             if (method.IsGenericMethod)
-                return new Exception("static method from the same type must be nonGeneric");
+                return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory on the type it builds takes its type parameters from that type, so it must not be generic itself");
             return null;
         }
         if (!method.ReturnType.IsGenericType) {
             if (method.IsGenericMethod)
-                return new Exception("method should not be generic");
+                return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory returning a non-generic type must not be generic itself");
             return null;
         }
         if (!method.IsGenericMethod)
-            return new Exception("method should have the same generic parameters as returning type");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must carry the same type parameters as the type it returns, in the same order");
         var typeArgs = method.ReturnType.GetGenericArguments();
         var methodArgs = method.GetGenericArguments();
         if (typeArgs.Length != methodArgs.Length)
-            return new Exception("method should have the same generic parameters as returning type");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must carry the same type parameters as the type it returns, in the same order");
         for (int j = 0; j < typeArgs.Length; j++)
             if (typeArgs[j] != methodArgs[j])
-                return new Exception("method should have the same generic parameters as returning type");
+                return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must carry the same type parameters as the type it returns, in the same order");
         return null;
     }
     /// <summary>

@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Reflection.Emit;
 using RinkuLib.Tools;
 
@@ -16,7 +16,7 @@ public sealed class NotNullOrWhitespaceAttribute : AccessorEmiterHandler {
         ArgumentNullException.ThrowIfNull(member);
         if (!(member is PropertyInfo p && p.PropertyType == typeof(string)
             || member is FieldInfo f && f.FieldType == typeof(string)))
-            throw new Exception($"When using {typeof(NotNullOrWhitespaceAttribute)}, the type must be of type {typeof(string)}");
+            throw new RinkuConfigurationException(ErrorCodes.AttributeOnWrongMemberType, $"When using {typeof(NotNullOrWhitespaceAttribute)}, the type must be of type {typeof(string)}");
         var index = mapper.GetIndex(varChar, member.Name);
         if (index < 0)
             return;

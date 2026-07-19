@@ -78,7 +78,7 @@ public class RegistrationApiTests {
         Assert.False(MemberParser.TryNew(M("GenericInstance"), P<int>("x"), out _));
         Assert.False(MemberParser.TryNew(typeof(MemberHost).GetConstructors()[0], P<int>("x"), out _));
         Assert.False(MemberParser.TryNew(M("Plain"), P<string>("Plain"), out _)); 
-        Assert.Throws<ArgumentException>(() => new MemberParser(M("ReadOnlyField"), P<int>("x")));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => new MemberParser(M("ReadOnlyField"), P<int>("x")));
     }
 
 
@@ -122,7 +122,7 @@ public class RegistrationApiTests {
         Assert.NotNull(MethodCtorInfo.ValidateMethodReturn(typeof(Payment).GetMethod("NotStatic")!));
         Assert.NotNull(MethodCtorInfo.ValidateMethodReturn(typeof(Payment).GetMethod("Generic")!));
         Assert.Null(MethodCtorInfo.ValidateMethodReturn(typeof(Payment).GetMethod("WrongReturn")!));
-        Assert.Throws<Exception>(() => new MethodCtorInfo(Ctor, []));
+        Refusals.Raises(ErrorCodes.ConstructionShapeNotUsable, () => new MethodCtorInfo(Ctor, []));
     }
 
     [Fact]
@@ -228,7 +228,7 @@ public class RegistrationApiTests {
 
     [Fact]
     public void AddOrSet_validates_the_type_against_the_info() {
-        Assert.Throws<ArgumentException>(() => TypeParsingInfo.AddOrSet(typeof(RegistryProbe), new DefaultTypeParsingInfo(typeof(Payment))));
+        Refusals.Raises(ErrorCodes.TypeNotUsableByInfo, () => TypeParsingInfo.AddOrSet(typeof(RegistryProbe), new DefaultTypeParsingInfo(typeof(Payment))));
     }
 
 
@@ -268,15 +268,15 @@ public class RegistrationApiTests {
     public void Replacing_with_a_foreign_target_throws() {
         var info = new DefaultTypeParsingInfo(typeof(Assembled));
         var foreignCtor = new MethodCtorInfo(Ctor);
-        Assert.Throws<InvalidOperationException>(() => ((ICanProvideConstructions)info).PossibleConstructors = new[] { foreignCtor });
+        Refusals.Raises(ErrorCodes.TargetTypeMismatch, () => ((ICanProvideConstructions)info).PossibleConstructors = new[] { foreignCtor });
 
         Assert.True(MemberParser.TryNew(typeof(Assembled).GetProperty("Id")!, P<int>("Id"), out var member));
         var payInfo = new DefaultTypeParsingInfo(typeof(Payment));
-        Assert.Throws<InvalidOperationException>(() => ((ICanProvideMembers)payInfo).AvailableMembers = new[] { member });
+        Refusals.Raises(ErrorCodes.TargetTypeMismatch, () => ((ICanProvideMembers)payInfo).AvailableMembers = new[] { member });
 
-        Assert.Throws<Exception>(() => info.AddPossibleConstruction(foreignCtor));
-        Assert.Throws<InvalidOperationException>(() => payInfo.AddMember(member));
-        Assert.Throws<ArgumentException>(() => info.ValidateCanUseType(typeof(Payment)));
+        Refusals.Raises(ErrorCodes.TargetTypeMismatch, () => info.AddPossibleConstruction(foreignCtor));
+        Refusals.Raises(ErrorCodes.TargetTypeMismatch, () => payInfo.AddMember(member));
+        Refusals.Raises(ErrorCodes.TypeNotUsableByInfo, () => info.ValidateCanUseType(typeof(Payment)));
     }
 
     [Fact]
@@ -286,11 +286,67 @@ public class RegistrationApiTests {
         Assert.False(BaseTypeInfo.Instance.UpdateAltName(c => c));
         Assert.False(BaseTypeInfo.Instance.SetInvalidOnNull("x", true));
         BaseTypeInfo.Instance.ValidateCanUseType(typeof(int));
-        Assert.ThrowsAny<Exception>(() => BaseTypeInfo.Instance.ValidateCanUseType(typeof(Assembled)));
+        Assert.Contains("base types or enums",
+            Assert.ThrowsAny<Exception>(() => BaseTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
         CtorTypeInfo.Instance.ValidateCanUseType(typeof((int, int)));
-        Assert.ThrowsAny<Exception>(() => CtorTypeInfo.Instance.ValidateCanUseType(typeof(Assembled)));
+        Assert.Contains("at least one constructor with parameters",
+            Assert.ThrowsAny<Exception>(() => CtorTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
         DynaObjectTypeInfo.Instance.ValidateCanUseType(typeof(DynaObject));
-        Assert.ThrowsAny<Exception>(() => DynaObjectTypeInfo.Instance.ValidateCanUseType(typeof(Assembled)));
+        Assert.Contains("may only be",
+            Assert.ThrowsAny<Exception>(() => DynaObjectTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
+    }
+
+    /// <summary>
+    /// Every info refuses a type it cannot handle the same way, so one catch covers the condition wherever
+    /// it comes from. Before the exception rework the base and ctor infos raised
+    /// <c>InvalidOperationException</c> and the dyna one <c>ArgumentException</c>, for the same failure.
+    /// </summary>
+    [Fact]
+    public void Every_info_refuses_an_unusable_type_the_same_way() {
+        Refusals.Raises(ErrorCodes.TypeNotUsableByInfo, () => BaseTypeInfo.Instance.ValidateCanUseType(typeof(Assembled)));
+        Refusals.Raises(ErrorCodes.TypeNotUsableByInfo, () => CtorTypeInfo.Instance.ValidateCanUseType(typeof(Assembled)));
+        Refusals.Raises(ErrorCodes.TypeNotUsableByInfo, () => DynaObjectTypeInfo.Instance.ValidateCanUseType(typeof(Assembled)));
+        Refusals.Raises(ErrorCodes.TypeNotUsableByInfo,
+            () => new DefaultTypeParsingInfo(typeof(Payment)).ValidateCanUseType(typeof(Assembled)));
+    }
+
+    public class Box<T> {
+        internal Box(T value) => Value = value;
+        public T Value { get; } = default!;
+    }
+    public class SelfBox<T> {
+        internal SelfBox(T value) => Value = value;
+        public T Value { get; } = default!;
+        public static SelfBox<T> Create(T value) => new(value);
+    }
+    static class BoxFactory {
+        public static Box<T> Create<T>(T value) => new(value);
+    }
+    static class BoxDonorGeneric<TAnything> {
+        public static Box<T> Create<T>(T value) => new(value);
+    }
+    static class BoxDonorTFromHost<T> {
+        public static Box<T> Create(T value) => new(value);
+    }
+
+    /// <summary>
+    /// Where a factory's type parameter comes from decides its shape. On an outside host the method
+    /// supplies it, so the method is generic and the host is not. On the type itself the type supplies it,
+    /// so the factory carries none and is found without registering anything.
+    /// </summary>
+    [Fact]
+    public void A_generic_factory_takes_its_parameter_from_its_host_or_from_the_type() {
+        TypeParsingInfo.GetOrAdd(typeof(Box<>))
+            .AddPossibleConstruction(typeof(BoxFactory).GetMethod("Create")!);
+
+        Refusals.Raises(ErrorCodes.ForeignGenericSource, () => TypeParsingInfo.GetOrAdd(typeof(Box<>))
+            .AddPossibleConstruction(typeof(BoxDonorGeneric<int>).GetMethod("Create")!));
+
+        Refusals.Raises(ErrorCodes.ConstructionShapeNotUsable, () => TypeParsingInfo.GetOrAdd(typeof(Box<>))
+            .AddPossibleConstruction(typeof(BoxDonorTFromHost<int>).GetMethod("Create")!));
+
+        ColumnInfo[] cols = [new("Value", typeof(int), false)];
+        Assert.Equal(7, Rows.ParseOne<SelfBox<int>>(cols, 7).Value);
     }
 
     record Renamed(int First, int Second) : IDbReadable;
@@ -327,8 +383,8 @@ public class RegistrationApiTests {
     [Fact]
     public void Registering_an_invalid_member_reports_the_reason() {
         var info = TypeParsingInfo.GetOrAdd<SetterAssembled>();
-        Assert.Throws<ArgumentException>(() => info.AddMember(typeof(SetterAssembled).GetConstructors()[0]));
-        Assert.Throws<ArgumentException>(() => info.AddMember(typeof(UnusableHolder).GetProperty("Value")!));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => info.AddMember(typeof(SetterAssembled).GetConstructors()[0]));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => info.AddMember(typeof(UnusableHolder).GetProperty("Value")!));
     }
 
     class UnusableHolder : IDbReadable {
@@ -430,12 +486,12 @@ public class RegistrationApiTests {
         var give = typeof(GenericDonor<int>).GetMethod("Give")!;
         Assert.True(MemberParser.TryNew(give, P<int>("value"), out var member));
         var info = new DefaultTypeParsingInfo(typeof(Assembled));
-        Assert.Throws<Exception>(() => info.AddMember(member));
+        Refusals.Raises(ErrorCodes.ForeignGenericSource, () => info.AddMember(member));
         Assert.ThrowsAny<Exception>(() => ((ICanProvideMembers)info).AvailableMembers = new[] { member });
 
         var make = new MethodCtorInfo(typeof(GenericDonor<int>).GetMethod("Make")!);
         var payInfo = new DefaultTypeParsingInfo(typeof(Payment));
-        Assert.Throws<Exception>(() => payInfo.AddPossibleConstruction(make));
+        Refusals.Raises(ErrorCodes.ForeignGenericSource, () => payInfo.AddPossibleConstruction(make));
         Assert.ThrowsAny<Exception>(() => ((ICanProvideConstructions)payInfo).PossibleConstructors = new[] { make });
     }
 
@@ -529,7 +585,7 @@ public class RegistrationApiTests {
 
     [Fact]
     public void GetOrAdd_validates_a_provided_info_on_the_generic_road() {
-        Assert.Throws<ArgumentException>(() =>
+        Refusals.Raises(ErrorCodes.TypeNotUsableByInfo, () =>
             TypeParsingInfo.GetOrAdd(typeof(GenericPay<Guid>), new DefaultTypeParsingInfo(typeof(Payment))));
         Assert.True(TypeParsingInfo.IsUsableType(typeof(RegistryProbe[])));  
     }

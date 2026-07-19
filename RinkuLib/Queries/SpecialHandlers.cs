@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
 using RinkuLib.Tools;
@@ -31,7 +31,9 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
             var ind = mapper.GetIndex(queryString[seg.Start..(last - 1)]);
             ref var handler = ref handlers[ind - startSpecialHandlers];
             if (handler is null) {
-                var getter = SpecialHandlerGetter[queryString[last]];
+                var suffix = queryString[last];
+                if (!SpecialHandlerGetter.TryGetValue(suffix, out var getter))
+                    throw new RinkuTemplateException(ErrorCodes.UnknownHandlerSuffix, $"unknown handler suffix \"_{suffix}\" on variable \"{mapper.GetKey(ind)}\"");
                 handler = getter(mapper.GetKey(ind));
             }
             seg.Handler = handler;
@@ -121,7 +123,8 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             return true;
         }
         if (currentValue is not object[] arr)
-            throw new Exception("the value was not set or not saved");
+            throw new RinkuBindingException(ErrorCodes.ValueNotSet,
+                $"the spread for \"{ParameterName}\" was updated before a bind saved its state");
         object[] array = [.. e];
         var cached = CachedParam;
         if (array.Length == arr.Length) {
@@ -289,7 +292,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
                 }
             }
             else
-                throw new ArgumentException("The value must provide a count");
+                throw new RinkuBindingException(ErrorCodes.HandlerValueType, "the value handed to a spread must be a collection that can report a count");
         }
         if (nb == 0) {
             var lastInd = sb.Length - 1;

@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -17,7 +17,7 @@ public class DynaObjectConverter : JsonConverter<DynaObject> {
 
     /// <inheritdoc/>
     public override DynaObject Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
-        throw new NotImplementedException($"{typeof(DynaObject)} may not be built from JSON");
+        throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{typeof(DynaObject)} may not be built from JSON");
     }
 }
 /// <summary>
@@ -31,7 +31,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     ///<inheritdoc/>
     internal DynaObject(Mapper mapper, int len) {
         if (mapper.Count != len)
-            throw new Exception($"Expect length of {len} but {nameof(mapper)} is of length {mapper.Count}");
+            throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Expect length of {len} but {nameof(mapper)} is of length {mapper.Count}");
         Mapper = mapper;
     }
     /// <summary>The mapper to the fields</summary>
@@ -53,7 +53,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     /// </summary>
     public T Get<T>(int index) {
         if (!TryGet<T>(index, out var val))
-            throw new Exception($"Unable to get value at index {index} of type {typeof(T)}");
+            throw new RinkuReadException(ErrorCodes.CannotReadColumn, $"Unable to get value at index {index} of type {typeof(T)}");
         return val;
     }
     /// <summary>
@@ -64,7 +64,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         if (ind < 0)
             throw new KeyNotFoundException(key);
         if (!TryGet<T>(ind, out var val))
-            throw new Exception($"Unable to get value for {key} of type {typeof(T)}");
+            throw new RinkuReadException(ErrorCodes.CannotReadColumn, $"Unable to get value for {key} of type {typeof(T)}");
         return val;
     }
     /// <summary>
@@ -75,7 +75,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         if (ind < 0)
             throw new KeyNotFoundException(key.ToString());
         if (!TryGet<T>(ind, out var val))
-            throw new Exception($"Unable to get value for {key} of type {typeof(T)}");
+            throw new RinkuReadException(ErrorCodes.CannotReadColumn, $"Unable to get value for {key} of type {typeof(T)}");
         return val;
     }
 

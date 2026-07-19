@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 using System.Data;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
@@ -12,7 +12,7 @@ public class MapperCreationTests {
 
     [Fact]
     public void Null_Entries_In_Span_Are_Refused() {
-        Assert.Throws<NullReferenceException>(() => Mapper.GetMapper(["A", null!, "B", null!, "a", "C"]));
+        Assert.Throws<ArgumentNullException>(() => Mapper.GetMapper(["A", null!, "B", null!, "a", "C"]));
     }
     public const char TypeEmpty = 'A';
     public const char TypeOne = 'B';

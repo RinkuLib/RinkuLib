@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
 
@@ -26,16 +26,16 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
 
     /// <inheritdoc/>
     public T Query(DbCommand command, bool disposeCommand = false) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 cnn.Open();
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             using var reader = command.ExecuteReader(behavior);
+            wasClosed = false;
             if (!reader.Read())
                 return Default();
             if (this is ISimpleParser<T> simple)
@@ -53,17 +53,17 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
     }
     /// <inheritdoc/>
     public T Query(IDbCommand command, bool disposeCommand = false) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 cnn.Open();
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             var r = command.ExecuteReader(behavior);
-            using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+            using var reader = WrappedBasicReader.Wrap(r);
+            wasClosed = false;
             if (!reader.Read())
                 return Default();
             if (this is ISimpleParser<T> simple)
@@ -81,16 +81,16 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
     }
     /// <inheritdoc/>
     public async Task<T> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 await cnn.OpenAsync(ct).ConfigureAwait(false);
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             using var reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            wasClosed = false;
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return Default();
             if (this is ISimpleParser<T> simple)
@@ -116,16 +116,16 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
 
     /// <inheritdoc/>
     public T Query(DbCommand command, ICache cache, bool disposeCommand = false) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 cnn.Open();
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             using var reader = command.ExecuteReader(behavior);
+            wasClosed = false;
             cache.UpdateCache(command);
             if (!reader.Read())
                 return Default();
@@ -144,17 +144,17 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
     }
     /// <inheritdoc/>
     public T Query(IDbCommand command, ICache cache, bool disposeCommand = false) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 cnn.Open();
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             var r = command.ExecuteReader(behavior);
-            using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+            using var reader = WrappedBasicReader.Wrap(r);
+            wasClosed = false;
             cache.UpdateCache(command);
             if (!reader.Read())
                 return Default();
@@ -173,16 +173,16 @@ public abstract class BaseTypeParser<T> : ITypeParser<T> {
     }
     /// <inheritdoc/>
     public async Task<T> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 await cnn.OpenAsync(ct).ConfigureAwait(false);
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             using var reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            wasClosed = false;
             cache.UpdateCache(command);
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return Default();

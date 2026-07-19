@@ -2,5 +2,7 @@
   href: dapper.md
 - name: Performance
   href: performance.md
+- name: Errors
+  href: errors.md
 - name: FAQ
   href: faq.md

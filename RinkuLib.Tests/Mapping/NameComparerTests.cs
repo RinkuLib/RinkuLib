@@ -412,6 +412,51 @@ public class NameComparerTests {
     }
 
     [Fact]
+    public void A_group_walks_past_children_that_cannot_do_the_operation() {
+        var rigid = new RigidComparer("R");
+
+        var toAdd = new NameComparerGroup([rigid, new NameComparer("A")]);
+        Assert.Same(toAdd, toAdd.TryAdd("B"));
+        Assert.True(Match(toAdd, "B"));
+
+        var toRemove = new NameComparerGroup([rigid, new NameTwo("A", "B")]);
+        Assert.Same(toRemove, toRemove.TryRemove("B"));
+        Assert.False(Match(toRemove, "B"));
+        Assert.True(Match(toRemove, "A"));
+
+        var target = new NameComparer("C");
+        var byComparer = new NameComparerGroup([rigid, new JoinedNameComparer(new NameComparer("D"), target)]);
+        var trimmed = byComparer.TryRemove(target);
+        Assert.NotNull(trimmed);
+        Assert.False(Match(trimmed!, "C"));
+        Assert.True(Match(trimmed!, "D"));
+    }
+
+    [Fact]
+    public void A_group_walks_past_a_child_that_refuses_to_grow() {
+        var group = new NameComparerGroup([new RefusingAdder("R"), new NameComparer("A")]);
+        Assert.Same(group, group.TryAdd("B"));
+        Assert.True(Match(group, "B"));
+        Assert.True(Match(group, "A"));
+    }
+
+    [Fact]
+    public void A_group_walks_past_a_child_that_does_not_hold_the_name() {
+        var group = new NameComparerGroup([new NameComparer("A"), new NameComparer("B")]);
+        var dropped = group.TryRemove("B");
+        Assert.NotNull(dropped);
+        Assert.True(Match(dropped!, "A"));
+        Assert.False(Match(dropped!, "B"));
+    }
+
+    [Fact]
+    public void NameMultiSpanKey_refuses_a_name_it_does_not_end_with() {
+        var keyed = new NameMultiSpanKey("Flat", "Root");
+        Span<INameComparer> chain = [new NameComparer("Root")];
+        Assert.False(keyed.Match("Other", chain));
+    }
+
+    [Fact]
     public void NoName_and_group_edges_of_the_match_chain() {
         Span<INameComparer> chain = [new NameComparer("Root")];
         Assert.False(NoNameComparer.Instance.Match("Left", chain));

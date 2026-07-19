@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using RinkuLib.Tools;
@@ -64,7 +64,7 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
         }
 
         if (method is null)
-            throw new MissingMethodException(typeof(TypeParser).FullName, nameof(TypeParser.GetTypeParser));
+            throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"{typeof(TypeParser).FullName}.{nameof(TypeParser.GetTypeParser)} was not found");
 
         var parser = method.MakeGenericMethod(itemType).Invoke(null, args);
 

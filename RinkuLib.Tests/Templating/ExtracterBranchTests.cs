@@ -95,7 +95,8 @@ public class ExtracterBranchTests {
 
     [Fact]
     public void Always_marker_inside_deeper_parens_is_rejected() {
-        Assert.Throws<Exception>(() => new QueryCommand("?SELECT a, fn(x!, y) AS B FROM t"));
+        Refusals.Raises(ErrorCodes.ProjectionOnlyConstruct,
+            () => new QueryCommand("?SELECT a, fn(x!, y) AS B FROM t"));
     }
 
     [Fact]
@@ -109,10 +110,54 @@ public class ExtracterBranchTests {
         Render.Expect(userOnly, "SELECT Username FROM users");
     }
 
+    /// <summary>
+    /// A clause marker opening a parenthesis governs the subquery's clause the same way it would at the top
+    /// level. It is read before its level is known to be a section level, so the level it records has to be
+    /// corrected once that is known, or nothing inside the parenthesis can close its footprint.
+    /// </summary>
     [Fact]
-    public void Clause_marker_on_a_subquery_select_is_rejected() {
-        var ex = Assert.Throws<Exception>(() => new QueryCommand("SELECT * FROM t WHERE id IN (/*K*/SELECT id FROM u)"));
-        Assert.Contains("not finished", ex.Message);
+    public void A_clause_marker_opening_a_subquery_prunes_that_clause() {
+        var query = new QueryCommand("SELECT * FROM t WHERE id IN (/*K*/SELECT id FROM u)");
+
+        var on = query.StartBuilder();
+        on.Use("K");
+        Assert.Equal("SELECT * FROM t WHERE id IN (SELECT id FROM u)", Render.From(on).CommandText);
+
+        var off = query.StartBuilder();
+        Assert.Equal("SELECT * FROM t WHERE id IN  FROM u)", Render.From(off).CommandText);
+    }
+
+    /// <summary>
+    /// A marker scoping a spread holds its footprint to the spread, so a default sitting beside it in the
+    /// same parenthesis survives. An optional variable grows instead and takes the whole condition.
+    /// </summary>
+    [Fact]
+    public void A_marker_scoping_a_spread_leaves_the_default_beside_it() {
+        var scoped = new QueryCommand("SELECT * FROM tracks WHERE GenreId IN (/*@genreIds*/@genreIds_X, 1)");
+        Assert.Equal("SELECT * FROM tracks WHERE GenreId IN ( 1)",
+            Render.From(scoped.StartBuilder()).CommandText);
+
+        var supplied = scoped.StartBuilder();
+        supplied.Use("@genreIds", new[] { 7, 8 });
+        Assert.Equal("SELECT * FROM tracks WHERE GenreId IN (@genreIds_1, @genreIds_2, 1)",
+            Render.From(supplied).CommandText);
+
+        var grows = new QueryCommand("SELECT * FROM tracks WHERE GenreId IN (?@genreIds_X, 1)");
+        Assert.Equal("SELECT * FROM tracks", Render.From(grows.StartBuilder()).CommandText);
+    }
+
+    /// <summary>The same marker one level deeper, and inside a <c>CASE</c>, which nests like a parenthesis.</summary>
+    [Theory]
+    [InlineData("SELECT * FROM t WHERE id IN ((/*K*/SELECT id FROM u))",
+                "SELECT * FROM t WHERE id IN ((SELECT id FROM u))")]
+    [InlineData("SELECT * FROM t WHERE id IN (SELECT id FROM u WHERE y IN (/*K*/SELECT z FROM v))",
+                "SELECT * FROM t WHERE id IN (SELECT id FROM u WHERE y IN (SELECT z FROM v))")]
+    [InlineData("SELECT CASE WHEN a IN (/*K*/SELECT x FROM u) THEN 1 ELSE 0 END FROM t",
+                "SELECT CASE WHEN a IN (SELECT x FROM u) THEN 1 ELSE 0 END FROM t")]
+    public void A_clause_marker_opening_a_nested_scope_still_binds(string sql, string used) {
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("K");
+        Assert.Equal(used, Render.From(on).CommandText);
     }
 
 
@@ -153,8 +198,9 @@ public class ExtracterBranchTests {
 
     [Fact]
     public void Marker_on_a_variable_that_does_not_exist_is_rejected() {
-        var ex = Assert.Throws<Exception>(() => new QueryCommand("SELECT a FROM t WHERE /*@Nope*/x = 1"));
-        Assert.Contains("must exist", ex.Message);
+        var ex = Refusals.Raises(ErrorCodes.ConditionVariableNotInQuery,
+            () => new QueryCommand("SELECT a FROM t WHERE /*@Nope*/x = 1"));
+        Assert.Contains("@Nope", ex.Message);
     }
 
     [Fact]

@@ -374,6 +374,42 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(0, cache.Calls);
     }
 
+    /// <summary>
+    /// A query that opens a closed connection owns closing it again. On the success road the reader's
+    /// <see cref="CommandBehavior.CloseConnection"/> does that. When the execute itself fails no reader is
+    /// ever built, so nothing carries that duty and the connection must be closed on the way out, exactly as
+    /// it is when the open is what failed.
+    /// </summary>
+    [Fact]
+    public void A_failing_execute_closes_the_connection_the_query_opened() {
+        using var cnn = Db.GetConnection();
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+        using var cmd = Cmd(cnn, "SELECT Name FROM NoSuchTableAnywhere");
+
+        Assert.ThrowsAny<Exception>(() => Parser<string>().Query(cmd, disposeCommand: false));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+    }
+
+    [Fact]
+    public void A_failing_execute_closes_the_connection_on_the_plain_road() {
+        using var cnn = Db.GetConnection();
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+        using var inner = Cmd(cnn, "SELECT Name FROM NoSuchTableAnywhere");
+
+        Assert.ThrowsAny<Exception>(() => Parser<string>().Query((IDbCommand)new PlainCommand(inner), disposeCommand: false));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+    }
+
+    [Fact]
+    public void A_successful_query_closes_the_connection_it_opened() {
+        using var cnn = Db.GetConnection();
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+        using var cmd = Cmd(cnn, Names);
+
+        Parser<string>().Query(cmd, disposeCommand: false);
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+    }
+
     [Fact]
     public void Empty_results_flow_through_each_lazy_variant() {
         var cache = new CountingCache();
@@ -398,7 +434,7 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(default, slow.Default());
         using (var r = Rows.Reader(ValueCol, [1], [2])) {
             r.Read();
-            Assert.ThrowsAny<Exception>(() => slow.Parse(r));
+            Refusals.Raises(ErrorCodes.ShapeRefusedResult, () => slow.Parse(r));
         }
         using (var r = Rows.Reader(ValueCol, [1], [2])) {
             r.Read();
@@ -409,7 +445,7 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(default, fast.Default());
         using (var r = Rows.Reader(ValueCol, [1], [2])) {
             r.Read();
-            Assert.ThrowsAny<Exception>(() => fast.Parse(r));
+            Refusals.Raises(ErrorCodes.ShapeRefusedResult, () => fast.Parse(r));
         }
         using (var r = Rows.Reader(ValueCol, [1], [2])) {
             r.Read();

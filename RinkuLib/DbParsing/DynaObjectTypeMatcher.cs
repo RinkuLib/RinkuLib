@@ -1,4 +1,4 @@
-﻿using System.Reflection.Emit;
+using System.Reflection.Emit;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
@@ -12,7 +12,7 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type TargetType) {
         if (TargetType != typeof(DynaObject))
-            throw new ArgumentException($"The type may only be {typeof(DynaObject)}");
+            throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, $"The type may only be {typeof(DynaObject)}");
     }
     /// <inheritdoc/>
     public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
@@ -118,7 +118,7 @@ public class DynaObjParser(Type[] Arguments, DbItemParser[] Parameters, Mapper M
             Parameters[i].Emit(cols, generator, nullSetPoint, out _);
         int argCount = Arguments.Length;
         var ctor = DynaTypes[argCount].MakeGenericType(Arguments).GetConstructor([.. Arguments, typeof(Mapper)])
-            ?? throw new Exception($"the ctor for {nameof(DynaObject)} with {argCount} arguments cannot be found");
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"the ctor for {nameof(DynaObject)} with {argCount} arguments cannot be found");
 
         generator.Emit(OpCodes.Ldarg_0);
         generator.Emit(OpCodes.Newobj, ctor);
@@ -145,7 +145,7 @@ public class DynaObjParserInfinite(Type[] Arguments, DbItemParser[] Parameters, 
     /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
         if (Parameters.Length <= ArgumentCount || Arguments.Length != ArgumentCount)
-            throw new Exception();
+            throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"the dyna emitter got {Parameters.Length} parameters and {Arguments.Length} arguments for an arity of {ArgumentCount}");
         var arrLen = Parameters.Length - ArgumentCount;
         for (int i = 0; i < ArgumentCount; i++)
             Parameters[i].Emit(cols, generator, nullSetPoint, out _);
@@ -158,7 +158,7 @@ public class DynaObjParserInfinite(Type[] Arguments, DbItemParser[] Parameters, 
             generator.Emit(OpCodes.Stelem_Ref);
         }
         var ctor = typeof(DynaObjectInfinite<,,,,,,,,,,,>).MakeGenericType(Arguments).GetConstructor([.. Arguments, typeof(object[]), typeof(Mapper)])
-            ?? throw new Exception($"the ctor for {nameof(DynaObjectInfinite<,,,,,,,,,,,>)} cannot be found");
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"the ctor for {nameof(DynaObjectInfinite<,,,,,,,,,,,>)} cannot be found");
 
         generator.Emit(OpCodes.Ldarg_0);
         generator.Emit(OpCodes.Newobj, ctor);

@@ -70,7 +70,14 @@ public class NumberVariableHandler() : IQuerySegmentHandler {
                 sb.Append(Convert.ToInt64(e).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 break;
             default:
-                sb.Append(((IFormattable)value).ToString(null, System.Globalization.CultureInfo.InvariantCulture));
+                if (value is IFormattable formattable) {
+                    sb.Append(formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture));
+                    break;
+                }
+                if (!Caster.TryCast<object, decimal>(value, out var number))
+                    throw new RinkuBindingException(ErrorCodes.HandlerValueType,
+                        $"the _N handler writes a number, and {value.GetType()} does not convert to one");
+                sb.Append(number.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 break;
         }
     }

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 using RinkuLib.DbParsing;
+using RinkuLib.Tests.Infrastructure;
 using RinkuLib.Tools;
 using Xunit;
 
@@ -219,10 +220,10 @@ public class GeneratorTests {
     [Fact]
     public void Scopes_and_namespaces_forward_to_the_real_generator() {
         var (g, m) = Method(typeof(int));
-        Assert.ThrowsAny<Exception>(g.BeginScope);
-        Assert.ThrowsAny<Exception>(g.EndScope);
-        Assert.ThrowsAny<Exception>(() => g.UsingNamespace("System"));
-        Assert.ThrowsAny<Exception>(() => g.UsingNamespace(""));
+        Assert.Throws<NotSupportedException>(g.BeginScope);
+        Assert.Throws<NotSupportedException>(g.EndScope);
+        Assert.Throws<NotSupportedException>(() => g.UsingNamespace("System"));
+        Assert.Throws<NotSupportedException>(() => g.UsingNamespace(""));
         g.Emit(OpCodes.Ldc_I4_4);
         g.Emit(OpCodes.Ret);
         Assert.Equal(4, m.CreateDelegate<Func<int>>()());
@@ -259,8 +260,8 @@ public class GeneratorTests {
         Assert.Equal(8, m.CreateDelegate<Func<int, PairHolder>>()(8).A);
 
         var (g2, _) = Method(typeof(int));
-        Assert.Throws<InvalidOperationException>(() => DbItemParser.EmitMemberDispatch(g2, typeof(DispatchHost).GetProperty("GetOnly")!));
-        Assert.Throws<NotSupportedException>(() => DbItemParser.EmitMemberDispatch(g2, typeof(DispatchHost).GetEvent("E")!));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => DbItemParser.EmitMemberDispatch(g2, typeof(DispatchHost).GetProperty("GetOnly")!));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => DbItemParser.EmitMemberDispatch(g2, typeof(DispatchHost).GetEvent("E")!));
     }
 
     [Fact]
@@ -300,7 +301,7 @@ public class GeneratorTests {
         Assert.Equal(12, m.CreateDelegate<Func<string, ExplicitParsable>>()("12").V);
 
         var (g2, _) = Method(typeof(object), typeof(string));
-        Assert.Throws<NotImplementedException>(() => new ParsableConverter(typeof(GeneratorTests)).EmitConversion(g2, typeof(string)));
+        Refusals.Raises(ErrorCodes.TargetTypeMismatch, () => new ParsableConverter(typeof(GeneratorTests)).EmitConversion(g2, typeof(string)));
     }
 
 #if DEBUG

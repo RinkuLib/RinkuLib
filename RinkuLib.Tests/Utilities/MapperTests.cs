@@ -230,9 +230,9 @@ public class MapperTests {
 
     [Fact]
     public void One_and_two_key_factories_reject_null_keys() {
-        Assert.Throws<NullReferenceException>(() => Mapper.GetOneKeyMapper(null!));
-        Assert.Throws<NullReferenceException>(() => Mapper.GetTwoKeyMapper(null!, "b"));
-        Assert.Throws<NullReferenceException>(() => Mapper.GetTwoKeyMapper("a", null!));
+        Assert.Throws<ArgumentNullException>(() => Mapper.GetOneKeyMapper(null!));
+        Assert.Throws<ArgumentNullException>(() => Mapper.GetTwoKeyMapper(null!, "b"));
+        Assert.Throws<ArgumentNullException>(() => Mapper.GetTwoKeyMapper("a", null!));
     }
 
     [Fact]
@@ -283,7 +283,7 @@ public class MapperTests {
 
     [Fact]
     public void A_null_key_in_the_set_is_rejected() {
-        Assert.Throws<NullReferenceException>(() => Mapper.GetMapper(["A", null!, "B", "C"]));
+        Assert.Throws<ArgumentNullException>(() => Mapper.GetMapper(["A", null!, "B", "C"]));
     }
 
     [Fact]

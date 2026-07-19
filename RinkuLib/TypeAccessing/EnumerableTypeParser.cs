@@ -48,16 +48,16 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
         => new(Parse(reader));
     /// <inheritdoc/>
     public IEnumerable<T> Query(DbCommand command, bool disposeCommand = false) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 cnn.Open();
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             using var reader = command.ExecuteReader(behavior);
+            wasClosed = false;
             if (reader.Read()) {
                 bool canContinue;
                 do {
@@ -77,17 +77,17 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
     }
     /// <inheritdoc/>
     public IEnumerable<T> Query(IDbCommand command, bool disposeCommand = false) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 cnn.Open();
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             var r = command.ExecuteReader(behavior);
-            using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+            using var reader = WrappedBasicReader.Wrap(r);
+            wasClosed = false;
             if (reader.Read()) {
                 bool canContinue;
                 do {
@@ -116,16 +116,16 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
     }
     /// <inheritdoc/>
     public IEnumerable<T> Query(DbCommand command, ICache cache, bool disposeCommand = false) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 cnn.Open();
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             using var reader = command.ExecuteReader(behavior);
+            wasClosed = false;
             cache.UpdateCache(command);
             if (reader.Read()) {
                 bool canContinue;
@@ -146,17 +146,17 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
     }
     /// <inheritdoc/>
     public IEnumerable<T> Query(IDbCommand command, ICache cache, bool disposeCommand = false) {
-        var cnn = command.Connection ?? throw new Exception("no connections was set with the command");
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
         var wasClosed = cnn.State != ConnectionState.Open;
         try {
             var behavior = Behavior;
             if (wasClosed) {
                 cnn.Open();
                 behavior |= CommandBehavior.CloseConnection;
-                wasClosed = false;
             }
             var r = command.ExecuteReader(behavior);
-            using var reader = r is DbDataReader rd ? rd : new WrappedBasicReader(r);
+            using var reader = WrappedBasicReader.Wrap(r);
+            wasClosed = false;
             cache.UpdateCache(command);
             if (reader.Read()) {
                 bool canContinue;

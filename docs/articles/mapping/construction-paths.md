@@ -86,7 +86,17 @@ TypeParsingInfo.GetOrAdd(typeof(Box<>))
 // Box<int> builds through Create<int>, Box<string> through Create<string>, from the one registration
 ```
 
-Two rules apply to the method's shape. Its type arguments must match the returned type's exactly (order and count), and its declaring type cannot itself be generic, the engine needs a fixed host to resolve the call. A factory declared on the generic type itself is instead non-generic (`static Box<T> Create(T)` inside `Box<T>`), since the type already supplies the parameter, and that form is discovered without registering anything.
+Two rules apply to the method's shape. Its type arguments must match the returned type's exactly (order and count), and its declaring type cannot itself be generic, the engine needs a fixed host to resolve the call.
+
+Where the type parameter comes from is what decides the shape. On an outside host the method supplies it, above. On the type itself the type already supplies it, so the factory carries none and is found without registering anything.
+
+```csharp
+public class Box<T> {
+    internal Box(T value) => Value = value;
+    public T Value { get; }
+    public static Box<T> Create(T value) => new(value);   // found on its own
+}
+```
 
 ### Replacing the set
 

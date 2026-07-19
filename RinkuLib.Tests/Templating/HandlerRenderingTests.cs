@@ -16,6 +16,28 @@ namespace RinkuLib.Tests.Templating;
 public class HandlerRenderingTests {
     static QueryBuilder Build(string sql) => new QueryCommand(sql).StartBuilder();
 
+    /// <summary>
+    /// A suffix letter resolves whatever its case, so <c>_x</c> spreads exactly as <c>_X</c> does. The
+    /// suffix is consumed either way, leaving the variable under its bare name.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT * FROM t WHERE a IN (@ids_X)")]
+    [InlineData("SELECT * FROM t WHERE a IN (@ids_x)")]
+    public void A_suffix_resolves_whatever_its_case(string sql) {
+        var b = Build(sql);
+        b.Use("@ids", new[] { 7, 8 });
+        Assert.Equal("SELECT * FROM t WHERE a IN (@ids_1, @ids_2)", Render.From(b).CommandText);
+    }
+
+    [Theory]
+    [InlineData("SELECT * FROM t WHERE a = @v_N", "SELECT * FROM t WHERE a = 46")]
+    [InlineData("SELECT * FROM t WHERE a = @v_n", "SELECT * FROM t WHERE a = 46")]
+    public void A_base_handler_suffix_resolves_whatever_its_case(string sql, string rendered) {
+        var b = Build(sql);
+        b.Use("@v", 46);
+        Assert.Equal(rendered, Render.From(b).CommandText);
+    }
+
 
     [Fact]
     public void Number_handler_doc_example_offset_fetch() {
@@ -99,15 +121,22 @@ public class HandlerRenderingTests {
             IQuerySegmentHandler.NotSet.Handle(ref sb, "");
             Assert.Fail("the NotSet placeholder must throw");
         }
-        catch (NotImplementedException) { }
+        catch (RinkuException e) when (e.Code == ErrorCodes.InternalInvariant) { }
         finally {
             sb.Dispose();
         }
     }
 
+    /// <summary>
+    /// An unregistered suffix letter is a typo in the SQL, so the rejection names the suffix and the
+    /// variable it sat on rather than surfacing the bare lookup failure behind it.
+    /// </summary>
     [Fact]
     public void An_unregistered_suffix_letter_is_rejected_at_construction() {
-        Assert.ThrowsAny<Exception>(() => new QueryCommand("SELECT * FROM t WHERE x = @V_Q"));
+        var ex = Assert.ThrowsAny<Exception>(() => new QueryCommand("SELECT * FROM t WHERE x = @V_Q"));
+        Assert.IsNotType<KeyNotFoundException>(ex);
+        Assert.Contains("_Q", ex.Message);
+        Assert.Contains("@V", ex.Message);
     }
 
 

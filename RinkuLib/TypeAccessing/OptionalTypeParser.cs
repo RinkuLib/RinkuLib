@@ -42,6 +42,11 @@ public sealed class FastOptionalTypeParser<TOpt, T>(CommandBehavior behavior, Fu
         return (await reader.ReadAsync(ct).ConfigureAwait(false), res);
     }
 }
+/// <summary>The refusal <see cref="Single{T}"/> raises, its own rule rather than one the engine applies.</summary>
+file static class SingleShape {
+    internal static RinkuShapeException MoreThanOne()
+        => new("The query provided more result than required for the single item");
+}
 /// <summary>
 /// The parser behind <see cref="Single{T}"/>. It reads one row and throws if the query returned more,
 /// enforcing exactly one result.
@@ -56,14 +61,14 @@ public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : Ba
     public override (bool CanContinue, TOpt Result) Parse(DbDataReader reader) {
         var (canContinue, res) = ElementParser.Parse(reader);
         if (canContinue)
-            throw new Exception("The query provided more result than required for the single item");
+            throw SingleShape.MoreThanOne();
         return (false, TOpt.Make(res));
     }
     /// <inheritdoc/>
     public override async ValueTask<(bool CanContinue, TOpt Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
         var (canContinue, res) = await ElementParser.ParseAsync(reader, ct).ConfigureAwait(false);
         if (canContinue)
-            throw new Exception("The query provided more result than required for the single item");
+            throw SingleShape.MoreThanOne();
         return (false, TOpt.Make(res));
     }
 }
@@ -78,14 +83,14 @@ public sealed class FastSingleTypeParser<TOpt, T>(CommandBehavior behavior, Func
     public override (bool CanContinue, TOpt Result) Parse(DbDataReader reader) {
         var res = TOpt.Make(Parser(reader));
         if (reader.Read())
-            throw new Exception("The query provided more result than required for the single item");
+            throw SingleShape.MoreThanOne();
         return (false, res);
     }
     /// <inheritdoc/>
     public override async ValueTask<(bool CanContinue, TOpt Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
         var res = TOpt.Make(Parser(reader));
         if (await reader.ReadAsync(ct).ConfigureAwait(false))
-            throw new Exception("The query provided more result than required for the single item");
+            throw SingleShape.MoreThanOne();
         return (false, res);
     }
 }

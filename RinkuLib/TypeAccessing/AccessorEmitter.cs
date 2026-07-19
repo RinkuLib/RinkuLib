@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Reflection.Emit;
 using RinkuLib.Tools;
 
@@ -35,7 +35,7 @@ public interface IAccessorEmiter {
                 if (member is PropertyInfo prop)
                     meth = prop.GetMethod!;
                 if (meth is null)
-                    throw new Exception("The member must be a field, property or method");
+                    throw new RinkuConfigurationException(ErrorCodes.UnusableMember, "The member must be a field, property or method");
             }
             if (meth.IsStatic)
                 il.Emit(OpCodes.Call, meth);

@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
@@ -94,7 +94,7 @@ internal static class ShallowCopier<T> where T : IEnumerable {
             return source => source;
 
         if (type.IsAbstract || type.IsInterface)
-            throw new InvalidOperationException($"Cannot directly instantiate abstract type or interface {type}. The dispatcher handles this.");
+            throw new RinkuTrackingException(ErrorCodes.NoCopyStrategy, $"Cannot directly instantiate abstract type or interface {type}. The dispatcher handles this.");
 
         ParameterExpression sourceParam = Expression.Parameter(type, "source");
         if (type.IsArray) {
@@ -128,7 +128,7 @@ internal static class ShallowCopier<T> where T : IEnumerable {
                 return CompileCollectionHelper(emptyCtor, helper, type, sourceParam);
             }
         }
-        throw new NotSupportedException($"Cannot create shallow copy strategy for {type}. No valid constructor found.");
+        throw new RinkuTrackingException(ErrorCodes.NoCopyStrategy, $"Cannot create shallow copy strategy for {type}. No valid constructor found");
     }
     private static ConstructorInfo? GetEnumerableConstructor(Type type) {
         return type.GetConstructors().FirstOrDefault(c => {
@@ -159,12 +159,12 @@ internal static class DeepCopier<T> where T : IEnumerable {
             return source => source;
 
         if (type.IsAbstract || type.IsInterface)
-            throw new InvalidOperationException($"Cannot directly instantiate abstract type or interface {type}. The dispatcher handles this.");
+            throw new RinkuTrackingException(ErrorCodes.NoCopyStrategy, $"Cannot directly instantiate abstract type or interface {type}. The dispatcher handles this.");
 
         ParameterExpression sourceParam = Expression.Parameter(type, "source");
         if (type.IsArray) {
             if (type.GetArrayRank() > 1)
-                throw new NotSupportedException($"Multi-dimensional array {type} is not supported.");
+                throw new RinkuTrackingException(ErrorCodes.NoCopyStrategy, $"Multi-dimensional array {type} is not supported");
 
             Type elementType = type.GetElementType()!;
             MethodInfo deepCloneMethod = typeof(DeepCopier<T>).GetMethod(nameof(DeepCloneArray), BindingFlags.NonPublic | BindingFlags.Static)!
@@ -200,7 +200,7 @@ internal static class DeepCopier<T> where T : IEnumerable {
                 return CompileCollectionHelper(emptyCtor, helper, type, sourceParam);
             }
         }
-        throw new NotSupportedException($"Cannot create deep copy strategy for {type}. Needs a parameterless constructor and an implementation of ICollection<T>, IList, or IDictionary.");
+        throw new RinkuTrackingException(ErrorCodes.NoCopyStrategy, $"Cannot create deep copy strategy for {type}. Needs a parameterless constructor and an implementation of ICollection<T>, IList, or IDictionary.");
     }
     private static Func<T, T> CompileCollectionHelper(ConstructorInfo emptyCtor, MethodInfo helperMethod, Type type, ParameterExpression sourceParam) {
         ParameterExpression cloneVar = Expression.Variable(type, "clone");

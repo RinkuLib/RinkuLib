@@ -74,7 +74,7 @@ internal struct AsciiMapperBuilder {
         var bit256 = new BitCounter256();
         var multi = new MultiBitCounter();
         for (int i = 0; i < Keys.Length; i++) {
-            var k = Keys[i] ?? throw new NullReferenceException("A key in the set was null");
+            var k = Keys[i] ?? throw new ArgumentNullException($"Keys[{i}]", "A key in the set was null");
             UsedKeys[i] = k;
             var l = k.Length;
             bit256.Set(l & 255);
@@ -238,7 +238,7 @@ private static readonly byte[] DeBruijnLookup64 = [
             if (keysStart == keysEnd)
                 return true;
         }
-        throw new UnreachableException();
+        throw new RinkuInternalException(ErrorCodes.InternalInvariant, "the key walk ran past its end without settling");
     }
     private uint MakeStep(int keysStart, int nb) {
         var (counter, charIndex) = GetBestBitCounter(keysStart, nb);

@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using RinkuLib.Commands;
 using RinkuLib.DbParsing;
+using RinkuLib.Tests.Infrastructure;
 using RinkuLib.Tools;
 using Xunit;
 
@@ -470,7 +471,8 @@ public class TypeParserTests {
         Assert.Equal(CurrencyCode.EUR, p1.ListingPrice.Value.Currency);
         Assert.Equal("Trusted", p1.Info.Value);
         Assert.Null(p1.Info.Source);
-        Assert.ThrowsAny<Exception>(() => parser.Parse(reader));
+        var refused = Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
+        Assert.Contains("Value", refused.Message);
     }
 
     [Fact]
@@ -902,7 +904,7 @@ public class TypeParserTests {
             [1, 2, 3, 4]
         ]);
 
-        Assert.ThrowsAny<Exception>(() => TypeParser.GetTypeParser<LayerOne>(ref columns));
+        Refusals.NoParserFor<LayerOne>(() => TypeParser.GetTypeParser<LayerOne>(ref columns));
     }
     [Fact]
     public void Test_User_Mapping_With_Nullable_And_Binary_Types() {

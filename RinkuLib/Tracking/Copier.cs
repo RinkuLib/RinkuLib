@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -131,7 +131,7 @@ public static class Copier<T> {
     }
     private static CopyDelegate<T> BuildCopyableStrategy(Type type) {
         MethodInfo copyMethod = type.GetMethod(nameof(ICopyable<>.Copy), BindingFlags.Instance | BindingFlags.Public)!
-            ?? throw new InvalidOperationException($"{type} implements ICopyable<{type.Name}> but no Copy method was found.");
+            ?? throw new RinkuTrackingException(ErrorCodes.CopyMethodNotUsable, $"{type} implements ICopyable<{type.Name}> but no Copy method was found.");
         DynamicMethod dm = new("Copyable_" + type.Name, type, [type], type.Module, true);
         ILGenerator il = dm.GetILGenerator();
         il.Emit(OpCodes.Ldarg_0);
@@ -154,7 +154,7 @@ public static class Copier<T> {
         }
         else {
             MethodInfo memberwiseClone = typeof(object).GetMethod(nameof(MemberwiseClone), BindingFlags.Instance | BindingFlags.NonPublic)!
-                ?? throw new MissingMethodException("Unable to locate object.MemberwiseClone.");
+                ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "Unable to locate object.MemberwiseClone");
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Call, memberwiseClone);
             il.Emit(OpCodes.Castclass, type);

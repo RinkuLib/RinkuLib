@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace RinkuLib.DbParsing;
@@ -75,7 +75,7 @@ public record class MemberParser {
         switch (member) {
             case PropertyInfo prop:
                 if (prop.GetAccessors(true)[0].IsStatic)
-                    return new ArgumentException("Properties must be instance members.");
+                    return new RinkuConfigurationException(ErrorCodes.UnusableMember, "Properties must be instance members");
 
                 detectedMemberType = prop.PropertyType;
                 detectedTargetType = prop.DeclaringType;
@@ -84,7 +84,7 @@ public record class MemberParser {
 
             case FieldInfo field:
                 if (field.IsStatic)
-                    return new ArgumentException("Fields must be instance members.");
+                    return new RinkuConfigurationException(ErrorCodes.UnusableMember, "Fields must be instance members");
 
                 detectedMemberType = field.FieldType;
                 detectedTargetType = field.DeclaringType;
@@ -93,29 +93,29 @@ public record class MemberParser {
 
             case MethodInfo method:
                 if (method.ReturnType != typeof(void))
-                    return new Exception("A member setter method must return void");
+                    return new RinkuConfigurationException(ErrorCodes.UnusableMember, "A member setter method must return void");
                 var parameters = method.GetParameters();
                 if (method.IsStatic) {
                     if (parameters.Length != 2)
-                        return new ArgumentException("Static methods must have 2 parameters (Instance, Value).");
+                        return new RinkuConfigurationException(ErrorCodes.UnusableMember, "A static setter takes 2 parameters (Instance, Value)");
                     detectedTargetType = parameters[0].ParameterType;
                     detectedMemberType = parameters[1].ParameterType;
                     if (method.IsGenericMethodDefinition) {
                         if (!detectedTargetType.IsGenericType)
-                            return new ArgumentException("The method's generic arguments should match with the instance's (1st param) generic arguments");
+                            return new RinkuConfigurationException(ErrorCodes.UnusableMember, "A generic setter takes its type parameters from the instance it writes to, so that instance has to be generic too");
                         Type[] methodGenericArgs = method.GetGenericArguments();
                         Type[] targetGenericArgs = detectedTargetType.GetGenericArguments();
                         if (methodGenericArgs.Length != targetGenericArgs.Length)
-                            return new ArgumentException($"Generic mismatch: Method has {methodGenericArgs.Length} type params, but Instance type has {targetGenericArgs.Length}.");
+                            return new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Generic mismatch: Method has {methodGenericArgs.Length} type params, but Instance type has {targetGenericArgs.Length}");
                         for (int i = 0; i < methodGenericArgs.Length; i++)
                             if (methodGenericArgs[i] != targetGenericArgs[i])
-                                return new ArgumentException($"Generic mismatch: Method has {methodGenericArgs[i]} type param, but Instance type has {targetGenericArgs[i]}.");
+                                return new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Generic mismatch: Method has {methodGenericArgs[i]} type param, but Instance type has {targetGenericArgs[i]}");
                     }
                     isWriteable = true;
                 }
                 else if (parameters.Length == 1) {
                     if (method.IsGenericMethodDefinition)
-                        return new Exception("instance methods should not be generic");
+                        return new RinkuConfigurationException(ErrorCodes.UnusableMember, "An instance setter takes its type from the instance, so it must not be generic itself");
                     detectedTargetType = method.DeclaringType;
                     detectedMemberType = parameters[0].ParameterType;
                     isWriteable = true;
@@ -123,11 +123,11 @@ public record class MemberParser {
                 break;
         }
         if (detectedMemberType == null || detectedTargetType == null)
-            return new ArgumentException("Member is not a supported writeable field, property, or method.");
+            return new RinkuConfigurationException(ErrorCodes.UnusableMember, "Member is not a supported writeable field, property, or method");
         if (!isWriteable)
-            return new ArgumentException($"Member '{member.Name}' is read-only or inacessible");
+            return new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Member '{member.Name}' is read-only or inaccessible");
         if (detectedMemberType != param.Type)
-            return new ArgumentException($"Type mismatch: Member expects {detectedMemberType.Name}, but Param provides {param.Type.Name}.");
+            return new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Type mismatch: Member expects {detectedMemberType.Name}, but Param provides {param.Type.Name}");
 
         return detectedTargetType;
     }

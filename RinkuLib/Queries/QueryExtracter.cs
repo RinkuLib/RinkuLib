@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
@@ -121,6 +121,12 @@ internal struct CondInfo {
         StartIndex = StartInd;
 
     }
+    /// <summary>
+    /// Re-records the nesting level the marker sits at. A marker opening a parenthesis is read before that
+    /// level is known to be a section level, so it is recorded one bit short and has to be corrected once
+    /// the bit is set, or nothing at that level ever matches it to close its footprint.
+    /// </summary>
+    public void UpdateNestingLevel(ulong parMap) => ParMapOrExcesses = parMap;
     public readonly bool IsFinished => Flags.HasFlag(CondFlags.Finished);
     public readonly bool IsRequired => Flags.HasFlag(CondFlags.IsRequired);
     public readonly bool NeedSectionToFinish => Flags.HasFlag(CondFlags.NeedSectionToFinish);
@@ -194,7 +200,7 @@ public unsafe ref struct QueryExtracter {
     private PooledArray<CondInfo>.Locked SegmentQuery(string query, char variableChar, out string newQuery) {
         Length = query.Length;
         if (Length <= 1)
-            throw new Exception($"invalid query \"{query}\", must contains at least 2 letters");
+            throw new RinkuTemplateException(ErrorCodes.QueryTooShort, $"invalid query \"{query}\", must contains at least 2 letters");
         Conditions = new PooledArray<CondInfo>();
         Builder = ArrayPool<char>.Shared.Rent((int)(Length * 1.1));
         BuilderSpan = Builder;
@@ -317,15 +323,13 @@ public unsafe ref struct QueryExtracter {
         => c < 64 ? (BoundaryMask >> c & 1) == 1 : c == '[' || c == ']' || c == '`';
     private void ManageBoundary() {
         var c = *CurrentChar;
-        if (ManageQuote(c)) {
-            PrevBoundary = true;
+        PrevBoundary = true;
+        if (ManageQuote(c))
             return;
-        }
         if (TryManageComment(true)) {
             CurrentChar--;
             return;
         }
-        PrevBoundary = true;
         if (c == '(')
             RaiseParentesis(true);
         else if (c == ')')
@@ -355,7 +359,7 @@ public unsafe ref struct QueryExtracter {
                 break;
             }
             if (i < LastUnfinishedSection)
-                throw new Exception($"The {SelectColumnAlwaysUsed} may only be used in a dynamic projection context {new string(Builder.AsSpan(0, BuilderInd))}");
+                throw new RinkuTemplateException(ErrorCodes.ProjectionOnlyConstruct, $"The {SelectColumnAlwaysUsed} may only be used in a dynamic projection context {new string(Builder.AsSpan(0, BuilderInd))}");
             Conditions.RemoveAt(i);
             if (i == LastUnfinishedSection) {
                 for (; i < Conditions.Length; i++)
@@ -419,7 +423,7 @@ public unsafe ref struct QueryExtracter {
             while (!(*CurrentChar == '*' && CurrentChar[1] == '/') && CurrentChar < LastChar)
                 Builder[BuilderInd++] = *CurrentChar++;
             if (CurrentChar >= LastChar)
-                throw new Exception("comment unclosed");
+                throw new RinkuTemplateException(ErrorCodes.UnclosedComment, "comment unclosed");
             CurrentChar++;
             Builder[BuilderInd++] = '*';
             Builder[BuilderInd++] = '/';
@@ -431,7 +435,7 @@ public unsafe ref struct QueryExtracter {
         while (true) {
             var cond = GetCommentString(out var isNot);
             if (string.IsNullOrWhiteSpace(cond))
-                throw new Exception($"Cannot have a whitespace condition {new string(Builder)}");
+                throw new RinkuTemplateException(ErrorCodes.EmptyConditionKey, $"Cannot have a whitespace condition {new string(Builder)}");
             nbCond++;
             ind = BuilderInd - 1;
             if (ind < 0)
@@ -480,12 +484,12 @@ public unsafe ref struct QueryExtracter {
             CurrentChar++;
         }
         if (CurrentChar >= LastChar)
-            throw new Exception("comment unclosed");
+            throw new RinkuTemplateException(ErrorCodes.UnclosedComment, "comment unclosed");
         isNot = *start == CondInfo.NotCommentChar;
         if (isNot)
             start++;
         var i = (int)(CurrentChar - start);
-        while (char.IsWhiteSpace(start[i - 1]))
+        while (i > 0 && char.IsWhiteSpace(start[i - 1]))
             i--;
         return new string(start, 0, i);
     }
@@ -507,7 +511,7 @@ public unsafe ref struct QueryExtracter {
     }
     private void RaiseParentesis(bool checkSection) {
         if (ParMap >= 0x8000000000000000UL)
-            throw new Exception("cannot have more than 64 level deep of parentesis / cases");
+            throw new RinkuTemplateException(ErrorCodes.ScopeTooDeep, "cannot have more than 63 level deep of parentesis / cases");
         CurrentStart++;
         CurrentExcess++;
         UpdateCurrentStart(BuilderInd, 0);
@@ -517,8 +521,11 @@ public unsafe ref struct QueryExtracter {
         CurrentChar++;
         SkipWhiteSpace();
         if (TryManageComment(false))
-            if (LastCondSectionLength > 0)
+            if (LastCondSectionLength > 0) {
                 ParMap |= 1;
+                for (int i = (int)(LastCondSectionLength >> 16); i > 0; i--)
+                    Conditions[^i].UpdateNestingLevel(ParMap);
+            }
         if (MatchSection(CurrentChar, out _) || (ParMap == 0b10 && ContainingParantesis))
             ParMap |= 1;
         CurrentChar--;
@@ -526,7 +533,7 @@ public unsafe ref struct QueryExtracter {
     private void LowerParentesis() {
         UpdateConditionsEnd(BuilderInd - 1, true, 0);
         if (ParMap == 1)
-            throw new Exception("too many closing parentesis / cases");
+            throw new RinkuTemplateException(ErrorCodes.UnbalancedScope, "too many closing parentesis / cases");
         ParMap >>= 1;
         CurrentStart--;
         CurrentExcess--;

@@ -1,4 +1,5 @@
 using RinkuLib.Commands;
+using RinkuLib.Exceptions;
 using RinkuLib.Queries;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
@@ -12,17 +13,17 @@ namespace RinkuLib.Tests.Templating;
 public class ParsingEdgeCaseTests {
     [Fact]
     public void Query_shorter_than_two_characters_is_rejected()
-        => Assert.Throws<Exception>(() => new QueryCommand("a"));
+        => Refusals.Raises(ErrorCodes.QueryTooShort, () => new QueryCommand("a"));
 
-    [Fact]
-    public void A_marker_directly_after_a_variable_drops_the_whole_predicate() {
-        // NOTE: with the marker touching the variable, turning the condition off removes the preceding
-        // "WHERE ID >= @Min" as well, not only the marker's following footprint. Pinned as observed;
-        // flagged as a possible discrepancy with the marker rule.
-        var query = new QueryCommand("SELECT Name FROM Users WHERE ID >= @Min/*Old*/ AND ID > 0 ORDER BY ID");
-        var b = query.StartBuilder();
-        b.Use("@Min", 2);
-        Render.Expect(b, "SELECT Name FROM Users ORDER BY ID", ("@Min", 2));   // bound, though its clause is gone
+    [Theory]
+    [InlineData("SELECT Name FROM Users WHERE ID >= @Min /*Old*/AND ID > 0 ORDER BY ID")]
+    [InlineData("SELECT Name FROM Users WHERE ID >= @Min/*Old*/ AND ID > 0 ORDER BY ID")]
+    public void A_marker_before_a_connector_binds_the_condition_on_its_left(string sql) {
+        var query = new QueryCommand(sql);
+
+        var off = query.StartBuilder();
+        off.Use("@Min", 2);
+        Assert.Equal("SELECT Name FROM Users WHERE ID > 0 ORDER BY ID", Render.From(off).CommandText);
 
         var on = query.StartBuilder();
         on.Use("@Min", 2);
@@ -31,30 +32,56 @@ public class ParsingEdgeCaseTests {
     }
 
     [Fact]
+    public void A_marker_before_a_connector_prunes_the_left_condition_from_the_doc_example() {
+        var query = new QueryCommand("SELECT * FROM tracks WHERE Composer = @composer /*Extra*/AND Milliseconds > @ms");
+
+        var off = query.StartBuilder();
+        off.Use("@composer", "x");
+        off.Use("@ms", 1);
+        Assert.Equal("SELECT * FROM tracks WHERE Milliseconds > @ms", Render.From(off).CommandText);
+
+        var on = query.StartBuilder();
+        on.Use("@composer", "x");
+        on.Use("@ms", 1);
+        on.Use("Extra");
+        Render.Expect(on, "SELECT * FROM tracks WHERE Composer = @composer AND Milliseconds > @ms",
+            ("@composer", "x"), ("@ms", 1));
+    }
+
+    [Fact]
+    public void A_variable_the_sql_no_longer_names_is_still_sent_as_a_parameter() {
+        var query = new QueryCommand("SELECT * FROM tracks WHERE Composer = @composer /*Extra*/AND Milliseconds > @ms");
+        var off = query.StartBuilder();
+        off.Use("@composer", "x");
+        off.Use("@ms", 1);
+        Render.Expect(off, "SELECT * FROM tracks WHERE Milliseconds > @ms", ("@composer", "x"), ("@ms", 1));
+    }
+
+    [Fact]
     public void Unclosed_condition_comment_is_rejected()
-        => Assert.Throws<Exception>(() => new QueryCommand("SELECT /*Cond FROM Users"));
+        => Refusals.Raises(ErrorCodes.UnclosedComment, () => new QueryCommand("SELECT /*Cond FROM Users"));
 
     [Fact]
     public void Whitespace_only_condition_is_rejected()
-        => Assert.Throws<Exception>(() => new QueryCommand("SELECT /*A&*/Col FROM Users"));
+        => Refusals.Raises(ErrorCodes.EmptyConditionKey, () => new QueryCommand("SELECT /*A&*/Col FROM Users"));
 
     [Fact]
     public void Unclosed_literal_comment_is_rejected()
-        => Assert.Throws<Exception>(() => new QueryCommand("SELECT /*~ still going FROM Users"));
+        => Refusals.Raises(ErrorCodes.UnclosedComment, () => new QueryCommand("SELECT /*~ still going FROM Users"));
 
     [Fact]
     public void Unbalanced_closing_paren_is_rejected()
-        => Assert.Throws<Exception>(() => new QueryCommand("SELECT a) FROM Users"));
+        => Refusals.Raises(ErrorCodes.UnbalancedScope, () => new QueryCommand("SELECT a) FROM Users"));
 
     [Fact]
     public void Nesting_deeper_than_the_limit_is_rejected() {
         var query = "SELECT " + new string('(', 65) + "1" + new string(')', 65) + " x";
-        Assert.Throws<Exception>(() => new QueryCommand(query));
+        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => new QueryCommand(query));
     }
 
     [Fact]
     public void Always_used_marker_outside_a_projection_is_rejected()
-        => Assert.Throws<Exception>(() => new QueryCommand("SELECT A!, B FROM Users"));
+        => Refusals.Raises(ErrorCodes.ProjectionOnlyConstruct, () => new QueryCommand("SELECT A!, B FROM Users"));
 
     [Fact]
     public void A_literal_comment_is_preserved() {

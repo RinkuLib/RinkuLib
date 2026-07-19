@@ -41,7 +41,7 @@ public static class Caster {
     public static T? Parse<T>(this object? value) {
         if (Caster<object?, T>.TryCast(value, out var val))
             return val!;
-        throw new Exception($"Unable to parse from {value} (object : {value!.GetType()}) to {typeof(T)}");
+        throw new RinkuReadException(ErrorCodes.CannotConvert, $"Unable to parse from {value} (object : {value!.GetType()}) to {typeof(T)}");
     }
     internal static bool TryGetOperator(Type f, Type t, [NotNullWhen(true)] out MethodInfo? m) {
         m = f.GetMethod("op_Explicit", PublicStatic, [f]) ?? f.GetMethod("op_Implicit", PublicStatic, [f])

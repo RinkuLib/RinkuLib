@@ -1,4 +1,4 @@
-﻿using RinkuLib.Tools;
+using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
 
@@ -42,5 +42,5 @@ public delegate T HandlerGetter<out T>(string Name) where T : IQuerySegmentHandl
 /// </summary>
 internal class NotSetHandler() : IQuerySegmentHandler {
     public void Handle(ref ValueStringBuilder sb, object? value)
-        => throw new NotImplementedException();
+        => throw new RinkuInternalException(ErrorCodes.InternalInvariant, "a handler spot was rendered before a real handler was bound to it");
 }

@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -22,7 +22,7 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     /// <inheritdoc/>
     public readonly DbParamInfo MakeInfoAt(int i) {
         var p = Command.Parameters[i] as IDbDataParameter
-            ?? throw new Exception($"there is no valid parameter at index {i}");
+            ?? throw new RinkuBindingException(ErrorCodes.InvalidParameterAtIndex, $"there is no valid parameter at index {i}");
         return MakeInfo(p);
     }
 
@@ -187,7 +187,7 @@ public class SizedDbParamCache : DbParamInfo {
     public static SizedDbParamCache Get(DbType type, int size) {
         ref var arr = ref GetCacheArray(type);
         if (Unsafe.IsNullRef(ref arr))
-            throw new ArgumentException($"Type {type} does not support a custom size parameter.");
+            throw new RinkuBindingException(ErrorCodes.TypeHasNoSize, $"Type {type} does not support a custom size parameter");
         return GetOrAdd(ref arr, type, size);
     }
     /// <summary>The <see cref="DbType"/> that will be used to create the parameter.</summary>

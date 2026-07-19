@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using RinkuLib.Tools;
@@ -290,10 +290,10 @@ public static class TypeParsingInfoHelper {
             FieldInfo field => ParamInfo.TryNew(field),
             MethodInfo method => ParamInfo.TryNew(method.GetParameters() is { Length: 2 } ps && method.IsStatic
                 ? ps[1] : method.GetParameters()[0]),
-            _ => throw new ArgumentException($"{member} is not a field, property, or setter method")
+            _ => throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"{member} is not a field, property, or setter method")
         };
         if (param is null)
-            throw new ArgumentException($"The value type of {member} is not a usable type");
+            throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"The value type of {member} is not a usable type");
         return new MemberParser(member, param);
     }
     /// <summary>

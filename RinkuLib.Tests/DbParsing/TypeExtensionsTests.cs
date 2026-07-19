@@ -67,7 +67,7 @@ public class TypeExtensionsTests {
                 typeof(bool), typeof(float), typeof(double), typeof(decimal), typeof(DateTime), typeof(Guid),
                 typeof(TimeSpan) })
             Assert.Equal(typeof(Nullable<>).MakeGenericType(t), t.GetNullableConstructor().DeclaringType);
-        Assert.Throws<Exception>(() => typeof(string).GetNullableConstructor());
+        Assert.Throws<ArgumentException>(() => typeof(string).GetNullableConstructor());
     }
 
 
@@ -105,8 +105,9 @@ public class TypeExtensionsTests {
         var untouched = typeof(TypeExtensionsTests).GetMethod(nameof(Open_members_close_onto_the_concrete_type))!;
         Assert.Same(untouched, untouched.GetClosedMember(typeof(string))); 
 
-        Assert.Throws<InvalidOperationException>(() => open.GetProperty("GetOnly")!.GetClosedMember(typeof(Holder<int>)));
-        Assert.Throws<NotImplementedException>(() => typeof(Evented<>).GetEvent("E")!.GetClosedMember(typeof(Evented<int>)));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => open.GetProperty("GetOnly")!.GetClosedMember(typeof(Holder<int>)));
+        Refusals.Raises(ErrorCodes.UnusableMember,
+            () => typeof(Evented<>).GetEvent("E")!.GetClosedMember(typeof(Evented<int>)));
     }
 
     class Evented<T> {
@@ -262,7 +263,8 @@ public class TypeExtensionsTests {
 
     [Fact]
     public void The_stack_printers_dump_values_and_leave_the_stack_intact() {
-        var writer = new StringWriter();
+        var buffer = new StringWriter();
+        var writer = TextWriter.Synchronized(buffer);
         var original = Console.Out;
         Console.SetOut(writer);
         try {
@@ -280,7 +282,8 @@ public class TypeExtensionsTests {
         finally {
             Console.SetOut(original);
         }
-        var output = writer.ToString();
+        writer.Flush();
+        var output = buffer.ToString();
         Assert.Contains("7", output);
         Assert.Contains("txt", output);
         Assert.Contains("[Stack Index 0]", output);

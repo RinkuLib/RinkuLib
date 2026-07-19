@@ -14,6 +14,7 @@ namespace RinkuLib.DbParsing;
 /// </summary>
 public class DefaultTypeParserMaker : ITypeParserMaker {
     /// <inheritdoc/>
+    [ExcludeFromCodeCoverage]
     public bool CanHandle<T>() => true;
     private static readonly Type[] TReaderArg = [typeof(object), typeof(DbDataReader)];
     internal static readonly Module Module = typeof(DbDataReader).Module;
@@ -50,7 +51,15 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
 #else
             new(dm.GetILGenerator());
 #endif
-        rd.Emit(cols, gen, rd.NeedNullSetPoint(cols) ? new(gen.DefineLabel(), 0) : default, out var targetObj);
+        Label? nullJump = rd.NeedNullSetPoint(cols) ? gen.DefineLabel() : null;
+        rd.Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default, out var targetObj);
+        if (nullJump.HasValue) {
+            var parsed = gen.DefineLabel();
+            gen.Emit(OpCodes.Br, parsed);
+            gen.MarkLabel(nullJump.Value);
+            DbItemParser.EmitDefaultValue(typeof(T), gen);
+            gen.MarkLabel(parsed);
+        }
         gen.Emit(OpCodes.Ret);
         dm.DefineParameter(1, ParameterAttributes.In, "reader");
         var prevIndex = -1;

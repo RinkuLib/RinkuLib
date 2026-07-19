@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -260,7 +260,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// <returns>An optimized <see cref="Mapper"/> containing exactly one key at index 0.</returns>
     public static Mapper GetOneKeyMapper(string key) {
         if (key is null)
-            throw new NullReferenceException("A key in the set was null");
+            throw new ArgumentNullException(nameof(key), "A key in the set was null");
         return new One(key);
     }
     /// <summary>
@@ -275,7 +275,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// </remarks>
     public static Mapper GetTwoKeyMapper(string key1, string key2) {
         if (key1 is null || key2 is null)
-            throw new NullReferenceException("A key in the set was null");
+            throw new ArgumentNullException(key1 is null ? nameof(key1) : nameof(key2), "A key in the set was null");
         if (string.Equals(key1, key2, StringComparison.OrdinalIgnoreCase))
             return GetOneKeyMapper(key1);
         return new Two(key1, key2);

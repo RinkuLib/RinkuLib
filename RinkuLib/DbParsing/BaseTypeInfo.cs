@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
@@ -11,7 +11,7 @@ public class BaseTypeInfo : TypeParsingInfo {
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type TargetType) {
         if (!TargetType.IsBaseType() && !TargetType.IsEnum)
-            throw new InvalidOperationException($"Only supports base types or enums");
+            throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, "Only supports base types or enums");
     }
     /// <inheritdoc/>
     public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
@@ -66,7 +66,7 @@ public class CtorTypeInfo : TypeParsingInfo {
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type targetType) {
         if (!targetType.GetConstructors().Any(c => c.GetParameters().Length > 0)) 
-            throw new InvalidOperationException($"Type {targetType.Name} must have at least one constructor with parameters.");
+            throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, $"Type {targetType.Name} must have at least one constructor with parameters");
     }
     internal static readonly ParamInfo InfoNullable = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo InfoNotNullable = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);

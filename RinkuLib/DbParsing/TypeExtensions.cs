@@ -1,4 +1,4 @@
-﻿using System.Data.Common;
+using System.Data.Common;
 using System.Reflection;
 using System.Reflection.Emit;
 
@@ -150,7 +150,7 @@ public static class TypeExtensions {
     /// </summary>
     public static ConstructorInfo GetNullableConstructor(this Type type) {
         if (!type.IsValueType)
-            throw new Exception("type must be a value type in order to have a nullable ctor");
+            throw new ArgumentException($"{type} must be a value type to have a Nullable<> constructor", nameof(type));
         var ctor = type switch {
             _ when type == typeof(int) => _Ni32Ctor,
             _ when type == typeof(DateTime) => _NdtCtor,
@@ -168,7 +168,7 @@ public static class TypeExtensions {
         if (ctor is not null)
             return ctor;
         return typeof(Nullable<>).MakeGenericType(type).GetConstructor([type])
-                ?? throw new Exception($"Could not find Nullable constructor for {type.Name}");
+                ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Could not find Nullable constructor for {type.Name}");
     }
     /// <summary>
     /// Determines if two types share the same representation on the CIL evaluation stack.
@@ -222,9 +222,9 @@ public static class TypeExtensions {
         if (member is ConstructorInfo ci)
             return ConstructorInfo.GetMethodFromHandle(ci.MethodHandle, closedType.TypeHandle)!;
         if (member is PropertyInfo pi)
-            member = pi.GetSetMethod(true) ?? throw new InvalidOperationException("Property has no setter");
+            member = pi.GetSetMethod(true) ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, "Property has no setter");
         if (member is not MethodInfo mi)
-            throw new NotImplementedException($"Member type {member.GetType()} not supported.");
+            throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Member type {member.GetType()} not supported");
         if (mi.IsGenericMethod)
             return mi.MakeGenericMethod(closedType.GetGenericArguments());
         return MethodBase.GetMethodFromHandle(mi.MethodHandle, closedType.TypeHandle)!;

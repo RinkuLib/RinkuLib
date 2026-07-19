@@ -115,7 +115,7 @@ public class ObjectMappingTests {
     [Fact]
     public void Parameter_with_a_non_default_default_stays_required() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
-        Assert.ThrowsAny<Exception>(() => {
+        Refusals.NoParserFor<UserWithCustomDefault>(() => {
             var localCols = cols;
             TypeParser.GetTypeParser<UserWithCustomDefault>(ref localCols);
         });
@@ -124,7 +124,7 @@ public class ObjectMappingTests {
     [Fact]
     public void Missing_required_column_fails_to_build_a_parser() {
         ColumnInfo[] cols = [new("Id", typeof(int), false)];
-        Assert.ThrowsAny<Exception>(() => {
+        Refusals.NoParserFor<PropUserRequired>(() => {
             var localCols = cols;
             TypeParser.GetTypeParser<PropUserRequired>(ref localCols);
         });

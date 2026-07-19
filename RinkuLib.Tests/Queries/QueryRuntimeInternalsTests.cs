@@ -338,7 +338,11 @@ public class QueryRuntimeInternalsTests {
         Assert.True(h.Update(new FakeCommand(), ref current, null));
         Assert.False(h.Update(new FakeCommand(), ref current, 5));
         current = "not saved";
-        Assert.Throws<Exception>(() => h.Update(new FakeCommand(), ref current, new[] { 1 }));
+        var stale = current;
+        Refusals.Raises(ErrorCodes.ValueNotSet, () => {
+            var local = stale;
+            h.Update(new FakeCommand(), ref local, new[] { 1 });
+        });
     }
 
     [Fact]
@@ -424,7 +428,7 @@ public class QueryRuntimeInternalsTests {
         try {
             h.Handle(ref sb, new object());
         }
-        catch (ArgumentException) {
+        catch (RinkuException e) when (e.Code == ErrorCodes.HandlerValueType) {
             threw = true;
         }
         finally {

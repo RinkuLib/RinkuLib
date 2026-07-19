@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
@@ -42,7 +42,7 @@ public interface IQueryText {
 #endif
 }
 /// <summary>Thrown when a required part of the query needs a handler value that the run did not supply.</summary>
-public class RequiredHandlerValueException(int Index) : Exception($"The variable at index {Index} should be set") {
+public class RequiredHandlerValueException(int Index) : RinkuBindingException(ErrorCodes.RequiredHandlerValue, $"The variable at index {Index} should be set") {
     /// <summary>The key slot whose value was missing.</summary>
     public int Index = Index;
 }

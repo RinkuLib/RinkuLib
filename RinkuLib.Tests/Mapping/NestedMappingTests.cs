@@ -187,7 +187,8 @@ public class NestedMappingTests {
         var ok = parser.Parse(reader).Result;
         Assert.Equal("Trusted", ok.Info.Value);
         Assert.Null(ok.Info.Source);
-        Assert.ThrowsAny<Exception>(() => parser.Parse(reader));
+        var refused = Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
+        Assert.Contains("Value", refused.Message);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -182,7 +182,8 @@ public class ParsableConverter(Type targetType) : ITypeConverter {
             generator.Emit(OpCodes.Call, method);
             return;
         }
-        throw new NotImplementedException();
+        throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch,
+            $"no conversion is emitted from the column to {OutputType}");
     }
 }
 

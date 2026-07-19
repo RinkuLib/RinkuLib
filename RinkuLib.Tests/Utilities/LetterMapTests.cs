@@ -29,7 +29,7 @@ public class LetterMapTests {
     [Fact]
     public void Missing_key_throws_on_read() {
         var map = new LetterMap<int> { ['a'] = 1 };
-        Assert.ThrowsAny<Exception>(() => map['b']);
+        Assert.Throws<KeyNotFoundException>(() => map['b']);
     }
 
     [Fact]

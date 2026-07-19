@@ -93,6 +93,9 @@ public class DynaObjectTests {
         Assert.False(row.TryGetValue("Nope", out string? _));
         Assert.False(row.TryGetValue("Nope".AsSpan(), out object? _));
         Assert.False(row.TryGetValue("Nope".AsSpan(), out string? _));
+        Assert.True(row.TryGetValue("Name", out object? boxedByName));
+        Assert.Equal("first", boxedByName);
+        Assert.False(row.TryGetValue("Nope", out object? _));
 
         Assert.True(row.ContainsKey("Name"));
         Assert.True(row.ContainsKey("Name".AsSpan()));
@@ -105,7 +108,7 @@ public class DynaObjectTests {
     public void A_backing_shape_refuses_a_mapper_of_the_wrong_width() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
         var row = Rows.ParseOne<DynaObject>(cols, 5, "first");
-        Assert.Throws<Exception>(() => new DynaObject<int>(5, row.Mapper));
+        Refusals.Raises(ErrorCodes.InternalInvariant, () => new DynaObject<int>(5, row.Mapper));
     }
 
     [Fact]
@@ -120,9 +123,9 @@ public class DynaObjectTests {
         Assert.Throws<KeyNotFoundException>(() => row.Get<int>("Nope".AsSpan()));
         Assert.Throws<IndexOutOfRangeException>(() => row[5]);
         Assert.Throws<IndexOutOfRangeException>(() => row[-1] = 1);
-        Assert.ThrowsAny<Exception>(() => row.Get<Version>(0));
-        Assert.ThrowsAny<Exception>(() => row.Get<Version>("Id"));
-        Assert.ThrowsAny<Exception>(() => row.Get<Version>("Id".AsSpan()));
+        Refusals.Raises(ErrorCodes.CannotReadColumn, () => row.Get<Version>(0));
+        Refusals.Raises(ErrorCodes.CannotReadColumn, () => row.Get<Version>("Id"));
+        Refusals.Raises(ErrorCodes.CannotReadColumn, () => { var span = "Id".AsSpan(); row.Get<Version>(span); });
     }
 
     [Fact]
@@ -232,8 +235,8 @@ public class DynaObjectTests {
     [Fact]
     public void Json_converter_does_not_read_back() {
         var options = new System.Text.Json.JsonSerializerOptions { Converters = { new DynaObjectConverter() } };
-        Assert.Throws<NotImplementedException>(() =>
-            System.Text.Json.JsonSerializer.Deserialize<DynaObject>("{}", options));
+        Refusals.Raises(ErrorCodes.OperationNotSupportedForType,
+            () => System.Text.Json.JsonSerializer.Deserialize<DynaObject>("{}", options));
     }
 }
 

@@ -86,6 +86,87 @@ public sealed class PlainEnumerableReader(DbDataReader inner) : IDataReader, Sys
 }
 
 /// <summary>
+/// A connection whose <c>Open</c> fails and which reports itself <see cref="ConnectionState.Broken"/>
+/// afterwards rather than closed, the shape the cleanup paths guard against when they close a connection
+/// they opened. <see cref="Closed"/> records whether that recovery ran.
+/// </summary>
+public sealed class BrokenConnection : DbConnection {
+    public bool Closed;
+    public override string? ConnectionString { get; set; }
+    public override string Database => "Broken";
+    public override string DataSource => "None";
+    public override string ServerVersion => "0.0";
+    public override ConnectionState State => ConnectionState.Broken;
+    public override void ChangeDatabase(string databaseName) { }
+    public override void Close() => Closed = true;
+    public override void Open() => throw new InvalidOperationException("open refused");
+    public override Task OpenAsync(CancellationToken ct) => throw new InvalidOperationException("open refused");
+    protected override DbCommand CreateDbCommand() => new FakeCommand { Connection = this };
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
+/// An <see cref="IDbCommand"/> that is not a <see cref="DbCommand"/> yet hands back a real
+/// <see cref="DbDataReader"/>, the provider shape whose reader must be used as-is rather than wrapped.
+/// </summary>
+public sealed class PassthroughCommand(DbCommand inner) : IDbCommand {
+    public string CommandText { get => inner.CommandText; set => inner.CommandText = value!; }
+    public int CommandTimeout { get => inner.CommandTimeout; set => inner.CommandTimeout = value; }
+    public CommandType CommandType { get => inner.CommandType; set => inner.CommandType = value; }
+    public IDbConnection? Connection { get => inner.Connection; set => inner.Connection = (DbConnection?)value; }
+    public IDataParameterCollection Parameters => inner.Parameters;
+    public IDbTransaction? Transaction { get => inner.Transaction; set => inner.Transaction = (DbTransaction?)value; }
+    public UpdateRowSource UpdatedRowSource { get => inner.UpdatedRowSource; set => inner.UpdatedRowSource = value; }
+    public void Cancel() => inner.Cancel();
+    public IDbDataParameter CreateParameter() => inner.CreateParameter();
+    public void Dispose() => inner.Dispose();
+    public int ExecuteNonQuery() => inner.ExecuteNonQuery();
+    public IDataReader ExecuteReader() => inner.ExecuteReader();
+    public IDataReader ExecuteReader(CommandBehavior behavior) => inner.ExecuteReader(behavior);
+    public object? ExecuteScalar() => inner.ExecuteScalar();
+    public void Prepare() => inner.Prepare();
+}
+
+/// <summary>An <see cref="IDbCommand"/> whose connection is a <see cref="BrokenConnection"/>.</summary>
+public sealed class BrokenPlainCommand(BrokenConnection cnn) : IDbCommand {
+    public string? CommandText { get; set; }
+    public int CommandTimeout { get; set; }
+    public CommandType CommandType { get; set; }
+    public IDbConnection? Connection { get => cnn; set { } }
+    public IDataParameterCollection Parameters { get; } = new LegacyParameterCollection();
+    public IDbTransaction? Transaction { get; set; }
+    public UpdateRowSource UpdatedRowSource { get; set; }
+    public void Cancel() { }
+    public IDbDataParameter CreateParameter() => new LegacyParameter();
+    public void Dispose() { }
+    public int ExecuteNonQuery() => 0;
+    public IDataReader ExecuteReader() => throw new NotSupportedException();
+    public IDataReader ExecuteReader(CommandBehavior behavior) => throw new NotSupportedException();
+    public object? ExecuteScalar() => null;
+    public void Prepare() { }
+}
+
+/// <summary>
+/// An <see cref="IDbConnection"/> that is deliberately not a <see cref="DbConnection"/>, delegating to a
+/// real one and handing out <see cref="PlainCommand"/>s, to drive every legacy-provider road end to end.
+/// </summary>
+public sealed class PlainConnection(DbConnection inner) : IDbConnection {
+    public DbConnection Inner => inner;
+    public string ConnectionString { get => inner.ConnectionString; set => inner.ConnectionString = value!; }
+    public int ConnectionTimeout => inner.ConnectionTimeout;
+    public string Database => inner.Database;
+    public ConnectionState State => inner.State;
+    public IDbTransaction BeginTransaction() => inner.BeginTransaction();
+    public IDbTransaction BeginTransaction(IsolationLevel il) => inner.BeginTransaction(il);
+    public void ChangeDatabase(string databaseName) => inner.ChangeDatabase(databaseName);
+    public void Close() => inner.Close();
+    public IDbCommand CreateCommand() => new PlainCommand(inner.CreateCommand());
+    public void Dispose() => inner.Dispose();
+    public void Open() => inner.Open();
+}
+
+/// <summary>
 /// An <see cref="IDbCommand"/> that is deliberately not a <see cref="DbCommand"/>, delegating to a real one,
 /// whose readers come back as plain <see cref="IDataReader"/>s.
 /// </summary>

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
@@ -370,7 +371,14 @@ public class QueryCommand : IQueryCommand, ICache {
                 if (_handles[i] == handle)
                     return _funcs[i];
             var method = typeof(TypeAccessorCacher<>).MakeGenericType(type).GetMethod(nameof(TypeAccessorCacher<>.GetOrGenerate), BindingFlags.Public | BindingFlags.Static);
-            var res = (TypeAccessorCache)method!.Invoke(null, [Mapper])!;
+            TypeAccessorCache res;
+            try {
+                res = (TypeAccessorCache)method!.Invoke(null, [Mapper])!;
+            }
+            catch (TargetInvocationException e) when (e.InnerException is not null) {
+                ExceptionDispatchInfo.Capture(e.InnerException).Throw();
+                throw;
+            }
             int len = _handles.Length;
             var newH = new IntPtr[len + 1];
             var newF = new TypeAccessorCache[len + 1];

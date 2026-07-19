@@ -90,7 +90,7 @@ public static class TypeParser {
                 break;
             }
         if (!typeParserMaker.TryMakeParser<T>(nullColHandler, cols, out var info))
-            throw new Exception($"cannot make the parser for {typeof(T)} with the schema ({string.Join(", ", cols.Select(c => $"{c.Type.ShortName()}{(c.IsNullable ? "?" : "")} {c.Name}"))})");
+            Refuse.NoParser(typeof(T), cols);
         return info;
     }
     /// <summary>The parser for <typeparamref name="T"/> over the columns of <typeparamref name="TSchema"/>, taken from its shape rather than a result.</summary>

@@ -57,8 +57,37 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     [Fact]
     public void No_rows_for_a_plain_type_throws() {
         using var cnn = Db.GetConnection();
-        Assert.ThrowsAny<Exception>(() => NoRows.Query<string>(cnn));
-        Assert.ThrowsAny<Exception>(() => NoIntRows.Query<int?>(cnn));
+        Refusals.Raises(ErrorCodes.NoRows, () => NoRows.Query<string>(cnn));
+        Refusals.Raises(ErrorCodes.NoRows, () => NoIntRows.Query<int?>(cnn));
+    }
+
+    static readonly QueryCommand ByIds = new("SELECT Name FROM Users WHERE ID IN (@ids_X)");
+    static readonly QueryCommand ByOptionalIds = new("SELECT Name FROM Users WHERE ID IN (?@ids_X)");
+
+    /// <summary>
+    /// The RINKU2002 path a caller actually takes. A spread builds the SQL out of its collection, so a
+    /// query run without one is refused while the SQL is built, before any database call.
+    /// </summary>
+    [Fact]
+    public void A_spread_run_without_its_collection_is_refused() {
+        using var cnn = Db.GetConnection();
+        Refusals.Raises(ErrorCodes.RequiredHandlerValue, () => ByIds.Query<List<string>>(cnn));
+
+        Assert.Equal(2, ByIds.Query<List<string>>(cnn, new { ids = new[] { 1, 2 } }).Count);
+        Assert.Equal(3, ByOptionalIds.Query<List<string>>(cnn).Count);
+    }
+
+    static readonly QueryCommand FirstName = new("SELECT Name FROM Users WHERE ID = @id");
+
+    /// <summary>
+    /// The RINKU3001 example. A scalar is converted at run time from whatever the query returned, so
+    /// asking for a type the value does not convert to is refused there rather than at parser build.
+    /// </summary>
+    [Fact]
+    public void A_scalar_asked_for_the_wrong_type_is_refused_at_conversion() {
+        using var cnn = Db.GetConnection();
+        Refusals.Raises(ErrorCodes.CannotConvert, () => FirstName.ExecuteScalar<int>(cnn, new { id = 1 }));
+        Assert.Equal("John", FirstName.ExecuteScalar<string>(cnn, new { id = 1 }));
     }
 
     [Fact]
@@ -85,7 +114,8 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     [Fact]
     public void Single_with_more_than_one_row_throws() {
         using var cnn = Db.GetConnection();
-        Assert.ThrowsAny<Exception>(() => AllUsers.Query<Single<(long, string, string?)>>(cnn));
+        Refusals.Raises(ErrorCodes.ShapeRefusedResult,
+            () => AllUsers.Query<Single<(long, string, string?)>>(cnn));
     }
 
     [Fact]

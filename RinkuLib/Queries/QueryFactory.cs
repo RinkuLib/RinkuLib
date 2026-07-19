@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics;
 using RinkuLib.Tools;
 
@@ -147,7 +147,7 @@ public struct QueryFactory {
         if (segInd - 1 >= 0 && Segments[segInd - 1].Handler is null)
             Segments[segInd - 1].ExcessOrInd = cond.PrevSegmentExcess;
         if (!Mapper.TryGetValue(cond.Cond, out var condMapperInd))
-            throw new Exception($"Comment conditions using variables must exist in the query: {cond.Cond}");
+            throw new RinkuTemplateException(ErrorCodes.ConditionVariableNotInQuery, $"the marker names \"{cond.Cond}\", which the query does not contain");
         var isOrIdentifier = 0;
         if (cond.Type == CondInfo.OrComment)
             isOrIdentifier = -1;
@@ -218,7 +218,7 @@ public struct QueryFactory {
         for (int i = 0; i < condInfos.Length; i++) {
             ref var cond = ref condInfos[i];
             if (!cond.IsFinished)
-                throw new Exception($"conditions {cond.Cond} was not finished [{cond.StartIndex}-{cond.EndIndex}]");
+                throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"conditions {cond.Cond} was not finished [{cond.StartIndex}-{cond.EndIndex}]");
             if (cond.Type >= CondInfo.Special) {
                 segmentIndexes.Add(cond.VarIndex);
                 segmentIndexes.Add(cond.VarIndex + cond.Cond.Length + 2);

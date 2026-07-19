@@ -41,7 +41,7 @@ SELECT Name FROM products ORDER BY Id
 Writes a string wrapped in single quotes.
 
 ```sql
-SELECT * FROM artists WHERE Name = @Name_S
+SELECT * FROM artists WHERE Name = @Name_s
 
 -- @Name = Queen
 SELECT * FROM artists WHERE Name = 'Queen'

@@ -143,7 +143,7 @@ public class ParamInfoTests {
 
     [Fact]
     public void Sized_rejects_a_type_that_carries_no_size() {
-        Assert.Throws<ArgumentException>(() => SizedDbParamCache.Get(DbType.Int32, 10));
+        Refusals.Raises(ErrorCodes.TypeHasNoSize, () => SizedDbParamCache.Get(DbType.Int32, 10));
         Assert.False(SizedDbParamCache.TryGet(DbType.Boolean, 10, out _));
         Assert.True(SizedDbParamCache.TryGet(DbType.Xml, 10, out var xml));
         Assert.Equal(10, xml.Size);
@@ -228,7 +228,7 @@ public class ParamInfoTests {
 
         var cache = new DefaultParamCache(cmd);
         Assert.Equal(["@a", "@b"], cache.EnumerateParameters().Select(kv => kv.Key));
-        Assert.ThrowsAny<Exception>(() => cache.MakeInfoAt(1)); 
+        Refusals.Raises(ErrorCodes.InvalidParameterAtIndex, () => cache.MakeInfoAt(1));
         Assert.True(cache.TryGetInfo("@b", out _));      
         Assert.False(cache.TryGetInfo("@nope", out _));
 
@@ -244,6 +244,19 @@ public class ParamInfoTests {
         InferedDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
         Assert.Single(new DefaultParamCache(cmd).EnumerateParameters());
         Assert.Single(new ForceInferedParamCache(cmd).EnumerateParameters());
+    }
+
+    /// <summary>
+    /// The providers reject a non-parameter as it is added, which is why RINKU1003 is documented as coming
+    /// from an <see cref="IDbCommand"/> of your own rather than from normal use.
+    /// </summary>
+    [Fact]
+    public void The_providers_refuse_a_non_parameter_in_their_collection() {
+        Assert.ThrowsAny<Exception>(() => new Microsoft.Data.Sqlite.SqliteCommand().Parameters.Add("plain object"));
+        Assert.ThrowsAny<Exception>(() => new Microsoft.Data.SqlClient.SqlCommand().Parameters.Add("plain object"));
+        Assert.ThrowsAny<Exception>(() => new Npgsql.NpgsqlCommand().Parameters.Add("plain object"));
+        Assert.ThrowsAny<Exception>(() => new MySqlConnector.MySqlCommand().Parameters.Add("plain object"));
+        Assert.ThrowsAny<Exception>(() => new Oracle.ManagedDataAccess.Client.OracleCommand().Parameters.Add("plain object"));
     }
 
     [Fact]

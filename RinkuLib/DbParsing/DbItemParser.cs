@@ -1,10 +1,11 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Reflection.Emit;
+using RinkuLib.Exceptions;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
 /// <summary>Identify a parameter that should not be null, but the row provided a null value. Can be direcly a null column or a sub-class that lead to a null value</summary>
-public class NullValueAssignmentException(Type parentType, Type paramType, string paramName) : Exception($"Constraint Violation: Parameter '{paramName}' of type '{paramType.Name}' is marked as non-nullable, but the source provided a null value. Parent: {parentType}") {
+public class NullValueAssignmentException(Type parentType, Type paramType, string paramName) : RinkuReadException(ErrorCodes.NullNotAllowed, $"Constraint Violation: Parameter '{paramName}' of type '{paramType.Name}' is marked as non-nullable, but the source provided a null value. Parent: {parentType}") {
     /// <summary>The name of the parameter that should not be null</summary>
     public readonly string ParameterName = paramName;
     /// <summary>The type of the parent</summary>
@@ -101,11 +102,11 @@ public abstract class DbItemParser {
         }
         if (member is PropertyInfo p) {
             var setter = p.GetSetMethod(nonPublic: true)
-                ?? throw new InvalidOperationException($"Property {p.Name} has no setter.");
+                ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Property {p.Name} has no setter");
             member = setter;
         }
         if (member is not MethodInfo m || m.DeclaringType is null)
-            throw new NotSupportedException($"Member type {member.MemberType} is not supported for dispatch.");
+            throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Member type {member.MemberType} is not supported for dispatch");
         if (m.IsVirtual && !m.IsStatic && !m.DeclaringType.IsValueType) 
             generator.Emit(OpCodes.Callvirt, m);
         else 
@@ -142,7 +143,7 @@ public readonly struct NullSetPoint(Label Label, int NbOnStack) {
     /// <exception cref="InvalidOperationException">Thrown if no recovery label is defined.</exception>
     public void MakeNullJump(Generator generator) {
         if (!HasValue)
-            throw new InvalidOperationException("must have a label defined");
+            throw new RinkuInternalException(ErrorCodes.InternalInvariant, "a null jump was made without a label to jump to");
         for (int i = 0; i < NbOnStack; i++)
             generator.Emit(OpCodes.Pop);
         generator.Emit(OpCodes.Br, Label);

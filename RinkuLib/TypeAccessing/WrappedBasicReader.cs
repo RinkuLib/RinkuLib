@@ -1,8 +1,9 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.ObjectModel;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -11,15 +12,15 @@ namespace RinkuLib.TypeAccessing;
 
 internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerator {
     private IDataReader _reader;
-    private static readonly Func<DataRow, DataColumnCollection, DbColumn> Create = GetPrivateDataRowCtor();
-    private static Func<DataRow, DataColumnCollection, DbColumn> GetPrivateDataRowCtor() {
-        Type nestedType = typeof(DbDataReaderExtensions).GetNestedType("DataRowDbColumn", BindingFlags.NonPublic)
-            ?? throw new Exception("Could not find nested type DataRowDbColumn");
+    private static readonly Func<DataRow, DataColumnCollection, DbColumn> Create = GetPrivateDataRowCtor(typeof(DbDataReaderExtensions));
+    internal static Func<DataRow, DataColumnCollection, DbColumn> GetPrivateDataRowCtor(Type host) {
+        Type nestedType = host.GetNestedType("DataRowDbColumn", BindingFlags.NonPublic)
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "Could not find nested type DataRowDbColumn");
         ConstructorInfo ctor = nestedType.GetConstructor(
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
             null,
             [typeof(DataRow), typeof(DataColumnCollection)],
-            null) ?? throw new Exception("Constructor not found");
+            null) ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "the DataRowDbColumn constructor was not found");
         var rowParam = Expression.Parameter(typeof(DataRow), "row");
         var colsParam = Expression.Parameter(typeof(DataColumnCollection), "cols");
         var newExp = Expression.New(ctor, rowParam, colsParam);
@@ -44,6 +45,9 @@ internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerato
         Debug.Assert(reader is not DbDataReader);
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
     }
+
+    internal static DbDataReader Wrap(IDataReader reader)
+        => reader as DbDataReader ?? new WrappedBasicReader(reader);
 
     public override bool HasRows => true;
     public override void Close() => _reader.Close();
@@ -174,6 +178,7 @@ internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerato
     }
 #endif
 }
+[ExcludeFromCodeCoverage]
 internal sealed class DisposedReader : DbDataReader {
     internal static readonly DisposedReader Instance = new();
     private DisposedReader() { }
@@ -186,12 +191,8 @@ internal sealed class DisposedReader : DbDataReader {
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static T ThrowDisposed<T>() => throw new ObjectDisposedException(nameof(DbDataReader));
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private async static Task<T> ThrowDisposedAsync<T>() {
-        var result = ThrowDisposed<T>();
-        await Task.Yield();
-        return result;
-    }
+    private static Task<T> ThrowDisposedAsync<T>()
+        => Task.FromException<T>(new ObjectDisposedException(nameof(DbDataReader)));
     public override void Close() { }
     public override DataTable GetSchemaTable() => ThrowDisposed<DataTable>();
 

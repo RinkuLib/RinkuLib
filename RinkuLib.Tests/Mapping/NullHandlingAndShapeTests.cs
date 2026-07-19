@@ -121,6 +121,61 @@ public class NullHandlingAndShapeTests {
     }
 
 
+    public record DocTrack(int Id, string Name, double Weight) : IDbReadable;
+    public record DocTrackNullable(int Id, string Name, double? Weight) : IDbReadable;
+    public record DocTrackCollapsing(int Id, string Name, [InvalidOnNull] double Weight) : IDbReadable;
+    public record DocTrackNotNull(int Id, [System.Diagnostics.CodeAnalysis.NotNull] string Name) : IDbReadable;
+
+    static readonly ColumnInfo[] TrackCols = [
+        new("Id", typeof(int), false), new("Name", typeof(string), true), new("Weight", typeof(double), true)];
+
+    /// <summary>
+    /// The rule follows the runtime type, so a plain struct slot is what rejects NULL inside an object while
+    /// a reference slot takes it, whatever its annotation says.
+    /// </summary>
+    [Fact]
+    public void A_struct_slot_rejects_null_where_a_reference_slot_takes_it() {
+        Refusals.Raises(ErrorCodes.NullNotAllowed,
+            () => Rows.ParseOne<DocTrack>(TrackCols, 1, "n", DBNull.Value));
+
+        Assert.Null(Rows.ParseOne<DocTrackNullable>(TrackCols, 1, "n", DBNull.Value).Weight);
+        Assert.Null(Rows.ParseOne<DocTrack>(TrackCols, 1, DBNull.Value, 2.0).Name);
+
+        ColumnInfo[] idName = [new("Id", typeof(int), false), new("Name", typeof(string), true)];
+        Refusals.Raises(ErrorCodes.NullNotAllowed,
+            () => Rows.ParseOne<DocTrackNotNull>(idName, 1, DBNull.Value));
+    }
+
+    public record DocAlbum([InvalidOnNull] int Id, string Title) : IDbReadable;
+    public record DocTrackWithAlbum(int Id, string Name, DocAlbum? Album) : IDbReadable;
+
+    /// <summary>
+    /// The slot that identifies the joined object carries
+    /// <c>[InvalidOnNull]</c>, so a row that matched nothing leaves the slot null rather than an object of
+    /// zeroes.
+    /// </summary>
+    [Fact]
+    public void An_unmatched_outer_join_collapses_to_null_rather_than_zeroes() {
+        ColumnInfo[] cols = [
+            new("Id", typeof(int), false), new("Name", typeof(string), false),
+            new("AlbumId", typeof(int), true), new("AlbumTitle", typeof(string), true)];
+
+        var matched = Rows.ParseOne<DocTrackWithAlbum>(cols, 1, "Song", 7, "Greatest Hits");
+        Assert.Equal(7, matched.Album!.Id);
+        Assert.Equal("Greatest Hits", matched.Album.Title);
+
+        var unmatched = Rows.ParseOne<DocTrackWithAlbum>(cols, 2, "Demo", DBNull.Value, DBNull.Value);
+        Assert.Null(unmatched.Album);
+    }
+
+    /// <summary>The stricter rule at the root, where only a null-taking shape survives a NULL.</summary>
+    [Fact]
+    public void The_root_needs_a_null_taking_shape() {
+        ColumnInfo[] one = [new("Name", typeof(string), true)];
+        Refusals.Raises(ErrorCodes.NullNotAllowed, () => Rows.ParseOne<string>(one, DBNull.Value));
+        Assert.Null(Rows.ParseOne<RinkuLib.TypeAccessing.MaybeNull<string>>(one, DBNull.Value).Value);
+    }
+
     public class Node : IDbReadable {
         public Node(Node inner, int x) { }
     }
@@ -129,7 +184,7 @@ public class NullHandlingAndShapeTests {
     public void A_self_referential_ctor_registration_stops_instead_of_recursing() {
         TypeParsingInfo.AddOrSet<Node>(CtorTypeInfo.Instance);
         ColumnInfo[] cols = [new("X", typeof(int), false)];
-        Assert.ThrowsAny<Exception>(() => TypeParser.GetTypeParser<Node>(ref cols));
+        Refusals.NoParserFor<Node>(() => TypeParser.GetTypeParser<Node>(ref cols));
     }
 
     public class Picky : IDbReadable {
@@ -140,7 +195,7 @@ public class NullHandlingAndShapeTests {
     public void A_ctor_registration_missing_a_column_rolls_back_and_fails() {
         TypeParsingInfo.AddOrSet<Picky>(CtorTypeInfo.Instance);
         ColumnInfo[] cols = [new("A", typeof(int), false)];
-        Assert.ThrowsAny<Exception>(() => TypeParser.GetTypeParser<Picky>(ref cols));
+        Refusals.NoParserFor<Picky>(() => TypeParser.GetTypeParser<Picky>(ref cols));
     }
 
     public class TwoDoors : IDbReadable {
@@ -201,7 +256,7 @@ public class NullHandlingAndShapeTests {
     [Fact]
     public void A_type_with_no_matching_construction_and_no_fallback_fails() {
         ColumnInfo[] cols = [new("A", typeof(int), false)];
-        Assert.ThrowsAny<Exception>(() => TypeParser.GetTypeParser<NoFit>(ref cols));
+        Refusals.NoParserFor<NoFit>(() => TypeParser.GetTypeParser<NoFit>(ref cols));
     }
 
     public class OpenPocket<T> : IDbReadable {

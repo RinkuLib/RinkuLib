@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
 
@@ -17,7 +17,8 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type TargetType) {
         if (TargetType != Type)
-            throw new ArgumentException($"The associated type with this instance is {Type} so it can't be bound with {TargetType}");
+            throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo,
+                $"The associated type with this instance is {Type} so it can't be bound with {TargetType}");
     }
     /// <summary>
     /// Whether a construction or member whose result is <paramref name="target"/> can build this info's
@@ -47,10 +48,10 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             for (var i = 0; i < value.Length; i++) {
                 var c = value[i];
                 if (!IsValidTarget(c.TargetType))
-                    throw new InvalidOperationException($"the method or constructor must be of type {Type} (returning type)");
+                    throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch, $"the method or constructor must be of type {Type} (returning type)");
                 var declare = c.MethodBase.DeclaringType!;
                 if (declare != Type && declare.IsGenericType)
-                    throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
+                    throw new RinkuConfigurationException(ErrorCodes.ForeignGenericSource, $"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
             }
             Interlocked.Exchange(ref MCIs, value.ToArray());
         }
@@ -69,10 +70,10 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             for (var i = 0; i < value.Length; i++) {
                 var c = value[i];
                 if (!IsValidTarget(c.TargetType))
-                    throw new InvalidOperationException($"the method or constructor must be of type {Type}");
+                    throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch, $"the member must belong to {Type}, and {c.Member} belongs to {c.TargetType}");
                 var declare = c.Member.DeclaringType!;
                 if (declare != Type && declare.IsGenericType)
-                    throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
+                    throw new RinkuConfigurationException(ErrorCodes.ForeignGenericSource, $"Cannot add a member from a generic type other then the target type Target:{Type} Used:{declare}");
             }
             Interlocked.Exchange(ref Members, value.ToArray());
         }
@@ -165,10 +166,10 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         lock (WriteLock) {
             var target = mci.TargetType;
             if (!IsValidTarget(target))
-                throw new Exception($"the expected type is {Type} but the provided type via the method is {mci.TargetType}");
+                throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch, $"the expected type is {Type} but the provided type via the method is {mci.TargetType}");
             var declare = mci.MethodBase.DeclaringType!;
             if (declare != Type && declare.IsGenericType)
-                throw new Exception($"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
+                throw new RinkuConfigurationException(ErrorCodes.ForeignGenericSource, $"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
             mci.InsertInto(ref MCIs);
         }
     }
@@ -176,10 +177,10 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
     public void AddMember(MemberParser member) {
         lock (WriteLock) {
             if (!IsValidTarget(member.TargetType))
-                throw new InvalidOperationException($"the member must be of type {Type}");
+                throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch, $"the member must be of type {Type}");
             var declare = member.Member.DeclaringType!;
             if (declare != Type && declare.IsGenericType)
-                throw new Exception($"Cannot add a member from a generic type other then the target type Target:{Type} Used:{declare}");
+                throw new RinkuConfigurationException(ErrorCodes.ForeignGenericSource, $"Cannot add a member from a generic type other then the target type Target:{Type} Used:{declare}");
             var result = new MemberParser[Members.Length + 1];
             Array.Copy(Members, result, Members.Length);
             result[^1] = member;
@@ -249,7 +250,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                 if (isNullableStruct)
                     paramClosedType = typeof(Nullable<>).MakeGenericType(paramClosedType);
                 if (!TryGetInfo(paramClosedType, out var typeInfo))
-                    throw new Exception("should not happend");
+                    throw new RinkuInternalException(ErrorCodes.InternalInvariant, "reached a branch believed unreachable while discovering construction paths");
                 var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage);
                 if (node is not null)
                     memberReaders.Add((members[i].Member.GetClosedMember(currentClosedType), node));

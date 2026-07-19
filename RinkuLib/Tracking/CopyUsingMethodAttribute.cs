@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Reflection.Emit;
 
 namespace RinkuLib.Tracking;
@@ -16,13 +16,13 @@ public sealed class CopyUsingMethodAttribute(string methodName) : CopyFieldAttri
         Type declaringType = field.DeclaringType!;
 
         MethodInfo method = declaringType.GetMethod(_methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            ?? throw new MissingMethodException($"Method '{_methodName}' not found on '{declaringType}'.");
+            ?? throw new RinkuTrackingException(ErrorCodes.CopyMethodNotUsable, $"Method '{_methodName}' not found on '{declaringType}'.");
 
         if (method.GetParameters().Length != 0)
-            throw new InvalidOperationException($"Method '{_methodName}' on '{declaringType}' must have zero parameters.");
+            throw new RinkuTrackingException(ErrorCodes.CopyMethodNotUsable, $"Method '{_methodName}' on '{declaringType}' must have zero parameters.");
 
         if (!field.FieldType.IsAssignableFrom(method.ReturnType))
-            throw new InvalidOperationException($"Method '{_methodName}' returns '{method.ReturnType}', which cannot be assigned to field '{field.Name}' ({field.FieldType}).");
+            throw new RinkuTrackingException(ErrorCodes.CopyMethodNotUsable, $"Method '{_methodName}' returns '{method.ReturnType}', which cannot be assigned to field '{field.Name}' ({field.FieldType}).");
 
         if (declaringType.IsValueType)
             il.Emit(OpCodes.Ldloca_S, clone);

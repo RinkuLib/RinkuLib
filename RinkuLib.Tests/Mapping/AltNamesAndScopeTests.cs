@@ -49,7 +49,7 @@ public class AltNamesAndScopeTests {
             new("SuperDeep", typeof(int), true),
             new("SemiDeep", typeof(int), true),
         ];
-        Assert.ThrowsAny<Exception>(() => {
+        Refusals.NoParserFor<TierOne>(() => {
             var localCols = cols;
             TypeParser.GetTypeParser<TierOne>(ref localCols);
         });

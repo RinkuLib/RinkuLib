@@ -74,14 +74,26 @@ public class AccessorEmitterVariantTests {
         [NotNullOrWhitespace] public int V { get; set; }
     }
 
+    /// <summary>
+    /// The refusal names the attribute and the type it demands. Accessor generation runs behind a
+    /// reflection call, so the check has to surface its own message rather than the
+    /// <see cref="System.Reflection.TargetInvocationException"/> that call would otherwise wrap it in.
+    /// </summary>
     [Fact]
     public void The_attributes_refuse_the_wrong_member_type() {
         var b = CondQuery.StartBuilder();
-        Assert.ThrowsAny<Exception>(() => { b.UseWith(new BadBool { F = 1 }); });
+        var boolMisuse = Refusals.Raises(ErrorCodes.AttributeOnWrongMemberType, () => b.UseWith(new BadBool { F = 1 }));
+        Assert.Contains(nameof(ForBoolCondAttribute), boolMisuse.Message);
+        Assert.Contains(nameof(Boolean), boolMisuse.Message);
+
         var b2 = VarQuery.StartBuilder();
-        Assert.ThrowsAny<Exception>(() => { b2.UseWith(new BadString { V = 1 }); });
+        var fieldMisuse = Refusals.Raises(ErrorCodes.AttributeOnWrongMemberType, () => b2.UseWith(new BadString { V = 1 }));
+        Assert.Contains(nameof(NotNullOrWhitespaceAttribute), fieldMisuse.Message);
+        Assert.Contains(nameof(String), fieldMisuse.Message);
+
         var b3 = VarQuery.StartBuilder();
-        Assert.ThrowsAny<Exception>(() => { b3.UseWith(new BadStringProp { V = 1 }); });
+        var propMisuse = Refusals.Raises(ErrorCodes.AttributeOnWrongMemberType, () => b3.UseWith(new BadStringProp { V = 1 }));
+        Assert.Contains(nameof(NotNullOrWhitespaceAttribute), propMisuse.Message);
     }
 
     [UsesBoolConds("F", "NotAConditionKey")]

@@ -93,7 +93,7 @@ public class CollectionAndWrapperTests {
         using var reader = Rows.Reader(cols, ["one"], ["two"]);
         var parser = TypeParser.GetTypeParser<Single<string>>(ref cols);
         reader.Read();
-        Assert.ThrowsAny<Exception>(() => parser.Parse(reader));
+        Refusals.Raises(ErrorCodes.ShapeRefusedResult, () => parser.Parse(reader));
     }
 
     [Fact]
