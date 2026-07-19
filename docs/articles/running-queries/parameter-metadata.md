@@ -6,7 +6,9 @@ How a `DbParameter` gets its type and size. The default needs no configuration. 
 
 1. On a variable's first use, a plain `DbParameter` is created with just the value. The provider infers the rest.
 2. Right after execution, the command captures each parameter's resolved metadata (type, size) and caches it.
-3. Every later call binds that parameter precisely, which helps plan reuse and driver overhead.
+3. Every later call binds that parameter from the cache, which helps plan reuse and driver overhead.
+
+A captured size is rounded up to 100, 500, 4000, or unbounded before it is cached, so a `varchar` learned at 50 binds at 100. Sizes group into a handful of buckets instead of one cache entry per length, and a plan is reused across calls whose values differ in length. Pin the size yourself, below, when a parameter needs an exact one.
 
 ## Setting it yourself
 

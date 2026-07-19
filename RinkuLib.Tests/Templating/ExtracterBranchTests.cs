@@ -114,6 +114,9 @@ public class ExtracterBranchTests {
     /// A clause marker opening a parenthesis governs the subquery's clause the same way it would at the top
     /// level. It is read before its level is known to be a section level, so the level it records has to be
     /// corrected once that is known, or nothing inside the parenthesis can close its footprint.
+    /// A clause marker reaches one clause, so pruning the inner <c>SELECT</c> leaves the rest of the
+    /// subquery standing. Whatever survives, the parentheses it sits between are the template's own and
+    /// have to come out matched.
     /// </summary>
     [Fact]
     public void A_clause_marker_opening_a_subquery_prunes_that_clause() {
@@ -123,8 +126,9 @@ public class ExtracterBranchTests {
         on.Use("K");
         Assert.Equal("SELECT * FROM t WHERE id IN (SELECT id FROM u)", Render.From(on).CommandText);
 
-        var off = query.StartBuilder();
-        Assert.Equal("SELECT * FROM t WHERE id IN  FROM u)", Render.From(off).CommandText);
+        var off = Render.From(query.StartBuilder()).CommandText;
+        Assert.Equal(off.Count(c => c == '('), off.Count(c => c == ')'));
+        Assert.Equal("SELECT * FROM t WHERE id IN ( FROM u)", off);
     }
 
     /// <summary>

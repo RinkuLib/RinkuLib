@@ -3,6 +3,8 @@ using RinkuLib.Commands;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
 using RinkuLib.Tests.Infrastructure;
+using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -143,5 +145,28 @@ public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         cmd.CommandText = "SELECT COUNT(*) FROM Users";
         Assert.Equal(3L, parser.Query((System.Data.IDbCommand)cmd));
         Assert.Equal(3L, parser.Query((System.Data.IDbCommand)cmd));
+    }
+
+    public record RacedRow(int Id, string Name) : IDbReadable;
+
+    /// <summary>
+    /// The shared parser store is read without a lock and written under one, so several threads meeting an
+    /// unseen shape at once all reach the write. The one that gets there first records the parser and the
+    /// rest have to find it on their second look rather than each recording one of their own.
+    /// </summary>
+    [Fact]
+    public void First_sight_of_a_shape_from_several_threads_yields_one_parser() {
+        ColumnInfo[] shape = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
+        const int threads = 8;
+        var parsers = new ITypeParser<RacedRow>[threads];
+        using var barrier = new Barrier(threads);
+
+        Parallel.For(0, threads, i => {
+            var cols = (ColumnInfo[])shape.Clone();
+            barrier.SignalAndWait();
+            parsers[i] = TypeParser.GetTypeParser<RacedRow>(ref cols);
+        });
+
+        Assert.All(parsers, p => Assert.Same(parsers[0], p));
     }
 }

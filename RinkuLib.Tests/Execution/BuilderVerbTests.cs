@@ -250,4 +250,23 @@ public class BuilderVerbTests(SqliteDb Db) : IClassFixture<SqliteDb> {
             Assert.Equal(1, await multi.QueryAsync<int>(TestContext.Current.CancellationToken));
         }
     }
+
+    /// <summary>
+    /// A run reuses the parser it learned last time while the command is still settling its parameter
+    /// metadata, so the second pass takes the road that has the parser in hand but still lets the command
+    /// finish learning. A spread keeps the command asking, which holds that road open past the first run.
+    /// </summary>
+    [Fact]
+    public async Task Builder_QueryAsync_reuses_the_parser_while_the_command_still_learns() {
+        var query = new QueryCommand("SELECT Name FROM Users WHERE ID IN (?@ids_X) ORDER BY ID");
+        using var cnn = Db.GetConnection();
+
+        var first = query.StartBuilder();
+        first.Use("@ids", new[] { 1, 2 });
+        Assert.Equal("John", await first.QueryAsync<string>(cnn, ct: TestContext.Current.CancellationToken));
+
+        var second = query.StartBuilder();
+        second.Use("@ids", new[] { 1, 2 });
+        Assert.Equal("John", await second.QueryAsync<string>(cnn, ct: TestContext.Current.CancellationToken));
+    }
 }

@@ -49,12 +49,32 @@ public class LiteralAndSpreadExecutionTests(SqliteDb Db) : IClassFixture<SqliteD
         Assert.Equal(["Victor"], names);
     }
 
+    /// <summary>
+    /// An empty collection counts as absent, so an optional spread prunes its footprint rather than
+    /// rendering an empty list. The <c>&amp;AND</c> welds the static condition to it, so the two leave
+    /// together. Running it proves the point a string compare cannot: <c>IN ()</c> would not parse.
+    /// </summary>
     [Fact]
-    public void Empty_spread_renders_the_sql_it_produces() {
+    public void Empty_spread_prunes_instead_of_rendering_an_empty_list() {
         var query = new QueryCommand("SELECT COUNT(*) FROM Users WHERE IsActive = 1 &AND ID IN (?@ids_X)");
         var cmd = Render.From(query, new { ids = Array.Empty<int>() });
-        Assert.Equal("SELECT COUNT(*) FROM Users WHERE IsActive = 1 AND ID IN ()", cmd.CommandText);
+        Assert.Equal("SELECT COUNT(*) FROM Users", cmd.CommandText);
         Assert.Empty(cmd.BoundParameters);
+
+        using var cnn = Db.GetConnection();
+        Assert.Equal(3, query.Query<int>(cnn, new { ids = Array.Empty<int>() }));
+    }
+
+    /// <summary>
+    /// A spread the query requires has nothing to write when its collection is empty, and the refusal
+    /// comes while the SQL is built rather than as an <c>IN ()</c> the database would reject.
+    /// </summary>
+    [Fact]
+    public void Empty_required_spread_is_refused_before_the_database() {
+        var query = new QueryCommand("SELECT COUNT(*) FROM Users WHERE ID IN (@ids_X)");
+        using var cnn = Db.GetConnection();
+        Refusals.Raises(ErrorCodes.RequiredHandlerValue,
+            () => query.Query<int>(cnn, new { ids = Array.Empty<int>() }));
     }
 
     [Fact]

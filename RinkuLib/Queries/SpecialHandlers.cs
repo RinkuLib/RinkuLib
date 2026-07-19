@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
 using RinkuLib.Tools;
+using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Queries;
 /// <summary>
@@ -52,6 +53,33 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// Whether this handler has settled its parameter metadata, so it binds without further learning.
     /// </summary>
     public bool IsCached;
+    /// <summary>
+    /// Whether the handler can render anything from the value it was handed, asked once a value has reached
+    /// it and answered by the handler alone. What decides whether a value gets this far is a separate matter
+    /// settled earlier, a <see langword="null"/> slot, a member the parameter object does not count as
+    /// supplied, or a <c>Use</c> the caller never called. None of those are the handler being overruled, they
+    /// are a value never arriving. Once one does, this is the last word on it, and answering
+    /// <see langword="false"/> prunes the footprint the way an unsupplied variable's would.
+    /// </summary>
+    /// <remarks>
+    /// Nothing upstream is a guarantee. A value reaches this from a <c>Use</c>, from a member the parameter
+    /// object counted as supplied, or from a presence rule the caller wrote, and none of them owe the handler
+    /// a shape. The complete job belongs here, including walking a sequence that will not answer any other
+    /// way. The slot is the handler's to rewrite for that, so what the walk cost can be handed to the bind.
+    /// </remarks>
+    /// <param name="value">
+    /// The value, never <see langword="null"/> on the way in, in a slot the handler may rewrite.
+    /// </param>
+    public virtual bool CanHandle(ref object? value) => true;
+    /// <summary>
+    /// The part of <see cref="CanHandle"/> that is cheap enough to fold into the presence check a parameter
+    /// object is read with, turning a key away before its value is ever fetched. This is an optimization and
+    /// carries no promise, so whatever it lets through is asked of <see cref="CanHandle"/> in full.
+    /// Returning <see langword="null"/> keeps the member on the ordinary presence check.
+    /// </summary>
+    /// <param name="targetType">The parameter object's type.</param>
+    /// <param name="member">The member holding this handler's variable.</param>
+    public virtual IAccessorEmiter? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member) => null;
     /// <summary>
     /// Re-binds for a new run from the rewritten value a previous <see cref="SaveUse"/> left, adding, changing,
     /// or dropping parameters to match, and keeping the bound-command road warm.
@@ -106,6 +134,16 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
     /// </summary>
     public static MultiVariableHandler Build(string Name)
         => new(Name);
+
+    /// <summary>
+    /// A spread writes one parameter per element, so a collection with no elements leaves it nothing to
+    /// write. A sequence is walked to find out, and the slot keeps what the walk took. A value that is not a
+    /// collection is left alone, a count among them.
+    /// </summary>
+    public override bool CanHandle(ref object? value) => SpreadUsage.HasElement(ref value);
+    /// <inheritdoc/>
+    public override IAccessorEmiter? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member)
+        => new SpreadUsageEmitter(targetType, member);
     /// <summary>
     /// Performs a differential update on the command. Adds, updates, or prunes 
     /// parameters based on the change in collection size since the last <see cref="SaveUse"/>.
@@ -294,23 +332,30 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             else
                 throw new RinkuBindingException(ErrorCodes.HandlerValueType, "the value handed to a spread must be a collection that can report a count");
         }
-        if (nb == 0) {
-            var lastInd = sb.Length - 1;
-            var lastChar = sb[lastInd];
-            while (lastChar == ',' || char.IsWhiteSpace(lastChar))
-                lastChar = sb[--lastInd];
-            sb.Length = lastInd + 1;
-            return;
-        }
+        if (nb <= 0)
+            throw new RequiredHandlerValueException(ParameterName);
         var nameSpan = ParameterName.AsSpan();
         int nameLen = nameSpan.Length;
-        sb.EnsureCapacity(ComputeTotalLength(nb) + nb * (nameLen + 3));
+        var dst = sb.AppendSpan(ComputeTotalLength(nb) + (nb * (nameLen + 3)));
+        int pos = 0;
+        int digits = 1;
+        int nextPow10 = 10;
         for (int i = 1; i <= nb; i++) {
-            sb.Append(nameSpan);
-            sb.Append('_');
-            sb.Append(i);
-            sb.Append(',');
-            sb.Append(' ');
+            if (i == nextPow10) {
+                digits++;
+                nextPow10 *= 10;
+            }
+            nameSpan.CopyTo(dst.Slice(pos, nameLen));
+            pos += nameLen;
+            dst[pos++] = '_';
+            int last = pos + digits - 1;
+            for (int v = i, d = last; d >= pos; d--) {
+                dst[d] = (char)('0' + (v % 10));
+                v /= 10;
+            }
+            pos = last + 1;
+            dst[pos++] = ',';
+            dst[pos++] = ' ';
         }
         sb.Length -= 2;
     }

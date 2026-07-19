@@ -135,4 +135,50 @@ public class MarkerSpacingTests {
         b.Use("@Min", 1);
         Render.Expect(b, "SELECT * FROM t", ("@Min", 1));
     }
+
+    /// <summary>
+    /// A footprint starts just past the boundary that opens it, so the space after a comma is the next
+    /// entry's and goes when that entry goes. Pruning the first entry of a list therefore takes the space
+    /// in front of it, the one following the keyword that opened the list.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT /*K*/a, b, c FROM t", "SELECT b, c FROM t")]
+    [InlineData("SELECT a, /*K*/b, c FROM t", "SELECT a, c FROM t")]
+    [InlineData("SELECT a, b, /*K*/c FROM t", "SELECT a, b FROM t")]
+    public void A_pruned_list_entry_takes_the_space_that_opened_it(string sql, string expected)
+        => Render.Expect(Build(sql), expected);
+
+    /// <summary>
+    /// The space before a section keyword belongs to the condition in front of it, so an emptied clause
+    /// leaves the keyword sitting one space after whatever now precedes it rather than two.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT * FROM t WHERE /*K*/a = 1 ORDER BY x", "SELECT * FROM t ORDER BY x")]
+    [InlineData("SELECT * FROM t WHERE a = 1 AND /*K*/b = 2 ORDER BY x", "SELECT * FROM t WHERE a = 1 ORDER BY x")]
+    [InlineData("SELECT a FROM t /*K*/JOIN u ON u.i = t.i WHERE y = 2", "SELECT a FROM t WHERE y = 2")]
+    public void A_section_keeps_one_space_from_what_precedes_it(string sql, string expected)
+        => Render.Expect(Build(sql), expected);
+
+    /// <summary>
+    /// The only space the engine adds. A section keyword written against the text before it would weld to a
+    /// kept condition, so one is put between them. Pruning that condition needs no such help.
+    /// </summary>
+    [Fact]
+    public void A_welded_section_keyword_is_the_one_added_space() {
+        const string sql = "SELECT a, /*K*/COUNT(b)FROM t";
+        var kept = Build(sql);
+        kept.Use("K");
+        Render.Expect(kept, "SELECT a, COUNT(b) FROM t");
+        Render.Expect(Build(sql), "SELECT a FROM t");
+    }
+
+    /// <summary>
+    /// The wall emits nothing and the spaces around it are outside the footprint it bounds, so they stay
+    /// exactly as written and a spaced wall leaves one more than a welded one.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT DISTINCT??? /*K*/a, b FROM t", "SELECT DISTINCT b FROM t")]
+    [InlineData("SELECT DISTINCT ??? /*K*/a, b FROM t", "SELECT DISTINCT  b FROM t")]
+    public void The_wall_leaves_the_spaces_around_it(string sql, string expected)
+        => Render.Expect(Build(sql), expected);
 }

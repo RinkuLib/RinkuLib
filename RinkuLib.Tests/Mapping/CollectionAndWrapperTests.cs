@@ -97,6 +97,13 @@ public class CollectionAndWrapperTests {
     }
 
     [Fact]
+    public void Single_defaults_when_no_row_was_read() {
+        ColumnInfo[] cols = [new("V", typeof(string), false)];
+        var parser = TypeParser.GetTypeParser<Single<string>>(ref cols);
+        Assert.Null(parser.Default().Value);
+    }
+
+    [Fact]
     public void Single_returns_the_value_when_alone() {
         ColumnInfo[] cols = [new("V", typeof(string), false)];
         using var reader = Rows.Reader(cols, ["one"]);

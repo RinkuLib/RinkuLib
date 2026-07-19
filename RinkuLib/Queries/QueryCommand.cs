@@ -225,10 +225,17 @@ public class QueryCommand : IQueryCommand, ICache {
         }
 
         ref object? pSpecialVar = ref Unsafe.Add(ref pVar, varInfos.Length);
+        ref SpecialHandler pHandlers = ref MemoryMarshal.GetArrayDataReference(handlers);
         for (int i = 0; i < handlers.Length; i++) {
             ref var currentVar = ref Unsafe.Add(ref pSpecialVar, i);
-            if (currentVar is not null)
-                handlers[i].Use(cmd, ref currentVar);
+            if (currentVar is null)
+                continue;
+            var handler = Unsafe.Add(ref pHandlers, i);
+            if (!handler.CanHandle(ref currentVar)) {
+                currentVar = null;
+                continue;
+            }
+            handler.Use(cmd, ref currentVar);
         }
 
         cmd.CommandText = QueryText.Parse(variables);
@@ -251,47 +258,23 @@ public class QueryCommand : IQueryCommand, ICache {
         }
 
         ref object? pSpecialVar = ref Unsafe.Add(ref pVar, varInfos.Length);
+        ref SpecialHandler pHandlers = ref MemoryMarshal.GetArrayDataReference(handlers);
         for (int i = 0; i < handlers.Length; i++) {
             ref var currentVar = ref Unsafe.Add(ref pSpecialVar, i);
             if (currentVar is null)
                 continue;
-            if (currentVar is IEnumerable && currentVar is not string && !HasAny(ref Unsafe.As<object, IEnumerable>(ref currentVar))) {
+            var handler = Unsafe.Add(ref pHandlers, i);
+            if (!handler.CanHandle(ref currentVar)) {
                 currentVar = null;
                 continue;
             }
-            handlers[i].Use(cmd, ref currentVar);
+            handler.Use(cmd, ref currentVar);
         }
 
         cmd.CommandText = QueryText.Parse(variables);
 
         return true;
     }
-    internal static bool HasAny(ref IEnumerable value) {
-        var source = value;
-        if (source is IEnumerable<object> enu && enu.TryGetNonEnumeratedCount(out var nb)) {
-            if (nb <= 0)
-                return false;
-            return true;
-        }
-        if (source is ICollection col) {
-            if (col.Count <= 0)
-                return false;
-            return true;
-        }
-        if (source.TryGetNonEnumeratedCount(out nb)) {
-            if (nb <= 0)
-                return false;
-            return true;
-        }
-        var e = source.GetEnumerator();
-        if (e.MoveNext()) {
-            value = new PeekableWrapper(e.Current, e);
-            return true;
-        }
-        (e as IDisposable)?.Dispose();
-        return false;
-    }
-
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand(IDbCommand cmd, object? parameterObj, Span<bool> usageMap) {
@@ -373,7 +356,7 @@ public class QueryCommand : IQueryCommand, ICache {
             var method = typeof(TypeAccessorCacher<>).MakeGenericType(type).GetMethod(nameof(TypeAccessorCacher<>.GetOrGenerate), BindingFlags.Public | BindingFlags.Static);
             TypeAccessorCache res;
             try {
-                res = (TypeAccessorCache)method!.Invoke(null, [Mapper])!;
+                res = (TypeAccessorCache)method!.Invoke(null, [Mapper, Parameters._specialHandlers, StartSpecialHandlers])!;
             }
             catch (TargetInvocationException e) when (e.InnerException is not null) {
                 ExceptionDispatchInfo.Capture(e.InnerException).Throw();
@@ -407,7 +390,12 @@ public class QueryCommand : IQueryCommand, ICache {
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
-                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+                var handler = handlers[i - StartSpecialHandlers];
+                if (!handler.CanHandle(ref handled)) {
+                    usageMap[i] = false;
+                    continue;
+                }
+                handler.Use(cmd, ref handled);
             }
 
         for (; i < total; i++)
@@ -431,7 +419,12 @@ public class QueryCommand : IQueryCommand, ICache {
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
-                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+                var handler = handlers[i - StartSpecialHandlers];
+                if (!handler.CanHandle(ref handled)) {
+                    usageMap[i] = false;
+                    continue;
+                }
+                handler.Use(cmd, ref handled);
             }
 
         for (; i < total; i++)
@@ -470,7 +463,12 @@ public class QueryCommand : IQueryCommand, ICache {
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
-                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+                var handler = handlers[i - StartSpecialHandlers];
+                if (!handler.CanHandle(ref handled)) {
+                    usageMap[i] = false;
+                    continue;
+                }
+                handler.Use(cmd, ref handled);
             }
 
         for (; i < total; i++)
@@ -494,7 +492,12 @@ public class QueryCommand : IQueryCommand, ICache {
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
-                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+                var handler = handlers[i - StartSpecialHandlers];
+                if (!handler.CanHandle(ref handled)) {
+                    usageMap[i] = false;
+                    continue;
+                }
+                handler.Use(cmd, ref handled);
             }
 
         for (; i < total; i++)
@@ -518,7 +521,12 @@ public class QueryCommand : IQueryCommand, ICache {
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
-                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+                var handler = handlers[i - StartSpecialHandlers];
+                if (!handler.CanHandle(ref handled)) {
+                    usageMap[i] = false;
+                    continue;
+                }
+                handler.Use(cmd, ref handled);
             }
 
         for (; i < total; i++)
@@ -542,7 +550,12 @@ public class QueryCommand : IQueryCommand, ICache {
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
-                handlers[i - StartSpecialHandlers].Use(cmd, ref handled);
+                var handler = handlers[i - StartSpecialHandlers];
+                if (!handler.CanHandle(ref handled)) {
+                    usageMap[i] = false;
+                    continue;
+                }
+                handler.Use(cmd, ref handled);
             }
 
         for (; i < total; i++)

@@ -58,7 +58,40 @@ SELECT TrackId, Name FROM tracks
 SELECT TrackId, Name FROM tracks WHERE Milliseconds > @ms
 ```
 
-Space around the marker is cosmetic. It can sit on either side or both and drops with the marker. The footprint's edges are the boundary tokens, not the spaces. The one rule is not to weld two words. Write `WHERE /*Long*/Milliseconds` or `WHERE/*Long*/ Milliseconds`, never `WHERE/*Long*/Milliseconds`.
+The marker can sit anywhere in the footprint, with space on either side or both. The footprint's edges are the boundary tokens, not the spaces. The one rule is not to weld two words. Write `WHERE /*Long*/Milliseconds` or `WHERE/*Long*/ Milliseconds`, never `WHERE/*Long*/Milliseconds`.
+
+## Where the spaces go
+
+Nothing reformats the SQL. A space is never removed on its own and only ever added in one place, so what a run produces is the template with whole footprints taken out of it.
+
+Which footprint a space belongs to follows from the boundaries. A footprint starts just past the boundary that opens it and runs through the one that closes it, so the space after a comma goes with the entry that follows, and the space before a section keyword goes with the condition in front of it. Each drops with the footprint that owns it.
+
+```sql
+SELECT a, /*K*/b, c FROM t
+SELECT * FROM t WHERE a = 1 AND /*K*/b = 2 ORDER BY x
+
+-- K off
+SELECT a, c FROM t
+SELECT * FROM t WHERE a = 1 ORDER BY x
+```
+
+A marker's own spaces are outside its footprint and stay, so one written with a space on both sides leaves two behind. The same goes for `???`, which emits nothing and leaves the spaces around it where they were.
+
+```sql
+SELECT a, /*K*/ b FROM t
+
+-- K on
+SELECT a,  b FROM t
+```
+
+The one place a space is added is a section keyword written hard against the text before it. Keeping that condition would run the two words together, so a space is put between them.
+
+```sql
+SELECT a, /*K*/COUNT(b)FROM t
+
+-- K on
+SELECT a, COUNT(b) FROM t
+```
 
 The connector after a footprint belongs to it, so a marker just before an `AND`, `OR`, or comma binds the condition on its left, not the one on its right.
 
@@ -262,11 +295,13 @@ SELECT Name FROM tracks
 With the wall in front of the marker, `DISTINCT` stays put.
 
 ```sql
-SELECT DISTINCT ??? /*ShowId*/TrackId, Name FROM tracks
+SELECT DISTINCT??? /*ShowId*/TrackId, Name FROM tracks
 
 -- ShowId off
 SELECT DISTINCT Name FROM tracks
 ```
+
+Written `DISTINCT ???` instead, the space before the wall is outside the pruned footprint and stays, so the result carries two.
 
 The same wall makes a modifier itself conditional.
 

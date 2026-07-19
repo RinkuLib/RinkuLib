@@ -481,7 +481,7 @@ public class QueryRuntimeInternalsTests {
 
         var cmd2 = new FakeCommand();
         query.SetCommand(cmd2, new Args { Min = 2, Ids = [] }, usage);
-        Assert.Equal("SELECT * FROM t WHERE a > @Min AND b IN ()", cmd2.CommandText);
+        Assert.Equal("SELECT * FROM t WHERE a > @Min", cmd2.CommandText);
     }
 
     [Fact]

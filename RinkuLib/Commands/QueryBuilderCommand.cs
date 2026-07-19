@@ -122,6 +122,10 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     public readonly bool Use(int variableIndex, object? value) {
         if (variableIndex < 0 || variableIndex >= QueryCommand.StartBoolCond)
             return false;
+        if (value is not null
+            && variableIndex >= QueryCommand.StartSpecialHandlers && variableIndex < QueryCommand.StartBaseHandlers
+            && !QueryCommand.Parameters._specialHandlers[variableIndex - QueryCommand.StartSpecialHandlers].CanHandle(ref value))
+            value = null;
         if (value is null) {
             ref var vall = ref Variables[variableIndex];
             if (vall is null)

@@ -238,6 +238,30 @@ public class DynaObjectTests {
         Refusals.Raises(ErrorCodes.OperationNotSupportedForType,
             () => System.Text.Json.JsonSerializer.Deserialize<DynaObject>("{}", options));
     }
+
+    /// <summary>
+    /// The sibling slot is free to match its column wherever it sits, so a <see cref="DynaObject"/> beside it
+    /// takes the columns from both sides of it and no longer spans one unbroken run.
+    /// </summary>
+    [Fact]
+    public void A_split_run_still_fills_the_dyna_object() {
+        ColumnInfo[] cols = [
+            new("BadgeId", typeof(Guid), false),
+            new("Department", typeof(string), false),
+            new("IdAnywhere", typeof(int), false),
+            new("JoinedAt", typeof(DateTime), true),
+        ];
+        var badge = Guid.NewGuid();
+        var joined = new DateTime(2023, 5, 10);
+
+        var (id, rest) = Rows.ParseOne<DynaSplit<int>>(cols, badge, "Engineering", 7, joined);
+
+        Assert.Equal(7, id);
+        Assert.Equal(badge, rest.Get<Guid>("BadgeId"));
+        Assert.Equal("Engineering", rest.Get<string>("Department"));
+        Assert.Equal(joined, rest.Get<DateTime>("JoinedAt"));
+    }
 }
 
 public record struct DynaHolder<T>([CanNotLookAnywhere] T ID, [NoName] DynaObject Rest);
+public record struct DynaSplit<T>(T IdAnywhere, [NoName] DynaObject Rest);

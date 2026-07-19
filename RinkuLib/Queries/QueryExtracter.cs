@@ -228,7 +228,7 @@ public unsafe ref struct QueryExtracter {
                     if (CurrentChar[1] == OptionalVariableIdentifier
                         && CurrentChar[2] == OptionalVariableIdentifier) {
                         BuilderInd--;
-                        UpdateConditionsEnd(BuilderInd, false, 0);
+                        UpdateConditionsEnd(BuilderInd, false, 0, keepUnstartedColumn: true);
                         UpdateCurrentStart(BuilderInd, 0);
                         CurrentChar += 2;
                     }
@@ -410,7 +410,12 @@ public unsafe ref struct QueryExtracter {
         CurrentChar--;
         return true;
     }
-    private bool TryManageComment(bool currentCharAddedToBuilder) {
+    /// <param name="currentCharAddedToBuilder">Whether the <c>/</c> already went into the builder.</param>
+    /// <param name="minStart">
+    /// The earliest index a clause marker's footprint may start at. A marker sitting right after an opening
+    /// parenthesis would otherwise walk back onto it and prune it, leaving its closing half behind.
+    /// </param>
+    private bool TryManageComment(bool currentCharAddedToBuilder, int minStart = 0) {
         if (*CurrentChar != '/' || CurrentChar[1] != '*')
             return false;
         if (currentCharAddedToBuilder)
@@ -458,6 +463,8 @@ public unsafe ref struct QueryExtracter {
         ind = BuilderInd - 1;
         while (ind > 0 && char.IsWhiteSpace(Builder[ind - 1]) && char.IsWhiteSpace(Builder[ind]))
             ind--;
+        if (ind < minStart)
+            ind = minStart;
         if (ind < 0)
             ind = 0;
         for (; nbCond > 0; nbCond--) {
@@ -518,9 +525,10 @@ public unsafe ref struct QueryExtracter {
         ParMap <<= 1;
         if (!checkSection)
             return;
+        var afterParenthesis = BuilderInd;
         CurrentChar++;
         SkipWhiteSpace();
-        if (TryManageComment(false))
+        if (TryManageComment(false, afterParenthesis))
             if (LastCondSectionLength > 0) {
                 ParMap |= 1;
                 for (int i = (int)(LastCondSectionLength >> 16); i > 0; i--)
@@ -617,7 +625,17 @@ public unsafe ref struct QueryExtracter {
         secLen = 0;
         return false;
     }
-    private bool UpdateConditionsEnd(int segmentEndIndex, bool isSection, uint currentExcess) {
+    /// <summary>Closes every footprint that ends at this point, naming a projection's column as it goes.</summary>
+    /// <param name="segmentEndIndex">Where the footprints being closed end.</param>
+    /// <param name="isSection">Whether a section keyword starts here.</param>
+    /// <param name="currentExcess">The boundary token's length, carried for the trim.</param>
+    /// <param name="keepUnstartedColumn">
+    /// Whether a dynamic projection's column that has not begun yet is left open. A boundary that ends a
+    /// column names it from the text in front of it, and a wall placed before the first column has only the
+    /// modifier it was written to isolate. The wall says the column starts after it, so the column waits for
+    /// the boundary that really ends it.
+    /// </param>
+    private bool UpdateConditionsEnd(int segmentEndIndex, bool isSection, uint currentExcess, bool keepUnstartedColumn = false) {
         int j = Conditions.Length - 1;
         var nbSectionComment = (int)(LastCondSectionLength >> 16);
         j -= nbSectionComment;
@@ -627,6 +645,8 @@ public unsafe ref struct QueryExtracter {
             if (cond.IsFinished)
                 continue;
             if (cond.ParMapOrExcesses != ParMap || (cond.NeedSectionToFinish && !isSection))
+                break;
+            if (keepUnstartedColumn && cond.Cond is null)
                 break;
             if (cond.Cond is null)
                 cond.UpdateSelectCond(FindSelectName(isSection ? segmentEndIndex : segmentEndIndex - 1), *CurrentStart, *CurrentExcess);

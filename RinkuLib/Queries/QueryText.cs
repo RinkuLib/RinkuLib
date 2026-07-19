@@ -42,9 +42,20 @@ public interface IQueryText {
 #endif
 }
 /// <summary>Thrown when a required part of the query needs a handler value that the run did not supply.</summary>
-public class RequiredHandlerValueException(int Index) : RinkuBindingException(ErrorCodes.RequiredHandlerValue, $"The variable at index {Index} should be set") {
-    /// <summary>The key slot whose value was missing.</summary>
-    public int Index = Index;
+public class RequiredHandlerValueException : RinkuBindingException {
+    /// <summary>The key slot whose value was missing, or -1 when the refusal came from the handler itself.</summary>
+    public int Index;
+    /// <summary>The key was absent and the segment that needed it was kept.</summary>
+    public RequiredHandlerValueException(int Index)
+        : base(ErrorCodes.RequiredHandlerValue, $"The variable at index {Index} should be set")
+        => this.Index = Index;
+    /// <summary>
+    /// The segment was kept and the handler still had nothing to write. This is the refusal a handler makes
+    /// for itself, which is reached when the value counted as supplied and the handler cannot render it.
+    /// </summary>
+    public RequiredHandlerValueException(string variableName)
+        : base(ErrorCodes.RequiredHandlerValue, $"the query keeps \"{variableName}\" and its value renders nothing")
+        => Index = -1;
 }
 /// <summary>
 /// The compiled form of a template, ready to render the SQL for each run. Built once from the template and
@@ -143,6 +154,8 @@ public sealed class QueryText : IQueryText {
                     prevExcess = 0;
                     start = seg.Start + seg.Length;
 
+                    if (!usageMap[seg.ExcessOrInd])
+                        throw new RequiredHandlerValueException(seg.ExcessOrInd);
                     var val = accessor.GetValue(seg.ExcessOrInd)
                         ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
 
@@ -233,6 +246,8 @@ public sealed class QueryText : IQueryText {
                     prevExcess = 0;
                     start = seg.Start + seg.Length;
 
+                    if (!usageMap[seg.ExcessOrInd])
+                        throw new RequiredHandlerValueException(seg.ExcessOrInd);
                     var val = accessor.GetValue(seg.ExcessOrInd)
                         ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
 
@@ -322,6 +337,8 @@ public sealed class QueryText : IQueryText {
                     prevExcess = 0;
                     start = seg.Start + seg.Length;
 
+                    if (!usageMap[seg.ExcessOrInd])
+                        throw new RequiredHandlerValueException(seg.ExcessOrInd);
                     var val = accessor.GetValue(seg.ExcessOrInd)
                         ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
 

@@ -97,7 +97,7 @@ public class DBFixture<T> : IAsyncLifetime where T : IDbConnection {
         ConnectionString = string.Empty;
     }
     public T GetConnection() => CnnMaker(ConnectionString);
-    public async ValueTask InitializeAsync() {
+    public virtual async ValueTask InitializeAsync() {
         if (Container is not null)
             await Container.StartAsync();
         ConnectionString = CnnStrGetter();

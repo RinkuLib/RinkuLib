@@ -156,6 +156,11 @@ public class ParameterBindingTests {
         Assert.False(query.NeedToCache(builder.Variables));
     }
 
+    /// <summary>
+    /// A learned size is bucketed up to 100, 500, 4000, or unbounded before it is cached, so the 50 the
+    /// driver resolved binds at 100 on the next run. The buckets keep one cache entry per size class
+    /// rather than per length, and hold the plan steady across values of differing length.
+    /// </summary>
     [Fact]
     public void Learned_metadata_is_applied_on_the_next_render() {
         var query = new QueryCommand("SELECT * FROM T WHERE A = @A AND B = ?@B");

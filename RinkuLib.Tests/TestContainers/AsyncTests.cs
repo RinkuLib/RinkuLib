@@ -6,7 +6,6 @@ using Microsoft.Data.SqlClient;
 using RinkuLib.Commands;
 using RinkuLib.DbParsing;
 using RinkuLib.Queries;
-using RinkuLib.Tests.Commands;
 using RinkuLib.TypeAccessing;
 using Xunit;
 

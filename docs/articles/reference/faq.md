@@ -14,6 +14,10 @@ Track t = GetTrackById.Query<Track>(cnn, new { id = 10 });
 
 Yes, that is the intended usage. The command holds no per-call state, and its internal caches are guarded. One shared command, fresh per-call values.
 
+### Can one `QueryCommand` run on two providers?
+
+It is not guaranteed to work. The command reuses the row parser it learned from the first result it saw, and nothing accounts for a provider typing the same query differently, `COUNT(*)` as an `int` on one and a `bigint` on another. Declare one command per provider.
+
 ### The clause is in the SQL but the provider throws about a missing parameter.
 
 A plain `@Id` is static text, the engine does not manage its presence. If its clause stays and you never supplied a value, the provider throws at execution. Mark it `?@Id` when its presence should follow the value. See [conditional SQL](../conditional-sql/index.md#markers-are-opt-in).

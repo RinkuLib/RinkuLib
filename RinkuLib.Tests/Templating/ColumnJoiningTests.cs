@@ -63,10 +63,51 @@ public class ColumnJoiningTests {
             ("@UID", 5), ("@Bio", "Hi"), ("@Web", "site.com"), ("@Img", "pic.png"));
     }
 
+    /// <summary>
+    /// Every column being off leaves the <c>SELECT</c> introducing nothing, and a keyword left with nothing
+    /// goes the same way an emptied <c>WHERE</c> does. The engine tells no clause from another, so there is
+    /// no case here that a dangling keyword would be kept for, and keeping it would not parse either.
+    /// Pin a column with <c>!</c> to keep the projection from emptying.
+    /// </summary>
     [Fact]
     public void Extraction_select_with_nothing_used_drops_the_whole_projection() {
         var query = new QueryCommand("?SELECT ID, Username, Email&, Test FROM Users WHERE IsActive = 1");
         Render.Expect(query.StartBuilder(), " FROM Users WHERE IsActive = 1");
+    }
+
+    /// <summary>
+    /// A projection that empties leaves room for a second <c>SELECT</c> beside it, so one template serves a
+    /// count and a row read. Each key drops what the other keeps, and neither knows about the other.
+    /// </summary>
+    [Fact]
+    public void A_marked_select_sits_beside_a_projection() {
+        const string sql = "/*Count*/SELECT COUNT(*) ?SELECT ID, Name, Age FROM Users";
+
+        var counting = new QueryCommand(sql).StartBuilder();
+        counting.Use("Count");
+        Render.Expect(counting, "SELECT COUNT(*) FROM Users");
+
+        var picked = new QueryCommand(sql).StartBuilder();
+        picked.Use("ID");
+        picked.Use("Name");
+        Render.Expect(picked, " SELECT ID, Name FROM Users");
+    }
+
+    /// <summary>
+    /// Nothing checks that the run picked one of the two, so a run that picks neither, or both, gets a
+    /// statement that will not parse. The template is a set of rules about what to keep, not a promise
+    /// about what the result reads like, and choosing between the two sides is the caller's.
+    /// </summary>
+    [Fact]
+    public void Picking_neither_or_both_sides_is_left_to_the_caller() {
+        const string sql = "/*Count*/SELECT COUNT(*) ?SELECT ID, Name, Age FROM Users";
+
+        Render.Expect(new QueryCommand(sql).StartBuilder(), " FROM Users");
+
+        var both = new QueryCommand(sql).StartBuilder();
+        both.Use("Count");
+        both.Use("ID");
+        Render.Expect(both, "SELECT COUNT(*) SELECT ID FROM Users");
     }
 
     [Fact]
@@ -121,11 +162,32 @@ public class ColumnJoiningTests {
 
     [Fact]
     public void Extraction_column_with_implicit_and_needs_the_extra_condition() {
-        var query = new QueryCommand("?SELECT ID, Username, /*#Admin*/Email FROM Users");
+        var query = new QueryCommand("?SELECT ID, Username, /*Admin*/Email FROM Users");
         var builder = query.StartBuilder();
         builder.Use("ID");
         builder.Use("Username");
         builder.Use("Email");
+        Render.Expect(builder, "SELECT ID, Username FROM Users");
+    }
+
+    [Fact]
+    public void Extraction_column_with_implicit_and_renders_when_both_hold() {
+        var query = new QueryCommand("?SELECT ID, Username, /*Admin*/Email FROM Users");
+        var builder = query.StartBuilder();
+        builder.Use("ID");
+        builder.Use("Username");
+        builder.Use("Email");
+        builder.Use("Admin");
+        Render.Expect(builder, "SELECT ID, Username, Email FROM Users");
+    }
+
+    [Fact]
+    public void Extraction_column_with_implicit_and_needs_its_own_key_too() {
+        var query = new QueryCommand("?SELECT ID, Username, /*Admin*/Email FROM Users");
+        var builder = query.StartBuilder();
+        builder.Use("ID");
+        builder.Use("Username");
+        builder.Use("Admin");
         Render.Expect(builder, "SELECT ID, Username FROM Users");
     }
 
@@ -155,6 +217,65 @@ public class ColumnJoiningTests {
         var builder = query.StartBuilder();
         builder.Use("Manual");
         Render.Expect(builder, "SELECT ID FROM Users WHERE IsActive = 1");
+    }
+
+    /// <summary>
+    /// A modifier in front of a dynamic projection is swept into the first column's footprint, so the wall
+    /// is what holds it out. The column keys are the columns either way, and the modifier the wall isolates
+    /// belongs to no column at all, so it stays however few columns are asked for.
+    /// </summary>
+    [Fact]
+    public void A_wall_holds_a_modifier_out_of_the_first_column() {
+        const string walled = "?SELECT DISTINCT??? Title, Composer FROM tracks";
+        var query = new QueryCommand(walled);
+        Assert.Equal(["Title", "Composer"], query.Mapper.Keys.ToArray());
+
+        var one = query.StartBuilder();
+        one.Use("Composer");
+        Render.Expect(one, "SELECT DISTINCT Composer FROM tracks");
+
+        var both = query.StartBuilder();
+        both.Use("Title");
+        both.Use("Composer");
+        Render.Expect(both, "SELECT DISTINCT Title, Composer FROM tracks");
+    }
+
+    /// <summary>
+    /// Without the wall the modifier rides with the first column, so asking for the others leaves it behind.
+    /// </summary>
+    [Fact]
+    public void Without_a_wall_the_modifier_rides_with_the_first_column() {
+        const string plain = "?SELECT DISTINCT Title, Composer FROM tracks";
+        var query = new QueryCommand(plain);
+        Assert.Equal(["Title", "Composer"], query.Mapper.Keys.ToArray());
+
+        var one = query.StartBuilder();
+        one.Use("Composer");
+        Render.Expect(one, "SELECT Composer FROM tracks");
+
+        var both = query.StartBuilder();
+        both.Use("Title");
+        both.Use("Composer");
+        Render.Expect(both, "SELECT DISTINCT Title, Composer FROM tracks");
+    }
+
+    /// <summary>
+    /// The wall bounds a footprint without keying anything itself, so a marker can still make the modifier
+    /// conditional on its own key beside a projection that keys the columns.
+    /// </summary>
+    [Fact]
+    public void A_walled_modifier_can_carry_its_own_marker() {
+        const string sql = "?SELECT /*UseDistinct*/DISTINCT??? Title, Composer FROM tracks";
+        var query = new QueryCommand(sql);
+
+        var off = query.StartBuilder();
+        off.Use("Composer");
+        Render.Expect(off, "SELECT Composer FROM tracks");
+
+        var on = query.StartBuilder();
+        on.Use("UseDistinct");
+        on.Use("Composer");
+        Render.Expect(on, "SELECT DISTINCT Composer FROM tracks");
     }
 
     [Fact]

@@ -93,6 +93,10 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     public bool Use(int variableIndex, object? value) {
         if (variableIndex < 0 || variableIndex >= QueryCommand.StartBoolCond)
             return false;
+        if (value is not null
+            && variableIndex >= QueryCommand.StartSpecialHandlers && variableIndex < QueryCommand.StartBaseHandlers
+            && !QueryCommand.Parameters._specialHandlers[variableIndex - QueryCommand.StartSpecialHandlers].CanHandle(ref value))
+            value = null;
         Variables[variableIndex] = value;
         return true;
     }

@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using System.Reflection.Emit;
+using RinkuLib.Queries;
 using RinkuLib.Tools;
 
 namespace RinkuLib.TypeAccessing;
@@ -128,7 +129,13 @@ public static class TypeAccessorCacher<T> {
     /// The compiled readers for <typeparamref name="T"/> against <paramref name="mapper"/>, built on first
     /// request and reused after.
     /// </summary>
-    public static TypeAccessorCache GetOrGenerate(Mapper mapper) {
+    /// <param name="mapper">The keys the readers are indexed by.</param>
+    /// <param name="handlers">
+    /// The handlers behind the mapper's handled keys, each offered the chance to fold a cheap part of its
+    /// own rule into the presence check. Leaving it out puts every key on the ordinary check.
+    /// </param>
+    /// <param name="handlersStart">The key index <paramref name="handlers"/> starts at.</param>
+    public static TypeAccessorCache GetOrGenerate(Mapper mapper, SpecialHandler[]? handlers = null, int handlersStart = 0) {
         var currentVariants = Variants;
         foreach (var (Keys, Cache) in currentVariants)
             if (ReferenceEquals(Keys, mapper))
@@ -139,14 +146,14 @@ public static class TypeAccessorCacher<T> {
                 if (ReferenceEquals(Keys, mapper))
                     return Cache;
             TypeAccessorCache cache = typeof(T).IsValueType
-                ? new StructTypeAccessorCache<T>(GenerateDelegate(mapper))
-                : new TypeAccessorCache(GenerateDelegate(mapper));
+                ? new StructTypeAccessorCache<T>(GenerateDelegate(mapper, handlers, handlersStart))
+                : new TypeAccessorCache(GenerateDelegate(mapper, handlers, handlersStart));
 
             Variants = [.. Variants, (mapper, cache)];
             return cache;
         }
     }
-    private static (DynamicMethod Usage, DynamicMethod Value) GenerateDelegate(Mapper mapper) {
+    private static (DynamicMethod Usage, DynamicMethod Value) GenerateDelegate(Mapper mapper, SpecialHandler[]? handlers, int handlersStart) {
         var varChar = mapper.Count <= 0 ? default : mapper.Keys[0].Length <= 0 ? default : mapper.Keys[0][0];
         Type type = typeof(T);
         Type arg0 = type.IsValueType ? type.MakeByRefType() : typeof(object);
@@ -173,7 +180,11 @@ public static class TypeAccessorCacher<T> {
             if (member is FieldInfo or PropertyInfo) {
                 int index = mapper.GetIndex(varChar, member.Name);
                 if (index >= 0) {
-                    usagePlans[index] = new MemberUsageEmitter(type, member);
+                    var handled = handlers is null ? -1 : index - handlersStart;
+                    usagePlans[index] = (handled >= 0 && handled < handlers!.Length
+                            ? handlers[handled].GetUsageEmitter(type, member)
+                            : null)
+                        ?? new MemberUsageEmitter(type, member);
                     valuePlans[index] = new MemberValueEmitter(type, member);
                 }
             }

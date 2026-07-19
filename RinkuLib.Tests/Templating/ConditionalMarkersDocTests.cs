@@ -109,9 +109,14 @@ public class ConditionalMarkersDocTests {
         Render.Expect(b, "SELECT * FROM tracks WHERE UnitPrice > @minPrice", ("@minPrice", 1));
     }
 
-    [Fact]
-    public void Keys_read_left_to_right_no_precedence() {
-        var sql = "SELECT * FROM tracks WHERE /*Cheap|Pricey&InCatalog*/UnitPrice > @minPrice";
+    /// <summary>
+    /// Spelled tight or spaced out, the marker reads the same keys, so both forms are one query. The spacing
+    /// is the doc's second form of the example, held beside the first.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT * FROM tracks WHERE /*Cheap|Pricey&InCatalog*/UnitPrice > @minPrice")]
+    [InlineData("SELECT * FROM tracks WHERE /* Cheap | Pricey & InCatalog */UnitPrice > @minPrice")]
+    public void Keys_read_left_to_right_no_precedence(string sql) {
         var b = Build(sql);
         b.Use("Cheap");
         b.Use("InCatalog");
