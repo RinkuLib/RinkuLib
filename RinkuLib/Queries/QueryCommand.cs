@@ -64,6 +64,21 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <inheritdoc/>
     public readonly int StartBoolCond;
     /// <summary>
+    /// How the provider reads this command's text. <see cref="System.Data.CommandType.Text"/> for SQL, which
+    /// is what a template is, and <see cref="System.Data.CommandType.StoredProcedure"/> for a command whose
+    /// text names a procedure.
+    /// </summary>
+    public readonly CommandType CommandType;
+    /// <summary>
+    /// Puts the run's text on the command, and the reading it needs when that is not the provider's default.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void SetText(IDbCommand cmd, string text) {
+        cmd.CommandText = text;
+        if (CommandType != CommandType.Text)
+            cmd.CommandType = CommandType;
+    }
+    /// <summary>
     /// Defines a command from a SQL template. The template is read once, here, and the command is then reused
     /// for every run.
     /// </summary>
@@ -71,8 +86,36 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <param name="variableChar">The character that marks a variable, <c>@</c> when left unset.</param>
     public QueryCommand(string query, char variableChar = default)
         : this(new QueryFactory(query, variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap)) { }
+    /// <summary>
+    /// Defines a command whose parameters are named rather than read out of its text, and says how the
+    /// provider should read the text. A stored procedure is the case this exists for: the text is the
+    /// procedure's name, which carries no variables to find, so the parameters are given instead.
+    /// </summary>
+    /// <param name="commandText">The text to send, used exactly as given, with no markers read from it.</param>
+    /// <param name="variableNames">
+    /// The parameters to bind, in order. Each is required, so a run supplies them all. A name may be written
+    /// with or without the variable character.
+    /// </param>
+    /// <param name="commandType">How the provider reads the text.</param>
+    /// <example>
+    /// <code>
+    /// static readonly QueryCommand Renumber =
+    ///     new("dbo.RenumberTracks", ["albumId", "moved"], CommandType.StoredProcedure);
+    ///
+    /// Renumber.Execute(cnn, new { albumId = 1, moved = 0 });
+    /// </code>
+    /// </example>
+    public QueryCommand(string commandText, IEnumerable<string> variableNames, CommandType commandType = CommandType.StoredProcedure)
+        : this(new QueryFactory(commandText, variableNames), commandType) { }
     /// <summary>Defines a command from an already-parsed template, the extension point a subclass builds on.</summary>
-    protected QueryCommand(QueryFactory factory) {
+    protected QueryCommand(QueryFactory factory) : this(factory, CommandType.Text) { }
+    /// <summary>
+    /// Defines a command from an already-parsed template, saying how the provider should read the text.
+    /// </summary>
+    /// <param name="factory">The template already read into its pieces.</param>
+    /// <param name="commandType">How the provider reads the text.</param>
+    protected QueryCommand(QueryFactory factory, CommandType commandType) {
+        CommandType = commandType;
         Mapper = factory.Mapper;
         var segments = factory.Segments;
         var queryString = factory.Query;
@@ -80,9 +123,30 @@ public class QueryCommand : IQueryCommand, ICache {
         StartBaseHandlers = StartBoolCond - factory.NbBaseHandlers;
         StartSpecialHandlers = StartBaseHandlers - factory.NbSpecialHandlers;
         var specialHandlers = SpecialHandler.GetHandlers(StartSpecialHandlers, StartBaseHandlers, Mapper, queryString, segments);
-        QueryText = new(queryString, segments, factory.Conditions);
+        QueryText = QueryText.Create(queryString, segments, factory.Conditions, StartSpecialHandlers, StartBoolCond - StartSpecialHandlers);
         Parameters = new(factory.NbNormalVar, specialHandlers);
     }
+    /// <summary>
+    /// A command for a stored procedure, read from the database. What the procedure declares is what the
+    /// command binds, so the names, their types, their sizes and their directions all come from the one
+    /// place that knows them.
+    /// </summary>
+    /// <param name="procedureName">The procedure to call.</param>
+    /// <param name="connection">The connection to ask, opened for the question if it is not already.</param>
+    /// <remarks>
+    /// Asking costs a round trip, so this belongs where a command is built, once, and not in a call. Without
+    /// a connection to ask, name the parameters yourself with
+    /// <see cref="QueryCommand(string, IEnumerable{string}, CommandType)"/>.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// static readonly QueryCommand Renumber = QueryCommand.FromProc("dbo.RenumberTracks", cnn);
+    ///
+    /// Renumber.Execute(cnn, new { albumId = 1, moved = 0 });
+    /// </code>
+    /// </example>
+    public static QueryCommand FromProc(string procedureName, IDbConnection connection)
+        => StoredProcedure.From(connection, procedureName);
     /// <summary>
     /// Looks up the row parser already learned for this run's shape, so a warm command can read the result
     /// without inspecting the columns again. Returns <see langword="false"/> when nothing is cached yet.
@@ -238,7 +302,7 @@ public class QueryCommand : IQueryCommand, ICache {
             handler.Use(cmd, ref currentVar);
         }
 
-        cmd.CommandText = QueryText.Parse(variables);
+        SetText(cmd, QueryText.Parse(variables));
 
         return true;
     }
@@ -271,7 +335,7 @@ public class QueryCommand : IQueryCommand, ICache {
             handler.Use(cmd, ref currentVar);
         }
 
-        cmd.CommandText = QueryText.Parse(variables);
+        SetText(cmd, QueryText.Parse(variables));
 
         return true;
     }
@@ -339,6 +403,12 @@ public class QueryCommand : IQueryCommand, ICache {
         return ActualSetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
     }
     /// <summary>
+    /// A run that supplies nothing still has to answer for the handler spots the template keeps, so the slots
+    /// are there and empty rather than absent, and a spot that needed one is refused by name.
+    /// </summary>
+    private Span<object?> EmptyHandlerValues()
+        => QueryText.HandlerValuesLength <= 0 ? default : new object?[QueryText.HandlerValuesLength];
+    /// <summary>
     /// The cached plan for reading a parameter object of the given type, its members mapped to this command's
     /// keys. Built on first sight of the type and reused after, so binding a familiar object type is cheap.
     /// </summary>
@@ -387,6 +457,10 @@ public class QueryCommand : IQueryCommand, ICache {
             if (usageMap[i] = accessor.IsUsed(i))
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
+        var handlerValues = QueryText.HandlerValuesLength <= 0
+            ? default
+            : new object?[QueryText.HandlerValuesLength].AsSpan();
+
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
@@ -396,12 +470,17 @@ public class QueryCommand : IQueryCommand, ICache {
                     continue;
                 }
                 handler.Use(cmd, ref handled);
+                handlerValues[i - StartSpecialHandlers] = handled;
             }
+
+        for (; i < StartBoolCond; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlerValues[i - StartSpecialHandlers] = accessor.GetValue(i);
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
 
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        SetText(cmd, QueryText.Parse(usageMap, handlerValues));
         return true;
     }
     private bool ActualSetCommand<T>(DbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
@@ -416,6 +495,10 @@ public class QueryCommand : IQueryCommand, ICache {
             if (usageMap[i] = accessor.IsUsed(i))
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
+        var handlerValues = QueryText.HandlerValuesLength <= 0
+            ? default
+            : new object?[QueryText.HandlerValuesLength].AsSpan();
+
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
@@ -425,25 +508,30 @@ public class QueryCommand : IQueryCommand, ICache {
                     continue;
                 }
                 handler.Use(cmd, ref handled);
+                handlerValues[i - StartSpecialHandlers] = handled;
             }
+
+        for (; i < StartBoolCond; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlerValues[i - StartSpecialHandlers] = accessor.GetValue(i);
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
 
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        SetText(cmd, QueryText.Parse(usageMap, handlerValues));
         return true;
     }
 #else
     private bool ActualSetCommand(IDbCommand cmd, NoTypeAccessor accessor, Span<bool> usageMap) {
         Debug.Assert(usageMap.Length == Mapper.Count);
         usageMap.Clear();
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        SetText(cmd, QueryText.Parse(usageMap, EmptyHandlerValues()));
         return true;
     }
     private bool ActualSetCommand(DbCommand cmd, NoTypeAccessor accessor, Span<bool> usageMap) {
         Debug.Assert(usageMap.Length == Mapper.Count);
         usageMap.Clear();
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        SetText(cmd, QueryText.Parse(usageMap, EmptyHandlerValues()));
         return true;
     }
 #endif
@@ -460,6 +548,10 @@ public class QueryCommand : IQueryCommand, ICache {
             if (usageMap[i] = accessor.IsUsed(i))
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
+        var handlerValues = QueryText.HandlerValuesLength <= 0
+            ? default
+            : new object?[QueryText.HandlerValuesLength].AsSpan();
+
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
@@ -469,12 +561,17 @@ public class QueryCommand : IQueryCommand, ICache {
                     continue;
                 }
                 handler.Use(cmd, ref handled);
+                handlerValues[i - StartSpecialHandlers] = handled;
             }
+
+        for (; i < StartBoolCond; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlerValues[i - StartSpecialHandlers] = accessor.GetValue(i);
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
 
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        SetText(cmd, QueryText.Parse(usageMap, handlerValues));
         return true;
     }
     private bool ActualSetCommand(DbCommand cmd, TypeAccessor accessor, Span<bool> usageMap) {
@@ -489,6 +586,10 @@ public class QueryCommand : IQueryCommand, ICache {
             if (usageMap[i] = accessor.IsUsed(i))
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
+        var handlerValues = QueryText.HandlerValuesLength <= 0
+            ? default
+            : new object?[QueryText.HandlerValuesLength].AsSpan();
+
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
@@ -498,12 +599,17 @@ public class QueryCommand : IQueryCommand, ICache {
                     continue;
                 }
                 handler.Use(cmd, ref handled);
+                handlerValues[i - StartSpecialHandlers] = handled;
             }
+
+        for (; i < StartBoolCond; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlerValues[i - StartSpecialHandlers] = accessor.GetValue(i);
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
 
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        SetText(cmd, QueryText.Parse(usageMap, handlerValues));
         return true;
     }
     private bool ActualSetCommand<T>(IDbCommand cmd, TypeAccessor<T> accessor, Span<bool> usageMap) {
@@ -518,6 +624,10 @@ public class QueryCommand : IQueryCommand, ICache {
             if (usageMap[i] = accessor.IsUsed(i))
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
+        var handlerValues = QueryText.HandlerValuesLength <= 0
+            ? default
+            : new object?[QueryText.HandlerValuesLength].AsSpan();
+
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
@@ -527,12 +637,17 @@ public class QueryCommand : IQueryCommand, ICache {
                     continue;
                 }
                 handler.Use(cmd, ref handled);
+                handlerValues[i - StartSpecialHandlers] = handled;
             }
+
+        for (; i < StartBoolCond; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlerValues[i - StartSpecialHandlers] = accessor.GetValue(i);
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
 
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        SetText(cmd, QueryText.Parse(usageMap, handlerValues));
         return true;
     }
     private bool ActualSetCommand<T>(DbCommand cmd, TypeAccessor<T> accessor, Span<bool> usageMap) {
@@ -547,6 +662,10 @@ public class QueryCommand : IQueryCommand, ICache {
             if (usageMap[i] = accessor.IsUsed(i))
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
 
+        var handlerValues = QueryText.HandlerValuesLength <= 0
+            ? default
+            : new object?[QueryText.HandlerValuesLength].AsSpan();
+
         for (; i < StartBaseHandlers; i++)
             if (usageMap[i] = accessor.IsUsed(i)) {
                 var handled = accessor.GetValue(i);
@@ -556,12 +675,17 @@ public class QueryCommand : IQueryCommand, ICache {
                     continue;
                 }
                 handler.Use(cmd, ref handled);
+                handlerValues[i - StartSpecialHandlers] = handled;
             }
+
+        for (; i < StartBoolCond; i++)
+            if (usageMap[i] = accessor.IsUsed(i))
+                handlerValues[i - StartSpecialHandlers] = accessor.GetValue(i);
 
         for (; i < total; i++)
             usageMap[i] = accessor.IsUsed(i);
 
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        SetText(cmd, QueryText.Parse(usageMap, handlerValues));
         return true;
     }
 #endif

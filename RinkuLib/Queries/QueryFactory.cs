@@ -89,6 +89,36 @@ public struct QueryFactory {
         }
     }
 
+    /// <summary>
+    /// Fills in the pieces for a command whose variables are named rather than read out of the text. The text is taken
+    /// as written and every name becomes a required variable, which is what a call that carries its parameters
+    /// somewhere other than its SQL needs, a stored procedure most of all.
+    /// </summary>
+    /// <param name="commandText">The text to send, a procedure's name or any SQL, used exactly as given.</param>
+    /// <param name="variableNames">
+    /// The parameters to bind, in order. A name already marked as a variable is taken as written, and one
+    /// that is not is marked with <see cref="DefaultVariableChar"/>, so <c>Id</c> and <c>@Id</c> name the
+    /// same parameter. Nothing here is parsed, so there is no template to say which character marks a
+    /// variable and the app-wide one answers.
+    /// </param>
+    public QueryFactory(string commandText, IEnumerable<string> variableNames) {
+        ArgumentNullException.ThrowIfNull(commandText);
+        ArgumentNullException.ThrowIfNull(variableNames);
+        var variableChar = DefaultVariableChar;
+        var keys = new List<string>();
+        foreach (var name in variableNames) {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new RinkuTemplateException(ErrorCodes.EmptyConditionKey, "a named variable cannot be blank");
+            keys.Add(char.IsLetterOrDigit(name[0]) || name[0] == '_' ? variableChar + name : name);
+        }
+        BaseHandlerPresenceMap = BaseHandlerMapper.PresenceMap;
+        Query = commandText;
+        Segments = [new(0, commandText.Length, 0, false, null)];
+        Mapper = keys.Count == 0 ? Mapper.GetEmptyMapper() : Mapper.GetMapper(keys);
+        NbNormalVar = Mapper.Count;
+        NbRequired = Mapper.Count;
+        Conditions = [MakeSentinel()];
+    }
     private readonly Condition MakeSentinel() => new(Mapper.Count, Segments.Length, -1, 0, true);
     private readonly void UpdateCondToSkip() {
         var sorted = Conditions.OrderBy(c => c).ToArray();

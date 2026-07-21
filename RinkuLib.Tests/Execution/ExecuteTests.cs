@@ -142,7 +142,8 @@ public class ExecuteTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     public void Command_bound_builder_executes_repeatedly() {
         using var cnn = Db.GetConnection();
         var before = Db.CountScratchRows();
-        var builder = InsertVal.StartBuilder(cnn.CreateCommand());
+        using var cmd = cnn.CreateCommand();
+        var builder = InsertVal.StartBuilder(cmd);
         builder.Use("@Val", 40);
         builder.Execute();
         builder.Use("@Val", 41);
@@ -154,7 +155,8 @@ public class ExecuteTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     public async Task Command_bound_builder_executes_repeatedly_async() {
         using var cnn = Db.GetConnection();
         var before = Db.CountScratchRows();
-        var builder = InsertVal.StartBuilder(cnn.CreateCommand());
+        using var cmd = cnn.CreateCommand();
+        var builder = InsertVal.StartBuilder(cmd);
         builder.UseWith(new { Val = 42 });
         await builder.ExecuteAsync(ct: TestContext.Current.CancellationToken);
         builder.UseWith(new { Val = 43 });

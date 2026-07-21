@@ -59,8 +59,14 @@ public sealed class SqliteDb : IDisposable {
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
+    /// <summary>
+    /// Releases this database's pooled handles so its file can go, and only this one's. Clearing every pool
+    /// in the process would reach the fixtures of the other classes running beside this one, which is a way
+    /// for one class finishing to disturb another mid-test.
+    /// </summary>
     public void Dispose() {
-        SqliteConnection.ClearAllPools();
+        using (var cnn = GetConnection())
+            SqliteConnection.ClearPool(cnn);
         try {
             File.Delete(_path);
         }

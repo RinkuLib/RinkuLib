@@ -412,7 +412,8 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         using var cnn = Fixture.GetConnection();
         await cnn.OpenAsync(TestContext.Current.CancellationToken);
         await Fixture.CreateTableLiteralIn.ExecuteAsync(cnn, ct: TestContext.Current.CancellationToken);
-        var builder = Fixture.InsertInLiteralin.StartBuilder(cnn.CreateCommand());
+        using var boundCmd = cnn.CreateCommand();
+        var builder = Fixture.InsertInLiteralin.StartBuilder(boundCmd);
         builder.Use("@id", 1);
         await builder.ExecuteAsync(ct: TestContext.Current.CancellationToken);
         builder.Use("@id", 2);

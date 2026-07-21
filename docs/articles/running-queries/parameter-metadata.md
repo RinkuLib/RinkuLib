@@ -40,6 +40,7 @@ The details that matter:
 - Providers fill outputs when the reader closes. A buffered shape completes its read before returning. A streamed shape fills them only after enumeration finishes.
 - A [builder bound to your own command](parameters.md#a-builder-bound-to-one-dbcommand) works the same way, its command is yours already.
 - `DirectionalScaledDbParamCache` is the same with precision and scale, for decimals.
+- A command built by [`QueryCommand.FromProc`](index.md#naming-the-variables-yourself) has this done for it. The procedure states the direction and the size, so an output needs no pinning of its own and the size is kept as stated rather than rounded.
 
 ## Plugging in a provider
 

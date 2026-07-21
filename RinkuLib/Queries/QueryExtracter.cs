@@ -609,11 +609,21 @@ public unsafe ref struct QueryExtracter {
         "then",
         ";"
     ];
-    private static bool MatchSection(char* ptr, out int secLen) {
+    /// <summary>
+    /// Whether a section keyword starts here, and how long it is.
+    /// </summary>
+    /// <remarks>
+    /// The character after a keyword is read first, since that is what tells a keyword from a word that
+    /// merely starts like one, and a keyword longer than the text that is left cannot be there at all. The
+    /// text ends at <see cref="LastChar"/>, which addresses the terminator and is a boundary like any other,
+    /// so a keyword closing the query still matches while nothing is read past it.
+    /// </remarks>
+    private bool MatchSection(char* ptr, out int secLen) {
+        var remaining = (int)(LastChar - ptr);
         for (int i = 0; i < SQLSections.Length; i++) {
             var sec = SQLSections[i];
             secLen = sec.Length;
-            if (!IsBoundary(ptr[secLen]))
+            if (secLen > remaining || !IsBoundary(ptr[secLen]))
                 continue;
             for (int j = 0; j < secLen; j++)
                 if (sec[j] != (ptr[j] | 0x20))

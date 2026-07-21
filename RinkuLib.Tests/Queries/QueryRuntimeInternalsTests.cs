@@ -553,14 +553,28 @@ public class QueryRuntimeInternalsTests {
     public void A_template_with_no_conditions_returns_its_string_untouched() {
         var query = new QueryCommand("SELECT 1");
         var map = new bool[query.Mapper.Count];
-        Assert.Same(query.QueryText.QueryString, query.QueryText.Parse(map, new NoTypeAccessor()));
+        Assert.Same(query.QueryText.QueryString, query.QueryText.Parse(map, default));
     }
 
     [Fact]
     public void A_required_handler_missing_on_the_usage_map_road_throws() {
         var query = new QueryCommand("SELECT * FROM t WHERE x = @V_N");
         var map = new bool[query.Mapper.Count];
-        Assert.Throws<RequiredHandlerValueException>(() => query.QueryText.Parse(map, new NoTypeAccessor()));
+        var values = new object?[query.QueryText.HandlerValuesLength];
+        Assert.Throws<RequiredHandlerValueException>(() => query.QueryText.Parse(map, values));
+    }
+
+    /// <summary>
+    /// A run that hands over no parameter object at all reaches the same refusal, by the name of the spot
+    /// rather than by an index into a buffer that was never filled.
+    /// </summary>
+    [Fact]
+    public void A_required_handler_with_no_parameter_object_throws() {
+        var query = new QueryCommand("SELECT * FROM t WHERE x = @V_N");
+        var usage = new bool[query.Mapper.Count];
+        var cmd = new FakeCommand();
+        Assert.Throws<RequiredHandlerValueException>(
+            () => query.SetCommand((DbCommand)cmd, null, usage));
     }
 
     sealed class NonDisposableEnumerable(int[] items) : IEnumerable {
@@ -808,19 +822,17 @@ public class QueryRuntimeInternalsTests {
         Assert.Equal($"SELECT {pad} WHERE x = 12", cmd2.CommandText);
     }
 
+    /// <summary>
+    /// A handler spot the template keeps has to be given something to render. The usage map saying the key is
+    /// there does not settle it, since the value slot is what the render reads.
+    /// </summary>
     [Fact]
-    public void A_required_handler_null_through_a_property_accessor_throws() {
+    public void A_required_handler_with_an_empty_value_slot_throws() {
         var query = new QueryCommand("SELECT * FROM t WHERE x = @V_N");
         var map = new bool[query.Mapper.Count];
         map[query.Mapper.GetIndex("@V")] = true;
-        bool threw = false;
-        try {
-            query.QueryText.Parse(map, new TypeAccessor(new object(), (o, i) => true, (o, i) => null!));
-        }
-        catch (RequiredHandlerValueException) {
-            threw = true;
-        }
-        Assert.True(threw);
+        var values = new object?[query.QueryText.HandlerValuesLength];
+        Assert.Throws<RequiredHandlerValueException>(() => query.QueryText.Parse(map, values));
     }
 
     record class GateArgs {
@@ -915,20 +927,21 @@ public class QueryRuntimeInternalsTests {
         Assert.Same(winner, fromBlocked);
     }
 
+    /// <summary>
+    /// A struct parameter object reaches the same refusal, since what the render reads is the value slot the
+    /// bind filled and not the object it came from.
+    /// </summary>
     [Fact]
-    public void A_required_handler_null_through_a_struct_accessor_throws() {
+    public void A_required_handler_missing_from_a_struct_parameter_object_throws() {
         var query = new QueryCommand("SELECT * FROM t WHERE x = @V_N");
-        var map = new bool[query.Mapper.Count];
-        map[query.Mapper.GetIndex("@V")] = true;
-        int probe = 0;
-        bool threw = false;
-        try {
-            query.QueryText.Parse(map, new TypeAccessor<int>(ref probe, (ref int o, int i) => true, (ref int o, int i) => null!));
-        }
-        catch (RequiredHandlerValueException) {
-            threw = true;
-        }
-        Assert.True(threw);
+        var usage = new bool[query.Mapper.Count];
+        var cmd = new FakeCommand();
+        Assert.Throws<RequiredHandlerValueException>(
+            () => query.SetCommand((DbCommand)cmd, new MissingHandlerArgs { Other = 1 }, usage));
+    }
+
+    struct MissingHandlerArgs {
+        public int Other { get; set; }
     }
 
     sealed class TrackingEnumerator : IEnumerator, IDisposable {

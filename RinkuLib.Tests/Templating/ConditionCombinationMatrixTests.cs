@@ -90,6 +90,6 @@ public class ConditionCombinationMatrixTests {
         Span<bool> usageMap = stackalloc bool[len];
         foreach (var key in on)
             usageMap[query.Mapper.GetIndex(key)] = true;
-        Assert.Equal(expected, query.QueryText.Parse(usageMap, new NoTypeAccessor()));
+        Assert.Equal(expected, query.QueryText.Parse(usageMap, default));
     }
 }

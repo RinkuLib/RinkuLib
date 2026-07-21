@@ -118,6 +118,86 @@ public class ParsingEdgeCaseTests {
     public void The_wall_spacing_combinations_when_pruned(string sql, string expected)
         => Render.Expect(new QueryCommand(sql).StartBuilder(), expected);
 
+    /// <summary>Every section keyword the scanner knows, longest first at sixteen characters.</summary>
+    private static readonly string[] Sections = [
+        "with", "delete from", "delete", "insert into", "insert", "values", "update", "set", "select",
+        "from", "join", "inner join", "left join", "left outer join", "right join", "right outer join",
+        "full join", "full outer join", "cross join", "where", "group by", "having", "union", "union all",
+        "intersect", "except", "order by", "limit", "offset", "when", "else", "then", ";",
+    ];
+
+    /// <summary>
+    /// A keyword is told from a word that merely starts like one by the character after it, so a template
+    /// ending on a keyword is asking about the character after its last one. Ending on every keyword, and on
+    /// every truncation of one, leaves the scanner a different amount of text to work with, down to a single
+    /// character before the end.
+    /// </summary>
+    public static TheoryData<string> TemplatesEndingInSectionText() {
+        var data = new TheoryData<string>();
+        foreach (var word in Sections)
+            for (int take = 1; take <= word.Length; take++)
+                data.Add("SELECT a FROM t " + word[..take]);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(TemplatesEndingInSectionText))]
+    public void A_template_ending_on_a_keyword_or_part_of_one_is_returned_as_written(string sql)
+        => Render.Expect(new QueryCommand(sql).StartBuilder(), sql);
+
+    /// <summary>
+    /// The same question with almost nothing in front of it, so the scanner meets the end of the template
+    /// while it still has keywords longer than the whole thing left to consider.
+    /// </summary>
+    [Theory]
+    [InlineData("ab")]
+    [InlineData("a b")]
+    [InlineData("SELECT a")]
+    [InlineData("SELECT a FROM t")]
+    [InlineData("SELECT a, b FROM t WHERE c = 1")]
+    public void A_short_template_is_returned_as_written(string sql)
+        => Render.Expect(new QueryCommand(sql).StartBuilder(), sql);
+
+    /// <summary>
+    /// The template the scanner used to read past, a handler followed by a short tail. It is ordinary in
+    /// every way that shows, which is why the reading beyond it went unnoticed.
+    /// </summary>
+    [Fact]
+    public void A_handler_with_a_short_tail_renders() {
+        var b = new QueryCommand("SELECT @name_S AS V").StartBuilder();
+        b.Use("@name", "Rinku");
+        Render.Expect(b, "SELECT 'Rinku' AS V");
+    }
+
+    /// <summary>
+    /// A keyword closing the template is still a keyword, so a marker on it takes the clause it introduces
+    /// the way it would anywhere else. The character the scanner reads to decide that is the one past the
+    /// last, and the longest keyword is the furthest it ever has to look.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT a FROM t /*K*/WHERE", "SELECT a FROM t WHERE")]
+    [InlineData("SELECT a FROM t /*K*/RIGHT OUTER JOIN", "SELECT a FROM t RIGHT OUTER JOIN")]
+    [InlineData("SELECT a FROM t /*K*/ORDER BY", "SELECT a FROM t ORDER BY")]
+    public void A_keyword_closing_the_template_is_still_a_clause(string sql, string kept) {
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT a FROM t");
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("K");
+        Render.Expect(on, kept);
+    }
+
+    /// <summary>
+    /// One character short of a keyword is a word, and the scanner reaches that answer without looking for
+    /// the rest of a keyword that cannot be there.
+    /// </summary>
+    [Fact]
+    public void A_word_that_falls_one_character_short_of_a_keyword_is_not_a_clause() {
+        const string sql = "SELECT a FROM t /*K*/RIGHT OUTER JOI";
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT a");
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("K");
+        Render.Expect(on, sql.Replace("/*K*/", ""));
+    }
+
     [Fact]
     public void Bracket_quoted_identifiers_pass_through() {
         var query = new QueryCommand("SELECT [My Col] FROM [My Table]");

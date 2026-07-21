@@ -99,7 +99,8 @@ public class LiteralAndSpreadExecutionTests(SqliteDb Db) : IClassFixture<SqliteD
     public void Spread_reused_on_a_bound_command_rebinds_the_list() {
         var query = new QueryCommand("SELECT COUNT(*) FROM Users WHERE ID IN (?@ids_X)");
         using var cnn = Db.Open();
-        var builder = query.StartBuilder(cnn.CreateCommand());
+        using var boundCmd = cnn.CreateCommand();
+        var builder = query.StartBuilder(boundCmd);
 
         builder.Use("@ids", new[] { 1, 2, 3 });
         Assert.Equal(3, builder.ExecuteScalar<int>());

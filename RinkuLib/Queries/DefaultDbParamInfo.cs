@@ -27,6 +27,12 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// This reads what a provider settled on for a value it was handed, which is a guess at a shape rather
+    /// than a statement of one, so the size is widened to the bucket above it and one plan serves every
+    /// value of a similar length. <see cref="MakeDeclaredInfo"/> is the counterpart for metadata that was
+    /// declared rather than inferred.
+    /// </remarks>
     public static DbParamInfo MakeInfo(IDbDataParameter p) {
         var type = p.DbType;
         ref var arr = ref SizedDbParamCache.GetCacheArray(type);
@@ -39,6 +45,30 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
             _ => -1
         };
         return SizedDbParamCache.GetOrAdd(ref arr, type, inferredSize);
+    }
+    /// <summary>
+    /// How a parameter binds when its metadata was declared rather than inferred, which is what the database
+    /// hands back for a stored procedure's parameters.
+    /// </summary>
+    /// <remarks>
+    /// A declaration is exact, so the size, or the precision and scale, are kept as stated instead of being
+    /// widened the way <see cref="MakeInfo"/> widens a guess, and a direction other than input is carried so
+    /// an output reaches the caller without being pinned by hand.
+    /// </remarks>
+    /// <param name="p">A parameter carrying the metadata that was declared for it.</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static DbParamInfo MakeDeclaredInfo(IDbDataParameter p) {
+        var type = p.DbType;
+        bool directed = p.Direction != ParameterDirection.Input;
+        if (p.Precision != 0 || p.Scale != 0)
+            return directed
+                ? new DirectionalScaledDbParamCache(p.Direction, type, p.Precision, p.Scale)
+                : new ScaledDbParamCache(type, p.Precision, p.Scale);
+        if (Unsafe.IsNullRef(ref SizedDbParamCache.GetCacheArray(type)))
+            return directed ? new DirectionalDbParamCache(p.Direction, type) : TypedDbParamCache.Get(type);
+        return directed
+            ? new DirectionalSizedDbParamCache(p.Direction, type, p.Size)
+            : SizedDbParamCache.Get(type, p.Size);
     }
     /// <summary>
     /// Attempts to resolve a <see cref="DbParamInfo"/> for a specific parameter name 

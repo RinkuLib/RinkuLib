@@ -1,8 +1,6 @@
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.Queries;
 
@@ -21,25 +19,20 @@ public interface IQueryText {
     public string Parse(object?[] variables);
     /// <summary>Whether a key controls any optional part of the template.</summary>
     public bool IsInCondition(int varIndex);
-
     /// <summary>
-    /// The SQL for one run, taking which keys are present from <paramref name="usageMap"/> and any handler
-    /// values through <paramref name="accessor"/>.
+    /// The SQL for one run, taking which keys are present from <paramref name="usageMap"/> and the values the
+    /// handler spots render from <paramref name="handlerValues"/>.
     /// </summary>
     /// <param name="usageMap">Which keys are present this run.</param>
-    /// <param name="accessor">Reads a value for a handler spot when one is needed.</param>
+    /// <param name="handlerValues">
+    /// One slot per handled key, in key order from the first handled one, holding the value the binding pass
+    /// left. Empty for a template with no handler, which needs no values at all.
+    /// </param>
     /// <returns>The rendered SQL, or the original template when no part was dropped.</returns>
     /// <exception cref="RequiredHandlerValueException">A required handler spot had no value.</exception>
-#if NET9_0_OR_GREATER
-    public string Parse<T>(Span<bool> usageMap, T accessor) where T : ITypeAccessor, allows ref struct;
-#else
-    public string Parse(Span<bool> usageMap, NoTypeAccessor accessor);
-#endif
-
-#if !NET9_0_OR_GREATER
-    /// <inheritdoc cref="Parse(Span{bool}, NoTypeAccessor)"/>
-    public string Parse(Span<bool> usageMap, TypeAccessor accessor);
-#endif
+    public string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues);
+    /// <summary>How many slots <see cref="Parse(Span{bool}, ReadOnlySpan{object})"/> reads values from.</summary>
+    public int HandlerValuesLength { get; }
 }
 /// <summary>Thrown when a required part of the query needs a handler value that the run did not supply.</summary>
 public class RequiredHandlerValueException : RinkuBindingException {
@@ -62,7 +55,12 @@ public class RequiredHandlerValueException : RinkuBindingException {
 /// held on the <see cref="QueryCommand"/>, it drops the parts a run leaves out and fills the handler spots,
 /// returning the original template untouched when nothing was optional.
 /// </summary>
-public sealed class QueryText : IQueryText {
+/// <remarks>
+/// What a template is made of settles when it is read and never changes after, so the kind of render it needs
+/// is picked once, here, rather than asked again on every run. <see cref="Create"/> returns the one that fits,
+/// and each carries only the work its own templates call for.
+/// </remarks>
+public abstract class QueryText : IQueryText {
     /// <summary> The template as written, with the markers stripped. </summary>
     public readonly string QueryString;
     /// <summary> The template broken into the runs of text and handler spots a render walks. </summary>
@@ -71,17 +69,40 @@ public sealed class QueryText : IQueryText {
     public readonly Condition[] Conditions;
     /// <summary>The number of key slots a run's values array must carry, checked by <see cref="Parse(object[])"/>.</summary>
     public readonly int RequiredVariablesLength;
-    private int AverageLengthChunk;
+    /// <inheritdoc/>
+    public int HandlerValuesLength => NbHandlers;
+    /// <summary>The first key a handler renders, the offset the values span is indexed from.</summary>
+    protected readonly int HandlersStart;
+    /// <summary>How many keys a handler renders.</summary>
+    protected readonly int NbHandlers;
+    /// <summary>The buffer size a render is expected to grow to, learned from the runs so far.</summary>
+    protected int AverageLengthChunk;
     private int NbExecuted;
     private const int MaxExecution = 1024;
-    private readonly bool ContainsHandlers;
-    internal QueryText(string QueryString, QuerySegment[] Segments, Condition[] Conditions) {
-        this.QueryString = QueryString;
-        this.AverageLengthChunk = QueryString.Length;
-        this.Segments = Segments;
-        this.Conditions = Conditions;
-        this.RequiredVariablesLength = Conditions[^1].CondIndex;
-        ContainsHandlers = Segments.Any(s => s.Handler is not null);
+
+    private protected QueryText(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers) {
+        QueryString = queryString;
+        AverageLengthChunk = queryString.Length;
+        Segments = segments;
+        Conditions = conditions;
+        RequiredVariablesLength = conditions[^1].CondIndex;
+        HandlersStart = handlersStart;
+        NbHandlers = nbHandlers;
+    }
+    /// <summary>
+    /// The render for this template, chosen from what the template turned out to hold.
+    /// </summary>
+    /// <param name="queryString">The template with its markers stripped.</param>
+    /// <param name="segments">The runs of text and handler spots.</param>
+    /// <param name="conditions">The optional parts and their keys.</param>
+    /// <param name="handlersStart">The first key a handler renders.</param>
+    /// <param name="nbHandlers">How many keys a handler renders.</param>
+    internal static QueryText Create(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers) {
+        if (conditions.Length == 1 && segments.Length == 1)
+            return new StaticQueryText(queryString, segments, conditions, handlersStart, nbHandlers);
+        if (nbHandlers <= 0)
+            return new ConditionalQueryText(queryString, segments, conditions, handlersStart, nbHandlers);
+        return new HandledQueryText(queryString, segments, conditions, handlersStart, nbHandlers);
     }
     /// <inheritdoc/>
     public bool IsInCondition(int varIndex) {
@@ -91,381 +112,339 @@ public sealed class QueryText : IQueryText {
         return false;
     }
     /// <inheritdoc/>
-#if NET9_0_OR_GREATER
-    public unsafe string Parse<T>(Span<bool> usageMap, T accessor) where T : ITypeAccessor, allows ref struct { 
-#else
-    public unsafe string Parse(Span<bool> usageMap, NoTypeAccessor accessor) {
-#endif
-        Debug.Assert(usageMap.Length == RequiredVariablesLength);
-        if (Conditions.Length == 1 && Segments.Length == 1)
-            return QueryString;
-        ValueStringBuilder sb = AverageLengthChunk <= 512
-                ? new ValueStringBuilder(stackalloc char[512])
-                : new ValueStringBuilder(AverageLengthChunk);
-        var start = 0;
-        var length = 0;
-        var prevExcess = 0;
-
-        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
-        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
-            var cond = conditions;
-            int i = 0;
-            while (true) {
-                if ((*cond).SegmentInd == i) {
-                    if ((*cond).Length < 0)
-                        break;
-
-                Restart:
-                    if (usageMap[(*cond).CondIndex] != (*cond).IsNeeded) {
-                        if (length > 0) {
-                            sb.Append(ptr + start, length);
-                            length = 0;
-                        }
-                        var skip = (*cond).NbConditionSkip;
-                        if (skip < 0) {
-                            var orCount = (*(cond + 1)).NbConditionSkip;
-                            int j = 1;
-                            for (; j <= orCount; j++)
-                                if (usageMap[(*(cond + j)).CondIndex] == (*(cond + j)).IsNeeded)
-                                    break;
-                            if (j <= orCount) {
-                                cond += orCount + 1;
-                                continue;
-                            }
-                            skip = -skip;
-                        }
-                        i += (*cond).Length;
-                        cond += skip;
-                        continue;
-                    }
-                    else {
-                        cond++;
-                        if ((*cond).SegmentInd == i)
-                            goto Restart;
-                    }
-                }
-
-                var seg = Segments[i];
-                if (seg.Handler is not null) {
-                    if (length > 0) {
-                        sb.Append(ptr + start, length);
-                        length = 0;
-                    }
-                    prevExcess = 0;
-                    start = seg.Start + seg.Length;
-
-                    if (!usageMap[seg.ExcessOrInd])
-                        throw new RequiredHandlerValueException(seg.ExcessOrInd);
-                    var val = accessor.GetValue(seg.ExcessOrInd)
-                        ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
-
-                    seg.Handler.Handle(ref sb, val);
-                    i++;
-                    continue;
-                }
-
-                if (length == 0) {
-                    if (seg.IsSection)
-                        sb.Length -= prevExcess;
-                    start = seg.Start;
-                }
-                length += seg.Length;
-                prevExcess = seg.ExcessOrInd;
-                i++;
-            }
-
-            if (length == QueryString.Length && !ContainsHandlers) {
-                sb.Dispose();
-                return QueryString;
-            }
-            if (length > 0)
-                sb.Append(ptr + start, length);
-            else
-                sb.Length -= prevExcess;
-        }
-        UpdateAvg(sb.Length);
-        return sb.ToStringAndDispose();
-    }
-#if !NET9_0_OR_GREATER
+    public abstract string Parse(object?[] variables);
     /// <inheritdoc/>
-    public unsafe string Parse(Span<bool> usageMap, TypeAccessor accessor) {
-        Debug.Assert(usageMap.Length == RequiredVariablesLength);
-
-        ValueStringBuilder sb = AverageLengthChunk <= 512
-                ? new ValueStringBuilder(stackalloc char[512])
-                : new ValueStringBuilder(AverageLengthChunk);
-        var start = 0;
-        var length = 0;
-        var prevExcess = 0;
-
-        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
-        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
-            var cond = conditions;
-            int i = 0;
-            while (true) {
-                if ((*cond).SegmentInd == i) {
-                    if ((*cond).Length < 0)
-                        break;
-
-                Restart:
-                    if (usageMap[(*cond).CondIndex] != (*cond).IsNeeded) {
-                        if (length > 0) {
-                            sb.Append(ptr + start, length);
-                            length = 0;
-                        }
-                        var skip = (*cond).NbConditionSkip;
-                        if (skip < 0) {
-                            var orCount = (*(cond + 1)).NbConditionSkip;
-                            int j = 1;
-                            for (; j <= orCount; j++)
-                                if (usageMap[(*(cond + j)).CondIndex] == (*(cond + j)).IsNeeded)
-                                    break;
-                            if (j <= orCount) {
-                                cond += orCount + 1;
-                                continue;
-                            }
-                            skip = -skip;
-                        }
-                        i += (*cond).Length;
-                        cond += skip;
-                        continue;
-                    }
-                    else {
-                        cond++;
-                        if ((*cond).SegmentInd == i)
-                            goto Restart;
-                    }
-                }
-
-                var seg = Segments[i];
-                if (seg.Handler is not null) {
-                    if (length > 0) {
-                        sb.Append(ptr + start, length);
-                        length = 0;
-                    }
-                    prevExcess = 0;
-                    start = seg.Start + seg.Length;
-
-                    if (!usageMap[seg.ExcessOrInd])
-                        throw new RequiredHandlerValueException(seg.ExcessOrInd);
-                    var val = accessor.GetValue(seg.ExcessOrInd)
-                        ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
-
-                    seg.Handler.Handle(ref sb, val);
-                    i++;
-                    continue;
-                }
-
-                if (length == 0) {
-                    if (seg.IsSection)
-                        sb.Length -= prevExcess;
-                    start = seg.Start;
-                }
-                length += seg.Length;
-                prevExcess = seg.ExcessOrInd;
-                i++;
-            }
-
-            if (length == QueryString.Length && !ContainsHandlers) {
-                sb.Dispose();
-                return QueryString;
-            }
-            if (length > 0)
-                sb.Append(ptr + start, length);
-            else
-                sb.Length -= prevExcess;
-        }
-        UpdateAvg(sb.Length);
-        return sb.ToStringAndDispose();
-    }
-    /// <inheritdoc cref="Parse(Span{bool}, NoTypeAccessor)"/>
-    public unsafe string Parse<T>(Span<bool> usageMap, TypeAccessor<T> accessor) {
-        Debug.Assert(usageMap.Length == RequiredVariablesLength);
-
-        ValueStringBuilder sb = AverageLengthChunk <= 512
-                ? new ValueStringBuilder(stackalloc char[512])
-                : new ValueStringBuilder(AverageLengthChunk);
-        var start = 0;
-        var length = 0;
-        var prevExcess = 0;
-
-        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
-        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
-            var cond = conditions;
-            int i = 0;
-            while (true) {
-                if ((*cond).SegmentInd == i) {
-                    if ((*cond).Length < 0)
-                        break;
-
-                Restart:
-                    if (usageMap[(*cond).CondIndex] != (*cond).IsNeeded) {
-                        if (length > 0) {
-                            sb.Append(ptr + start, length);
-                            length = 0;
-                        }
-                        var skip = (*cond).NbConditionSkip;
-                        if (skip < 0) {
-                            var orCount = (*(cond + 1)).NbConditionSkip;
-                            int j = 1;
-                            for (; j <= orCount; j++)
-                                if (usageMap[(*(cond + j)).CondIndex] == (*(cond + j)).IsNeeded)
-                                    break;
-                            if (j <= orCount) {
-                                cond += orCount + 1;
-                                continue;
-                            }
-                            skip = -skip;
-                        }
-                        i += (*cond).Length;
-                        cond += skip;
-                        continue;
-                    }
-                    else {
-                        cond++;
-                        if ((*cond).SegmentInd == i)
-                            goto Restart;
-                    }
-                }
-
-                var seg = Segments[i];
-                if (seg.Handler is not null) {
-                    if (length > 0) {
-                        sb.Append(ptr + start, length);
-                        length = 0;
-                    }
-                    prevExcess = 0;
-                    start = seg.Start + seg.Length;
-
-                    if (!usageMap[seg.ExcessOrInd])
-                        throw new RequiredHandlerValueException(seg.ExcessOrInd);
-                    var val = accessor.GetValue(seg.ExcessOrInd)
-                        ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
-
-                    seg.Handler.Handle(ref sb, val);
-                    i++;
-                    continue;
-                }
-
-                if (length == 0) {
-                    if (seg.IsSection)
-                        sb.Length -= prevExcess;
-                    start = seg.Start;
-                }
-                length += seg.Length;
-                prevExcess = seg.ExcessOrInd;
-                i++;
-            }
-
-            if (length == QueryString.Length && !ContainsHandlers) {
-                sb.Dispose();
-                return QueryString;
-            }
-            if (length > 0)
-                sb.Append(ptr + start, length);
-            else
-                sb.Length -= prevExcess;
-        }
-        UpdateAvg(sb.Length);
-        return sb.ToStringAndDispose();
-    }
-#endif
-    /// <inheritdoc/>
-    public unsafe string Parse(object?[] variables) {
-        Debug.Assert(variables.Length == RequiredVariablesLength);
-        ref object? pVarBase = ref MemoryMarshal.GetArrayDataReference(variables);
-
-        ValueStringBuilder sb = AverageLengthChunk <= 512
-                ? new ValueStringBuilder(stackalloc char[512])
-                : new ValueStringBuilder(AverageLengthChunk);
-        var start = 0;
-        var length = 0;
-        var prevExcess = 0;
-
-        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
-        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
-            var cond = conditions;
-            int i = 0;
-            while (true) {
-                if ((*cond).SegmentInd == i) {
-                    if ((*cond).Length < 0)
-                        break;
-
-                Restart:
-                    if ((Unsafe.Add(ref pVarBase, (*cond).CondIndex) is null) == (*cond).IsNeeded) {
-                        if (length > 0) {
-                            sb.Append(ptr + start, length);
-                            length = 0;
-                        }
-                        var skip = (*cond).NbConditionSkip;
-                        if (skip < 0) {
-                            var orCount = (*(cond + 1)).NbConditionSkip;
-                            int j = 1;
-                            for (; j <= orCount; j++) 
-                                if ((Unsafe.Add(ref pVarBase, (*(cond + j)).CondIndex) is not null) == (*(cond + j)).IsNeeded)
-                                    break;
-                            if (j <= orCount) {
-                                cond += orCount + 1;
-                                continue;
-                            }
-                            skip = -skip;
-                        }
-                        i += (*cond).Length;
-                        cond += skip;
-                        continue;
-                    }
-                    else {
-                        cond++;
-                        if ((*cond).SegmentInd == i)
-                            goto Restart;
-                    }
-                }
-
-                var seg = Segments[i];
-                if (seg.Handler is not null) {
-                    if (length > 0) {
-                        sb.Append(ptr + start, length);
-                        length = 0;
-                    }
-                    prevExcess = 0;
-                    start = seg.Start + seg.Length;
-
-                    var val = Unsafe.Add(ref pVarBase, seg.ExcessOrInd)
-                        ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
-
-                    seg.Handler.Handle(ref sb, val);
-                    i++;
-                    continue;
-                }
-
-                if (length == 0) {
-                    if (seg.IsSection)
-                        sb.Length -= prevExcess;
-                    start = seg.Start;
-                }
-                length += seg.Length;
-                prevExcess = seg.ExcessOrInd;
-                i++;
-            }
-
-            if (length == QueryString.Length && !ContainsHandlers) {
-                sb.Dispose();
-                return QueryString;
-            }
-            if (length > 0)
-                sb.Append(ptr + start, length);
-            else
-                sb.Length -= prevExcess;
-        }
-        UpdateAvg(sb.Length);
-        return sb.ToStringAndDispose();
-    }
-    private void UpdateAvg(int length) {
+    public abstract string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues);
+    /// <summary>Opens the builder a render writes into, sized from what the runs so far have needed.</summary>
+    private protected ValueStringBuilder StartBuilder()
+        => AverageLengthChunk <= 512 ? new ValueStringBuilder(512) : new ValueStringBuilder(AverageLengthChunk);
+    /// <summary>Folds a render's length into the size the next one starts at.</summary>
+    private protected void UpdateAvg(int length) {
         if (NbExecuted > MaxExecution)
             return;
         NbExecuted++;
         AverageLengthChunk += (length - AverageLengthChunk) / NbExecuted;
         int estimated = (AverageLengthChunk + 128) & ~64;
         AverageLengthChunk = estimated == 512 ? 576 : estimated;
+    }
+}
+
+/// <summary>
+/// A template with nothing optional and no handler spot. Every run sends the same SQL, so a render is the
+/// template itself.
+/// </summary>
+public sealed class StaticQueryText : QueryText {
+    internal StaticQueryText(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers)
+        : base(queryString, segments, conditions, handlersStart, nbHandlers) { }
+    /// <inheritdoc/>
+    public override string Parse(object?[] variables) => QueryString;
+    /// <inheritdoc/>
+    public override string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues) => QueryString;
+}
+
+/// <summary>
+/// A template with optional parts and no handler spot. A render decides what to keep and copies it, and needs
+/// to know only which keys a run supplied, never their values.
+/// </summary>
+public sealed class ConditionalQueryText : QueryText {
+    internal ConditionalQueryText(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers)
+        : base(queryString, segments, conditions, handlersStart, nbHandlers) { }
+
+    /// <inheritdoc/>
+    public override unsafe string Parse(object?[] variables) {
+        Debug.Assert(variables.Length == RequiredVariablesLength);
+        ref object? pVarBase = ref MemoryMarshal.GetArrayDataReference(variables);
+        var sb = StartBuilder();
+        var start = 0;
+        var length = 0;
+        var prevExcess = 0;
+        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
+        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
+            var cond = conditions;
+            int i = 0;
+            while (true) {
+                if ((*cond).SegmentInd == i) {
+                    if ((*cond).Length < 0)
+                        break;
+                Restart:
+                    if ((System.Runtime.CompilerServices.Unsafe.Add(ref pVarBase, (*cond).CondIndex) is null) == (*cond).IsNeeded) {
+                        if (length > 0) {
+                            sb.Append(ptr + start, length);
+                            length = 0;
+                        }
+                        var skip = (*cond).NbConditionSkip;
+                        if (skip < 0) {
+                            var orCount = (*(cond + 1)).NbConditionSkip;
+                            int j = 1;
+                            for (; j <= orCount; j++)
+                                if ((System.Runtime.CompilerServices.Unsafe.Add(ref pVarBase, (*(cond + j)).CondIndex) is not null) == (*(cond + j)).IsNeeded)
+                                    break;
+                            if (j <= orCount) {
+                                cond += orCount + 1;
+                                continue;
+                            }
+                            skip = -skip;
+                        }
+                        i += (*cond).Length;
+                        cond += skip;
+                        continue;
+                    }
+                    else {
+                        cond++;
+                        if ((*cond).SegmentInd == i)
+                            goto Restart;
+                    }
+                }
+                var seg = Segments[i];
+                if (length == 0) {
+                    if (seg.IsSection)
+                        sb.Length -= prevExcess;
+                    start = seg.Start;
+                }
+                length += seg.Length;
+                prevExcess = seg.ExcessOrInd;
+                i++;
+            }
+            if (length == QueryString.Length) {
+                sb.Dispose();
+                return QueryString;
+            }
+            if (length > 0)
+                sb.Append(ptr + start, length);
+            else
+                sb.Length -= prevExcess;
+        }
+        UpdateAvg(sb.Length);
+        return sb.ToStringAndDispose();
+    }
+
+    /// <inheritdoc/>
+    public override unsafe string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues) {
+        Debug.Assert(usageMap.Length == RequiredVariablesLength);
+        var sb = StartBuilder();
+        var start = 0;
+        var length = 0;
+        var prevExcess = 0;
+        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
+        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
+            var cond = conditions;
+            int i = 0;
+            while (true) {
+                if ((*cond).SegmentInd == i) {
+                    if ((*cond).Length < 0)
+                        break;
+                Restart:
+                    if (usageMap[(*cond).CondIndex] != (*cond).IsNeeded) {
+                        if (length > 0) {
+                            sb.Append(ptr + start, length);
+                            length = 0;
+                        }
+                        var skip = (*cond).NbConditionSkip;
+                        if (skip < 0) {
+                            var orCount = (*(cond + 1)).NbConditionSkip;
+                            int j = 1;
+                            for (; j <= orCount; j++)
+                                if (usageMap[(*(cond + j)).CondIndex] == (*(cond + j)).IsNeeded)
+                                    break;
+                            if (j <= orCount) {
+                                cond += orCount + 1;
+                                continue;
+                            }
+                            skip = -skip;
+                        }
+                        i += (*cond).Length;
+                        cond += skip;
+                        continue;
+                    }
+                    else {
+                        cond++;
+                        if ((*cond).SegmentInd == i)
+                            goto Restart;
+                    }
+                }
+                var seg = Segments[i];
+                if (length == 0) {
+                    if (seg.IsSection)
+                        sb.Length -= prevExcess;
+                    start = seg.Start;
+                }
+                length += seg.Length;
+                prevExcess = seg.ExcessOrInd;
+                i++;
+            }
+            if (length == QueryString.Length) {
+                sb.Dispose();
+                return QueryString;
+            }
+            if (length > 0)
+                sb.Append(ptr + start, length);
+            else
+                sb.Length -= prevExcess;
+        }
+        UpdateAvg(sb.Length);
+        return sb.ToStringAndDispose();
+    }
+}
+
+/// <summary>
+/// A template carrying at least one handler spot. A render writes those spots from the values the binding
+/// pass left, so this is the only kind that reads values at all.
+/// </summary>
+public sealed class HandledQueryText : QueryText {
+    internal HandledQueryText(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers)
+        : base(queryString, segments, conditions, handlersStart, nbHandlers) { }
+
+    /// <inheritdoc/>
+    public override unsafe string Parse(object?[] variables) {
+        Debug.Assert(variables.Length == RequiredVariablesLength);
+        ref object? pVarBase = ref MemoryMarshal.GetArrayDataReference(variables);
+        var sb = StartBuilder();
+        var start = 0;
+        var length = 0;
+        var prevExcess = 0;
+        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
+        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
+            var cond = conditions;
+            int i = 0;
+            while (true) {
+                if ((*cond).SegmentInd == i) {
+                    if ((*cond).Length < 0)
+                        break;
+                Restart:
+                    if ((System.Runtime.CompilerServices.Unsafe.Add(ref pVarBase, (*cond).CondIndex) is null) == (*cond).IsNeeded) {
+                        if (length > 0) {
+                            sb.Append(ptr + start, length);
+                            length = 0;
+                        }
+                        var skip = (*cond).NbConditionSkip;
+                        if (skip < 0) {
+                            var orCount = (*(cond + 1)).NbConditionSkip;
+                            int j = 1;
+                            for (; j <= orCount; j++)
+                                if ((System.Runtime.CompilerServices.Unsafe.Add(ref pVarBase, (*(cond + j)).CondIndex) is not null) == (*(cond + j)).IsNeeded)
+                                    break;
+                            if (j <= orCount) {
+                                cond += orCount + 1;
+                                continue;
+                            }
+                            skip = -skip;
+                        }
+                        i += (*cond).Length;
+                        cond += skip;
+                        continue;
+                    }
+                    else {
+                        cond++;
+                        if ((*cond).SegmentInd == i)
+                            goto Restart;
+                    }
+                }
+                var seg = Segments[i];
+                if (seg.Handler is not null) {
+                    if (length > 0) {
+                        sb.Append(ptr + start, length);
+                        length = 0;
+                    }
+                    prevExcess = 0;
+                    start = seg.Start + seg.Length;
+                    var val = System.Runtime.CompilerServices.Unsafe.Add(ref pVarBase, seg.ExcessOrInd)
+                        ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
+                    seg.Handler.Handle(ref sb, val);
+                    i++;
+                    continue;
+                }
+                if (length == 0) {
+                    if (seg.IsSection)
+                        sb.Length -= prevExcess;
+                    start = seg.Start;
+                }
+                length += seg.Length;
+                prevExcess = seg.ExcessOrInd;
+                i++;
+            }
+            if (length > 0)
+                sb.Append(ptr + start, length);
+            else
+                sb.Length -= prevExcess;
+        }
+        UpdateAvg(sb.Length);
+        return sb.ToStringAndDispose();
+    }
+
+    /// <inheritdoc/>
+    public override unsafe string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues) {
+        Debug.Assert(usageMap.Length == RequiredVariablesLength);
+        Debug.Assert(handlerValues.Length == NbHandlers);
+        var sb = StartBuilder();
+        var start = 0;
+        var length = 0;
+        var prevExcess = 0;
+        fixed (char* ptr = &MemoryMarshal.GetReference(QueryString.AsSpan()))
+        fixed (Condition* conditions = &MemoryMarshal.GetReference(Conditions.AsSpan())) {
+            var cond = conditions;
+            int i = 0;
+            while (true) {
+                if ((*cond).SegmentInd == i) {
+                    if ((*cond).Length < 0)
+                        break;
+                Restart:
+                    if (usageMap[(*cond).CondIndex] != (*cond).IsNeeded) {
+                        if (length > 0) {
+                            sb.Append(ptr + start, length);
+                            length = 0;
+                        }
+                        var skip = (*cond).NbConditionSkip;
+                        if (skip < 0) {
+                            var orCount = (*(cond + 1)).NbConditionSkip;
+                            int j = 1;
+                            for (; j <= orCount; j++)
+                                if (usageMap[(*(cond + j)).CondIndex] == (*(cond + j)).IsNeeded)
+                                    break;
+                            if (j <= orCount) {
+                                cond += orCount + 1;
+                                continue;
+                            }
+                            skip = -skip;
+                        }
+                        i += (*cond).Length;
+                        cond += skip;
+                        continue;
+                    }
+                    else {
+                        cond++;
+                        if ((*cond).SegmentInd == i)
+                            goto Restart;
+                    }
+                }
+                var seg = Segments[i];
+                if (seg.Handler is not null) {
+                    if (length > 0) {
+                        sb.Append(ptr + start, length);
+                        length = 0;
+                    }
+                    prevExcess = 0;
+                    start = seg.Start + seg.Length;
+                    var val = handlerValues[seg.ExcessOrInd - HandlersStart]
+                        ?? throw new RequiredHandlerValueException(seg.ExcessOrInd);
+                    seg.Handler.Handle(ref sb, val);
+                    i++;
+                    continue;
+                }
+                if (length == 0) {
+                    if (seg.IsSection)
+                        sb.Length -= prevExcess;
+                    start = seg.Start;
+                }
+                length += seg.Length;
+                prevExcess = seg.ExcessOrInd;
+                i++;
+            }
+            if (length > 0)
+                sb.Append(ptr + start, length);
+            else
+                sb.Length -= prevExcess;
+        }
+        UpdateAvg(sb.Length);
+        return sb.ToStringAndDispose();
     }
 }

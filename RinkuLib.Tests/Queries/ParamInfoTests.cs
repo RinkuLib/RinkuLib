@@ -1,10 +1,91 @@
 using System.Data;
 using System.Data.Common;
+using RinkuLib.Commands;
 using RinkuLib.Queries;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
 namespace RinkuLib.Tests.Queries;
+
+/// <summary>
+/// A command whose parameters are named rather than read out of its text, the form a stored procedure needs
+/// because a procedure's name carries no variables to find.
+/// </summary>
+public class NamedVariableCommandTests {
+    [Fact]
+    public void The_text_is_sent_as_written_and_the_names_become_the_parameters() {
+        var proc = new QueryCommand("dbo.RenumberTracks", ["albumId", "moved"]);
+        Render.Expect(proc, new { albumId = 1, moved = 0 },
+            "dbo.RenumberTracks", ("@albumId", 1), ("@moved", 0));
+    }
+
+    /// <summary>A name is the same parameter written with the variable character or without it.</summary>
+    [Fact]
+    public void A_name_may_carry_the_variable_character_or_not() {
+        var withChar = new QueryCommand("dbo.P", ["@Id"]);
+        var without = new QueryCommand("dbo.P", ["Id"]);
+        Assert.Equal(withChar.Mapper.Keys.ToArray(), without.Mapper.Keys.ToArray());
+        Render.Expect(without, new { Id = 7 }, "dbo.P", ("@Id", 7));
+    }
+
+    /// <summary>
+    /// The reading the provider needs travels with the command, so every road that prepares one sets it.
+    /// </summary>
+    [Fact]
+    public void The_command_type_reaches_the_command() {
+        var proc = new QueryCommand("dbo.P", ["Id"]);
+        Assert.Equal(CommandType.StoredProcedure, proc.CommandType);
+        Assert.Equal(CommandType.StoredProcedure, Render.From(proc, new { Id = 1 }).CommandType);
+
+        var b = proc.StartBuilder();
+        b.Use("@Id", 1);
+        Assert.Equal(CommandType.StoredProcedure, Render.From(b).CommandType);
+    }
+
+    /// <summary>
+    /// Text is what a command already reads as, so an ordinary template never writes the property and
+    /// whatever the caller set on their own command survives.
+    /// </summary>
+    [Fact]
+    public void A_template_leaves_the_command_type_alone() {
+        var query = new QueryCommand("SELECT Id FROM t WHERE a = @A");
+        Assert.Equal(CommandType.Text, query.CommandType);
+
+        var cmd = new FakeCommand { CommandType = CommandType.TableDirect };
+        query.SetCommand((DbCommand)cmd, new { A = 1 }, new bool[query.Mapper.Count]);
+        Assert.Equal(CommandType.TableDirect, cmd.CommandType);
+    }
+
+    /// <summary>The text is taken as given, so what reads as a marker in a template is left alone here.</summary>
+    [Fact]
+    public void The_text_is_never_read_for_markers() {
+        var proc = new QueryCommand("dbo.Weird?@NotAMarker", ["Id"]);
+        Assert.Equal(["@Id"], proc.Mapper.Keys.ToArray());
+        Render.Expect(proc, new { Id = 1 }, "dbo.Weird?@NotAMarker", ("@Id", 1));
+    }
+
+    /// <summary>Named parameters are required, so one left out is sent as it would be from any command.</summary>
+    [Fact]
+    public void A_name_with_no_value_binds_nothing_and_keeps_the_text() {
+        var proc = new QueryCommand("dbo.P", ["Id", "Other"]);
+        Render.Expect(proc, new { Id = 3 }, "dbo.P", ("@Id", 3));
+    }
+
+    [Fact]
+    public void A_blank_name_is_rejected() {
+        Refusals.Raises(ErrorCodes.EmptyConditionKey, () => new QueryCommand("dbo.P", ["Id", " "]));
+    }
+
+    /// <summary>A procedure taking nothing still needs its name and its reading.</summary>
+    [Fact]
+    public void A_procedure_with_no_parameters_still_sends_its_name() {
+        var proc = new QueryCommand("dbo.Cleanup", []);
+        var cmd = Render.From(proc, null);
+        Assert.Equal("dbo.Cleanup", cmd.CommandText);
+        Assert.Equal(CommandType.StoredProcedure, cmd.CommandType);
+        Assert.Empty(cmd.BoundParameters);
+    }
+}
 
 /// <summary>
 /// The parameter binding strategies: each writes its metadata onto the parameter it creates, updates the

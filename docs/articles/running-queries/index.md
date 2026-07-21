@@ -135,6 +135,24 @@ List<Track> tracks = cnn.Query<List<Track>>(
     new { albumId = 1 });
 ```
 
+## Naming the variables yourself
+
+A constructor takes the variables instead of reading them out of the text, so the two are independent.
+
+```csharp
+static readonly QueryCommand Renumber = new("dbo.RenumberTracks", ["albumId", "moved"]);
+
+int affected = Renumber.Execute(cnn, new { albumId = 1, moved = 0 });
+```
+
+A stored procedure is the natural fit, its name holding nothing to read, so `CommandType.StoredProcedure` is what the constructor assumes. The third argument sets it, `CommandType.Text` for SQL.
+
+A connection can supply the list instead, reading from the database what the procedure declares, the types, sizes and directions along with the names.
+
+```csharp
+static readonly QueryCommand Renumber = QueryCommand.FromProc("dbo.RenumberTracks", cnn);
+```
+
 ## A DbCommand you already have
 
 The mapping side also runs on a command you built yourself.

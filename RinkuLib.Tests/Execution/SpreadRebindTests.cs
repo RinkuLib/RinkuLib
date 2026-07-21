@@ -15,7 +15,8 @@ public class SpreadRebindTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     public void Bound_spread_rebinds_through_every_size_transition() {
         var query = new QueryCommand("SELECT COUNT(*) FROM Users WHERE ID IN (?@Ids_X)");
         using var cnn = Db.Open();
-        var b = query.StartBuilder(cnn.CreateCommand());
+        using var boundCmd = cnn.CreateCommand();
+        var b = query.StartBuilder(boundCmd);
 
         b.Use("@Ids", new[] { 1, 2, 3 });                      
         Assert.Equal(3, b.ExecuteScalar<int>());
@@ -43,7 +44,8 @@ public class SpreadRebindTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     public void Bound_spread_dropped_by_an_empty_collection_and_rebound() {
         var query = new QueryCommand("SELECT COUNT(*) FROM Users WHERE ID IN (?@Ids_X)");
         using var cnn = Db.Open();
-        var b = query.StartBuilder(cnn.CreateCommand());
+        using var boundCmd = cnn.CreateCommand();
+        var b = query.StartBuilder(boundCmd);
 
         b.Use("@Ids", new[] { 1, 2 });
         Assert.Equal(2, b.ExecuteScalar<int>());
