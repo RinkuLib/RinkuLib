@@ -33,19 +33,25 @@ public static class ParsingCacheExtensions {
     /// Returns the cache with the parser for this result's columns folded in, reusing and widening a matching
     /// entry when one exists, otherwise adding a new one.
     /// </summary>
+    /// <remarks>
+    /// The array it is given is never written into. Widening an entry copies first, so a lookup running
+    /// beside this one reads a whole array or the one before it, never an entry half moved.
+    /// </remarks>
     public static ParsingCacheItem[] GetUpdatedCache<T>(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ColumnInfo[] schema, ITypeParser<T> cache, int resultSetIndex = 0) {
         for (var i = 0; i < parsingCache.Length; i++) {
             ref var item = ref parsingCache[i];
             if (item.ResultSetIndex == resultSetIndex && item.Parser is ITypeParser<T> && schema.EquivalentTo(item.Schema)) {
                 var currentLen = item.CondStates.Length;
-                item.CondStates = GetUpdatedStates(usageMap, item.CondStates);
-                if (item.CondStates.Length < currentLen) {
-                    currentLen = item.CondStates.Length;
-                    for (int j = i + 1; j < parsingCache.Length; j++)
-                        if (parsingCache[j].CondStates.Length > currentLen)
-                            (parsingCache[j], parsingCache[j - 1]) = (parsingCache[j - 1], parsingCache[j]);
-                }
-                return parsingCache;
+                var widened = GetUpdatedStates(usageMap, item.CondStates);
+                if (widened.Length == currentLen)
+                    return parsingCache;
+                var merged = (ParsingCacheItem[])parsingCache.Clone();
+                merged[i].CondStates = widened;
+                currentLen = widened.Length;
+                for (int j = i + 1; j < merged.Length; j++)
+                    if (merged[j].CondStates.Length > currentLen)
+                        (merged[j], merged[j - 1]) = (merged[j - 1], merged[j]);
+                return merged;
             }
         }
         Span<int> condStates = stackalloc int[usageMap.Length];

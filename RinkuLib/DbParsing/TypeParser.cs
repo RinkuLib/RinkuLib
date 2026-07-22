@@ -25,13 +25,10 @@ public static class TypeParser {
     /// Insert your own ahead of the defaults to add a shape (see the parsers guide).
     /// </summary>
     public static readonly List<ITypeParserMaker> TypeParserMakers = [
-        new ReusingBaseTypeParserMaker([typeof(IEnumerable<>), typeof(List<>)],
-            (def, itemType, ref _) => (def == typeof(IEnumerable<>))
-                ? typeof(EnumerableTypeParser<>).MakeGenericType(itemType)
-                : typeof(ListTypeParser<>).MakeGenericType(itemType),
-            (def, itemType, ref _) => (def == typeof(IEnumerable<>))
-                ? typeof(FastEnumerableTypeParser<>).MakeGenericType(itemType)
-                : typeof(FastListTypeParser<>).MakeGenericType(itemType)
+        new EnumerableTypeParserMaker(),
+        new ReusingBaseTypeParserMaker([typeof(List<>)],
+            (def, itemType, ref _) => typeof(ListTypeParser<>).MakeGenericType(itemType),
+            (def, itemType, ref _) => typeof(FastListTypeParser<>).MakeGenericType(itemType)
         ),
         new ReusingBaseTypeParserMaker([typeof(Optional<>), typeof(OptionalStruct<>), typeof(OptionalNullable<>)],
             (def, itemType, ref _) => typeof(OptionalTypeParser<,>).MakeGenericType(def.MakeGenericType(itemType), itemType),

@@ -9,7 +9,7 @@ using RinkuLib.Commands;
 // Your own type.
 public record Artist(int Id, string Name);
 
-// Create once, in a static readonly field.
+// No per-call state, so create it once and reuse it from any thread.
 static readonly QueryCommand GetArtists = new("SELECT ArtistId AS Id, Name FROM artists");
 
 using DbConnection cnn = GetConnection();
@@ -19,10 +19,9 @@ List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
 
 No attributes, no configuration. The engine reads the result columns and builds each `Artist` from them.
 
-Two rules carry everything on this page:
+## Result shapes
 
-1. **Create the command once, reuse it everywhere.** It holds no per-call state and is safe to share across threads.
-2. **The type argument decides the result shape.**
+The type argument decides what comes back.
 
 ```csharp
 List<Artist> all       = GetArtists.Query<List<Artist>>(cnn);         // all rows, buffered

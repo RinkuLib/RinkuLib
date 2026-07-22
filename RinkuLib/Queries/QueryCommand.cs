@@ -35,8 +35,11 @@ public class QueryCommand : IQueryCommand, ICache {
     public readonly QueryText QueryText;
     /// <summary> The row parsers learned so far, one per result shape seen, reused across runs. </summary>
     public ParsingCacheItem[] ParsingCache = [];
-    private IntPtr[] _handles = [];
-    private TypeAccessorCache[] _funcs = [];
+    /// <summary>
+    /// The accessor learned for each parameter-object type, kept as one array so a lookup that runs without
+    /// the lock cannot pair a handle with the plan of another type.
+    /// </summary>
+    private (IntPtr Handle, TypeAccessorCache Cache)[] _accessors = [];
     /// <summary>
     /// Guards the shared accessor cache while it learns how to read a new parameter object type.
     /// </summary>
@@ -160,8 +163,9 @@ public class QueryCommand : IQueryCommand, ICache {
             ref var entry = ref cacheArray[i];
             if (entry.ResultSetIndex != resultSetIndex)
                 goto NextEntry;
-            int idxLen = entry.CondStates.Length;
-            ref int pBase = ref MemoryMarshal.GetReference(entry.CondStates);
+            var condStates = entry.CondStates;
+            int idxLen = condStates.Length;
+            ref int pBase = ref MemoryMarshal.GetArrayDataReference(condStates);
             for (int j = 0; j < idxLen; j++) {
                 int packed = Unsafe.Add(ref pBase, j);
                 if (Unsafe.Add(ref pUsage, packed >> 1) != ((packed & 1) != 0))
@@ -188,8 +192,11 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (int i = 0; i < cacheLen; i++) {
             ref var entry = ref cacheArray[i];
-            int idxLen = entry.CondStates.Length;
-            ref int pBase = ref MemoryMarshal.GetArrayDataReference(entry.CondStates);
+            if (entry.ResultSetIndex != resultSetIndex)
+                goto NextEntry;
+            var condStates = entry.CondStates;
+            int idxLen = condStates.Length;
+            ref int pBase = ref MemoryMarshal.GetArrayDataReference(condStates);
             for (int j = 0; j < idxLen; j++) {
                 int packed = Unsafe.Add(ref pBase, j);
                 if ((Unsafe.Add(ref usageBase, packed >> 1) is not null) != ((packed & 1) != 0))
@@ -197,8 +204,6 @@ public class QueryCommand : IQueryCommand, ICache {
             }
 
             parser = entry.Parser as ITypeParser<T>;
-            if (entry.ResultSetIndex != resultSetIndex)
-                return false;
             if (parser is not null)
                 return !NeedToCache(usageMap);
 
@@ -414,15 +419,15 @@ public class QueryCommand : IQueryCommand, ICache {
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TypeAccessorCache GetAccessorCache(IntPtr handle, Type type) {
-        var hds = _handles;
-        var funcs = _funcs;
-        for (int i = 0; i < hds.Length; i++)
-            if (hds[i] == handle)
-                return funcs[i];
+        var accessors = _accessors;
+        for (int i = 0; i < accessors.Length; i++)
+            if (accessors[i].Handle == handle)
+                return accessors[i].Cache;
         lock (TypeAccessorSharedLock) {
-            for (int i = 0; i < _handles.Length; i++)
-                if (_handles[i] == handle)
-                    return _funcs[i];
+            accessors = _accessors;
+            for (int i = 0; i < accessors.Length; i++)
+                if (accessors[i].Handle == handle)
+                    return accessors[i].Cache;
             var method = typeof(TypeAccessorCacher<>).MakeGenericType(type).GetMethod(nameof(TypeAccessorCacher<>.GetOrGenerate), BindingFlags.Public | BindingFlags.Static);
             TypeAccessorCache res;
             try {
@@ -432,15 +437,7 @@ public class QueryCommand : IQueryCommand, ICache {
                 ExceptionDispatchInfo.Capture(e.InnerException).Throw();
                 throw;
             }
-            int len = _handles.Length;
-            var newH = new IntPtr[len + 1];
-            var newF = new TypeAccessorCache[len + 1];
-            _handles.CopyTo(newH, 0);
-            _funcs.CopyTo(newF, 0);
-            newH[len] = handle;
-            newF[len] = res;
-            _handles = newH;
-            _funcs = newF;
+            _accessors = [.. accessors, (handle, res)];
             return res;
         }
     }

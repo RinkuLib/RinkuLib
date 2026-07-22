@@ -235,7 +235,9 @@ SELECT * FROM products WHERE IsActive = 1
 SELECT * FROM products
 ```
 
-Unlike the combine operators, `!` must touch its key. `/*! All*/` with a space does not negate.
+Unlike the combine operators, `!` must touch its key. A space after it is part of the key, so `/*! All*/` negates a key named `" All"` rather than `All`. That key is a real one and `builder.Use(" All")` reaches it, but `Use("All")` does not. Write `/*!All*/`.
+
+The space matters only there. Everywhere else in a marker it is trimmed, so `/* Cheap | Pricey */` and `/*Cheap|Pricey*/` are the same two keys.
 
 ## Merging footprints: `&AND`, `&OR`, `&,`
 
@@ -314,7 +316,7 @@ SELECT Id, Name FROM users
 
 ## Keeping a real comment
 
-Start a comment with `~` to pass it through instead of parsing it.
+Start a block comment with `~` to pass it through instead of parsing it.
 
 ```sql
 /*~ join hint */SELECT TrackId FROM tracks
@@ -322,6 +324,19 @@ Start a comment with `~` to pass it through instead of parsing it.
 -- result
 /* join hint */SELECT TrackId FROM tracks
 ```
+
+A `--` comment needs no `~`. It runs to the end of its line and nothing in it is read, so a marker or a variable written there is text like the rest of it.
+
+```sql
+SELECT TrackId, Name -- @Name and /*Long*/ are notes here
+FROM tracks WHERE Name = ?@Name
+
+-- no @Name
+SELECT TrackId, Name -- @Name and /*Long*/ are notes here
+FROM tracks
+```
+
+The one key here is the `@Name` in the `WHERE`. A comment is ordinary text of the condition it sits in, so one written inside a footprint drops when that footprint does.
 
 ## In practice
 

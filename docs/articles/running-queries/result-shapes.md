@@ -31,7 +31,21 @@ await foreach (var t in GetTracks.StreamQueryAsync<Track>(cnn))   // async strea
     Process(t);
 ```
 
-`List<T>` buffers every row. `IEnumerable<T>` and `IAsyncEnumerable<T>` produce rows as you enumerate, keeping memory flat on large results. A streamed result holds the reader open while you iterate, so finish or dispose it before reusing the connection. Zero rows give an empty collection.
+`List<T>` buffers every row. `IEnumerable<T>` and `IAsyncEnumerable<T>` produce rows as you enumerate, keeping memory flat on large results. Zero rows give an empty collection.
+
+A streamed result waits. `Query<IEnumerable<T>>` runs nothing when you call it, the command goes off on the first step of walking the rows, and the reader closes when the walk ends, whether you reach the last row or leave the loop early.
+
+```csharp
+var tracks = GetTracks.Query<IEnumerable<Track>>(cnn);   // nothing has run
+foreach (var t in tracks)                                // runs it here
+    Process(t);                                          // reader closed at the end
+```
+
+A result you decide not to walk holds nothing, and walking one twice runs the command twice. Ask for `List<T>` when you mean to read the rows more than once.
+
+Two things follow from the waiting. A command handed back by the `out DbCommand` overloads has not run yet, so its output parameters fill only once you walk the rows. And what the database refuses surfaces where you walk, not where you asked for the result.
+
+`QueryAsync<IEnumerable<T>>` waits the same way, and awaiting it gives a sequence, not an async stream. The rows still come as you walk them and the walk is a synchronous one. `StreamQueryAsync<T>` is the async stream, and the one to reach for when the rows should come asynchronously.
 
 ## The built-in shapes
 

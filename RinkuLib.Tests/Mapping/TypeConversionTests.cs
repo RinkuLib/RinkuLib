@@ -78,6 +78,40 @@ public class TypeConversionTests {
         Assert.Equal(SampleColor.Green, Rows.ParseOne<SampleColor>(longCols, 2L));
     }
 
+    /// <summary>
+    /// An enum stored as text reads by name, whatever its casing, the way <c>Caster</c> reads one. The
+    /// number written out still works, so a column that holds either is read either way.
+    /// </summary>
+    [Theory]
+    [InlineData("Green")]
+    [InlineData("green")]
+    [InlineData("GREEN")]
+    [InlineData("2")]
+    public void Enum_from_a_string_column(string stored) {
+        ColumnInfo[] cols = [new("V", typeof(string), false)];
+        Assert.Equal(SampleColor.Green, Rows.ParseOne<SampleColor>(cols, stored));
+    }
+
+    [Fact]
+    public void Nullable_enum_from_a_string_column() {
+        ColumnInfo[] cols = [new("V", typeof(string), true)];
+        Assert.Equal(SampleColor.Green, Rows.ParseOne<SampleColor?>(cols, "Green"));
+        Assert.Null(Rows.ParseOne<SampleColor?>(cols, DBNull.Value));
+    }
+
+    [Fact]
+    public void A_name_the_enum_does_not_have_is_refused() {
+        ColumnInfo[] cols = [new("V", typeof(string), false)];
+        Assert.ThrowsAny<Exception>(() => Rows.ParseOne<SampleColor>(cols, "Puce"));
+    }
+
+    [Fact]
+    public void The_converter_for_a_string_to_an_enum_parses_the_name() {
+        Assert.True(ITypeConverter.TryGetConverter(typeof(string), typeof(SampleColor), out var converter));
+        Assert.IsType<StringToEnumConverter>(converter);
+        Assert.Equal(typeof(SampleColor), converter.OutputType);
+    }
+
     [Fact]
     public void DateTime_from_a_string_column() {
         var stamp = new DateTime(2024, 5, 1, 13, 30, 15);

@@ -26,6 +26,11 @@ public class QueryRuntimeInternalsTests {
 
     static ColumnInfo[] Schema() => [new("V", typeof(int), false)];
 
+    /// <summary>
+    /// A run that changes nothing hands the same array back, and one that widens an entry copies first and
+    /// leaves the array it was given as it was. The store is read without a lock, so an entry may never be
+    /// rewritten once it has been published.
+    /// </summary>
     [Fact]
     public void Parser_cache_adds_then_merges_a_matching_shape() {
         var query = new QueryCommand("SELECT V FROM t WHERE /*A*/x = 1 AND /*B*/y = 2");
@@ -47,8 +52,9 @@ public class QueryRuntimeInternalsTests {
         var mapB = new bool[len];
         mapB[query.Mapper.GetIndex("B")] = true;
         var narrowed = cache.GetUpdatedCache(qt, mapB, schema, parser);
-        Assert.Same(cache, narrowed);
+        Assert.NotSame(cache, narrowed);
         Assert.Empty(narrowed[0].CondStates);
+        Assert.Equal(2, cache[0].CondStates.Length);
     }
 
     [Fact]
@@ -909,6 +915,36 @@ public class QueryRuntimeInternalsTests {
         var structRoad = new FakeCommand();
         Assert.True(q.SetCommand((DbCommand)structRoad, new Args { Min = 3 }, usage));
         Assert.Equal($"SELECT {pad} FROM t WHERE x > @Min", structRoad.CommandText);
+    }
+
+    public class RacedArgs<TMarker> {
+        public int Min { get; set; }
+    }
+    public struct Mark0; public struct Mark1; public struct Mark2; public struct Mark3;
+    public struct Mark4; public struct Mark5; public struct Mark6; public struct Mark7;
+
+    /// <summary>
+    /// The accessor lookup runs without the lock while another thread is registering, so what it reads has
+    /// to be one array holding a handle and its plan together. Reading a handle list and a plan list
+    /// separately lets a reader pair the two from either side of a registration.
+    /// </summary>
+    [Fact]
+    public void Accessor_cache_lookup_holds_up_while_registrations_land() {
+        Type[] types = [
+            typeof(RacedArgs<Mark0>), typeof(RacedArgs<Mark1>), typeof(RacedArgs<Mark2>), typeof(RacedArgs<Mark3>),
+            typeof(RacedArgs<Mark4>), typeof(RacedArgs<Mark5>), typeof(RacedArgs<Mark6>), typeof(RacedArgs<Mark7>)];
+
+        for (int round = 0; round < 20; round++) {
+            var query = new QueryCommand("SELECT * FROM t WHERE a > ?@Min");
+            using var barrier = new Barrier(types.Length);
+            Parallel.For(0, types.Length, i => {
+                var type = types[i];
+                var handle = type.TypeHandle.Value;
+                barrier.SignalAndWait();
+                for (int k = 0; k < 200; k++)
+                    Assert.NotNull(query.GetAccessorCache(handle, type));
+            });
+        }
     }
 
     [Fact]

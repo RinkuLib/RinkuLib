@@ -171,6 +171,49 @@ public class ExecuteTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         builder.Use("@Val", 44);
         Assert.True(builder.ExecuteScalar<int>(cnn) >= 1);
     }
+
+    private static readonly QueryCommand Broken = new("SELECT * FROM NoSuchTable");
+
+    /// <summary>
+    /// A run that opens the connection owns it until it hands it to a reader, so a statement the provider
+    /// refuses leaves the connection as it found it rather than returning it to the pool open.
+    /// </summary>
+    [Fact]
+    public void A_refused_statement_closes_the_connection_the_run_opened() {
+        using var cnn = Db.GetConnection();
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+
+        Assert.ThrowsAny<Exception>(() => Broken.ExecuteReader(cnn, out _));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+
+        Assert.ThrowsAny<Exception>(() => Broken.Execute(cnn));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+
+        Assert.ThrowsAny<Exception>(() => Broken.ExecuteScalar<int>(cnn));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+
+        Assert.ThrowsAny<Exception>(() => Broken.Query<UserRow>(cnn));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+
+        Assert.ThrowsAny<Exception>(() => Broken.ExecuteMultiReader(cnn, out _));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+    }
+
+    /// <inheritdoc cref="A_refused_statement_closes_the_connection_the_run_opened"/>
+    [Fact]
+    public async Task A_refused_statement_closes_the_connection_the_async_run_opened() {
+        using var cnn = Db.GetConnection();
+        var ct = TestContext.Current.CancellationToken;
+
+        await Assert.ThrowsAnyAsync<Exception>(() => Broken.ExecuteReaderAsync(cnn, out _, ct: ct));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => Broken.ExecuteAsync(cnn, ct: ct));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => Broken.QueryAsync<UserRow>(cnn, ct: ct));
+        Assert.Equal(ConnectionState.Closed, cnn.State);
+    }
 }
 
 public record struct ValHolder(int Val);

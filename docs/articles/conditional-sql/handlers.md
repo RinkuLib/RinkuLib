@@ -38,13 +38,16 @@ SELECT Name FROM products ORDER BY Id
 
 ## `_S`, string literal
 
-Writes a string wrapped in single quotes.
+Writes a string wrapped in single quotes. A quote inside the value is doubled, so the literal carries the whole value and the statement ends where you wrote it.
 
 ```sql
 SELECT * FROM artists WHERE Name = @Name_s
 
 -- @Name = Queen
 SELECT * FROM artists WHERE Name = 'Queen'
+
+-- @Name = O'Brien
+SELECT * FROM artists WHERE Name = 'O''Brien'
 ```
 
 ## `_R`, raw SQL
@@ -59,6 +62,35 @@ SELECT Id, Name FROM tracks WHERE IsActive = 1
 ```
 
 > **Warning.** `_R` is textual injection. Only pass values you fully control, never user input.
+
+## When `_R` decides the columns
+
+The row parser is cached per set of active keys, and a handler value is not a key.
+
+```sql
+SELECT @Cols_R FROM users
+```
+
+Run that with `@Cols = "Id, Name"`, then with `@Cols = "Email, City"`, and the second run maps its rows with the first run's parser. Nothing throws, the values land in the wrong places.
+
+Use one command per shape.
+
+```csharp
+static readonly QueryCommand Names = new("SELECT Id, Name FROM users");
+static readonly QueryCommand Contacts = new("SELECT Email, City FROM users");
+```
+
+Or make the columns keys, with [markers](conditional-markers.md) or a [`?SELECT`](dynamic-projection.md). Each combination is its own key set, so it gets its own parser and one command covers them all.
+
+```sql
+?SELECT Id&, Name, Email&, City FROM users
+
+-- Name on
+SELECT Id, Name FROM users
+
+-- City on
+SELECT Email, City FROM users
+```
 
 ## Errors happen at generation
 

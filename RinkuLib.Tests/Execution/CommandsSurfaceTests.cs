@@ -160,6 +160,84 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         }
     }
 
+    const string ThreeSets = "SELECT ID FROM Users ORDER BY ID; SELECT Name FROM Users ORDER BY ID; SELECT ID FROM Users ORDER BY ID DESC";
+
+    /// <summary>
+    /// A streamed set holds the reader while its rows are walked, so the step to the next set waits for the
+    /// read that follows it. A buffered set read after one comes back whole and in its own order.
+    /// </summary>
+    [Fact]
+    public void MultiReader_reads_a_buffered_set_after_a_streamed_one() {
+        var query = new QueryCommand(ThreeSets);
+        using var cnn = Db.GetConnection();
+        using var mr = query.ExecuteMultiReader(cnn, out var cmd);
+        using (cmd) {
+            Assert.Equal([1L, 2L, 3L], mr.Query<IEnumerable<long>>().ToList());
+            Assert.Equal(["John", "Victor", "Alice"], mr.Query<List<string>>());
+            Assert.Equal([3L, 2L, 1L], mr.Query<List<long>>());
+        }
+    }
+
+    /// <summary>Two streamed sets in a row, each walked before the next is asked for.</summary>
+    [Fact]
+    public void MultiReader_reads_two_streamed_sets_in_a_row() {
+        var query = new QueryCommand(ThreeSets);
+        using var cnn = Db.GetConnection();
+        using var mr = query.ExecuteMultiReader(cnn, out var cmd);
+        using (cmd) {
+            Assert.Equal([1L, 2L, 3L], mr.Query<IEnumerable<long>>().ToList());
+            Assert.Equal(["John", "Victor", "Alice"], mr.Query<IEnumerable<string>>().ToList());
+            Assert.Equal([3L, 2L, 1L], mr.Query<IEnumerable<long>>().ToList());
+        }
+    }
+
+    /// <inheritdoc cref="MultiReader_reads_two_streamed_sets_in_a_row"/>
+    [Fact]
+    public async Task MultiReader_reads_two_streamed_sets_in_a_row_asynchronously() {
+        var ct = TestContext.Current.CancellationToken;
+        var query = new QueryCommand(ThreeSets);
+        using var cnn = Db.GetConnection();
+        using var mr = await query.ExecuteMultiReaderAsync(cnn, out var cmd, ct: ct);
+        using (cmd) {
+            Assert.Equal([1L, 2L, 3L], (await mr.QueryAsync<IEnumerable<long>>(ct)).ToList());
+            Assert.Equal(["John", "Victor", "Alice"], (await mr.QueryAsync<IEnumerable<string>>(ct)).ToList());
+            Assert.Equal([3L, 2L, 1L], (await mr.QueryAsync<IEnumerable<long>>(ct)).ToList());
+        }
+    }
+
+    /// <summary>
+    /// A read steps to the next set when it is done with this one, a streamed one when its rows have been
+    /// walked, so the row by row road picks up on the set that follows.
+    /// </summary>
+    [Fact]
+    public void MultiReader_reads_row_by_row_after_a_whole_set() {
+        var query = new QueryCommand(ThreeSets);
+        using var cnn = Db.GetConnection();
+        using var mr = query.ExecuteMultiReader(cnn, out var cmd);
+        using (cmd) {
+            Assert.Equal([1L, 2L, 3L], mr.Query<List<long>>());
+
+            Assert.True(mr.Read());
+            var (more, name) = mr.Get<string>();
+            Assert.Equal("John", name);
+            Assert.True(more);
+        }
+    }
+
+    /// <inheritdoc cref="MultiReader_reads_row_by_row_after_a_whole_set"/>
+    [Fact]
+    public void MultiReader_reads_row_by_row_after_a_streamed_set() {
+        var query = new QueryCommand(ThreeSets);
+        using var cnn = Db.GetConnection();
+        using var mr = query.ExecuteMultiReader(cnn, out var cmd);
+        using (cmd) {
+            Assert.Equal([1L, 2L, 3L], mr.Query<IEnumerable<long>>().ToList());
+
+            Assert.True(mr.Read());
+            Assert.Equal("John", mr.Get<string>().Result);
+        }
+    }
+
     [Fact]
     public async Task MultiReader_defaults_when_a_set_is_empty_and_streams_sets() {
         var ct = TestContext.Current.CancellationToken;

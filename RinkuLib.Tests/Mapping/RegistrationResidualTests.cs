@@ -396,4 +396,31 @@ public class RegistrationResidualTests {
         Assert.Same(typeof(int), typeof(int).CloseType(typeof(KeyValuePair<int, string>)));
         Assert.Same(typeof(List<int>), typeof(List<int>).CloseType(typeof(KeyValuePair<int, string>)));
     }
+
+    public record RacingRegistrationA(int Id, string Name);
+    public record RacingRegistrationB(int Id, string Name);
+    public record RacingRegistrationC(int Id, string Name);
+
+    /// <summary>
+    /// The registry is process wide, and the info a caller receives is the one the whole app will parse
+    /// through. First sight of a type from several threads has to settle on one entry, otherwise a caller
+    /// configures an info nothing else consults and its rules vanish without a word.
+    /// </summary>
+    [Fact]
+    public void First_registration_from_several_threads_settles_on_one_entry() {
+        Type[] types = [typeof(RacingRegistrationA), typeof(RacingRegistrationB), typeof(RacingRegistrationC)];
+        var seen = new System.Collections.Concurrent.ConcurrentBag<(Type Type, TypeParsingInfo Info)>();
+        using var barrier = new Barrier(15);
+
+        Parallel.For(0, 15, i => {
+            var type = types[i % types.Length];
+            barrier.SignalAndWait();
+            seen.Add((type, TypeParsingInfo.GetOrAdd(type)));
+        });
+
+        foreach (var group in seen.GroupBy(s => s.Type)) {
+            var only = Assert.Single(group.Select(s => s.Info).Distinct());
+            Assert.Same(only, TypeParsingInfo.GetOrAdd(group.Key));
+        }
+    }
 }

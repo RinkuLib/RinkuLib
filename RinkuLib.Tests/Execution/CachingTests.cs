@@ -147,6 +147,67 @@ public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(3L, parser.Query((System.Data.IDbCommand)cmd));
     }
 
+    /// <summary>
+    /// The cache is keyed on which keys a run supplies, and a handler's value is not one of them. Two runs
+    /// supplying the same keys are one shape, so the parser learned for the first serves the second even
+    /// when a <c>_R</c> value changed the columns. This is the limit
+    /// <c>docs/articles/conditional-sql/handlers.md</c> names, one command per shape when the value decides
+    /// what comes back.
+    /// </summary>
+    [Fact]
+    public void A_handler_value_is_not_part_of_the_cache_key() {
+        var query = new QueryCommand("SELECT @Cols_R FROM Users WHERE ID = 2");
+        using var cnn = Db.Open();
+
+        var first = query.StartBuilder();
+        first.Use("@Cols", "ID, Name");
+        Assert.Equal(["ID", "Name"], first.Query<DynaObject>(cnn).Keys.ToArray());
+
+        var second = query.StartBuilder();
+        second.Use("@Cols", "Salary, Email");
+        Assert.Equal(["ID", "Name"], second.Query<DynaObject>(cnn).Keys.ToArray());
+    }
+
+    /// <summary>
+    /// A command read through a <see cref="MultiReader"/> stores a parser per result set. Running it on its
+    /// own afterwards has to take the first set's, so the lookup skips an entry belonging to another set
+    /// rather than stopping at it.
+    /// </summary>
+    [Fact]
+    public void A_later_result_sets_parser_is_not_used_for_the_first_set() {
+        var query = new QueryCommand("SELECT ID FROM Users WHERE ID = 1; SELECT Name FROM Users WHERE ID = 1");
+        using var cnn = Db.Open();
+
+        using (var multi = query.ExecuteMultiReader(cnn, out var cmd))
+        using (cmd) {
+            Assert.Equal("ID", multi.Query<DynaObject>().Keys.ToArray()[0]);
+            Assert.Equal("Name", multi.Query<DynaObject>().Keys.ToArray()[0]);
+        }
+
+        Assert.Equal("ID", query.StartBuilder().Query<DynaObject>(cnn).Keys.ToArray()[0]);
+        Assert.Equal("ID", query.Query<DynaObject>(cnn).Keys.ToArray()[0]);
+    }
+
+    /// <summary>Each key combination is its own shape, so a marker-driven projection needs no second command.</summary>
+    [Fact]
+    public void A_marker_driven_projection_gets_a_parser_per_combination() {
+        var query = new QueryCommand("?SELECT ID, Name, Email FROM Users WHERE ID = 2");
+        using var cnn = Db.Open();
+
+        var ids = query.StartBuilder();
+        ids.Use("ID");
+        Assert.Equal(["ID"], ids.Query<DynaObject>(cnn).Keys.ToArray());
+
+        var names = query.StartBuilder();
+        names.Use("Name");
+        Assert.Equal(["Name"], names.Query<DynaObject>(cnn).Keys.ToArray());
+
+        var both = query.StartBuilder();
+        both.Use("ID");
+        both.Use("Email");
+        Assert.Equal(["ID", "Email"], both.Query<DynaObject>(cnn).Keys.ToArray());
+    }
+
     public record RacedRow(int Id, string Name) : IDbReadable;
 
     /// <summary>

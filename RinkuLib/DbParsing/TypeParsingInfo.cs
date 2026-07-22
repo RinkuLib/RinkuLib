@@ -76,8 +76,7 @@ public abstract class TypeParsingInfo {
         if (TypeInfos.TryGetValue(type, out typeInfo))
             return true;
         if (type.IsBaseType() || type.IsEnum) {
-            typeInfo = BaseTypeInfo.Instance;
-            TypeInfos[type] = typeInfo;
+            typeInfo = TypeInfos.GetOrAdd(type, BaseTypeInfo.Instance);
             return true;
         }
         if (type.IsGenericType) {
@@ -87,8 +86,7 @@ public abstract class TypeParsingInfo {
         }
         if (!type.IsAssignableTo(typeof(IDbReadable)))
             return false;
-        typeInfo = new DefaultTypeParsingInfo(type);
-        TypeInfos[type] = typeInfo;
+        typeInfo = TypeInfos.GetOrAdd(type, new DefaultTypeParsingInfo(type));
         return true;
     }
     /// <summary>
@@ -101,15 +99,12 @@ public abstract class TypeParsingInfo {
         if (!type.IsGenericType) {
             infos = type.IsBaseType() || type.IsEnum
                 ? BaseTypeInfo.Instance : new DefaultTypeParsingInfo(type);
-            TypeInfos[type] = infos;
-            return infos;
+            return TypeInfos.GetOrAdd(type, infos);
         }
         type = type.GetGenericTypeDefinition();
         if (TypeInfos.TryGetValue(type, out infos))
             return infos;
-        infos = new DefaultTypeParsingInfo(type);
-        TypeInfos[type] = infos;
-        return infos;
+        return TypeInfos.GetOrAdd(type, new DefaultTypeParsingInfo(type));
     }
     /// <summary>
     /// Performs a prioritized lookup in the global cache.
@@ -144,19 +139,18 @@ public abstract class TypeParsingInfo {
             toUseIfNotPresent?.ValidateCanUseType(type);
             infos = toUseIfNotPresent ?? (type.IsBaseType() || type.IsEnum
                 ? BaseTypeInfo.Instance : new DefaultTypeParsingInfo(type));
-            TypeInfos[type] = infos;
-            return infos;
+            return TypeInfos.GetOrAdd(type, infos);
         }
         type = type.GetGenericTypeDefinition();
         if (TypeInfos.TryGetValue(type, out infos))
             return infos;
         toUseIfNotPresent?.ValidateCanUseType(type);
-        infos = toUseIfNotPresent ?? new DefaultTypeParsingInfo(type);
-        TypeInfos[type] = infos;
-        return infos;
+        return TypeInfos.GetOrAdd(type, toUseIfNotPresent ?? new DefaultTypeParsingInfo(type));
     }
     /// <summary>
-    /// Standard access point to retrieve or create a type's metadata registry.
+    /// Puts <paramref name="typeParsingInfo"/> in as the info for <paramref name="type"/>, replacing
+    /// whatever was there. This is the one entry that overwrites, which is what a caller naming both the
+    /// type and its info is asking for, and it wins over a registration a query would have made on its own.
     /// </summary>
     public static void AddOrSet(Type type, TypeParsingInfo typeParsingInfo) {
         typeParsingInfo.ValidateCanUseType(type);
@@ -166,9 +160,7 @@ public abstract class TypeParsingInfo {
     /// Standard access point to retrieve or create a type's metadata registry.
     /// </summary>
     public static TypeParsingInfo GetOrAdd<T>(TypeParsingInfo? toUseIfNotPresent = null, bool saveAsGenericDefinitionWhenGeneric = true) => GetOrAdd(typeof(T), toUseIfNotPresent, saveAsGenericDefinitionWhenGeneric);
-    /// <summary>
-    /// Standard access point to retrieve or create a type's metadata registry.
-    /// </summary>
+    /// <inheritdoc cref="AddOrSet(Type, TypeParsingInfo)"/>
     public static void AddOrSet<T>(TypeParsingInfo typeParsingInfo, bool saveAsGenericDefinitionWhenGeneric = true) => AddOrSet(saveAsGenericDefinitionWhenGeneric && typeof(T).IsGenericType ? typeof(T).GetGenericTypeDefinition() : typeof(T), typeParsingInfo);
 
     /// <summary>

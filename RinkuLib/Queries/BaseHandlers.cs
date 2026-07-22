@@ -5,9 +5,9 @@ namespace RinkuLib.Queries;
 /// Escapes and injects a string literal directly into the SQL text.
 /// </summary>
 /// <remarks>
-/// Wraps the provided value in single quotes. If the value is not a string, 
-/// it performs a <c>ToString()</c> conversion. 
-/// Use this for values that should be treated as SQL string literals.
+/// Wraps the provided value in single quotes and doubles every single quote inside it, so the literal the
+/// value produces is the value and nothing more. If the value is not a string, it performs a
+/// <c>ToString()</c> conversion. Use this for values that should be treated as SQL string literals.
 /// </remarks>
 public class StringVariableHandler() : IQuerySegmentHandler {
     /// <summary>Singleton for <see cref="StringVariableHandler"/></summary>
@@ -21,7 +21,13 @@ public class StringVariableHandler() : IQuerySegmentHandler {
         if (value is not string str)
             str = value.ToString() ?? "";
         sb.Append('\'');
-        sb.Append(str);
+        var rest = str.AsSpan();
+        for (int quote = rest.IndexOf('\''); quote >= 0; quote = rest.IndexOf('\'')) {
+            sb.Append(rest[..(quote + 1)]);
+            sb.Append('\'');
+            rest = rest[(quote + 1)..];
+        }
+        sb.Append(rest);
         sb.Append('\'');
     }
 }

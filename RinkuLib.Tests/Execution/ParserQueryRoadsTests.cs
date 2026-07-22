@@ -272,49 +272,6 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
 
     static readonly ColumnInfo[] ValueCol = [new("V", typeof(int), false)];
 
-    static (BaseEnumerableTypeParser<int> Parser, DbDataReader Reader) Lazy(params int[] values) {
-        var cols = ValueCol;
-        var parser = (BaseEnumerableTypeParser<int>)TypeParser.GetTypeParser<IEnumerable<int>>(ref cols);
-        var reader = Rows.Reader(ValueCol, values.Select(v => new object[] { v }).ToArray());
-        reader.Read();
-        return (parser, reader);
-    }
-
-    [Fact]
-    public void Each_ownership_strategy_cleans_its_own_set() {
-        var (parser, reader) = Lazy(1, 2);
-        Assert.Equal([1, 2], parser.ParseAndOwn(reader, new DisposeReader()));
-        Assert.True(reader.IsClosed);
-
-        using var cnn = Db.Open();
-        var (p2, r2) = Lazy(3);
-        var cmd = Cmd(cnn, Names);
-        Assert.Equal([3], p2.ParseAndOwn(r2, cmd, wasClosed: true, disposeCommand: true));
-        Assert.Equal(ConnectionState.Closed, cnn.State);
-
-        using var cnn2 = Db.Open();
-        var (p3, r3) = Lazy(4);
-        using var cmd2 = Cmd(cnn2, Names);
-        Assert.Equal([4], p3.ParseAndOwn(r3, cmd2, wasClosed: true, disposeCommand: false));
-        Assert.Equal(ConnectionState.Closed, cnn2.State);
-
-        var (p4, r4) = Lazy(5);
-        var cmd3 = Cmd(cnn2, Names);
-        Assert.Equal([5], p4.ParseAndOwn(r4, cmd3, wasClosed: false, disposeCommand: true));
-        Assert.True(r4.IsClosed);
-
-        var (p5, r5) = Lazy(6);
-        using var cmd4 = Cmd(cnn2, Names);
-        Assert.Equal([6], p5.ParseAndOwn(r5, cmd4, wasClosed: false, disposeCommand: false));
-        Assert.True(r5.IsClosed);
-
-        var (p6, r6) = Lazy(7);
-        new DoNothing().Invoke(r6);
-        Assert.False(r6.IsClosed);
-        new GoToNextResultSet().Invoke(r6);  
-        r6.Dispose();
-    }
-
     public record UserRow(long ID, string Name) : IDbReadable;
 
     [Fact]
@@ -475,19 +432,6 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.True(((ITypeParser<int>)inner).InternalProtect);
         Assert.True(((ITypeParser<IEnumerable<int>>)enumerable).InternalProtect);
     }
-
-    [Fact]
-    public void Cleanup_strategies_survive_a_command_without_a_connection() {
-        var legacy = new LegacyCommand();
-        using var r1 = Rows.Reader(ValueCol, [1]);
-        new DisposeReaderAndCommandAndCloseConnection(legacy).Invoke(r1);
-        Assert.True(r1.IsClosed);
-        var legacy2 = new LegacyCommand();
-        using var r2 = Rows.Reader(ValueCol, [1]);
-        new DisposeReaderAndCloseConnection(legacy2).Invoke(r2);
-        Assert.True(r2.IsClosed);
-    }
-
 
     [Fact]
     public async Task Every_shape_parses_asynchronously() {

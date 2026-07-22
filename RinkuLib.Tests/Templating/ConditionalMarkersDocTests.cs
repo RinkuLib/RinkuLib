@@ -135,10 +135,17 @@ public class ConditionalMarkersDocTests {
         Render.Expect(b, "SELECT * FROM products");
     }
 
+    /// <summary>
+    /// A space after the <c>!</c> is part of the key, so the marker negates <c>" All"</c> and
+    /// <c>Use("All")</c> does not reach it. The spelling that works is covered by
+    /// <see cref="SpacedNegationTests"/>.
+    /// </summary>
     [Fact]
     public void Negation_must_touch_its_key() {
-        var b = Build("SELECT * FROM products WHERE /*! All*/IsActive = 1");
-        b.Use("All");
+        var query = new QueryCommand("SELECT * FROM products WHERE /*! All*/IsActive = 1");
+        Assert.Equal([" All"], query.Mapper.Keys.ToArray());
+        var b = query.StartBuilder();
+        Assert.False(b.Use("All"));
         Render.Expect(b, "SELECT * FROM products WHERE IsActive = 1");
     }
 

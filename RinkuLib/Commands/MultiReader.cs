@@ -58,9 +58,9 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
             var cache = GetCurrentSetParser<T>();
             if (!reader.Read())
                 return cache.Default();
-            if (cache is ILazyTypeParser<T> lazyParser) {
+            if (cache is IReaderHoldingParser<T> holding) {
                 goToNextResultSet = false;
-                return lazyParser.ParseAndOwn<GoToNextResultSet>(reader, new());
+                return holding.ParseThen(reader, new GoToNextResultSet());
             }
             if (cache is ISimpleParser<T> simple)
                 return simple.RowParser(reader);
@@ -85,9 +85,9 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
             var cache = GetCurrentSetParser<T>();
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return cache.Default();
-            if (cache is ILazyTypeParser<T> lazyParser) {
+            if (cache is IReaderHoldingParser<T> holding) {
                 goToNextResultSet = false;
-                return lazyParser.ParseAndOwn<GoToNextResultSet>(reader, new());
+                return holding.ParseThen(reader, new GoToNextResultSet());
             }
             if (cache is ISimpleParser<T> simple)
                 return simple.RowParser(reader);

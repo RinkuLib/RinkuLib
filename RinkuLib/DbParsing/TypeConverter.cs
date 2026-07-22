@@ -36,6 +36,10 @@ public interface ITypeConverter {
             return false;
         }
         outputType = t ?? outputType;
+        if (sourceType == typeof(string) && outputType.IsEnum) {
+            converter = new StringToEnumConverter(outputType);
+            return true;
+        }
         if (sourceType.IsEnum)
             sourceType = Enum.GetUnderlyingType(sourceType);
         if (outputType.IsEnum)
@@ -184,6 +188,25 @@ public class ParsableConverter(Type targetType) : ITypeConverter {
         }
         throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch,
             $"no conversion is emitted from the column to {OutputType}");
+    }
+}
+
+/// <summary>
+/// String to an enum, by name or by the number written out, matching the name whatever its casing. This
+/// sits ahead of the enum being read as its underlying type, which would send the name to a number parse.
+/// </summary>
+public class StringToEnumConverter(Type enumType) : ITypeConverter {
+    private static readonly MethodInfo ParseDefinition = typeof(Enum)
+        .GetMethods(BindingFlags.Public | BindingFlags.Static)
+        .Single(m => m.Name == nameof(Enum.Parse) && m.IsGenericMethodDefinition
+            && m.GetParameters() is [var value, var ignoreCase]
+            && value.ParameterType == typeof(string) && ignoreCase.ParameterType == typeof(bool));
+    /// <inheritdoc/>
+    public Type OutputType { get; } = enumType;
+    /// <inheritdoc/>
+    public void EmitConversion(Generator generator, Type sourceType) {
+        generator.Emit(OpCodes.Ldc_I4_1);
+        generator.Emit(OpCodes.Call, ParseDefinition.MakeGenericMethod(OutputType));
     }
 }
 

@@ -93,7 +93,7 @@ ORDER BY s.Total DESC
 
 ## How the template is read
 
-The engine never builds your SQL into a tree. It scans the text, tracking structure as it goes, the sections, parentheses, quotes, and `CASE` depth, and the marker rules follow from that alone.
+The engine never builds your SQL into a tree. It scans the text, tracking structure as it goes, the sections, parentheses, quotes, comments, and `CASE` depth, and the marker rules follow from that alone.
 
 It also means the template does not have to be valid SQL on its own. Nothing is checked, only the SQL a run produces has to hold together. So you can lay down alternatives that could never coexist and let each run keep one. These two `FROM` clauses never appear together.
 

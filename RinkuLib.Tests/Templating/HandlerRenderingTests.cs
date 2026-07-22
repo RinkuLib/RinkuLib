@@ -89,6 +89,22 @@ public class HandlerRenderingTests {
         Render.Expect(b, "SELECT * FROM artists WHERE Name = '12'");
     }
 
+    /// <summary>
+    /// The handler writes a literal, so a quote in the value is doubled and the literal still holds the
+    /// whole value. Without that the value could close the literal and the rest of it would be read as SQL.
+    /// </summary>
+    [Theory]
+    [InlineData("O'Brien", "'O''Brien'")]
+    [InlineData("'", "''''")]
+    [InlineData("''", "''''''")]
+    [InlineData("a'b'c", "'a''b''c'")]
+    [InlineData("x'; DROP TABLE artists; --", "'x''; DROP TABLE artists; --'")]
+    public void String_handler_doubles_a_quote_in_the_value(string value, string expected) {
+        var b = Build("SELECT * FROM artists WHERE Name = @Name_S");
+        b.Use("@Name", value);
+        Render.Expect(b, "SELECT * FROM artists WHERE Name = " + expected);
+    }
+
     class NullToString {
         public override string? ToString() => null;
     }

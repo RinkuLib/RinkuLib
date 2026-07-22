@@ -7,14 +7,14 @@ namespace RinkuLib.TypeAccessing;
 /// buffering them, keeping memory flat on large results. It holds the reader open while you iterate and
 /// disposes it when enumeration ends.
 /// </summary>
-public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>, ILazyTypeParser<IEnumerable<T>> {
+public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>, IReaderHoldingParser<IEnumerable<T>> {
     bool ITypeParser<IEnumerable<T>>.InternalProtect => true;
     /// <summary>
     /// Used to parse a single item. Reports whether the reader is left on an untreated row
     /// </summary>
     protected abstract (bool CanContinue, T Result) ParseOne(DbDataReader reader);
     /// <inheritdoc/>
-    public IEnumerable<T> ParseAndOwn<TCallback>(DbDataReader reader, TCallback callback) where TCallback : ILazyTypeParserCallback {
+    public IEnumerable<T> ParseThen<TDone>(DbDataReader reader, TDone onDone) where TDone : IReaderDone {
         try {
             bool canContinue;
             do {
@@ -23,7 +23,7 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
             } while (canContinue);
         }
         finally {
-            callback.Invoke(reader);
+            onDone.Invoke(reader);
         }
     }
     /// <inheritdoc/>
@@ -106,13 +106,56 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
         }
     }
     /// <inheritdoc/>
-    public Task<IEnumerable<T>> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default)
-        => Task.FromResult(Query(command, disposeCommand));
-    /// <inheritdoc/>
+    /// <remarks>
+    /// The opening, the running and the first row are done while there is something to await, and the rows
+    /// are handed back over the reader that leaves open. Walking them out, or leaving the walk early, is
+    /// what closes it. The rows themselves come synchronously, which is what an
+    /// <see cref="IEnumerable{T}"/> is, <c>StreamQueryAsync</c> being the asynchronous stream.
+    /// </remarks>
+    public async Task<IEnumerable<T>> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        DbDataReader? reader = null;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            wasClosed = false;
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                return Default();
+            var open = reader;
+            reader = null;
+            return disposeCommand
+                ? ParseThen(open, new LetGoOfReaderAndCommand(command))
+                : ParseThen(open, new LetGoOfReader());
+        }
+        finally {
+            if (reader is not null) {
+                LetGo(reader, command, disposeCommand);
+                if (wasClosed && cnn.State != ConnectionState.Closed)
+                    cnn.Close();
+            }
+        }
+    }
+    /// <inheritdoc cref="QueryAsync(DbCommand, bool, CancellationToken)"/>
+    /// <remarks>
+    /// A command that is only an <see cref="IDbCommand"/> has no asynchronous road of its own, so there is
+    /// nothing here to await and the whole run waits for the walk.
+    /// </remarks>
     public Task<IEnumerable<T>> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
             return QueryAsync(c, disposeCommand, ct);
         return Task.FromResult(Query(command, disposeCommand));
+    }
+    /// <summary>Hands back a reader no result took, and the command when this run owns it.</summary>
+    private static void LetGo(DbDataReader reader, IDbCommand command, bool disposeCommand) {
+        if (disposeCommand)
+            new LetGoOfReaderAndCommand(command).Invoke(reader);
+        else
+            new LetGoOfReader().Invoke(reader);
     }
     /// <inheritdoc/>
     public IEnumerable<T> Query(DbCommand command, ICache cache, bool disposeCommand = false) {
@@ -175,10 +218,37 @@ public abstract class BaseEnumerableTypeParser<T> : ITypeParser<IEnumerable<T>>,
                 cnn.Close();
         }
     }
-    /// <inheritdoc/>
-    public Task<IEnumerable<T>> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
-        => Task.FromResult(Query(command, cache, disposeCommand));
-    /// <inheritdoc/>
+    /// <inheritdoc cref="QueryAsync(DbCommand, bool, CancellationToken)"/>
+    public async Task<IEnumerable<T>> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        DbDataReader? reader = null;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            wasClosed = false;
+            await cache.UpdateCacheAsync(command, ct).ConfigureAwait(false);
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                return Default();
+            var open = reader;
+            reader = null;
+            return disposeCommand
+                ? ParseThen(open, new LetGoOfReaderAndCommand(command))
+                : ParseThen(open, new LetGoOfReader());
+        }
+        finally {
+            if (reader is not null) {
+                LetGo(reader, command, disposeCommand);
+                if (wasClosed && cnn.State != ConnectionState.Closed)
+                    cnn.Close();
+            }
+        }
+    }
+    /// <inheritdoc cref="QueryAsync(IDbCommand, bool, CancellationToken)"/>
     public Task<IEnumerable<T>> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
             return QueryAsync(c, cache, disposeCommand, ct);

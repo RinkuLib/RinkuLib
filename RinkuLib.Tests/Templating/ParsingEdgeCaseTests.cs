@@ -210,4 +210,89 @@ public class ParsingEdgeCaseTests {
         Render.Expect(query.StartBuilder(), "SELECT 'a value', `col`, \"dq\" FROM Users");
     }
 
+    /// <summary>
+    /// A <c>--</c> comment is copied through as written, and what it holds is read as nothing. A variable
+    /// named in one is not a key, so it never reaches the mapper and never binds a parameter.
+    /// </summary>
+    [Fact]
+    public void A_variable_in_a_line_comment_is_text() {
+        var query = new QueryCommand("SELECT ID -- note @x\r\nFROM Users");
+        Assert.Empty(query.Mapper.Keys.ToArray());
+        Render.Expect(query.StartBuilder(), "SELECT ID -- note @x\r\nFROM Users");
+    }
+
+    /// <summary>A marker in a line comment is text too, so it keys nothing and prunes nothing.</summary>
+    [Fact]
+    public void A_marker_in_a_line_comment_is_text() {
+        const string sql = "SELECT ID, Name -- /*K*/ note\r\nFROM Users";
+        var query = new QueryCommand(sql);
+        Assert.Empty(query.Mapper.Keys.ToArray());
+        Render.Expect(query.StartBuilder(), sql);
+    }
+
+    /// <summary>
+    /// The worked example of <c>docs/articles/conditional-sql/conditional-markers.md</c>, where the only
+    /// key is the one written outside the comment.
+    /// </summary>
+    [Fact]
+    public void The_line_comment_doc_example() {
+        const string sql = "SELECT TrackId, Name -- @Name and /*Long*/ are notes here\r\nFROM tracks WHERE Name = ?@Name";
+        var query = new QueryCommand(sql);
+        Assert.Equal(["@Name"], query.Mapper.Keys.ToArray());
+        Render.Expect(query.StartBuilder(),
+            "SELECT TrackId, Name -- @Name and /*Long*/ are notes here\r\nFROM tracks");
+    }
+
+    /// <summary>
+    /// The line ends the comment, so the markers after it are read as usual. The comment stays when the
+    /// clause behind it prunes, keeping the one whitespace a section leaves in front of it.
+    /// </summary>
+    [Fact]
+    public void A_line_comment_ends_at_its_line() {
+        const string sql = "SELECT ID FROM Users -- pick a row\r\nWHERE Name = ?@Name";
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT ID FROM Users -- pick a row\r");
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("@Name", "John");
+        Render.Expect(on, sql.Replace("?@Name", "@Name"), ("@Name", "John"));
+    }
+
+    /// <summary>A comment closing the template needs no line to end it.</summary>
+    [Fact]
+    public void A_line_comment_may_end_the_template() {
+        const string sql = "SELECT ID FROM Users -- trailing @note";
+        var query = new QueryCommand(sql);
+        Assert.Empty(query.Mapper.Keys.ToArray());
+        Render.Expect(query.StartBuilder(), sql);
+    }
+
+    /// <summary>A comment written against a variable ends its name rather than joining it.</summary>
+    [Fact]
+    public void A_line_comment_welded_to_a_variable_ends_the_name() {
+        const string sql = "SELECT ID FROM Users WHERE Name = @Name-- pick one\r\nORDER BY ID";
+        var query = new QueryCommand(sql);
+        Assert.Equal(["@Name"], query.Mapper.Keys.ToArray());
+        var b = query.StartBuilder();
+        b.Use("@Name", "John");
+        Render.Expect(b, sql, ("@Name", "John"));
+    }
+
+    /// <summary>Two dashes inside a literal are part of it, not the start of a comment.</summary>
+    [Fact]
+    public void Dashes_inside_a_literal_do_not_open_a_comment() {
+        const string sql = "SELECT 'a--b' AS Lit, Name FROM Users WHERE ID = ?@ID";
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT 'a--b' AS Lit, Name FROM Users");
+    }
+
+    /// <summary>
+    /// The comment is ordinary text of the condition it sits in, so a pruned footprint takes it along. The
+    /// line break behind it is the section's own whitespace and stays, exactly as it does with no comment
+    /// written there at all.
+    /// </summary>
+    [Fact]
+    public void A_line_comment_inside_a_footprint_goes_with_it() {
+        const string sql = "SELECT ID FROM Users WHERE Name = ?@Name -- by name\r\nORDER BY ID";
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT ID FROM Users\r\nORDER BY ID");
+        Render.Expect(new QueryCommand("SELECT ID FROM Users WHERE Name = ?@Name\r\nORDER BY ID").StartBuilder(),
+            "SELECT ID FROM Users\r\nORDER BY ID");
+    }
 }

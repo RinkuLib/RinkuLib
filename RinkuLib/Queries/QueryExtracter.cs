@@ -224,6 +224,10 @@ public unsafe ref struct QueryExtracter {
                     ManageBoundary();
                     continue;
                 }
+                if (CurrentQuote == 0 && *CurrentChar == '-' && CurrentChar[1] == '-') {
+                    ManageLineComment();
+                    continue;
+                }
                 if (*CurrentChar == OptionalVariableIdentifier && CurrentChar[1] != variableChar) {
                     if (CurrentChar[1] == OptionalVariableIdentifier
                         && CurrentChar[2] == OptionalVariableIdentifier) {
@@ -385,7 +389,8 @@ public unsafe ref struct QueryExtracter {
             CurrentChar++;
         }
         CurrentChar++;
-        while (!IsBoundary(*CurrentChar) && *CurrentChar != JoinAndOrChar) {
+        while (!IsBoundary(*CurrentChar) && *CurrentChar != JoinAndOrChar
+            && !(*CurrentChar == '-' && CurrentChar[1] == '-')) {
             Builder[BuilderInd++] = *CurrentChar;
             CurrentChar++;
         }
@@ -471,6 +476,15 @@ public unsafe ref struct QueryExtracter {
             Conditions[^nbCond].UpdateCommentAsSectionComment(ind);
         }
         return true;
+    }
+    /// <summary>
+    /// Copies a <c>--</c> comment through to the end of its line without reading it, the opening dash
+    /// already being in the builder. What sits in one is text, so a variable or a marker written there is
+    /// neither, and the line stays in the query as written.
+    /// </summary>
+    private void ManageLineComment() {
+        while (CurrentChar + 1 < LastChar && CurrentChar[1] != '\n' && CurrentChar[1] != '\r')
+            Builder[BuilderInd++] = *++CurrentChar;
     }
     private void SkipWhiteSpace() {
         while (char.IsWhiteSpace(*CurrentChar)) {

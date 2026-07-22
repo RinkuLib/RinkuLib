@@ -12,8 +12,15 @@ public sealed class QueryParameters : IDbParamCache {
     internal SpecialHandler[] _specialHandlers;
     /// <summary>The special handlers, the ones that expand into several parameters.</summary>
     public ReadOnlySpan<SpecialHandler> SpecialHandlers => _specialHandlers;
-    internal int NbNonCached;
+    /// <summary>
+    /// The parameters still to learn, ascending, empty once they have all settled. It is the one field the
+    /// answer comes from, so a reader takes it in a single read and its length is the count. Holding a
+    /// count beside it would be two fields that cannot be published together, and a reader catching them
+    /// apart would answer from a count that did not match the list it walked.
+    /// </summary>
     internal int[] _nonCachedIndexes;
+    /// <summary>How many parameters are still to learn.</summary>
+    internal int NbNonCached => _nonCachedIndexes.Length;
     /// <summary>Starts with every parameter unsettled, its binding inferred until a run teaches it more.</summary>
     public QueryParameters(int NbNormalVariables, SpecialHandler[] specialHandlers) {
         _variablesInfo = new DbParamInfo[NbNormalVariables];
@@ -22,7 +29,6 @@ public sealed class QueryParameters : IDbParamCache {
         _specialHandlers = specialHandlers;
         var total = NbNormalVariables + specialHandlers.Length;
         _nonCachedIndexes = new int[total];
-        NbNonCached = total;
         for (int i = 0; i < total; i++)
             _nonCachedIndexes[i] = i;
     }
@@ -37,24 +43,44 @@ public sealed class QueryParameters : IDbParamCache {
         ref var oldVal = ref _variablesInfo[ind];
         var isDifferentCached = oldVal.IsCached != info.IsCached;
         oldVal = info;
-        if (isDifferentCached) {
-            var oldArray = _nonCachedIndexes;
-            int len = oldArray.Length;
-            var nbNon = new int[len + 1];
-            int i = 0;
-            while (i < len && oldArray[i] < ind) {
-                nbNon[i] = oldArray[i];
-                i++;
-            }
-            nbNon[i] = ind;
-            while (i < len) {
-                nbNon[i + 1] = oldArray[i];
-                i++;
-            }
-            Interlocked.Exchange(ref _nonCachedIndexes, nbNon);
-            Interlocked.Exchange(ref NbNonCached, nbNon.Length);
-        }
+        if (!isDifferentCached)
+            return true;
+        var pending = _nonCachedIndexes;
+        Interlocked.Exchange(ref _nonCachedIndexes, info.IsCached ? WithoutIndex(pending, ind) : WithIndex(pending, ind));
         return true;
+    }
+    /// <summary>
+    /// The list without <paramref name="ind"/>, for a parameter that just became cached and has nothing
+    /// left to learn. A list that never held it is handed back as it is, with nothing allocated.
+    /// </summary>
+    private static int[] WithoutIndex(int[] oldArray, int ind) {
+        var at = Array.IndexOf(oldArray, ind);
+        if (at < 0)
+            return oldArray;
+        if (oldArray.Length == 1)
+            return [];
+        var res = new int[oldArray.Length - 1];
+        Array.Copy(oldArray, 0, res, 0, at);
+        Array.Copy(oldArray, at + 1, res, at, res.Length - at);
+        return res;
+    }
+    /// <summary>
+    /// The list with <paramref name="ind"/> in its place, for a parameter that went back to being unsettled.
+    /// </summary>
+    private static int[] WithIndex(int[] oldArray, int ind) {
+        int len = oldArray.Length;
+        var res = new int[len + 1];
+        int i = 0;
+        while (i < len && oldArray[i] < ind) {
+            res[i] = oldArray[i];
+            i++;
+        }
+        res[i] = ind;
+        while (i < len) {
+            res[i + 1] = oldArray[i];
+            i++;
+        }
+        return res;
     }
     /// <inheritdoc/>
     public bool UpdateSpecialHandlers<T>(T infoGetter) where T : IDbParamInfoGetter {
@@ -77,30 +103,28 @@ public sealed class QueryParameters : IDbParamCache {
         for (int i = 0; i < _specialHandlers.Length; i++)
             if (!_specialHandlers[i].IsCached)
                 nonCachedIndexes[total++] = i + _variablesInfo.Length;
-        _nonCachedIndexes = nonCachedIndexes[..total].ToArray();
-        NbNonCached = total;
+        Interlocked.Exchange(ref _nonCachedIndexes, nonCachedIndexes[..total].ToArray());
     }
     /// <summary>
     /// Whether this run uses a parameter whose provider metadata is not settled yet, so the command still has
     /// something to learn on this pass.
     /// </summary>
+    /// <remarks>
+    /// Every run asks this, and a command that has settled answers from the one read that finds the list
+    /// empty.
+    /// </remarks>
     public bool NeedToCache(object?[] variables) {
-        if (NbNonCached == 0)
-            return false;
-        for (int i = 0; i < _nonCachedIndexes.Length; i++)
-            if (variables[_nonCachedIndexes[i]] is not null)
+        var pending = _nonCachedIndexes;
+        for (int i = 0; i < pending.Length; i++)
+            if (variables[pending[i]] is not null)
                 return true;
         return false;
     }
-    /// <summary>
-    /// Whether this run uses a parameter whose provider metadata is not settled yet, so the command still has
-    /// something to learn on this pass.
-    /// </summary>
+    /// <inheritdoc cref="NeedToCache(object[])"/>
     public bool NeedToCache(Span<bool> usageMap) {
-        if (NbNonCached == 0)
-            return false;
-        for (int i = 0; i < _nonCachedIndexes.Length; i++)
-            if (usageMap[_nonCachedIndexes[i]])
+        var pending = _nonCachedIndexes;
+        for (int i = 0; i < pending.Length; i++)
+            if (usageMap[pending[i]])
                 return true;
         return false;
     }
