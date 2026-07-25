@@ -111,7 +111,7 @@ public class NullableTypeHandle : INullColHandler {
     /// <inheritdoc/>
     public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         var endLabel = generator.DefineLabel();
-        DbItemParser.EmitDefaultValue(closedType, generator);
+        DbItemPlan.EmitDefaultValue(closedType, generator);
         generator.Emit(OpCodes.Br_S, endLabel);
         return endLabel;
     }
@@ -148,7 +148,7 @@ public class NotNullHandle : INullColHandler {
     private NotNullHandle() { }
     /// <inheritdoc/>
     public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
-        DbItemParser.EmitThrowNullAssignment(parentType, closedType, paramName, generator);
+        DbItemPlan.EmitThrowNullAssignment(parentType, closedType, paramName, generator);
         return null;
     }
     /// <inheritdoc/>

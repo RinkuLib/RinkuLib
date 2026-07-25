@@ -6,7 +6,7 @@ namespace RinkuLib.DbParsing;
 /// A terminal parser that emits IL to read a single column from a data reader.
 /// Handles null checks, type conversions, and nullable wrapper instantiation.
 /// </summary>
-public class BasicParser(Type ParentType, ITypeConverter TypeConverter, string ParamName, INullColHandler NullColHandler, int Index) : DbItemParser {
+public class BasicParser(Type ParentType, ITypeConverter TypeConverter, string ParamName, INullColHandler NullColHandler, int Index) : SimpleDbItemParser {
     private readonly Type ParentType = ParentType;
     private readonly ITypeConverter TypeConverter = TypeConverter;
     private readonly string ParamName = ParamName;

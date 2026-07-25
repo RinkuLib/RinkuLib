@@ -255,13 +255,13 @@ public class GeneratorTests {
     public void Member_dispatch_builds_through_a_ctor_and_refuses_unsupported_members() {
         var (g, m) = Method(typeof(PairHolder), typeof(int));
         g.Emit(OpCodes.Ldarg_0);
-        DbItemParser.EmitMemberDispatch(g, typeof(PairHolder).GetConstructor([typeof(int)])!);
+        DbItemPlan.EmitMemberDispatch(g, typeof(PairHolder).GetConstructor([typeof(int)])!);
         g.Emit(OpCodes.Ret);
         Assert.Equal(8, m.CreateDelegate<Func<int, PairHolder>>()(8).A);
 
         var (g2, _) = Method(typeof(int));
-        Refusals.Raises(ErrorCodes.UnusableMember, () => DbItemParser.EmitMemberDispatch(g2, typeof(DispatchHost).GetProperty("GetOnly")!));
-        Refusals.Raises(ErrorCodes.UnusableMember, () => DbItemParser.EmitMemberDispatch(g2, typeof(DispatchHost).GetEvent("E")!));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => DbItemPlan.EmitMemberDispatch(g2, typeof(DispatchHost).GetProperty("GetOnly")!));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => DbItemPlan.EmitMemberDispatch(g2, typeof(DispatchHost).GetEvent("E")!));
     }
 
     [Fact]
@@ -271,7 +271,7 @@ public class GeneratorTests {
         g.Emit(OpCodes.Ldarg_0);
         g.Emit(OpCodes.Brtrue, nullJump); 
         g.Emit(OpCodes.Ldc_I4, 42);
-        DbItemParser.EmitNullJump(nullJump, typeof(int), g);
+        DbItemPlan.EmitNullJump(nullJump, typeof(int), g);
         g.Emit(OpCodes.Ret);
         var f = m.CreateDelegate<Func<bool, int>>();
         Assert.Equal(42, f(false));

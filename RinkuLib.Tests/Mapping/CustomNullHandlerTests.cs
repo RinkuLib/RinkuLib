@@ -17,7 +17,7 @@ public class CustomNullHandlerTests {
         public bool NeedNullJumpSetPoint(Type closedType) => false;
         public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
             var endLabel = generator.DefineLabel();
-            DbItemParser.EmitDefaultValue(closedType, generator);
+            DbItemPlan.EmitDefaultValue(closedType, generator);
             generator.Emit(OpCodes.Br, endLabel);
             return endLabel;
         }

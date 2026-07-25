@@ -188,7 +188,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         }
     }
     /// <inheritdoc/>
-    public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
         if (!IsInit)
             Init();
         var actualType = Nullable.GetUnderlyingType(currentClosedType) ?? currentClosedType;
@@ -199,7 +199,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
         colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
         var mcis = MCIs;
-        List<DbItemParser> readers = [];
+        List<DbItemPlan> readers = [];
         MemberInfo? method = null;
         var genericArguments = actualType.IsGenericType ? actualType.GetGenericArguments() : [];
         bool canCompleteWithMembers = false;
@@ -238,7 +238,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                 return paramInfo.FallbackTryGetParser(currentClosedType);
             canCompleteWithMembers = true;
         }
-        List<(MemberInfo, DbItemParser)>? memberReaders = null;
+        List<(MemberInfo, DbItemPlan)>? memberReaders = null;
         if (canCompleteWithMembers) {
             memberReaders = [];
             var members = Members;

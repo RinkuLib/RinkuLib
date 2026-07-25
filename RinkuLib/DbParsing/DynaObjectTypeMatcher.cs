@@ -15,12 +15,12 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
             throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, $"The type may only be {typeof(DynaObject)}");
     }
     /// <inheritdoc/>
-    public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
         if (!previousUsages.CanContinue(currentClosedType, colUsage.NbUsed, out previousUsages))
             return null;
         Mapper mapper = MakeMapper(columns, colUsage);
         var len = mapper.Count;
-        var readers = new DbItemParser[len];
+        var readers = new DbItemPlan[len];
         var arguments = new Type[len > DynaObjParser.MaxArguments ? DynaObjParser.MaxArguments : len];
         var ind = 0;
         for (int i = 0; i < colUsage.Length; i++) {
@@ -82,7 +82,7 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
 /// <summary>
 /// Builds a <see cref="DynaObject"/> from a result's columns, the parser behind a untyped dynamic read.
 /// </summary>
-public class DynaObjParser(Type[] Arguments, DbItemParser[] Parameters, Mapper Mapper) : DbItemParser {
+public class DynaObjParser(Type[] Arguments, DbItemPlan[] Parameters, Mapper Mapper) : SimpleDbItemParser {
     /// <summary>The most typed columns a <see cref="DynaObject"/> can carry, beyond which extras stay untyped.</summary>
     public static int MaxArguments => DynaTypes.Length - 1;
     private readonly static Type[] DynaTypes = [
@@ -101,7 +101,7 @@ public class DynaObjParser(Type[] Arguments, DbItemParser[] Parameters, Mapper M
         typeof(DynaObject<,,,,,,,,,,,>),
     ];
     private readonly Type[] Arguments = Arguments;
-    private readonly DbItemParser[] Parameters = Parameters;
+    private readonly DbItemPlan[] Parameters = Parameters;
     private readonly Mapper Mapper = Mapper;
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => false;
@@ -113,9 +113,11 @@ public class DynaObjParser(Type[] Arguments, DbItemParser[] Parameters, Mapper M
         return true;
     }
     /// <inheritdoc/>
+    internal override IEnumerable<DbItemPlan> Children => Parameters;
+    /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
         for (int i = 0; i < Parameters.Length; i++)
-            Parameters[i].Emit(cols, generator, nullSetPoint, out _);
+            ((SimpleDbItemParser)Parameters[i]).Emit(cols, generator, nullSetPoint, out _);
         int argCount = Arguments.Length;
         var ctor = DynaTypes[argCount].MakeGenericType(Arguments).GetConstructor([.. Arguments, typeof(Mapper)])
             ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"the ctor for {nameof(DynaObject)} with {argCount} arguments cannot be found");
@@ -128,10 +130,10 @@ public class DynaObjParser(Type[] Arguments, DbItemParser[] Parameters, Mapper M
 /// <summary>
 /// A parser that handle a dynaobject generation
 /// </summary>
-public class DynaObjParserInfinite(Type[] Arguments, DbItemParser[] Parameters, Mapper Mapper) : DbItemParser {
+public class DynaObjParserInfinite(Type[] Arguments, DbItemPlan[] Parameters, Mapper Mapper) : SimpleDbItemParser {
     internal const int ArgumentCount = 12;
     private readonly Type[] Arguments = Arguments;
-    private readonly DbItemParser[] Parameters = Parameters;
+    private readonly DbItemPlan[] Parameters = Parameters;
     private readonly Mapper Mapper = Mapper;
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => false;
@@ -143,18 +145,20 @@ public class DynaObjParserInfinite(Type[] Arguments, DbItemParser[] Parameters, 
         return true;
     }
     /// <inheritdoc/>
+    internal override IEnumerable<DbItemPlan> Children => Parameters;
+    /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
         if (Parameters.Length <= ArgumentCount || Arguments.Length != ArgumentCount)
             throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"the dyna emitter got {Parameters.Length} parameters and {Arguments.Length} arguments for an arity of {ArgumentCount}");
         var arrLen = Parameters.Length - ArgumentCount;
         for (int i = 0; i < ArgumentCount; i++)
-            Parameters[i].Emit(cols, generator, nullSetPoint, out _);
+            ((SimpleDbItemParser)Parameters[i]).Emit(cols, generator, nullSetPoint, out _);
         generator.Emit(OpCodes.Ldc_I4, arrLen);
         generator.Emit(OpCodes.Newarr, typeof(object));
         for (int i = 0; i < arrLen; i++) {
             generator.Emit(OpCodes.Dup);
             generator.Emit(OpCodes.Ldc_I4, i);
-            Parameters[ArgumentCount + i].Emit(cols, generator, nullSetPoint, out _);
+            ((SimpleDbItemParser)Parameters[ArgumentCount + i]).Emit(cols, generator, nullSetPoint, out _);
             generator.Emit(OpCodes.Stelem_Ref);
         }
         var ctor = typeof(DynaObjectInfinite<,,,,,,,,,,,>).MakeGenericType(Arguments).GetConstructor([.. Arguments, typeof(object[]), typeof(Mapper)])

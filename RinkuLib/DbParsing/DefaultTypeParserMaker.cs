@@ -40,6 +40,9 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
             parser = default;
             return false;
         }
+        if (!DbItemPlan.AllSimple(rd))
+            throw new RinkuInternalException(ErrorCodes.InternalInvariant,
+                $"multi-row parsing of {typeof(T)} is negotiated but its emit is not implemented yet");
         var dm = new DynamicMethod(
             $"Map_{typeof(T).Name}_{Guid.NewGuid():N}",
             typeof(T), TReaderArg, Module,
@@ -52,12 +55,12 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
             new(dm.GetILGenerator());
 #endif
         Label? nullJump = rd.NeedNullSetPoint(cols) ? gen.DefineLabel() : null;
-        rd.Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default, out var targetObj);
+        ((SimpleDbItemParser)rd).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default, out var targetObj);
         if (nullJump.HasValue) {
             var parsed = gen.DefineLabel();
             gen.Emit(OpCodes.Br, parsed);
             gen.MarkLabel(nullJump.Value);
-            DbItemParser.EmitDefaultValue(typeof(T), gen);
+            DbItemPlan.EmitDefaultValue(typeof(T), gen);
             gen.MarkLabel(parsed);
         }
         gen.Emit(OpCodes.Ret);

@@ -9,15 +9,15 @@ namespace RinkuLib.DbParsing;
 /// A composite parser that builds complex types and fills their members.
 /// It coordinates the evaluation stack to satisfy constructor parameters and setter methods.
 /// </summary>
-public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemParser> Parameters, List<(MemberInfo, DbItemParser)>? Members = null) : DbItemParser {
+public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemPlan> Parameters, List<(MemberInfo, DbItemPlan)>? Members = null) : SimpleDbItemParser {
     private readonly Type ParentType = ParentType;
     private readonly Type Type = Type;
     private readonly string ParamName = ParamName;
     private readonly INullColHandler NullColHandler = NullColHandler;
     private readonly MemberInfo MethodBase = MethodBase;
-    private readonly List<DbItemParser> Readers = Parameters;
-    private readonly List<(MemberInfo, DbItemParser)> Members = Members ?? EmptyMembers;
-    private static readonly List<(MemberInfo, DbItemParser)> EmptyMembers = [];
+    private readonly List<DbItemPlan> Readers = Parameters;
+    private readonly List<(MemberInfo, DbItemPlan)> Members = Members ?? EmptyMembers;
+    private static readonly List<(MemberInfo, DbItemPlan)> EmptyMembers = [];
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedNullJumpSetPoint(Type);
     /// <inheritdoc/>
@@ -31,6 +31,15 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
         return true;
     }
     /// <inheritdoc/>
+    internal override IEnumerable<DbItemPlan> Children {
+        get {
+            foreach (var reader in Readers)
+                yield return reader;
+            foreach (var (_, reader) in Members)
+                yield return reader;
+        }
+    }
+    /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
         Label? jump = null;
         var localSetPoint = NeedNullSetPoint(cols) ? nullSetPoint : default;
@@ -41,7 +50,7 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
                 jump = generator.DefineLabel();
                 localSetPoint = new(jump.Value, 0);
             }
-            reader.Emit(cols, generator, localSetPoint.WithItemOnStack(i), out targetObject);
+            ((SimpleDbItemParser)reader).Emit(cols, generator, localSetPoint.WithItemOnStack(i), out targetObject);
         }
         EmitMemberDispatch(generator, MethodBase);
         var under = Nullable.GetUnderlyingType(Type);
@@ -68,8 +77,8 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
         for (int i = 0; i < Members.Count; i++) {
             var (member, reader) = Members[i];
             Label? l = reader.NeedNullSetPoint(cols) ? generator.DefineLabel() : null;
-            generator.Emit(opCode, instanceLocal);            
-            reader.Emit(cols, generator, l.HasValue ? new(l.Value, 1) : default, out _);
+            generator.Emit(opCode, instanceLocal);
+            ((SimpleDbItemParser)reader).Emit(cols, generator, l.HasValue ? new(l.Value, 1) : default, out _);
             EmitMemberDispatch(generator, member);
             if (l.HasValue)
                 generator.MarkLabel(l.Value);

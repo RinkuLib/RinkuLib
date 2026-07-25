@@ -17,7 +17,7 @@ public class NullValueAssignmentException(Type parentType, Type paramType, strin
 /// One node in a type's read plan, it knows how to read its own part of a row, whether a single column, a
 /// nested object, or a default. The plan is a tree of these, and the object parser is compiled from it.
 /// </summary>
-public abstract class DbItemParser {
+public abstract class DbItemPlan {
     /// <summary>
     /// Whether reading this node can hit a <c>NULL</c> that has to collapse the owning object, so a recovery
     /// point is needed.
@@ -28,13 +28,24 @@ public abstract class DbItemParser {
     /// </summary>
     public abstract bool IsSequencial(ref int previousIndex);
     /// <summary>
-    /// Reads this node's value from the row, handling a <c>NULL</c> and any type conversion.
+    /// This node's children in the plan tree, for the walk that decides whether the whole plan is single-row.
+    /// Leaves have none.
     /// </summary>
-    /// <param name="cols">The columns the result carries.</param>
-    /// <param name="generator">The IL generator the read is written into.</param>
-    /// <param name="nullSetPoint">Where to jump when a value is <c>NULL</c> and the object must collapse.</param>
-    /// <param name="targetObject">Set to an object the compiled reader needs passed in, or <see langword="null"/>.</param>
-    public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject);
+    internal virtual IEnumerable<DbItemPlan> Children => [];
+    /// <summary>
+    /// Whether <paramref name="node"/> and everything beneath it is a <see cref="SimpleDbItemParser"/>, the
+    /// one condition for the single compiled delegate. There is no capability flag, the ability to emit single
+    /// row is simply being the specialized type, checked here recursively. A collection or other node that is
+    /// not one fails it, so any plan containing one takes the multi-row road.
+    /// </summary>
+    internal static bool AllSimple(DbItemPlan node) {
+        if (node is not SimpleDbItemParser)
+            return false;
+        foreach (var child in node.Children)
+            if (!AllSimple(child))
+                return false;
+        return true;
+    }
     internal static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(Type), typeof(string)])!;
     internal static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;
 
@@ -107,11 +118,27 @@ public abstract class DbItemParser {
         }
         if (member is not MethodInfo m || m.DeclaringType is null)
             throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Member type {member.MemberType} is not supported for dispatch");
-        if (m.IsVirtual && !m.IsStatic && !m.DeclaringType.IsValueType) 
+        if (m.IsVirtual && !m.IsStatic && !m.DeclaringType.IsValueType)
             generator.Emit(OpCodes.Callvirt, m);
-        else 
+        else
             generator.Emit(OpCodes.Call, m);
     }
+}
+/// <summary>
+/// A node that can read its value from the current row alone, the more specific parser the single-row road is
+/// built from. The base <see cref="DbItemPlan"/> is the general, multi-row case and carries no single-row
+/// emit, this is the specialization that does. When every node in a plan is one of these the plan takes the
+/// happy path, the single compiled delegate, otherwise the multi-row road negotiates a state object instead.
+/// </summary>
+public abstract class SimpleDbItemParser : DbItemPlan {
+    /// <summary>
+    /// Reads this node's value from the current row, handling a <c>NULL</c> and any type conversion.
+    /// </summary>
+    /// <param name="cols">The columns the result carries.</param>
+    /// <param name="generator">The IL generator the read is written into.</param>
+    /// <param name="nullSetPoint">Where to jump when a value is <c>NULL</c> and the object must collapse.</param>
+    /// <param name="targetObject">Set to an object the compiled reader needs passed in, or <see langword="null"/>.</param>
+    public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject);
 }
 /// <summary>
 /// A recovery location (Jump Point) used during IL emission to handle null values.

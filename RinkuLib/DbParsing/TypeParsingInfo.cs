@@ -171,9 +171,9 @@ public abstract class TypeParsingInfo {
     /// <see cref="DefaultTypeParsingInfo.AvailableMembers"/> against the provided <paramref name="columns"/> schema.
     /// </remarks>
     /// <returns>
-    /// A configured <see cref="DbItemParser"/> if the schema satisfies a construction path, otherwise null.
+    /// A configured <see cref="DbItemPlan"/> if the schema satisfies a construction path, otherwise null.
     /// </returns>
-    public abstract DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
+    public abstract DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
 }
 /// <summary>Reshapes a registered type's mapping, its alternative names, null rules, construction paths, and members.</summary>
 public static class TypeParsingInfoHelper {

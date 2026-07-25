@@ -14,7 +14,7 @@ public class BaseTypeInfo : TypeParsingInfo {
             throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, "Only supports base types or enums");
     }
     /// <inheritdoc/>
-    public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
         int i = 0;
         ITypeConverter? converter = null;
         paramInfo.UpdateColModifier(ref colModifier);
@@ -71,7 +71,7 @@ public class CtorTypeInfo : TypeParsingInfo {
     internal static readonly ParamInfo InfoNullable = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo InfoNotNullable = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
     /// <inheritdoc/>
-    public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
         if (!previousUsages.CanContinue(currentClosedType, colUsage.NbUsed, out previousUsages))
             return null;
         var ctors = currentClosedType.GetConstructors();
@@ -90,7 +90,7 @@ public class CtorTypeInfo : TypeParsingInfo {
         Span<bool> checkpoint = stackalloc bool[colUsage.Length];
         colUsage.InitCheckpoint(checkpoint, out var lastIndUsed);
         var parameters = ctor.GetParameters();
-        var readers = new DbItemParser[parameters.Length];
+        var readers = new DbItemPlan[parameters.Length];
         colModifier.Flags |= UsageFlags.SequentialRead;
         for (int i = 0; i < readers.Length; i++) {
             var type = parameters[i].ParameterType;

@@ -137,7 +137,7 @@ public class RegistrationResidualTests {
             NullCalls++;
             Slot.NullColHandler = modifier(Slot) ?? Slot.NullColHandler;
         }
-        public override DbItemParser? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages,
+        public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages,
             ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) => null;
     }
 
@@ -385,7 +385,7 @@ public class RegistrationResidualTests {
         Assert.Equal(14, dyna.Get<int>(13));
 
         var mapper = dyna.Mapper;
-        var tooFewParams = new DbItemParser[2];
+        var tooFewParams = new DbItemPlan[2];
         Refusals.Raises(ErrorCodes.InternalInvariant, () =>
             new DynaObjParserInfinite([], tooFewParams, mapper).Emit(cols, Wrap(new DynamicMethod("x", typeof(void), Type.EmptyTypes).GetILGenerator()), default, out _));
     }

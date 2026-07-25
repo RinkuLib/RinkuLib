@@ -48,10 +48,10 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// </summary>
     public virtual void EnterSubtree(ref ColModifier mod, int nbUsed) { }
     /// <summary>
-    /// Provide a way to retrieve a <see cref="DbItemParser"/> when the normal way fails
+    /// Provide a way to retrieve a <see cref="DbItemPlan"/> when the normal way fails
     /// </summary>
     /// <returns></returns>
-    public virtual DbItemParser? FallbackTryGetParser(Type type) => null;
+    public virtual DbItemPlan? FallbackTryGetParser(Type type) => null;
     /// <summary>
     /// Adds an alternative name to the existing <see cref="NameComparer"/>.
     /// </summary>
