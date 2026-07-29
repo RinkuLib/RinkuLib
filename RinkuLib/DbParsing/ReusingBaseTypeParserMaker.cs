@@ -1,6 +1,7 @@
 using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
 
@@ -66,7 +67,14 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
         if (method is null)
             throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"{typeof(TypeParser).FullName}.{nameof(TypeParser.GetTypeParser)} was not found");
 
-        var parser = method.MakeGenericMethod(itemType).Invoke(null, args);
+        object? parser;
+        try {
+            parser = method.MakeGenericMethod(itemType).Invoke(null, args);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null) {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
 
         cols = (ColumnInfo[])args[0]!;
         return parser;

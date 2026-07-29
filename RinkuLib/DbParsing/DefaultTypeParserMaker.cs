@@ -26,23 +26,15 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
     /// order allows it.
     /// </summary>
     public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
-        var t = Nullable.GetUnderlyingType(typeof(T));
-        bool isNullable = t is not null;
-        var closedType = t ?? typeof(T);
-        var paramInfo = nullColHandler == NullableTypeHandle.Instance
-            ? InfoNullable
-            : nullColHandler == NotNullHandle.Instance
-                ? InfoNotNullable
-                : new(ParamInfo.NoType, nullColHandler, NoNameComparer.Instance);
-        var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
-        var rd = TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(T), new([], 0), paramInfo, cols, new(), ref colUsage);
+        var rd = Negotiate<T>(nullColHandler, cols);
         if (rd is null) {
             parser = default;
             return false;
         }
-        if (!DbItemPlan.AllSimple(rd))
-            throw new RinkuInternalException(ErrorCodes.InternalInvariant,
-                $"multi-row parsing of {typeof(T)} is negotiated but its emit is not implemented yet");
+        if (!DbItemPlan.AllSimple(rd)) {
+            parser = MultiRowEmitter.Build<T>(rd, cols);
+            return true;
+        }
         var dm = new DynamicMethod(
             $"Map_{typeof(T).Name}_{Guid.NewGuid():N}",
             typeof(T), TReaderArg, Module,
@@ -71,5 +63,31 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
             defaultBehavior |= CommandBehavior.SequentialAccess;
         parser = new SimpleTypeParser<T>(defaultBehavior, dm.CreateDelegate<Func<DbDataReader, T>>(targetObj));
         return true;
+    }
+
+    /// <summary>
+    /// Negotiates the read plan for <typeparamref name="T"/> over the columns, the shared pass-1 step both the
+    /// single-row and multi-row roads start from. Returns <see langword="null"/> when no construction path maps.
+    /// </summary>
+    private static DbItemPlan? Negotiate<T>(INullColHandler nullColHandler, ColumnInfo[] cols) {
+        var closedType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+        var paramInfo = nullColHandler == NullableTypeHandle.Instance
+            ? InfoNullable
+            : nullColHandler == NotNullHandle.Instance
+                ? InfoNotNullable
+                : new(ParamInfo.NoType, nullColHandler, NoNameComparer.Instance);
+        var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
+        return TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(T), new([], 0), paramInfo, cols, new(), ref colUsage);
+    }
+
+    /// <summary>
+    /// Builds the multi-row parser for <typeparamref name="T"/> even when its plan is fully single-row, so a
+    /// type that would take the single-row road can be read through the multi-row emit instead. Not used by the
+    /// query path.
+    /// </summary>
+    internal ITypeParser<T> ForceMultiRow<T>(INullColHandler nullColHandler, ColumnInfo[] cols) {
+        var rd = Negotiate<T>(nullColHandler, cols)
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"no read plan for {typeof(T)} over the given columns");
+        return MultiRowEmitter.Build<T>(rd, cols);
     }
 }

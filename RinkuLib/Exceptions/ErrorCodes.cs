@@ -43,6 +43,12 @@ public static class ErrorCodes {
 
     /// <summary>No construction path for the target type could be filled from the columns returned.</summary>
     public const string NoParserForSchema = "RINKU3001";
+    /// <summary>A spanning type maps many rows to one instance but declares no group boundary to tell its instances apart.</summary>
+    public const string MissingGroupBoundary = "RINKU3002";
+    /// <summary>A declared group key matched no column in the result, so the boundary cannot be read.</summary>
+    public const string GroupKeyUnmapped = "RINKU3003";
+    /// <summary>Two group key declarations conflict at the same level, a member key and a method key on the type, or parameter keys and a method reference on one construction.</summary>
+    public const string ConflictingGroupKey = "RINKU3004";
 
     /// <summary>The query returned no rows and the requested shape requires one.</summary>
     public const string NoRows = "RINKU4001";

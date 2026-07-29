@@ -18,6 +18,18 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
     private readonly List<DbItemPlan> Readers = Parameters;
     private readonly List<(MemberInfo, DbItemPlan)> Members = Members ?? EmptyMembers;
     private static readonly List<(MemberInfo, DbItemPlan)> EmptyMembers = [];
+    /// <summary>The constructor or factory this node builds its instance with, what the multi-row emit calls.</summary>
+    internal MemberInfo Construction => MethodBase;
+    /// <summary>The construction arguments in order, each a plan for one constructor or factory parameter.</summary>
+    internal IReadOnlyList<DbItemPlan> ConstructorArguments => Readers;
+    /// <summary>The members filled after construction, each a target and its plan.</summary>
+    internal IReadOnlyList<(MemberInfo Member, DbItemPlan Plan)> PostMembers => Members;
+    /// <summary>The type this node builds.</summary>
+    internal Type ResultType => Type;
+    /// <summary>The group boundary key of this node's type, captured in pass 1 and negotiated by the multi-row emit.</summary>
+    internal IGroupingKeyMaker? GroupKey { get; init; }
+    /// <summary>The name-matching context this node negotiated in, so the key can match its columns the same way.</summary>
+    internal ColModifier Context { get; init; }
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedNullJumpSetPoint(Type);
     /// <inheritdoc/>

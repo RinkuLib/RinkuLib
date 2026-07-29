@@ -21,6 +21,8 @@ public abstract class TypeParsingInfo {
             RegisterTuples(tuples);
         if (DynaObjectTypeInfo.Instance is { } dyna)
             RegisterDynaObject(dyna);
+        AddOrSet(typeof(List<>), MultiRowTypeParsingInfo.ForList);
+        AddOrSet(typeof(IEnumerable<>), MultiRowTypeParsingInfo.ForList);
     }
     internal static void RegisterTuples(CtorTypeInfo instance) {
         AddOrSet(typeof(ValueTuple<>), instance);
@@ -79,6 +81,10 @@ public abstract class TypeParsingInfo {
             typeInfo = TypeInfos.GetOrAdd(type, BaseTypeInfo.Instance);
             return true;
         }
+        if (type.IsSZArray) {
+            typeInfo = TypeInfos.GetOrAdd(type, MultiRowTypeParsingInfo.ForArray);
+            return true;
+        }
         if (type.IsGenericType) {
             type = type.GetGenericTypeDefinition();
             if (TypeInfos.TryGetValue(type, out typeInfo))
@@ -97,8 +103,9 @@ public abstract class TypeParsingInfo {
         if (TypeInfos.TryGetValue(type, out var infos))
             return infos;
         if (!type.IsGenericType) {
-            infos = type.IsBaseType() || type.IsEnum
-                ? BaseTypeInfo.Instance : new DefaultTypeParsingInfo(type);
+            infos = type.IsBaseType() || type.IsEnum ? BaseTypeInfo.Instance
+                : type.IsSZArray ? MultiRowTypeParsingInfo.ForArray
+                : new DefaultTypeParsingInfo(type);
             return TypeInfos.GetOrAdd(type, infos);
         }
         type = type.GetGenericTypeDefinition();
@@ -121,6 +128,8 @@ public abstract class TypeParsingInfo {
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (TypeInfos.TryGetValue(type, out var infos))
             return infos;
+        if (type.IsSZArray && !type.IsBaseType())
+            return MultiRowTypeParsingInfo.ForArray;
         if (!type.IsGenericType)
             return null;
         type = type.GetGenericTypeDefinition();
@@ -194,6 +203,31 @@ public static class TypeParsingInfoHelper {
             return true;
         }
         return false;
+    }
+    /// <summary>Replaces the group boundary of an editable info, returning <see langword="false"/> when the info does not expose one.</summary>
+    public static bool SetGroupKey(this TypeParsingInfo info, IGroupingKeyMaker maker) {
+        if (info is not ICanUpdateGroupKey editable)
+            return false;
+        editable.GroupKey = maker;
+        return true;
+    }
+    /// <summary>Sets the group boundary of <typeparamref name="T"/> to an equality key over the named members.</summary>
+    public static void SetGroupKey<T>(params string[] members) {
+        var infos = new System.Reflection.MemberInfo[members.Length];
+        for (int i = 0; i < members.Length; i++)
+            infos[i] = (System.Reflection.MemberInfo?)typeof(T).GetProperty(members[i]) ?? typeof(T).GetField(members[i])
+                ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"{typeof(T)} has no property or field named {members[i]}");
+        SetOrThrow<T>(new EqualityGroupKeyMaker(infos));
+    }
+    /// <summary>Sets the group boundary of <typeparamref name="T"/> to the boundary a marked static method computes.</summary>
+    public static void SetGroupKeyMethod<T>(string method) {
+        var m = typeof(T).GetMethod(method, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"{typeof(T)} has no static method named {method}");
+        SetOrThrow<T>(new MethodGroupKeyMaker(m));
+    }
+    private static void SetOrThrow<T>(IGroupingKeyMaker maker) {
+        if (!TypeParsingInfo.ForceGet(typeof(T)).SetGroupKey(maker))
+            throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{typeof(T)} does not expose an editable group boundary");
     }
     /// <summary>
     /// The shared road every null-handling helper travels, the info's own

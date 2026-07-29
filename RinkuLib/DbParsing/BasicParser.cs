@@ -12,6 +12,8 @@ public class BasicParser(Type ParentType, ITypeConverter TypeConverter, string P
     private readonly string ParamName = ParamName;
     private readonly INullColHandler NullColHandler = NullColHandler;
     private readonly int Index = Index;
+    /// <summary>The column ordinal this node reads, used by the multi-row emit to null-check a sub-level's key.</summary>
+    internal int ColumnIndex => Index;
     /// <summary>
     /// Determines if the specific column/handler combination requires a jump target for null values.
     /// </summary>

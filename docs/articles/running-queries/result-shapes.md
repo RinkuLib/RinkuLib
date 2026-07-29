@@ -33,6 +33,8 @@ await foreach (var t in GetTracks.StreamQueryAsync<Track>(cnn))   // async strea
 
 `List<T>` buffers every row. `IEnumerable<T>` and `IAsyncEnumerable<T>` produce rows as you enumerate, keeping memory flat on large results. Zero rows give an empty collection.
 
+When `T` is itself nested, a `List<Artist>` whose `Artist` holds a `List<Album>`, a join's repeated rows fold back into it. See [across rows](../mapping/across-rows.md).
+
 A streamed result waits. `Query<IEnumerable<T>>` runs nothing when you call it, the command goes off on the first step of walking the rows, and the reader closes when the walk ends, whether you reach the last row or leave the loop early.
 
 ```csharp

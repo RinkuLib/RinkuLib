@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace RinkuLib.DbParsing;
@@ -35,6 +35,12 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// The C# type of the parameter or member. (Can be generic)
     /// </summary>
     public Type Type = Type;
+    /// <summary>
+    /// When this slot is a collection, whether a null element is kept (added as the element default) rather
+    /// than skipped. A collection skips null elements by default; <see cref="KeepNullElementsAttribute"/> on the
+    /// member turns that off.
+    /// </summary>
+    public bool KeepNullCollectionElements { get; set; }
     /// <summary>
     /// Updates the <see cref="NullColHandler"/> to handle a recovery jump if a null is encountered.
     /// </summary>
@@ -109,6 +115,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
         UsageFlags usageFlags = default;
         bool hasNoName = false;
+        bool keepNullElements = false;
         List<INameComparerMaker> nameComparersMakers = [];
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
@@ -118,6 +125,8 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 altCount++;
             if (attr is NoNameAttribute)
                 hasNoName = true;
+            if (attr is KeepNullElementsAttribute)
+                keepNullElements = true;
             if (attr is INameComparerMaker mkr)
                 nameComparersMakers.Add(mkr);
             if (attr is IParamInfoMaker mm)
@@ -136,7 +145,9 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                     altNames[altIdx++] = alt.AlternativeName;
         }
         INameComparer comparer = ComparerFactory(type, hasNoName ? null : name, altNames, attributes, param, nameComparersMakers);
-        return maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
+        var matcher = maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
+        matcher.KeepNullCollectionElements = keepNullElements;
+        return matcher;
     }
     /// <summary>
     /// Resolves the nullability that a set of attributes declares, a custom

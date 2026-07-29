@@ -4,7 +4,9 @@ using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing; 
 /// <summary>The default implementation of TypeParsingInfo</summary>
-public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanProvideParamInfos, ICanAddMember, ICanProvideConstructions, ICanProvideMembers {
+public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanProvideParamInfos, ICanAddMember, ICanProvideConstructions, ICanProvideMembers, ICanUpdateGroupKey {
+    /// <inheritdoc/>
+    public IGroupingKeyMaker? GroupKey { get; set; }
     internal static readonly
 #if NET9_0_OR_GREATER
         Lock
@@ -146,6 +148,27 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                     MCIs = MethodCtorInfo.GetOrderedInfos(result);
                 }
             }
+            if (GroupKey is null) {
+                var keyMethods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+                    .Where(m => m.IsDefined(typeof(GroupKeyAttribute), inherit: true)).ToArray();
+                List<MemberInfo> keyMembers = [];
+                foreach (var p in props)
+                    if (p.IsDefined(typeof(GroupKeyAttribute), inherit: true))
+                        keyMembers.Add(p);
+                foreach (var f in fields)
+                    if (f.IsDefined(typeof(GroupKeyAttribute), inherit: true))
+                        keyMembers.Add(f);
+                if (keyMethods.Length > 0 && keyMembers.Count > 0)
+                    throw new RinkuConfigurationException(ErrorCodes.ConflictingGroupKey,
+                        $"{type} marks both a [GroupKey] method and [GroupKey] members; a type carries one or the other");
+                if (keyMethods.Length > 1)
+                    throw new RinkuConfigurationException(ErrorCodes.ConflictingGroupKey,
+                        $"{type} marks more than one [GroupKey] method; a type carries one");
+                if (keyMethods.Length == 1)
+                    GroupKey = new MethodGroupKeyMaker(keyMethods[0]);
+                else if (keyMembers.Count > 0)
+                    GroupKey = new EqualityGroupKeyMaker([.. keyMembers]);
+            }
             IsInit = true;
         }
     }
@@ -258,6 +281,34 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             if (memberReaders.Count == 0 && readers.Count == 0)
                 return null;
         }
-        return new CustomClassParser(previousUsages.LatestUsedType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders);
+        return new CustomClassParser(previousUsages.LatestUsedType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders) { GroupKey = ConstructionKey(method) ?? GroupKey, Context = colModifier };
     }
+
+    /// <summary>
+    /// The key the chosen construction declares, which takes priority over the type-level key. Its marked
+    /// parameters compose an equality key, or a <see cref="GroupKeyMethodAttribute"/> names a boundary method; a
+    /// construction carries one or the other, never both. Declaring neither gives <see langword="null"/> so the
+    /// type-level key applies.
+    /// </summary>
+    private static IGroupingKeyMaker? ConstructionKey(MemberInfo method) {
+        if (method is not MethodBase construction)
+            return null;
+        List<ParameterInfo>? keyParams = null;
+        foreach (var p in construction.GetParameters())
+            if (p.IsDefined(typeof(GroupKeyAttribute), inherit: true))
+                (keyParams ??= []).Add(p);
+        var methodRef = construction.GetCustomAttribute<GroupKeyMethodAttribute>();
+        if (methodRef is not null && keyParams is not null)
+            throw new RinkuConfigurationException(ErrorCodes.ConflictingGroupKey,
+                $"{construction.DeclaringType} marks a construction with both [GroupKeyMethod] and [GroupKey] parameters; a construction carries one or the other");
+        if (methodRef is not null)
+            return new MethodGroupKeyMaker(ResolveKeyMethod(construction.DeclaringType!, methodRef.Method));
+        return keyParams is null ? null : new EqualityGroupKeyMaker([.. keyParams]);
+    }
+
+    /// <summary>Finds the static boundary method a <see cref="GroupKeyMethodAttribute"/> names on the construction's type.</summary>
+    private static MethodInfo ResolveKeyMethod(Type declaringType, string name)
+        => declaringType.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType,
+                $"[GroupKeyMethod] names no static method {name} on {declaringType}");
 }

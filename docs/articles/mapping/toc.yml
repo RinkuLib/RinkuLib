@@ -4,6 +4,10 @@
   href: objects.md
 - name: Nullability
   href: nullability.md
+- name: Across Rows
+  href: across-rows.md
+- name: Across Rows In Detail
+  href: across-rows-detail.md
 - name: DynaObject
   href: dynaobject.md
 - name: Registration
