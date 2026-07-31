@@ -219,6 +219,20 @@ public static class DirectBuildExtensions {
             return cmd.ExecuteMultiReader(command, usageMap, true, behavior);
         }
         /// <summary>
+        /// Executes the <see cref="MultiReader"/>, which owns the command and disposes it with itself, so there is nothing to hold.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        public MultiReader ExecuteMultiReader(DbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReader(command, usageMap, true, behavior);
+        }
+        /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
         /// </summary>
         /// <param name="cnn">The connection to execute on</param>
@@ -230,6 +244,21 @@ public static class DirectBuildExtensions {
         /// <param name="ct">The fowarded cancellation token</param>
         public Task<MultiReader> ExecuteMultiReaderAsync(DbConnection cnn, out DbCommand cmd, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             cmd = cnn.GetCommand(transaction, timeout);
+            bool[] usageMap = new bool[command.Mapper.Count];
+            command.SetCommand(cmd, parametersObj, usageMap);
+            return cmd.ExecuteMultiReaderAsync(command, usageMap, true, behavior, ct);
+        }
+        /// <summary>
+        /// Executes the <see cref="MultiReader"/>, which owns the command and disposes it with itself, so there is nothing to hold.
+        /// </summary>
+        /// <param name="cnn">The connection to execute on</param>
+        /// <param name="parametersObj">The current state object for the <see cref="DbCommand"/> creation</param>
+        /// <param name="behavior">The behavior to use for the reader</param>
+        /// <param name="transaction">The transaction to execute on</param>
+        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="ct">The fowarded cancellation token</param>
+        public Task<MultiReader> ExecuteMultiReaderAsync(DbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout);
             bool[] usageMap = new bool[command.Mapper.Count];
             command.SetCommand(cmd, parametersObj, usageMap);
             return cmd.ExecuteMultiReaderAsync(command, usageMap, true, behavior, ct);

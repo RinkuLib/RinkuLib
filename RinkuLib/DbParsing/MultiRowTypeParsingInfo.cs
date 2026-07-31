@@ -21,31 +21,35 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo {
     /// </summary>
     public readonly MethodBase InitialState;
     /// <summary>
-    /// The accumulator's <c>Add</c> for one element, its single parameter the element type, or
-    /// <see langword="null"/> to find an <c>Add(element)</c> on the accumulator by name. A non-void return is
-    /// discarded. Giving it names an <c>Add</c> the lookup would miss and skips the lookup.
+    /// The accumulator's <c>Add</c> for one element, its single parameter the element type. Its return value,
+    /// if non-void, is discarded. Can be open generic when the accumulator is generic; it is closed with
+    /// the resolved element type at negotiation.
     /// </summary>
-    public readonly MethodBase? Add;
+    public readonly MethodBase Add;
     /// <summary>
     /// The construction from the accumulator to the declared value, or <see langword="null"/> when the accumulator
     /// already is the value (a <c>List</c>, or a set filled in place).
     /// </summary>
     public readonly MethodBase? Finish;
-    /// <summary>Builds a multi-row info seeding the accumulator with <paramref name="initialState"/>, folding with <paramref name="add"/> (<see langword="null"/> to find <c>Add(element)</c> by name), and finishing with <paramref name="finish"/> (<see langword="null"/> for identity).</summary>
+    /// <summary>Builds a multi-row info seeding the accumulator with <paramref name="initialState"/>, folding with <paramref name="add"/> (required to determine element type), and finishing with <paramref name="finish"/> (<see langword="null"/> for identity).</summary>
     public MultiRowTypeParsingInfo(MethodBase initialState, MethodBase? add, MethodBase? finish) {
+        if (add is null)
+            throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, $"{nameof(MultiRowTypeParsingInfo)} requires Add to be provided to determine the element type");
         InitialState = initialState;
         Add = add;
         Finish = finish;
     }
 
     private static readonly ConstructorInfo ListCtor = typeof(List<>).GetConstructor(Type.EmptyTypes)!;
+    private static readonly MethodInfo ListAdd = typeof(List<>).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+        .First(m => m.Name == nameof(List<int>.Add) && m.GetParameters().Length == 1);
     /// <summary>The built-in <c>List&lt;&gt;</c> mapping, where the accumulator is already the result.</summary>
-    public static readonly MultiRowTypeParsingInfo ForList = new(ListCtor, null, null);
+    public static readonly MultiRowTypeParsingInfo ForList = new(ListCtor, ListAdd, null);
     /// <summary>
     /// Maps an array, folding into a <c>List&lt;element&gt;</c> and finishing with its <c>ToArray</c>. Register it
     /// against a specific array type, for example <c>AddOrSet(typeof(Child[]), MultiRowTypeParsingInfo.ForArray)</c>.
     /// </summary>
-    public static readonly MultiRowTypeParsingInfo ForArray = new(ListCtor, null, typeof(List<>).GetMethod(nameof(List<int>.ToArray), Type.EmptyTypes)!);
+    public static readonly MultiRowTypeParsingInfo ForArray = new(ListCtor, ListAdd, typeof(List<>).GetMethod(nameof(List<int>.ToArray), Type.EmptyTypes)!);
 
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type targetType) {
@@ -61,25 +65,35 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo {
     }
 
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
         var elementType = ElementOf(currentClosedType);
         var initialState = Close(InitialState, elementType);
         var finish = Finish is null ? null : Close(Finish, elementType);
         var accumulatorType = AccumulatorOf(initialState);
-        return Fold(elementType, accumulatorType, initialState, ResolveAdd(accumulatorType, elementType, Add), finish, previousUsages, paramInfo, columns, colModifier, ref colUsage)
-            ?? paramInfo.FallbackTryGetParser(currentClosedType);
+        var add = ResolveAdd(accumulatorType, elementType, Add);
+
+        if (!TryGetInfo(elementType, out var elementInfo))
+            return null;
+        var elementParamInfo = new ParamInfo(elementType, InvalidOnNullAndNotNullHandle.Instance, paramInfo.NameComparer);
+        var elementNode = elementInfo.TryGetParser(elementType, previousUsages, elementParamInfo, columns, colModifier, ref colUsage, registerRecursively);
+        return elementNode is null ? null
+            : new AccumulatorPlan(elementNode, elementType, accumulatorType, add, initialState, finish, paramInfo.NullColHandler);
     }
 
-    /// <summary>The element read per row: the collection's generic argument or array element, or the single parameter of <see cref="Add"/> when the value is no collection.</summary>
+    /// <summary>The element type read per row: the single parameter of the Add method, resolved from the closed collection type when Add is generic.</summary>
     private Type ElementOf(Type currentClosedType) {
+        var addParams = Add.GetParameters();
+        if (addParams.Length == 0)
+            throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo,
+                $"{nameof(MultiRowTypeParsingInfo)} requires Add to have a single parameter specifying the element type");
+        var paramType = addParams[0].ParameterType;
+
+        if (!paramType.IsGenericParameter)
+            return paramType;
+
         if (currentClosedType.IsArray)
-            return currentClosedType.GetElementType()!;
-        if (currentClosedType.IsGenericType)
-            return currentClosedType.GetGenericArguments()[0];
-        if (Add is not null)
-            return Add.GetParameters()[0].ParameterType;
-        throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo,
-            $"{nameof(MultiRowTypeParsingInfo)} maps {currentClosedType} with no generic element and no Add to name the element; give the Add whose single parameter is the element");
+            return paramType.CloseType([currentClosedType.GetElementType()!]);
+        return paramType.CloseType(currentClosedType.GetGenericArguments());
     }
 
     /// <summary>The type a seeding construction produces, its declaring type for a constructor or its return for a factory.</summary>
@@ -100,19 +114,6 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo {
     }
 
     /// <summary>
-    /// Negotiates the element and, when it maps, builds the fold plan shared by every accumulator: seed
-    /// <paramref name="accumulatorType"/> with <paramref name="initialState"/>, read one element per row and
-    /// <c>Add</c> it with <paramref name="add"/>, and finish with <paramref name="finish"/>. Returns
-    /// <see langword="null"/> when the element maps no column.
-    /// </summary>
-    internal static AccumulatorPlan? Fold(Type elementType, Type accumulatorType, MethodBase initialState, MethodInfo add, MethodBase? finish, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
-        var elementParamInfo = new ParamInfo(elementType, ElementNullColHandler(elementType, paramInfo.KeepNullCollectionElements), paramInfo.NameComparer);
-        var elementNode = ForceGet(elementType).TryGetParser(elementType, previousUsages, elementParamInfo, columns, colModifier, ref colUsage);
-        return elementNode is null ? null
-            : new AccumulatorPlan(elementNode, elementType, accumulatorType, add, initialState, finish);
-    }
-
-    /// <summary>
     /// The <c>Add(element)</c> that folds one element in, either the registered one closed to the element type or,
     /// when none was given, the accumulator's own found by name. Throws when neither names an <c>Add</c>.
     /// </summary>
@@ -124,27 +125,19 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo {
                 $"the accumulator {accumulatorType} has no Add({elementType}) to fold an element into");
     }
 
-    /// <summary>
-    /// The null rule the element negotiates under. By default a null element is skipped, not added: a scalar
-    /// element takes an invalid-on-null rule so a null column collapses it out, and a complex element takes one
-    /// too, which is also the recovery channel a nested <c>[InvalidOnNull]</c> uses (a childless left join). With
-    /// <see cref="KeepNullElementsAttribute"/> on the member the element follows its own nullability instead, so
-    /// a null is added as the element default.
-    /// </summary>
-    internal static INullColHandler ElementNullColHandler(Type elementType, bool keepNulls) {
-        if (keepNulls)
-            return elementType.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
-        return elementType.IsNullable() ? InvalidOnNullAndNullableHandle.Instance : InvalidOnNullAndNotNullHandle.Instance;
-    }
 }
 
 /// <summary>
-/// Keeps null elements in a collection instead of skipping them: the element is added as its default (a
-/// <see langword="null"/> for a class, the zero value for a struct). Place it on the collection parameter or
-/// member. Without it a collection drops an element whose value, or whose <c>[InvalidOnNull]</c> column, is null.
+/// Keeps a null element in a collection instead of dropping it, adding it as the type's default (a
+/// <see langword="null"/> for a class or nullable, the zero value for a value type). It sets the collection's null
+/// rule to the take-default one instead of the collapse rule, so the null no longer flows up out of the fold. It is
+/// a convenience over the same <see cref="INullColHandlerMaker"/> seam any rule of your own uses.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class KeepNullElementsAttribute : Attribute { }
+public sealed class KeepNullElementsAttribute : Attribute, INullColHandlerMaker {
+    /// <inheritdoc/>
+    public INullColHandler MakeColHandler(Type type, string? name, object[] attributes, object? param) => KeepNullElementsHandle.Instance;
+}
 
 /// <summary>
 /// The plan node for a folded value, an accumulator that reads one element per row and folds it into a single
@@ -153,9 +146,11 @@ public sealed class KeepNullElementsAttribute : Attribute { }
 /// <c>Add</c>, and <see cref="Construct"/> turns it into the declared result, so a list, a set filled in place, or
 /// an aggregate that keeps a running sum all take the same road, differing only in these pieces.
 /// </summary>
-internal sealed class AccumulatorPlan(DbItemPlan element, Type elementType, Type accumulatorType, MethodInfo add, MethodBase initialState, MethodBase? construct) : DbItemPlan {
+internal sealed class AccumulatorPlan(DbItemPlan element, Type elementType, Type accumulatorType, MethodInfo add, MethodBase initialState, MethodBase? construct, INullColHandler nullRule) : DbItemPlan {
     /// <summary>The plan that reads one element from a row.</summary>
     internal DbItemPlan Element => element;
+    /// <summary>The collection's own null rule, what to do when an element flows up null: skip, keep (add the default), or throw. The element itself is read with a fixed collapse rule and never null-handled.</summary>
+    internal INullColHandler NullRule => nullRule;
     /// <summary>The element type each row folds in, what <see cref="AddMethod"/> takes.</summary>
     internal Type ElementType => elementType;
     /// <summary>The accumulator instance type, seeded once per group and folded into each row; this is the buffer.</summary>

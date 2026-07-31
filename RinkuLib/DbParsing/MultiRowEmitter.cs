@@ -100,6 +100,7 @@ internal static class MultiRowEmitter {
         public MemberInfo? Member;
         public FieldBuilder? TargetField;
         public object? Target;
+        public INullColHandler? NullRule;
         public bool IsBuffer => Kind is SlotKind.SimpleBuffer or SlotKind.SubLevelBuffer;
     }
 
@@ -243,46 +244,9 @@ internal static class MultiRowEmitter {
     /// boundary; the member key, the method, and the always-grouped boundary all reach emit through
     /// <see cref="GroupingBoundary"/>.
     /// </summary>
-    private static GroupingBoundary BuildBoundary(CustomClassParser node, TypeBuilder tb, ColumnInfo[] cols, string tag) {
-        var build = new BoundaryBuild(tb, cols, tag);
-        if (node.GroupKey is { } maker)
-            return maker.MakeBoundary(node.ResultType, cols, node.Context, build);
-        return InferBoundary(node, build);
-    }
-
-    /// <summary>
-    /// The default boundary of a keyless spanning construction, read from its argument shape. The arguments
-    /// before the first accumulator, each already negotiated for construction, become the key, reused so their
-    /// columns still feed the arguments. With none before the first accumulator the group never changes, which
-    /// folds every row into one instance and reads a tuple of collections whole, unless a non-accumulator
-    /// argument follows an accumulator, which is ambiguous and asks for an explicit key.
-    /// </summary>
-    private static GroupingBoundary InferBoundary(CustomClassParser node, IBoundaryBuild build) {
-        var args = node.ConstructorArguments;
-        int firstAccumulator = args.Count;
-        for (int i = 0; i < args.Count; i++)
-            if (args[i] is AccumulatorPlan) {
-                firstAccumulator = i;
-                break;
-            }
-        if (firstAccumulator == 0) {
-            for (int i = 1; i < args.Count; i++)
-                if (args[i] is not AccumulatorPlan)
-                    throw new RinkuConfigurationException(ErrorCodes.MissingGroupBoundary,
-                        $"{node.ResultType} has a value after a collection and no group key to tell its groups apart; mark its key with [GroupKey]");
-            return AlwaysGroupedBoundary.Instance;
-        }
-        var parameters = ((MethodBase)node.Construction).GetParameters();
-        var components = new (IBoundaryReader, IBoundaryField)[firstAccumulator];
-        for (int i = 0; i < firstAccumulator; i++) {
-            if (!DbItemPlan.AllSimple(args[i]))
-                throw new RinkuConfigurationException(ErrorCodes.MissingGroupBoundary,
-                    $"{node.ResultType} spans a value before its collection and cannot be a default key; mark its key with [GroupKey]");
-            var type = parameters[i].ParameterType;
-            components[i] = (build.Reader(args[i], type), build.Field(type));
-        }
-        return new EqualityBoundary(components);
-    }
+    private static GroupingBoundary BuildBoundary(CustomClassParser node, TypeBuilder tb, ColumnInfo[] cols, string tag)
+        => (node.GroupKey ?? new InferredGroupingRule(node.ConstructorArguments, (MethodBase)node.Construction, node.ResultType))
+            .MakeBoundary(node.ResultType, cols, node.Context, new BoundaryBuild(tb, cols, tag));
 
     /// <summary>
     /// Turns one construction slot, a constructor argument or a settable member, into a state slot. A simple
@@ -297,7 +261,7 @@ internal static class MultiRowEmitter {
             StateTypeAssembly.AllowAccessTo(acc.ElementType.Assembly);
             if (DbItemPlan.AllSimple(acc.Element)) {
                 slot = new Slot {
-                    Kind = SlotKind.SimpleBuffer, Field = buffer, ElementType = acc.ElementType, Construct = acc.Construct, InitialState = acc.InitialState, Add = acc.AddMethod, Member = member,
+                    Kind = SlotKind.SimpleBuffer, Field = buffer, ElementType = acc.ElementType, Construct = acc.Construct, InitialState = acc.InitialState, Add = acc.AddMethod, Member = member, NullRule = acc.NullRule,
                     Reader = EmitTryReadElement(tb, acc.Element, acc.ElementType, cols, tag, out var tobj),
                 };
                 CaptureTarget(slot, tobj, tb, tag);
@@ -549,17 +513,20 @@ internal static class MultiRowEmitter {
 
         foreach (var b in level.SimpleBuffers) {
             var element = il.DeclareLocal(b.ElementType);
-            var skip = il.DefineLabel();
+            var add = il.DefineLabel();
+            var done = il.DefineLabel();
             EmitTarget(il, b.TargetField);
             il.Emit(OpCodes.Ldarg_1);
             il.Emit(OpCodes.Ldloca, element);
             il.Emit(OpCodes.Call, b.Reader);
-            il.Emit(OpCodes.Brfalse, skip);
+            il.Emit(OpCodes.Brtrue, add);
+            b.NullRule!.HandleNullForMultiRow(b.Field.FieldType, b.ElementType, "element", element, Wrap(il), new(done, 0));
+            il.MarkLabel(add);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldfld, b.Field);
             il.Emit(OpCodes.Ldloc, element);
             EmitAdd(il, b.Add!);
-            il.MarkLabel(skip);
+            il.MarkLabel(done);
         }
 
         if (level.Child is not null)

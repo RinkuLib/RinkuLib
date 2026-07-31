@@ -70,6 +70,7 @@ public class MultiRowTests {
     }
 
     public sealed record TagParent([property: GroupKey] int Id, [KeepNullElements] List<string?> Tags) : IDbReadable;
+    public sealed record NotNullTagParent([property: GroupKey] int Id, [System.Diagnostics.CodeAnalysis.NotNull] List<string> Tags) : IDbReadable;
     public sealed record InferredParent(int Id, string Name, List<Child> Children) : IDbReadable;
     public sealed record ValueAfterCollection(List<Child> Children, int Trailing) : IDbReadable;
     public sealed record DynaHolder(List<DynaObject> Rows) : IDbReadable {
@@ -377,6 +378,51 @@ public class MultiRowTests {
         Assert.Equal([5, 7, 9], result);
     }
 
+    public sealed record PairedAlbum(int Id, string Title);
+
+    [Fact]
+    public void A_tuple_pairs_a_grouping_id_with_a_built_object() {
+        ColumnInfo[] cols = [new("ArtistId", typeof(int), false), new("Id", typeof(int), false), new("Title", typeof(string), false)];
+        var parser = TypeParser.GetTypeParser<List<(int ArtistId, PairedAlbum Album)>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, 10, "High Voltage"], [1, 11, "Let There Be Rock"], [2, 20, "Jazz"]);
+        reader.Read();
+        var rows = parser.Parse(reader).Result;
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal((1, new PairedAlbum(10, "High Voltage")), rows[0]);
+        Assert.Equal((1, new PairedAlbum(11, "Let There Be Rock")), rows[1]);
+        Assert.Equal((2, new PairedAlbum(20, "Jazz")), rows[2]);
+    }
+
+    public sealed record ArtistShell(int Id, string Name) {
+        public List<PairedAlbum> Albums { get; } = [];
+    }
+
+    [Fact]
+    public void Manual_grouping_streams_children_into_parents_by_key() {
+        ColumnInfo[] pcols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
+        var pparser = TypeParser.GetTypeParser<List<ArtistShell>>(ref pcols);
+        using var preader = Rows.Reader(pcols, [1, "AC/DC"], [2, "Queen"]);
+        preader.Read();
+        var artists = pparser.Parse(preader).Result;
+
+        ColumnInfo[] ccols = [new("ArtistId", typeof(int), false), new("Id", typeof(int), false), new("Title", typeof(string), false)];
+        var cparser = TypeParser.GetTypeParser<IEnumerable<(int ArtistId, PairedAlbum Album)>>(ref ccols);
+        using var creader = Rows.Reader(ccols, [1, 10, "High Voltage"], [1, 11, "Let There Be Rock"], [2, 20, "Jazz"]);
+        creader.Read();
+        using var albums = cparser.Parse(creader).Result.GetEnumerator();
+
+        bool more = albums.MoveNext();
+        foreach (var artist in artists)
+            while (more && albums.Current.ArtistId == artist.Id) {
+                artist.Albums.Add(albums.Current.Album);
+                more = albums.MoveNext();
+            }
+
+        Assert.Equal([new PairedAlbum(10, "High Voltage"), new PairedAlbum(11, "Let There Be Rock")], artists[0].Albums);
+        Assert.Equal([new PairedAlbum(20, "Jazz")], artists[1].Albums);
+    }
+
     [Fact]
     public void A_keyless_type_infers_its_leading_scalars_as_the_key() {
         var cols = ParentCols();
@@ -568,6 +614,15 @@ public class MultiRowTests {
         Assert.Equal(["a", null, "b"], result[0].Tags);
     }
 
+    [Fact]
+    public void NotNull_on_collection_throws_when_null_element_encountered() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("Tags", typeof(string), true)];
+        var parser = TypeParser.GetTypeParser<List<NotNullTagParent>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "a"], [1, DBNull.Value], [1, "b"]);
+        reader.Read();
+        Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
+    }
+
     // --- composition and async --------------------------------------------------------------------------
 
     private static readonly object[][] TwoParentRows = [
@@ -704,4 +759,39 @@ public class MultiRowTests {
         Assert.Equal(2, result[1].Rows[0].Get<int>("Id"));
         Assert.Equal("c", result[1].Rows[0].Get<string>("Name"));
     }
+
+    public sealed record StrictInventory(int Id, List<string> Items);
+
+    [Fact]
+    public void A_non_nullable_collection_element_behavior_when_null_is_encountered() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("Items", typeof(string), true)];
+        var parser = TypeParser.GetTypeParser<List<StrictInventory>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "bolt"], [1, null], [1, "nail"]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Single(result);
+        Assert.Equal(1, result[0].Id);
+        // Documents actual behavior: null elements are skipped, not kept as default
+        Assert.Equal(["bolt", "nail"], result[0].Items);
+    }
+
+    public sealed record UnregisteredElement(int Id, string Value);
+
+    public sealed record WithUnregisteredCollection(int Id, List<UnregisteredElement> Items) : IDbReadable;
+
+    [Fact]
+    public void An_unregistered_element_type_in_a_closed_collection_rejects_the_path() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("ItemsId", typeof(int), false), new("ItemsValue", typeof(string), true)];
+        Assert.Throws<RinkuNoParserException>(() => TypeParser.GetTypeParser<List<WithUnregisteredCollection>>(ref cols));
+    }
+
+    public sealed record GenericContainer<T>(int Id, List<T> Items) : IDbReadable;
+
+    [Fact]
+    public void An_unregistered_type_resolving_an_open_generic_collection_rejects_the_path() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("ItemsId", typeof(int), false), new("ItemsValue", typeof(string), true)];
+        Assert.Throws<RinkuNoParserException>(() => TypeParser.GetTypeParser<List<GenericContainer<UnregisteredElement>>>(ref cols));
+    }
+
 }

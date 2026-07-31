@@ -1,79 +1,12 @@
 ﻿using System.Reflection.Emit;
 
 namespace RinkuLib.DbParsing;
-/// <summary>The seam behind the reading-order attributes, it adjusts how a member claims its columns.</summary>
-public interface IUsageFlagModifier {
-    /// <summary>Adjusts the reading-order flags for the member this is on.</summary>
-    public void UpdateFlags(object? param, ref UsageFlags usageFlag);
-}
 /// <summary>
 /// Collapses the owning object to nothing when this column is <c>NULL</c>, so a nested object that is all
 /// nulls becomes absent instead of an instance of blanks.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class InvalidOnNullAttribute : Attribute;
-/// <summary>
-/// The member may look anywhere in the schema to find its column, not only the one following the last
-/// consumed. On a complex-typed slot this frees only the subtree's first consumed column. The rest keep
-/// the inherited regime. Use <see cref="CanLookAnywhereSubtreeAttribute"/> to free the whole subtree.
-/// </summary>
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class CanLookAnywhereAttribute : Attribute, IUsageFlagModifier {
-    /// <inheritdoc/>
-    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
-        => usageFlag |= UsageFlags.RemoveSequentialRead;
-}
-/// <summary>
-/// The member must <b>not</b> look anywhere and must take only the column following the last consumed.
-/// On a complex-typed slot this constrains only the subtree's first consumed column. The rest keep the
-/// inherited regime. Use <see cref="CanNotLookAnywhereSubtreeAttribute"/> to constrain the whole subtree.
-/// </summary>
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class CanNotLookAnywhereAttribute : Attribute, IUsageFlagModifier {
-    /// <inheritdoc/>
-    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
-        => usageFlag |= UsageFlags.SequentialRead;
-}
-/// <summary>
-/// Specifies that an an allready used column may be used to match. On a complex-typed slot this applies
-/// to the subtree's first consumed column. Use <see cref="MayReuseColSubtreeAttribute"/> for the whole subtree.
-/// </summary>
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class MayReuseColAttribute : Attribute, IUsageFlagModifier {
-    /// <inheritdoc/>
-    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
-        => usageFlag |= UsageFlags.CanReuse;
-}
-/// <summary>
-/// The subtree form of <see cref="CanLookAnywhereAttribute"/>: frees the complex slot's whole subtree to
-/// look anywhere, not just its first column.
-/// </summary>
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class CanLookAnywhereSubtreeAttribute : Attribute, IUsageFlagModifier {
-    /// <inheritdoc/>
-    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
-        => usageFlag |= UsageFlags.RemoveSequentialRead | UsageFlags.Subtree;
-}
-/// <summary>
-/// The subtree form of <see cref="CanNotLookAnywhereAttribute"/>: constrains the complex slot's whole
-/// subtree to sequential reading, not just its first column.
-/// </summary>
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class CanNotLookAnywhereSubtreeAttribute : Attribute, IUsageFlagModifier {
-    /// <inheritdoc/>
-    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
-        => usageFlag |= UsageFlags.SequentialRead | UsageFlags.Subtree;
-}
-/// <summary>
-/// The subtree form of <see cref="MayReuseColAttribute"/>: lets the complex slot's whole subtree reuse
-/// already consumed columns, not just its first column.
-/// </summary>
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class MayReuseColSubtreeAttribute : Attribute, IUsageFlagModifier {
-    /// <inheritdoc/>
-    public void UpdateFlags(object? param, ref UsageFlags usageFlag)
-        => usageFlag |= UsageFlags.CanReuse | UsageFlags.Subtree;
-}
 /// <summary>
 /// Builds the null rule for a member from its reflection metadata, the seam behind an attribute that changes
 /// how a column's <c>NULL</c> is treated.
@@ -99,6 +32,11 @@ public interface INullColHandler {
     /// <returns>A label to continue at after handling, or <see langword="null"/> when the handler jumps or throws outright.</returns>
     public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint);
     /// <summary>
+    /// Emits how a <c>NULL</c> element signal is handled in a multi-row collection, storing the result in the element local.
+    /// </summary>
+    /// <returns>A label to continue at after handling, or <see langword="null"/> when the handler jumps or throws outright.</returns>
+    public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint);
+    /// <summary>
     /// The same rule switched to also collapse the owning object when the value is <c>NULL</c>, or back.
     /// </summary>
     public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull);
@@ -116,12 +54,41 @@ public class NullableTypeHandle : INullColHandler {
         return endLabel;
     }
     /// <inheritdoc/>
+    public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint) {
+        throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType,
+            $"nullable type handling does not support multi-row null elements; use [KeepNullElements] for {bufferType}");
+    }
+    /// <inheritdoc/>
     public bool IsBr_S(Type closedType) => true;
     /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => false;
     /// <inheritdoc/>
-    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) 
+    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
         => invalidOnNull ? InvalidOnNullAndNullableHandle.Instance : this;
+}
+/// <summary>The null rule for collection elements marked with [KeepNullElements], keeps the element as the type's default.</summary>
+public class KeepNullElementsHandle : INullColHandler {
+    /// <summary>Singleton</summary>
+    public static readonly KeepNullElementsHandle Instance = new();
+    private KeepNullElementsHandle() { }
+    /// <inheritdoc/>
+    public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+        throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType,
+            $"[KeepNullElements] only supports collection elements, not simple types like {closedType}");
+    }
+    /// <inheritdoc/>
+    public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint) {
+        DbItemPlan.EmitDefaultValue(elementType, generator);
+        generator.Emit(OpCodes.Stloc, elementLocal);
+        return null;
+    }
+    /// <inheritdoc/>
+    public bool IsBr_S(Type closedType) => true;
+    /// <inheritdoc/>
+    public bool NeedNullJumpSetPoint(Type closedType) => false;
+    /// <inheritdoc/>
+    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
+        => invalidOnNull ? this : this;
 }
 /// <summary>The null rule that collapses the owning object when a column is <c>NULL</c>, otherwise a default.</summary>
 public class InvalidOnNullAndNullableHandle : INullColHandler {
@@ -130,6 +97,11 @@ public class InvalidOnNullAndNullableHandle : INullColHandler {
     private InvalidOnNullAndNullableHandle() { }
     /// <inheritdoc/>
     public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+        nullSetPoint.MakeNullJump(generator);
+        return null;
+    }
+    /// <inheritdoc/>
+    public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint) {
         nullSetPoint.MakeNullJump(generator);
         return null;
     }
@@ -152,6 +124,11 @@ public class NotNullHandle : INullColHandler {
         return null;
     }
     /// <inheritdoc/>
+    public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint) {
+        DbItemPlan.EmitThrowNullAssignment(bufferType, elementType, paramName, generator);
+        return null;
+    }
+    /// <inheritdoc/>
     public bool IsBr_S(Type closedType) => true;
     /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => false;
@@ -166,6 +143,11 @@ public class InvalidOnNullAndNotNullHandle : INullColHandler {
     private InvalidOnNullAndNotNullHandle() { }
     /// <inheritdoc/>
     public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+        nullSetPoint.MakeNullJump(generator);
+        return null;
+    }
+    /// <inheritdoc/>
+    public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint) {
         nullSetPoint.MakeNullJump(generator);
         return null;
     }

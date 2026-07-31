@@ -138,7 +138,7 @@ public class RegistrationResidualTests {
             Slot.NullColHandler = modifier(Slot) ?? Slot.NullColHandler;
         }
         public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages,
-            ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) => null;
+            ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) => null;
     }
 
     [Fact]

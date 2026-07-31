@@ -1,26 +1,9 @@
 using System.Reflection;
 using System.Reflection.Emit;
-using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
 
-/// <summary>
-/// The options for a spanning read's group boundary, the un-negotiated key held by the type mapping. In the emit
-/// step it is negotiated over the result's columns, resolving alternates, nesting, and generics, to produce the
-/// <see cref="GroupingBoundary"/> that emits the resolved key. The options and the emitter are two things: the
-/// options say what the key is, the boundary is the code that reads and compares it.
-/// </summary>
-public interface IGroupingKeyMaker {
-    /// <summary>
-    /// Negotiates the key over <paramref name="columns"/> under the same name-matching context
-    /// <paramref name="colModifier"/> the ordinary slots negotiated in, and lowers it through
-    /// <paramref name="build"/> into the boundary that emits it. The columns the key reads are reused, not
-    /// consumed, so the ordinary slots claim them first.
-    /// </summary>
-    GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build);
-}
-
-/// <summary>The surface a maker lowers its negotiated readers through, turning them into emit handles on the state struct.</summary>
+/// <summary>The surface a rule lowers its negotiated readers through, turning them into emit handles on the state struct.</summary>
 public interface IBoundaryBuild {
     /// <summary>Compiles a negotiated reader into a handle whose <see cref="IBoundaryReader.EmitRead"/> reads the current row.</summary>
     IBoundaryReader Reader(DbItemPlan reader, Type type);
@@ -199,89 +182,4 @@ public sealed class AlwaysGroupedBoundary : GroupingBoundary {
     public override void EmitCapture(Generator g) { }
     /// <inheritdoc/>
     public override void EmitCompare(Generator g, Label changed) { }
-}
-
-/// <summary>A type mapping whose group boundary can be read and replaced.</summary>
-public interface ICanUpdateGroupKey {
-    /// <summary>The maker that builds the type's group boundary, or <see langword="null"/> when it declares none.</summary>
-    IGroupingKeyMaker? GroupKey { get; set; }
-}
-
-/// <summary>The shared negotiation the key makers reuse: turn one source into a reused reader over the columns.</summary>
-internal static class GroupKeyNegotiation {
-    /// <summary>Negotiates a fresh reader for <paramref name="param"/> against the columns, reusing what the slots claimed.</summary>
-    public static DbItemPlan NegotiateReader(ParamInfo param, Type type, ColumnInfo[] columns, ColModifier colModifier, string describe) {
-        var usage = new ColumnUsage(new bool[columns.Length]);
-        return TypeParsingInfo.ForceGet(type).TryGetParser(type, new([], 0), param, columns, colModifier, ref usage)
-            ?? throw new RinkuConfigurationException(ErrorCodes.GroupKeyUnmapped, $"the group key {describe} matched no column");
-    }
-}
-
-/// <summary>
-/// A key of one or more marked sources, each a member (property or field) or a construction parameter, negotiated
-/// to its own column with reuse and compared by its own equality. Several sources compose a composite key. It is
-/// the key of a marked member or, when a construction's marked parameters override the type, of those parameters.
-/// </summary>
-public sealed class EqualityGroupKeyMaker : IGroupingKeyMaker {
-    private readonly object[] Sources;
-    /// <summary>A key over one or more marked members (properties or fields).</summary>
-    public EqualityGroupKeyMaker(params MemberInfo[] members) => Sources = members;
-    /// <summary>A key over one or more marked construction parameters.</summary>
-    public EqualityGroupKeyMaker(params ParameterInfo[] parameters) => Sources = parameters;
-    /// <inheritdoc/>
-    public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
-        colModifier.Flags |= UsageFlags.CanReuse | UsageFlags.RemoveSequentialRead;
-        var components = new (IBoundaryReader, IBoundaryField)[Sources.Length];
-        for (int i = 0; i < Sources.Length; i++) {
-            var (param, type) = Resolve(Sources[i]);
-            var reader = GroupKeyNegotiation.NegotiateReader(param, type, columns, colModifier, Sources[i].ToString()!);
-            components[i] = (build.Reader(reader, type), build.Field(type));
-        }
-        return new EqualityBoundary(components);
-    }
-    private static (ParamInfo Param, Type Type) Resolve(object source) => source switch {
-        PropertyInfo p => (Usable(source, ParamInfo.TryNew(p)), p.PropertyType),
-        FieldInfo f => (Usable(source, ParamInfo.TryNew(f)), f.FieldType),
-        ParameterInfo p => (Usable(source, ParamInfo.TryNew(p)), p.ParameterType),
-        _ => throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"a group key source must be a property, field, or parameter, not {source?.GetType()}"),
-    };
-    private static ParamInfo Usable(object source, ParamInfo? param)
-        => param ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"the group key {source} is not a usable type");
-}
-
-/// <summary>
-/// A boundary decided by a marked <c>static (bool, TKey) Method(TKey stored, ...params)</c>. The stored key is the
-/// first parameter; every parameter after it is negotiated like an ordinary reader, so the method's inputs carry
-/// alternates and nesting.
-/// </summary>
-public sealed class MethodGroupKeyMaker : IGroupingKeyMaker {
-    private readonly MethodInfo Method;
-    private readonly Type KeyType;
-    private readonly ParameterInfo[] Params;
-    /// <summary>Validates the <c>static (bool, TKey) Method(TKey, ...)</c> shape.</summary>
-    public MethodGroupKeyMaker(MethodInfo method) {
-        var parameters = method.GetParameters();
-        if (!method.IsStatic || parameters.Length < 1
-            || !method.ReturnType.IsGenericType || method.ReturnType.GetGenericTypeDefinition() != typeof(ValueTuple<,>)
-            || method.ReturnType.GetGenericArguments()[0] != typeof(bool)
-            || method.ReturnType.GetGenericArguments()[1] != parameters[0].ParameterType)
-            throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType,
-                $"a [GroupKey] method must be static (bool, TKey) {method.Name}(TKey, ...negotiated parameters)");
-        Method = method;
-        KeyType = parameters[0].ParameterType;
-        Params = parameters[1..];
-    }
-    /// <inheritdoc/>
-    public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
-        colModifier.Flags |= UsageFlags.CanReuse | UsageFlags.RemoveSequentialRead;
-        var readers = new IBoundaryReader[Params.Length];
-        for (int i = 0; i < Params.Length; i++) {
-            var p = Params[i];
-            var param = ParamInfo.TryNew(p)
-                ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"the group key parameter {p.Name} is not a usable type");
-            var reader = GroupKeyNegotiation.NegotiateReader(param, p.ParameterType, columns, colModifier, $"parameter {p.Name}");
-            readers[i] = build.Reader(reader, p.ParameterType);
-        }
-        return new MethodBoundary(Method, KeyType, build.Field(KeyType), readers);
-    }
 }

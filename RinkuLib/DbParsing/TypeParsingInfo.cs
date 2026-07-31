@@ -176,13 +176,13 @@ public abstract class TypeParsingInfo {
     /// Evaluates a received schema against the registered metadata to emit a specialized parser.
     /// </summary>
     /// <remarks>
-    /// The default logic evaluates <see cref="DefaultTypeParsingInfo.PossibleConstructors"/> and 
+    /// The default logic evaluates <see cref="DefaultTypeParsingInfo.PossibleConstructors"/> and
     /// <see cref="DefaultTypeParsingInfo.AvailableMembers"/> against the provided <paramref name="columns"/> schema.
     /// </remarks>
     /// <returns>
     /// A configured <see cref="DbItemPlan"/> if the schema satisfies a construction path, otherwise null.
     /// </returns>
-    public abstract DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage);
+    public abstract DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false);
 }
 /// <summary>Reshapes a registered type's mapping, its alternative names, null rules, construction paths, and members.</summary>
 public static class TypeParsingInfoHelper {
@@ -205,10 +205,32 @@ public static class TypeParsingInfoHelper {
         return false;
     }
     /// <summary>Replaces the group boundary of an editable info, returning <see langword="false"/> when the info does not expose one.</summary>
-    public static bool SetGroupKey(this TypeParsingInfo info, IGroupingKeyMaker maker) {
+    public static bool SetGroupKey(this TypeParsingInfo info, IGroupingRule rule) {
         if (info is not ICanUpdateGroupKey editable)
             return false;
-        editable.GroupKey = maker;
+        editable.GroupKey = rule;
+        return true;
+    }
+    /// <summary>Sets the type-level group boundary of <typeparamref name="T"/> to <paramref name="rule"/>.</summary>
+    public static void SetGroupKey<T>(IGroupingRule rule) => SetOrThrow<T>(rule);
+    /// <summary>Sets the group boundary of the construction of <typeparamref name="T"/> whose parameter types are <paramref name="constructionParameters"/>, overriding the type rule when that path is chosen.</summary>
+    public static void SetGroupKey<T>(IGroupingRule rule, params Type[] constructionParameters) {
+        if (TypeParsingInfo.ForceGet(typeof(T)) is not ICanProvideConstructions provider)
+            throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{typeof(T)} does not expose its constructions");
+        foreach (var mci in provider.PossibleConstructors)
+            if (SameShape(mci, constructionParameters)) {
+                mci.GroupKey = rule;
+                return;
+            }
+        throw new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable,
+            $"{typeof(T)} has no construction taking ({string.Join(", ", constructionParameters.Select(t => t.Name))})");
+    }
+    private static bool SameShape(MethodCtorInfo mci, Type[] parameterTypes) {
+        if (mci.Parameters.Length != parameterTypes.Length)
+            return false;
+        for (int i = 0; i < parameterTypes.Length; i++)
+            if (mci.Parameters[i].Type != parameterTypes[i])
+                return false;
         return true;
     }
     /// <summary>Sets the group boundary of <typeparamref name="T"/> to an equality key over the named members.</summary>
@@ -217,16 +239,19 @@ public static class TypeParsingInfoHelper {
         for (int i = 0; i < members.Length; i++)
             infos[i] = (System.Reflection.MemberInfo?)typeof(T).GetProperty(members[i]) ?? typeof(T).GetField(members[i])
                 ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"{typeof(T)} has no property or field named {members[i]}");
-        SetOrThrow<T>(new EqualityGroupKeyMaker(infos));
+        SetOrThrow<T>(new EqualityGroupingRule(infos));
     }
+    /// <summary>Sets the group boundary of <typeparamref name="T"/> to an equality key over the named columns, each read as whatever type its column carries, no member required.</summary>
+    public static void SetGroupKeyColumns<T>(params string[] columns)
+        => SetOrThrow<T>(new EqualityGroupingRule(columns));
     /// <summary>Sets the group boundary of <typeparamref name="T"/> to the boundary a marked static method computes.</summary>
     public static void SetGroupKeyMethod<T>(string method) {
         var m = typeof(T).GetMethod(method, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
             ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"{typeof(T)} has no static method named {method}");
-        SetOrThrow<T>(new MethodGroupKeyMaker(m));
+        SetOrThrow<T>(new MethodGroupingRule(m));
     }
-    private static void SetOrThrow<T>(IGroupingKeyMaker maker) {
-        if (!TypeParsingInfo.ForceGet(typeof(T)).SetGroupKey(maker))
+    private static void SetOrThrow<T>(IGroupingRule rule) {
+        if (!TypeParsingInfo.ForceGet(typeof(T)).SetGroupKey(rule))
             throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{typeof(T)} does not expose an editable group boundary");
     }
     /// <summary>

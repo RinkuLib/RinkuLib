@@ -29,8 +29,9 @@ The engine is one negotiation composed of small parts, each a default implementa
 
 - [Objects and nesting](objects.md). Constructors, factories, members, prefixes, recursion.
 - [Nullability](nullability.md). What a `NULL` column does, and how to change it.
-- [Across rows](across-rows.md). Folding a join into nested collections, keys, and missing rows.
-- [Across rows in detail](across-rows-detail.md). Boundary sources, method boundaries, other shapes, aggregates, runtime.
+- [Collections](collections.md). Folding a join into nested and side-by-side collections, prefixes, missing rows.
+- [Grouping](grouping.md). The boundary that tells one value from the next, named, computed, or inferred.
+- [Custom multi-row types](custom-multi-row-types.md). Registering a set, an aggregate, or any fold of your own.
 - [DynaObject](dynaobject.md). Rows without a fixed type.
 - [Registration](registration.md). How a type becomes known, and which rules it signs up for.
 - [Construction paths](construction-paths.md). How paths are ordered, added, and reordered.

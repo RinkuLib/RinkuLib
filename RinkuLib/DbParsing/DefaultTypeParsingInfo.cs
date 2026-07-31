@@ -6,7 +6,7 @@ namespace RinkuLib.DbParsing;
 /// <summary>The default implementation of TypeParsingInfo</summary>
 public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanProvideParamInfos, ICanAddMember, ICanProvideConstructions, ICanProvideMembers, ICanUpdateGroupKey {
     /// <inheritdoc/>
-    public IGroupingKeyMaker? GroupKey { get; set; }
+    public IGroupingRule? GroupKey { get; set; }
     internal static readonly
 #if NET9_0_OR_GREATER
         Lock
@@ -148,27 +148,8 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                     MCIs = MethodCtorInfo.GetOrderedInfos(result);
                 }
             }
-            if (GroupKey is null) {
-                var keyMethods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
-                    .Where(m => m.IsDefined(typeof(GroupKeyAttribute), inherit: true)).ToArray();
-                List<MemberInfo> keyMembers = [];
-                foreach (var p in props)
-                    if (p.IsDefined(typeof(GroupKeyAttribute), inherit: true))
-                        keyMembers.Add(p);
-                foreach (var f in fields)
-                    if (f.IsDefined(typeof(GroupKeyAttribute), inherit: true))
-                        keyMembers.Add(f);
-                if (keyMethods.Length > 0 && keyMembers.Count > 0)
-                    throw new RinkuConfigurationException(ErrorCodes.ConflictingGroupKey,
-                        $"{type} marks both a [GroupKey] method and [GroupKey] members; a type carries one or the other");
-                if (keyMethods.Length > 1)
-                    throw new RinkuConfigurationException(ErrorCodes.ConflictingGroupKey,
-                        $"{type} marks more than one [GroupKey] method; a type carries one");
-                if (keyMethods.Length == 1)
-                    GroupKey = new MethodGroupKeyMaker(keyMethods[0]);
-                else if (keyMembers.Count > 0)
-                    GroupKey = new EqualityGroupKeyMaker([.. keyMembers]);
-            }
+            GroupKey ??= GroupKeyScan.Resolve(type,
+                [type, .. props, .. fields, .. type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)]);
             IsInit = true;
         }
     }
@@ -211,7 +192,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         }
     }
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
         if (!IsInit)
             Init();
         var actualType = Nullable.GetUnderlyingType(currentClosedType) ?? currentClosedType;
@@ -224,11 +205,12 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         var mcis = MCIs;
         List<DbItemPlan> readers = [];
         MemberInfo? method = null;
+        IGroupingRule? constructionKey = null;
         var genericArguments = actualType.IsGenericType ? actualType.GetGenericArguments() : [];
         bool canCompleteWithMembers = false;
         for (int i = 0; i < mcis.Length; i++) {
             var mci = mcis[i];
-            bool forcedRegister = mci.ParametersAreReadable;
+            bool forcedRegister = mci.ParametersAreReadable || registerRecursively || mci.ParametersAreReadableRecursively;
             var parameters = mci.Parameters;
             for (int j = 0; j < parameters.Length; j++) {
                 var param = parameters[j];
@@ -242,7 +224,8 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                         break;
                     typeInfo = ForceGet(paramClosedType);
                 }
-                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage);
+                var childRegisterRecursively = registerRecursively || mci.ParametersAreReadableRecursively;
+                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage, childRegisterRecursively);
                 if (node is null)
                     break;
                 readers.Add(node);
@@ -250,6 +233,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             if (readers.Count == parameters.Length) {
                 method = mci.MethodBase.GetClosedMember(currentClosedType);
                 canCompleteWithMembers = mci.CanCompleteWithMembers;
+                constructionKey = mci.GroupKey;
                 break;
             }
             colUsage.Rollback(checkpoint, lastIndUsed);
@@ -274,41 +258,13 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                     paramClosedType = typeof(Nullable<>).MakeGenericType(paramClosedType);
                 if (!TryGetInfo(paramClosedType, out var typeInfo))
                     throw new RinkuInternalException(ErrorCodes.InternalInvariant, "reached a branch believed unreachable while discovering construction paths");
-                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage);
+                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage, registerRecursively);
                 if (node is not null)
                     memberReaders.Add((members[i].Member.GetClosedMember(currentClosedType), node));
             }
             if (memberReaders.Count == 0 && readers.Count == 0)
                 return null;
         }
-        return new CustomClassParser(previousUsages.LatestUsedType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders) { GroupKey = ConstructionKey(method) ?? GroupKey, Context = colModifier };
+        return new CustomClassParser(previousUsages.LatestUsedType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders) { GroupKey = constructionKey ?? GroupKey, Context = colModifier };
     }
-
-    /// <summary>
-    /// The key the chosen construction declares, which takes priority over the type-level key. Its marked
-    /// parameters compose an equality key, or a <see cref="GroupKeyMethodAttribute"/> names a boundary method; a
-    /// construction carries one or the other, never both. Declaring neither gives <see langword="null"/> so the
-    /// type-level key applies.
-    /// </summary>
-    private static IGroupingKeyMaker? ConstructionKey(MemberInfo method) {
-        if (method is not MethodBase construction)
-            return null;
-        List<ParameterInfo>? keyParams = null;
-        foreach (var p in construction.GetParameters())
-            if (p.IsDefined(typeof(GroupKeyAttribute), inherit: true))
-                (keyParams ??= []).Add(p);
-        var methodRef = construction.GetCustomAttribute<GroupKeyMethodAttribute>();
-        if (methodRef is not null && keyParams is not null)
-            throw new RinkuConfigurationException(ErrorCodes.ConflictingGroupKey,
-                $"{construction.DeclaringType} marks a construction with both [GroupKeyMethod] and [GroupKey] parameters; a construction carries one or the other");
-        if (methodRef is not null)
-            return new MethodGroupKeyMaker(ResolveKeyMethod(construction.DeclaringType!, methodRef.Method));
-        return keyParams is null ? null : new EqualityGroupKeyMaker([.. keyParams]);
-    }
-
-    /// <summary>Finds the static boundary method a <see cref="GroupKeyMethodAttribute"/> names on the construction's type.</summary>
-    private static MethodInfo ResolveKeyMethod(Type declaringType, string name)
-        => declaringType.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType,
-                $"[GroupKeyMethod] names no static method {name} on {declaringType}");
 }

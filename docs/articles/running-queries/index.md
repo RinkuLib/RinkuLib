@@ -51,7 +51,7 @@ List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
 // artists[0].Albums holds the albums gathered from that artist's rows
 ```
 
-The same reading folds a set or an aggregate as readily as a list. See [across rows](../mapping/across-rows.md).
+The same reading folds a set or an aggregate as readily as a list. See [custom multi-row types](../mapping/custom-multi-row-types.md).
 
 ## Parameters
 

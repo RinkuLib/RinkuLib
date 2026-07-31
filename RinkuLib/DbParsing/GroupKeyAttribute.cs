@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace RinkuLib.DbParsing;
 
 /// <summary>
@@ -14,4 +16,13 @@ namespace RinkuLib.DbParsing;
 /// </para>
 /// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Parameter, AllowMultiple = false)]
-public sealed class GroupKeyAttribute : Attribute { }
+public sealed class GroupKeyAttribute : Attribute, IGroupingRuleMaker {
+    /// <summary>Members and parameters compose a composite key, a boundary method stands alone on its level.</summary>
+    public bool Composes(ICustomAttributeProvider carrier) => carrier is not MethodBase;
+    /// <inheritdoc/>
+    public IGroupingRule MakeRule(IReadOnlyList<ICustomAttributeProvider> carriers) => carriers[0] switch {
+        MethodInfo method => new MethodGroupingRule(method),
+        ParameterInfo => new EqualityGroupingRule([.. carriers.Cast<ParameterInfo>()]),
+        _ => new EqualityGroupingRule([.. carriers.Cast<MemberInfo>()]),
+    };
+}

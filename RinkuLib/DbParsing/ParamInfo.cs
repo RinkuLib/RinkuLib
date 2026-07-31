@@ -36,12 +36,6 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// </summary>
     public Type Type = Type;
     /// <summary>
-    /// When this slot is a collection, whether a null element is kept (added as the element default) rather
-    /// than skipped. A collection skips null elements by default; <see cref="KeepNullElementsAttribute"/> on the
-    /// member turns that off.
-    /// </summary>
-    public bool KeepNullCollectionElements { get; set; }
-    /// <summary>
     /// Updates the <see cref="NullColHandler"/> to handle a recovery jump if a null is encountered.
     /// </summary>
     public void SetInvalidOnNull(bool invalidOnNull) => NullColHandler = NullColHandler.SetInvalidOnNull(Type, invalidOnNull);
@@ -115,7 +109,6 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
         UsageFlags usageFlags = default;
         bool hasNoName = false;
-        bool keepNullElements = false;
         List<INameComparerMaker> nameComparersMakers = [];
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
@@ -125,8 +118,6 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 altCount++;
             if (attr is NoNameAttribute)
                 hasNoName = true;
-            if (attr is KeepNullElementsAttribute)
-                keepNullElements = true;
             if (attr is INameComparerMaker mkr)
                 nameComparersMakers.Add(mkr);
             if (attr is IParamInfoMaker mm)
@@ -135,7 +126,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 ufm.UpdateFlags(param, ref usageFlags);
         }
         var nullColHandler = GetDeclaredNullColHandler(type, name, attributes, param)
-            ?? (type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance);
+            ?? DefaultNullColHandler(type);
         string[] altNames = [];
         if (altCount > 0) {
             altNames = new string[altCount];
@@ -146,9 +137,17 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         }
         INameComparer comparer = ComparerFactory(type, hasNoName ? null : name, altNames, attributes, param, nameComparersMakers);
         var matcher = maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
-        matcher.KeepNullCollectionElements = keepNullElements;
         return matcher;
     }
+    /// <summary>
+    /// The null rule for a type when nothing is declared: the collapse rule for a registered multi-row type (a
+    /// collection or aggregate) so a null element flows up out of the fold and is skipped, otherwise the type's
+    /// own nullability.
+    /// </summary>
+    private static INullColHandler DefaultNullColHandler(Type type)
+        => TypeParsingInfo.TryGetInfo(type, out var info) && info is MultiRowTypeParsingInfo
+            ? InvalidOnNullAndNotNullHandle.Instance
+            : type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
     /// <summary>
     /// Resolves the nullability that a set of attributes declares, a custom
     /// <see cref="INullColHandlerMaker"/>, <see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>,

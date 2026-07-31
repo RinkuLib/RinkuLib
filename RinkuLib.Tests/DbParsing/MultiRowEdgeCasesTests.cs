@@ -100,7 +100,7 @@ public class MultiRowEdgeCasesTests {
         }
     }
 
-    private sealed class StepMaker(string column, int step) : IGroupingKeyMaker {
+    private sealed class StepMaker(string column, int step) : IGroupingRule {
         public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
             int index = Array.FindIndex(columns, c => string.Equals(c.Name, column, StringComparison.OrdinalIgnoreCase));
             return new StepBoundary(index, step, build.Field(typeof(int)));
@@ -147,12 +147,9 @@ public class MultiRowEdgeCasesTests {
         }
     }
 
-    private sealed class ParityMaker(string column) : IGroupingKeyMaker {
+    private sealed class ParityMaker(string column) : IGroupingRule {
         public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
-            colModifier.Flags |= UsageFlags.CanReuse | UsageFlags.RemoveSequentialRead;
-            var usage = new ColumnUsage(new bool[columns.Length]);
-            var plan = TypeParsingInfo.ForceGet(typeof(int)).TryGetParser(typeof(int), new([], 0),
-                ParamInfo.Create(typeof(int), column, []), columns, colModifier, ref usage)!;
+            var plan = GroupKeyNegotiation.NegotiateReader(ParamInfo.Create(typeof(int), column, []).NameComparer, typeof(int), columns, colModifier, column);
             return new ParityBoundary(build.Reader(plan, typeof(int)), build.Field(typeof(int)));
         }
     }
@@ -172,6 +169,117 @@ public class MultiRowEdgeCasesTests {
         Assert.Equal(["c", "d"], result[1].Items);
         Assert.Equal(8, result[2].Seed);
         Assert.Equal(["e"], result[2].Items);
+    }
+
+    // --- outside-in extensibility: a rule AND its attribute defined outside the library -------------------
+
+    /// <summary>A rule written outside the library that groups by any column of a hand-coded name, whatever its type.</summary>
+    private sealed class LooseColumnRule(string column) : IGroupingRule {
+        public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
+            var col = Array.Find(columns, c => string.Equals(c.Name, column, StringComparison.OrdinalIgnoreCase));
+            var reader = GroupKeyNegotiation.NegotiateReader(ParamInfo.Create(col.Type, column, []).NameComparer, col.Type, columns, colModifier, column);
+            return new EqualityBoundary([(build.Reader(reader, col.Type), build.Field(col.Type))]);
+        }
+    }
+
+    /// <summary>An attribute written outside the library that makes a <see cref="LooseColumnRule"/>, found by the scan with no core change.</summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+    private sealed class LooseColumnKeyAttribute(string column) : Attribute, IGroupingRuleMaker {
+        public bool Composes(ICustomAttributeProvider carrier) => false;
+        public IGroupingRule MakeRule(IReadOnlyList<ICustomAttributeProvider> carriers) => new LooseColumnRule(column);
+    }
+
+    [LooseColumnKey("Region")]
+    public sealed record RegionGroup(int Ordinal, string Region, List<int> Codes) : IDbReadable;
+
+    [Fact]
+    public void A_rule_and_attribute_defined_outside_the_library_drive_grouping() {
+        ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<RegionGroup>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [3, "East", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("West", result[0].Region);
+        Assert.Equal([10, 11], result[0].Codes);
+        Assert.Equal("East", result[1].Region);
+        Assert.Equal([20], result[1].Codes);
+    }
+
+    // --- runtime setters: a rule set on a type or a construction path ------------------------------------
+
+    public sealed record RuntimeTypeKeyed(int Ordinal, string Region, List<int> Codes) : IDbReadable;
+
+    [Fact]
+    public void SetGroupKey_sets_a_type_level_rule_at_runtime() {
+        TypeParsingInfoHelper.SetGroupKey<RuntimeTypeKeyed>(new LooseColumnRule("Region"));
+        ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<RuntimeTypeKeyed>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [3, "East", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal([10, 11], result[0].Codes);
+        Assert.Equal([20], result[1].Codes);
+    }
+
+    public sealed record RuntimePathKeyed(int Ordinal, string Region, List<int> Codes) : IDbReadable;
+
+    [Fact]
+    public void SetGroupKey_sets_a_construction_level_rule_at_runtime() {
+        TypeParsingInfoHelper.SetGroupKey<RuntimePathKeyed>(new LooseColumnRule("Region"), typeof(int), typeof(string), typeof(List<int>));
+        ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<RuntimePathKeyed>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [3, "East", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal([10, 11], result[0].Codes);
+        Assert.Equal([20], result[1].Codes);
+    }
+
+    // --- outside-in extensibility: a null-element rule defined outside the library -----------------------
+
+    /// <summary>A null rule written outside the library that keeps a null element as the type's default instead of skipping it.</summary>
+    private sealed class DefaultWhenNullHandle : INullColHandler {
+        public static readonly DefaultWhenNullHandle Instance = new();
+        public bool NeedNullJumpSetPoint(Type closedType) => false;
+        public bool IsBr_S(Type closedType) => true;
+        public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+            var end = generator.DefineLabel();
+            DbItemPlan.EmitDefaultValue(closedType, generator);
+            generator.Emit(OpCodes.Br_S, end);
+            return end;
+        }
+        public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, System.Reflection.Emit.LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint) {
+            DbItemPlan.EmitDefaultValue(elementType, generator);
+            generator.Emit(OpCodes.Stloc, elementLocal);
+            return null;
+        }
+        public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) => this;
+    }
+
+    /// <summary>An attribute written outside the library that puts <see cref="DefaultWhenNullHandle"/> on a collection member, found by the same seam as the built-in rules with no core change.</summary>
+    [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
+    private sealed class DefaultWhenNullElementAttribute : Attribute, INullColHandlerMaker {
+        public INullColHandler MakeColHandler(Type type, string? name, object[] attributes, object? param) => DefaultWhenNullHandle.Instance;
+    }
+
+    public sealed record ScoreCard(int Player, [DefaultWhenNullElement] List<int> Scores) : IDbReadable;
+
+    [Fact]
+    public void A_null_element_rule_defined_outside_the_library_keeps_a_default() {
+        ColumnInfo[] cols = [new("Player", typeof(int), false), new("Scores", typeof(int), true)];
+        var parser = TypeParser.GetTypeParser<List<ScoreCard>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, 10], [1, DBNull.Value], [1, 30]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Single(result);
+        Assert.Equal([10, 0, 30], result[0].Scores);
     }
 
     // --- method boundary edge cases ----------------------------------------------------------------------
@@ -385,10 +493,10 @@ public class MultiRowEdgeCasesTests {
 
     // --- a key resolves the throw and can sit anywhere ---------------------------------------------------
 
-    public sealed record Ledger(List<int> Lines, [property: GroupKey] int AccountId) : IDbReadable;
+    public sealed record Ledger(List<int> Lines, [GroupKey] int AccountId) : IDbReadable;
 
     [Fact]
-    public void A_key_after_the_collection_resolves_the_throw_and_groups() {
+    public void A_parameter_key_after_the_collection_resolves_the_throw_and_groups() {
         ColumnInfo[] cols = [new("Lines", typeof(int), false), new("AccountId", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<List<Ledger>>(ref cols);
         using var reader = Rows.Reader(cols, [10, 1], [11, 1], [20, 2]);
@@ -434,7 +542,7 @@ public class MultiRowEdgeCasesTests {
     }
 
     public sealed record NullableAlbum(int? Id, string? Title) : IDbReadable;
-    public sealed record NullableArtist([property: GroupKey] int Id, string Name, [KeepNullElements] List<NullableAlbum?> Albums) : IDbReadable;
+    public sealed record NullableArtist([property: GroupKey] int Id, string Name, List<NullableAlbum?> Albums) : IDbReadable;
 
     [Fact]
     public void An_all_null_element_that_still_builds_is_kept() {
@@ -460,6 +568,20 @@ public class MultiRowEdgeCasesTests {
 
         Assert.Single(result);
         Assert.Equal([new NullableAlbum(null, null)], result[0].Albums);
+    }
+
+    public sealed class ThrowOnNullElementAttribute : Attribute, INullColHandlerMaker {
+        public INullColHandler MakeColHandler(Type type, string? name, object[] attributes, object? param) => NotNullHandle.Instance;
+    }
+    public sealed record StrictTags(int Id, [ThrowOnNullElement] List<string?> Tags) : IDbReadable;
+
+    [Fact]
+    public void A_custom_element_rule_can_throw_on_a_null_element() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("Tags", typeof(string), true)];
+        var parser = TypeParser.GetTypeParser<List<StrictTags>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "a"], [1, DBNull.Value], [1, "b"]);
+        reader.Read();
+        Refusals.Raises(ErrorCodes.NullNotAllowed, () => parser.Parse(reader));
     }
 
     public sealed class KeyedWidget : IDbReadable {
@@ -774,6 +896,253 @@ public class MultiRowEdgeCasesTests {
         Refusals.Raises(ErrorCodes.ConflictingGroupKey, () => TypeParser.GetTypeParser<List<TypeKeyConflict>>(ref cols));
     }
 
+    // --- a group key on a member that is not a constructor parameter --------------------------------------
+
+    public sealed class Timeline : IDbReadable {
+        [CanCompleteWithMembers]
+        public Timeline(string label, List<int> marks) {
+            Label = label;
+            Marks = marks;
+        }
+        public string Label { get; }
+        public List<int> Marks { get; }
+        [GroupKey] public int Track { get; set; }
+    }
+
+    [Fact]
+    public void A_group_key_on_a_member_outside_the_constructor_drives_grouping() {
+        ColumnInfo[] cols = [new("Track", typeof(int), false), new("Label", typeof(string), false), new("Marks", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<Timeline>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "morning", 10], [1, "evening", 11], [2, "morning", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(1, result[0].Track);
+        Assert.Equal([10, 11], result[0].Marks);
+        Assert.Equal(2, result[1].Track);
+        Assert.Equal([20], result[1].Marks);
+    }
+
+    public sealed class MemberKeyAccount : IDbReadable {
+        public MemberKeyAccount(string holder, List<int> entries) {
+            Holder = holder;
+            Entries = entries;
+        }
+        public string Holder { get; }
+        public List<int> Entries { get; }
+        [GroupKey] public int Number { get; }
+    }
+
+    [Fact]
+    public void A_get_only_member_key_never_set_still_groups() {
+        ColumnInfo[] cols = [new("Number", typeof(int), false), new("Holder", typeof(string), false), new("Entries", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<MemberKeyAccount>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "Ada", 10], [1, "Ada", 11], [2, "Bo", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Ada", result[0].Holder);
+        Assert.Equal([10, 11], result[0].Entries);
+        Assert.Equal("Bo", result[1].Holder);
+        Assert.Equal([20], result[1].Entries);
+        Assert.Equal(0, result[0].Number);
+    }
+
+    [GroupKeyColumns("Number")]
+    public sealed record ColumnKeyAccount(string Holder, List<int> Entries) : IDbReadable;
+
+    [Fact]
+    public void A_column_name_key_on_the_type_groups_with_no_member() {
+        ColumnInfo[] cols = [new("Number", typeof(int), false), new("Holder", typeof(string), false), new("Entries", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<ColumnKeyAccount>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "Ada", 10], [1, "Ada", 11], [2, "Bo", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Ada", result[0].Holder);
+        Assert.Equal([10, 11], result[0].Entries);
+        Assert.Equal("Bo", result[1].Holder);
+        Assert.Equal([20], result[1].Entries);
+    }
+
+    // --- the negotiated construction path decides the grouping --------------------------------------------
+
+    public sealed class Route : IDbReadable {
+        public Route(int Line, List<int> stops) {
+            Key = Line;
+            Stops = stops;
+        }
+        public Route(int From, int To, List<int> stops) {
+            Key = From * 1000 + To;
+            Stops = stops;
+        }
+        public int Key { get; }
+        public List<int> Stops { get; }
+    }
+
+    [Fact]
+    public void The_chosen_construction_path_decides_the_grouping() {
+        ColumnInfo[] byLine = [new("Line", typeof(int), false), new("Stops", typeof(int), false)];
+        var a = TypeParser.GetTypeParser<List<Route>>(ref byLine);
+        using var ra = Rows.Reader(byLine, [1, 10], [1, 11], [2, 20]);
+        ra.Read();
+        var resA = a.Parse(ra).Result;
+        Assert.Equal(2, resA.Count);
+        Assert.Equal([10, 11], resA[0].Stops);
+        Assert.Equal([20], resA[1].Stops);
+
+        ColumnInfo[] byPair = [new("From", typeof(int), false), new("To", typeof(int), false), new("Stops", typeof(int), false)];
+        var b = TypeParser.GetTypeParser<List<Route>>(ref byPair);
+        using var rb = Rows.Reader(byPair, [1, 5, 10], [1, 5, 11], [1, 6, 20]);
+        rb.Read();
+        var resB = b.Parse(rb).Result;
+        Assert.Equal(2, resB.Count);
+        Assert.Equal([10, 11], resB[0].Stops);
+        Assert.Equal([20], resB[1].Stops);
+    }
+
+    // --- a group key by column name, no member needed ----------------------------------------------------
+
+    public sealed record Ticker(List<int> Prices) : IDbReadable;
+
+    [Fact]
+    public void A_group_key_by_column_name_groups_by_any_column_type() {
+        TypeParsingInfoHelper.SetGroupKeyColumns<Ticker>("Symbol");
+
+        ColumnInfo[] ints = [new("Symbol", typeof(int), false), new("Prices", typeof(int), false)];
+        var pInt = TypeParser.GetTypeParser<List<Ticker>>(ref ints);
+        using var rInt = Rows.Reader(ints, [1, 100], [1, 101], [2, 200]);
+        rInt.Read();
+        var byInt = pInt.Parse(rInt).Result;
+        Assert.Equal(2, byInt.Count);
+        Assert.Equal([100, 101], byInt[0].Prices);
+        Assert.Equal([200], byInt[1].Prices);
+
+        ColumnInfo[] strs = [new("Symbol", typeof(string), false), new("Prices", typeof(int), false)];
+        var pStr = TypeParser.GetTypeParser<List<Ticker>>(ref strs);
+        using var rStr = Rows.Reader(strs, ["AAA", 100], ["AAA", 101], ["BBB", 200]);
+        rStr.Read();
+        var byStr = pStr.Parse(rStr).Result;
+        Assert.Equal(2, byStr.Count);
+        Assert.Equal([100, 101], byStr[0].Prices);
+        Assert.Equal([200], byStr[1].Prices);
+    }
+
+    public sealed record Box<T>([property: GroupKey] T Key, List<int> Values) : IDbReadable;
+
+    [Fact]
+    public void A_generic_member_key_resolves_at_negotiation() {
+        ColumnInfo[] cols = [new("Key", typeof(int), false), new("Values", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<Box<int>>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, 100], [1, 101], [2, 200]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(1, result[0].Key);
+        Assert.Equal([100, 101], result[0].Values);
+        Assert.Equal(2, result[1].Key);
+        Assert.Equal([200], result[1].Values);
+    }
+
+    public sealed record Crate<T>([GroupKey] T Tag, List<int> Values) : IDbReadable;
+
+    [Fact]
+    public void A_generic_construction_parameter_key_resolves_at_negotiation() {
+        ColumnInfo[] cols = [new("Tag", typeof(int), false), new("Values", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<Crate<int>>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, 100], [1, 101], [2, 200]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(1, result[0].Tag);
+        Assert.Equal([100, 101], result[0].Values);
+        Assert.Equal(2, result[1].Tag);
+        Assert.Equal([200], result[1].Values);
+    }
+
+    public sealed class TypeMethodBoundary : IDbReadable {
+        public TypeMethodBoundary(DateTime sessionDate, List<int> values) {
+            SessionDate = sessionDate;
+            Values = values;
+        }
+        public DateTime SessionDate { get; }
+        public List<int> Values { get; }
+        [GroupKey]
+        public static (bool Same, DateTime Next) BySessionDate(DateTime previous, DateTime sessionDate)
+            => (sessionDate == previous, sessionDate);
+    }
+
+    [Fact]
+    public void A_type_level_static_method_boundary_groups_by_the_method_logic() {
+        ColumnInfo[] cols = [new("SessionDate", typeof(DateTime), false), new("Values", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<TypeMethodBoundary>>(ref cols);
+        var d1 = new DateTime(2026, 7, 30);
+        var d2 = new DateTime(2026, 7, 31);
+        using var reader = Rows.Reader(cols, [d1, 10], [d1, 11], [d2, 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(d1, result[0].SessionDate);
+        Assert.Equal([10, 11], result[0].Values);
+        Assert.Equal(d2, result[1].SessionDate);
+        Assert.Equal([20], result[1].Values);
+    }
+
+    [GroupKeyColumns("Region")]
+    public class TypeAndPathRulePriority : IDbReadable {
+        public TypeAndPathRulePriority([GroupKey] DateTime date, List<int> amounts) {
+            Date = date;
+            Region = null!;
+            Amounts = amounts;
+        }
+        public TypeAndPathRulePriority(string region, List<int> amounts) {
+            Date = default;
+            Region = region;
+            Amounts = amounts;
+        }
+        public DateTime Date { get; }
+        public string Region { get; }
+        public List<int> Amounts { get; }
+    }
+
+    [Fact]
+    public void A_path_level_key_overrides_the_type_level_key() {
+        var d1 = new DateTime(2026, 7, 30);
+        var d2 = new DateTime(2026, 7, 31);
+        ColumnInfo[] cols = [new("Date", typeof(DateTime), false), new("Amounts", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<TypeAndPathRulePriority>>(ref cols);
+        using var reader = Rows.Reader(cols, [d1, 100], [d1, 200], [d2, 300]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(d1, result[0].Date);
+        Assert.Equal([100, 200], result[0].Amounts);
+        Assert.Equal(d2, result[1].Date);
+        Assert.Equal([300], result[1].Amounts);
+    }
+
+    [Fact]
+    public void A_construction_with_no_path_key_uses_the_type_level_key() {
+        ColumnInfo[] cols = [new("Region", typeof(string), false), new("Amounts", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<TypeAndPathRulePriority>>(ref cols);
+        using var reader = Rows.Reader(cols, ["West", 100], ["West", 200], ["East", 300]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("West", result[0].Region);
+        Assert.Equal([100, 200], result[0].Amounts);
+        Assert.Equal("East", result[1].Region);
+        Assert.Equal([300], result[1].Amounts);
+    }
+
     // --- collapse path -----------------------------------------------------------------------------------
 
     public sealed record KeyedPoint([property: GroupKey] int Id, string Name) : IDbReadable;
@@ -792,4 +1161,165 @@ public class MultiRowEdgeCasesTests {
         Assert.False(second.CanContinue);
         Assert.Equal(new KeyedPoint(1, "two"), second.Result);
     }
+
+    // --- grouping rule architecture: independence from storage, multiple params, generics, same impl --------
+
+    public sealed class MemberKeyNotKept : IDbReadable {
+        public MemberKeyNotKept(string data, List<int> values) {
+            Data = data;
+            Values = values;
+        }
+        public string Data { get; }
+        public List<int> Values { get; }
+        [GroupKey] public int Id { get; }
+    }
+
+    [Fact]
+    public void Grouping_rule_on_a_member_is_independent_from_storage() {
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("Data", typeof(string), false), new("Values", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<MemberKeyNotKept>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "x", 10], [1, "x", 11], [2, "y", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("x", result[0].Data);
+        Assert.Equal([10, 11], result[0].Values);
+        Assert.Equal(0, result[0].Id);
+    }
+
+    public sealed class ParameterKeyUnused : IDbReadable {
+        public ParameterKeyUnused(string data, List<int> values) {
+            Data = data;
+            Values = values;
+        }
+        public string Data { get; }
+        public List<int> Values { get; }
+    }
+
+
+    public sealed class MultiParamBoundary : IDbReadable {
+        public MultiParamBoundary(int a, string b, DateTime c, List<int> values) {
+            A = a;
+            B = b;
+            C = c;
+            Values = values;
+        }
+        public int A { get; }
+        public string B { get; }
+        public DateTime C { get; }
+        public List<int> Values { get; }
+        [GroupKey]
+        public static (bool Same, (int, string, DateTime) Next) BySeveralParams((int, string, DateTime) previous, int a, string b, DateTime c)
+            => ((a, b, c) == previous, (a, b, c));
+    }
+
+    [Fact]
+    public void Grouping_method_supports_multiple_negotiated_parameters() {
+        var d1 = new DateTime(2026, 7, 30);
+        var d2 = new DateTime(2026, 7, 31);
+        ColumnInfo[] cols = [
+            new("A", typeof(int), false),
+            new("B", typeof(string), false),
+            new("C", typeof(DateTime), false),
+            new("Values", typeof(int), false)
+        ];
+        var parser = TypeParser.GetTypeParser<List<MultiParamBoundary>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "x", d1, 10], [1, "x", d1, 11], [1, "y", d1, 12], [2, "x", d2, 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal([10, 11], result[0].Values);
+        Assert.Equal([12], result[1].Values);
+        Assert.Equal([20], result[2].Values);
+    }
+
+    public sealed class GenericMemberKey<T> : IDbReadable {
+        public GenericMemberKey(T key, string data, List<int> values) {
+            Key = key;
+            Data = data;
+            Values = values;
+        }
+        [GroupKey] public T Key { get; }
+        public string Data { get; }
+        public List<int> Values { get; }
+    }
+
+    [Fact]
+    public void Grouping_rule_on_a_generic_member_resolves_to_the_spanning_type() {
+        ColumnInfo[] cols = [new("Key", typeof(int), false), new("Data", typeof(string), false), new("Values", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<GenericMemberKey<int>>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "x", 10], [1, "x", 11], [2, "y", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("x", result[0].Data);
+        Assert.Equal([10, 11], result[0].Values);
+        Assert.Equal("y", result[1].Data);
+        Assert.Equal([20], result[1].Values);
+    }
+
+    public sealed class MethodWithAltParameter : IDbReadable {
+        public MethodWithAltParameter(int value, List<int> items) {
+            Value = value;
+            Items = items;
+        }
+        public int Value { get; }
+        public List<int> Items { get; }
+        [GroupKey]
+        public static (bool Same, int Next) GroupByAlternateColumn(int previous, [Alt("GroupId")] int group)
+            => (group == previous, group);
+    }
+
+    [Fact]
+    public void Grouping_method_parameters_support_alt_attribute() {
+        ColumnInfo[] cols = [new("GroupId", typeof(int), false), new("Value", typeof(int), false), new("Items", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<MethodWithAltParameter>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, 100, 10], [1, 200, 11], [2, 300, 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal([10, 11], result[0].Items);
+        Assert.Equal([20], result[1].Items);
+    }
+
+    public sealed class StaticReadOnlyKeyField : IDbReadable {
+        public StaticReadOnlyKeyField(string data, List<int> values) {
+            Data = data;
+            Values = values;
+        }
+        public string Data { get; }
+        public List<int> Values { get; }
+        [GroupKey] public static readonly int GroupId = 0;
+    }
+
+    [Fact]
+    public void Grouping_rule_on_a_static_readonly_field_groups_by_that_column() {
+        ColumnInfo[] cols = [new("GroupId", typeof(int), false), new("Data", typeof(string), false), new("Values", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<StaticReadOnlyKeyField>>(ref cols);
+        using var reader = Rows.Reader(cols, [1, "x", 10], [1, "x", 11], [2, "y", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("x", result[0].Data);
+        Assert.Equal([10, 11], result[0].Values);
+        Assert.Equal("y", result[1].Data);
+        Assert.Equal([20], result[1].Values);
+    }
+
+    public sealed class MemberKeyVersion : IDbReadable {
+        public MemberKeyVersion(int value, List<int> items) {
+            Value = value;
+            Items = items;
+        }
+        [GroupKey] public int Group { get; set; }
+        public int Value { get; }
+        public List<int> Items { get; }
+    }
+
+
 }

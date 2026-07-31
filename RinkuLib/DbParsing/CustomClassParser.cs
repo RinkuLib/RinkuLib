@@ -27,7 +27,7 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
     /// <summary>The type this node builds.</summary>
     internal Type ResultType => Type;
     /// <summary>The group boundary key of this node's type, captured in pass 1 and negotiated by the multi-row emit.</summary>
-    internal IGroupingKeyMaker? GroupKey { get; init; }
+    internal IGroupingRule? GroupKey { get; init; }
     /// <summary>The name-matching context this node negotiated in, so the key can match its columns the same way.</summary>
     internal ColModifier Context { get; init; }
     /// <inheritdoc/>

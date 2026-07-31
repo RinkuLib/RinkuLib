@@ -27,13 +27,22 @@ public record Invoice(int Id, Customer Customer, Address Shipping);
 // Customer and Address register along with Invoice
 ```
 
+`[AreReadableRecursive]` on a constructor or factory, registering all of its parameter types and recursing into their nested parameters:
+
+```csharp
+[method: AreReadableRecursive]
+public record Report(int Id, List<Item> Items);
+// Item registers along with Report, and since List<> recurses,
+// Item's own parameters are registered too
+```
+
 And manually:
 
 ```csharp
 var info = TypeParsingInfo.GetOrAdd<Address>();
 ```
 
-Separate from the rules, a type's implementation may register more on its own: `List<TInner>` and `Optional<TInner>` register their element, which is why querying `List<Track>` makes `Track` usable too.
+Separate from the rules, a type's implementation may register more on its own: `List<TInner>` and `Optional<TInner>` register their element, which is why querying `List<Track>` makes `Track` usable too. When a construction path is marked with `[AreReadableRecursive]`, its parameters are registered recursively, so nested types within those parameters also get registered.
 
 ## Generic types
 

@@ -15,7 +15,7 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
             throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, $"The type may only be {typeof(DynaObject)}");
     }
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
         if (!previousUsages.CanContinue(currentClosedType, colUsage.NbUsed, out previousUsages))
             return null;
         Mapper mapper = MakeMapper(columns, colUsage);
@@ -30,7 +30,7 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
             var type = i >= DynaObjParser.MaxArguments ? typeof(object) : col.Type;
             if (type.IsValueType && col.IsNullable && Nullable.GetUnderlyingType(type) is null)
                 type = typeof(Nullable<>).MakeGenericType(type);
-            var r = ForceGet(type).TryGetParser(type, previousUsages, NullableTransientParamInfo, columns, colModifier, ref colUsage);
+            var r = ForceGet(type).TryGetParser(type, previousUsages, NullableTransientParamInfo, columns, colModifier, ref colUsage, registerRecursively);
             if (r is null)
                 return null;
             if (i < DynaObjParser.MaxArguments)

@@ -16,7 +16,12 @@ public class CanCompleteWithMembersAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
 public sealed class AreReadableAttribute : Attribute;
 /// <summary>
-/// A validated candidate for object instantiation, wrapping a 
+/// Defines that all parameter types and nested generic types should be registered if they aren't
+/// </summary>
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
+public sealed class AreReadableRecursiveAttribute : Attribute;
+/// <summary>
+/// A validated candidate for object instantiation, wrapping a
 /// <see cref="ConstructorInfo"/> or static <see cref="MethodInfo"/>.
 /// </summary>
 public class MethodCtorInfo {
@@ -31,7 +36,11 @@ public class MethodCtorInfo {
         /// <summary>
         /// Will automaticaly register the type of tha parameters if they are not allready registered
         /// </summary>
-        ParametersAreReadable = 0b10
+        ParametersAreReadable = 0b10,
+        /// <summary>
+        /// Will automatically register parameter types recursively, including nested generic types
+        /// </summary>
+        ParametersAreReadableRecursively = 0b100
     }
     /// <summary>The constructor or static method used for instantiation.</summary>
     public readonly MethodBase MethodBase;
@@ -49,10 +58,37 @@ public class MethodCtorInfo {
     /// </summary>
     public bool ParametersAreReadable => Flags.HasFlag(AdditionalFlags.ParametersAreReadable);
     /// <summary>
+    /// Will automatically register parameter types recursively, including nested generic types
+    /// </summary>
+    public bool ParametersAreReadableRecursively => Flags.HasFlag(AdditionalFlags.ParametersAreReadableRecursively);
+    /// <summary>
     /// Resolves the type that this method/constructor produces.
     /// </summary>
     public Type TargetType => MethodBase is MethodInfo method ? method.ReturnType : MethodBase.DeclaringType
                 ?? throw new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, $"{nameof(MethodBase)} must be a {nameof(MethodInfo)} or a {nameof(ConstructorInfo)} and have a DeclaringType");
+    private IGroupingRule? _groupKey;
+    private bool _groupKeyResolved;
+    /// <summary>
+    /// The grouping rule this construction declares, its <see cref="GroupKeyAttribute"/> parameters or a
+    /// <see cref="GroupKeyMethodAttribute"/>, which overrides the type-level rule when this construction is chosen.
+    /// <see langword="null"/> when it declares none, so the type's rule (or the default) applies. Read once from the
+    /// attributes, or set directly to override a construction's boundary at registration time.
+    /// </summary>
+    public IGroupingRule? GroupKey {
+        get {
+            if (!_groupKeyResolved) {
+                _groupKey = MakeGroupKey(MethodBase);
+                _groupKeyResolved = true;
+            }
+            return _groupKey;
+        }
+        set {
+            _groupKey = value;
+            _groupKeyResolved = true;
+        }
+    }
+    private static IGroupingRule? MakeGroupKey(MethodBase construction)
+        => GroupKeyScan.Resolve(construction.DeclaringType!, [construction, .. construction.GetParameters()]);
     /// <summary>
     /// Initializes a new instance of <see cref="MethodCtorInfo"/>.
     /// </summary>
@@ -113,6 +149,8 @@ public class MethodCtorInfo {
             flags |= AdditionalFlags.CanCompleteWithMembers;
         if (MethodBase.IsDefined(typeof(AreReadableAttribute)))
             flags |= AdditionalFlags.ParametersAreReadable;
+        if (MethodBase.IsDefined(typeof(AreReadableRecursiveAttribute)))
+            flags |= AdditionalFlags.ParametersAreReadableRecursively;
         mci = new(MethodBase, Parameters!, flags, true);
         return true;
     }

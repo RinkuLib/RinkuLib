@@ -14,7 +14,7 @@ public class BaseTypeInfo : TypeParsingInfo {
             throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, "Only supports base types or enums");
     }
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
         int i = 0;
         ITypeConverter? converter = null;
         paramInfo.UpdateColModifier(ref colModifier);
@@ -70,8 +70,9 @@ public class CtorTypeInfo : TypeParsingInfo {
     }
     internal static readonly ParamInfo InfoNullable = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo InfoNotNullable = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
+    internal static readonly ParamInfo InfoSkip = new(ParamInfo.NoType, InvalidOnNullAndNotNullHandle.Instance, NoNameComparer.Instance);
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
         if (!previousUsages.CanContinue(currentClosedType, colUsage.NbUsed, out previousUsages))
             return null;
         var ctors = currentClosedType.GetConstructors();
@@ -94,8 +95,10 @@ public class CtorTypeInfo : TypeParsingInfo {
         colModifier.Flags |= UsageFlags.SequentialRead;
         for (int i = 0; i < readers.Length; i++) {
             var type = parameters[i].ParameterType;
-            var itemParamInfo = !type.IsValueType || Nullable.GetUnderlyingType(type) is not null ? InfoNullable : InfoNotNullable;
-            var r = ForceGet(type).TryGetParser(type, previousUsages, itemParamInfo, columns, colModifier, ref colUsage);
+            var info = ForceGet(type);
+            var itemParamInfo = info is MultiRowTypeParsingInfo ? InfoSkip
+                : !type.IsValueType || Nullable.GetUnderlyingType(type) is not null ? InfoNullable : InfoNotNullable;
+            var r = info.TryGetParser(type, previousUsages, itemParamInfo, columns, colModifier, ref colUsage, false);
             if (r is null) {
                 colUsage.Rollback(checkpoint, lastIndUsed);
                 return null;

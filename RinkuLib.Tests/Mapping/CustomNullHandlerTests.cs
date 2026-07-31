@@ -21,6 +21,11 @@ public class CustomNullHandlerTests {
             generator.Emit(OpCodes.Br, endLabel);
             return endLabel;
         }
+        public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, System.Reflection.Emit.LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint) {
+            DbItemPlan.EmitDefaultValue(elementType, generator);
+            generator.Emit(OpCodes.Stloc, elementLocal);
+            return null;
+        }
         public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) => this;
     }
 
@@ -29,6 +34,10 @@ public class CustomNullHandlerTests {
         public bool IsBr_S(Type closedType) => false;
         public bool NeedNullJumpSetPoint(Type closedType) => true;
         public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
+            nullSetPoint.MakeNullJump(generator);
+            return null;
+        }
+        public Label? HandleNullForMultiRow(Type bufferType, Type elementType, string paramName, System.Reflection.Emit.LocalBuilder elementLocal, Generator generator, NullSetPoint nullSetPoint) {
             nullSetPoint.MakeNullJump(generator);
             return null;
         }

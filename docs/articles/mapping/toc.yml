@@ -4,10 +4,12 @@
   href: objects.md
 - name: Nullability
   href: nullability.md
-- name: Across Rows
-  href: across-rows.md
-- name: Across Rows In Detail
-  href: across-rows-detail.md
+- name: Collections
+  href: collections.md
+- name: Grouping
+  href: grouping.md
+- name: Custom Multi-Row Types
+  href: custom-multi-row-types.md
 - name: DynaObject
   href: dynaobject.md
 - name: Registration

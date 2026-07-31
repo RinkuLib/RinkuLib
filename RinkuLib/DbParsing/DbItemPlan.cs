@@ -154,7 +154,7 @@ public readonly struct NullSetPoint(Label Label, int NbOnStack) {
         this.HasValue = HasValue;
     }
     /// <summary>
-    /// The number of items currently on the evaluation stack that must be 
+    /// The number of items currently on the evaluation stack that must be
     /// removed if a null jump occurs.
     /// </summary>
     public readonly int NbOfPopToMake => NbOnStack;
