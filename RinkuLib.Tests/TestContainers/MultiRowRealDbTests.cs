@@ -9,10 +9,10 @@ using Xunit;
 namespace RinkuLib.Tests.TestContainers;
 
 /// <summary>The shapes the real-database multi-row tests group into. Leaf elements are scalar records, so one list equality checks every field of every element.</summary>
-public sealed record MrChild([InvalidOnNull] int Id, string Value) : IDbReadable;
+public sealed record MrChild([AbortOnNull] int Id, string Value) : IDbReadable;
 public sealed record MrParent([property: GroupKey] int Id, string Name, List<MrChild> Children) : IDbReadable;
 public sealed record MrArrayParent([property: GroupKey] int Id, string Name, MrChild[] Children) : IDbReadable;
-public sealed record MrGrand([InvalidOnNull] int Id, string Data) : IDbReadable;
+public sealed record MrGrand([AbortOnNull] int Id, string Data) : IDbReadable;
 public sealed record MrNChild([property: GroupKey] int Id, string Value, List<MrGrand> Grands) : IDbReadable;
 public sealed record MrNParent([property: GroupKey] int Id, string Name, List<MrNChild> Children) : IDbReadable;
 

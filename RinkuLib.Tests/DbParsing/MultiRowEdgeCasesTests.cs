@@ -259,7 +259,7 @@ public class MultiRowEdgeCasesTests {
             generator.Emit(OpCodes.Stloc, elementLocal);
             return null;
         }
-        public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) => this;
+        public INullColHandler SetAbortOnNull(Type type, bool abortOnNull) => this;
     }
 
     /// <summary>An attribute written outside the library that puts <see cref="DefaultWhenNullHandle"/> on a collection member, found by the same seam as the built-in rules with no core change.</summary>
@@ -284,7 +284,7 @@ public class MultiRowEdgeCasesTests {
 
     // --- method boundary edge cases ----------------------------------------------------------------------
 
-    public sealed record TwoKeyChild([InvalidOnNull] int Id, string Value) : IDbReadable;
+    public sealed record TwoKeyChild([AbortOnNull] int Id, string Value) : IDbReadable;
     public sealed record ManhattanBucket(List<TwoKeyChild> Children) : IDbReadable {
         [GroupKey]
         public static (bool Same, (int, int) Next) SameCell((int X, int Y) stored, int gx, int gy)
@@ -336,7 +336,7 @@ public class MultiRowEdgeCasesTests {
         Assert.Equal([new TwoKeyChild(12, "c")], result[1].Children);
     }
 
-    public sealed record MGrand([InvalidOnNull] int Id, string Data) : IDbReadable;
+    public sealed record MGrand([AbortOnNull] int Id, string Data) : IDbReadable;
     public sealed record MethodChild(List<MGrand> Grands) : IDbReadable {
         [GroupKey]
         public static (bool Same, int Next) SameChild(int stored, int childKey) => (childKey == stored, childKey);
@@ -526,7 +526,7 @@ public class MultiRowEdgeCasesTests {
         Refusals.Raises(ErrorCodes.NullNotAllowed, () => parser.Parse(reader));
     }
 
-    public sealed record CollapsingAlbum([InvalidOnNull] int Id, string Title) : IDbReadable;
+    public sealed record CollapsingAlbum([AbortOnNull] int Id, string Title) : IDbReadable;
     public sealed record CollapsingArtist([property: GroupKey] int Id, string Name, List<CollapsingAlbum> Albums) : IDbReadable;
 
     [Fact]

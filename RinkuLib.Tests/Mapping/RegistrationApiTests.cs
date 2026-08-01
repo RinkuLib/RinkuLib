@@ -284,7 +284,7 @@ public class RegistrationApiTests {
         Assert.False(BaseTypeInfo.Instance.AddMember(typeof(Assembled).GetField("Hidden")!));
         Assert.False(BaseTypeInfo.Instance.AddPossibleConstruction(Ctor));
         Assert.False(BaseTypeInfo.Instance.UpdateAltName(c => c));
-        Assert.False(BaseTypeInfo.Instance.SetInvalidOnNull("x", true));
+        Assert.False(BaseTypeInfo.Instance.SetAbortOnNull("x", true));
         BaseTypeInfo.Instance.ValidateCanUseType(typeof(int));
         Assert.Contains("base types or enums",
             Assert.ThrowsAny<Exception>(() => BaseTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
@@ -355,8 +355,8 @@ public class RegistrationApiTests {
     public void Alt_names_and_null_rules_reach_every_slot_through_the_helper() {
         var info = TypeParsingInfo.GetOrAdd<Renamed>();
         Assert.True(info.UpdateAltName(c => c.Contains("First") ? c.AddAltName("Uno") : null));
-        Assert.True(info.SetInvalidOnNull("Second", true));
-        Assert.True(info.SetInvalidOnNull(p => p.NameComparer.Contains("Second") ? false : null));
+        Assert.True(info.SetAbortOnNull("Second", true));
+        Assert.True(info.SetAbortOnNull(p => p.NameComparer.Contains("Second") ? false : null));
         Assert.True(info.UpdateNullColHandler("First", NotNullHandle.Instance));
         Assert.True(info.UpdateNullColHandler(p => null));
 
@@ -405,8 +405,8 @@ public class RegistrationApiTests {
         public int AltsOnly { get; set; }
         [NotNull]
         public string? SwearsNotNull { get; set; }
-        [InvalidOnNull]
-        public int? RowInvalidOnNull { get; set; }
+        [AbortOnNull]
+        public int? RowAbortOnNull { get; set; }
         public UnregisteredPlain? Unusable { get; set; }
         public UnregisteredPlain? UnusableField;
     }
@@ -443,20 +443,20 @@ public class RegistrationApiTests {
     }
 
     [Fact]
-    public void Declared_null_handlers_compose_with_invalid_on_null() {
+    public void Declared_null_handlers_compose_with_abort_on_null() {
         Assert.Null(ParamInfo.GetDeclaredNullColHandler(typeof(int), "x", []));
         Assert.Same(NotNullHandle.Instance, ParamInfo.GetDeclaredNullColHandler(typeof(string), "x", [new NotNullAttribute()]));
         Assert.Same(NullableTypeHandle.Instance, ParamInfo.GetDeclaredNullColHandler(typeof(string), "x", [new MaybeNullAttribute()]));
-        Assert.NotNull(ParamInfo.GetDeclaredNullColHandler(typeof(int?), "x", [new InvalidOnNullAttribute()]));
-        Assert.NotNull(ParamInfo.GetDeclaredNullColHandler(typeof(int), "x", [new InvalidOnNullAttribute()]));
-        Assert.NotNull(ParamInfo.GetDeclaredNullColHandler(typeof(int), "x", [new InvalidOnNullAttribute(), new NotNullAttribute()]));
+        Assert.NotNull(ParamInfo.GetDeclaredNullColHandler(typeof(int?), "x", [new AbortOnNullAttribute()]));
+        Assert.NotNull(ParamInfo.GetDeclaredNullColHandler(typeof(int), "x", [new AbortOnNullAttribute()]));
+        Assert.NotNull(ParamInfo.GetDeclaredNullColHandler(typeof(int), "x", [new AbortOnNullAttribute(), new NotNullAttribute()]));
 
-        var invalidOnNull = ParamInfo.TryNew(typeof(AttributedMembers).GetProperty("RowInvalidOnNull")!);
-        Assert.NotNull(invalidOnNull);
+        var abortOnNull = ParamInfo.TryNew(typeof(AttributedMembers).GetProperty("RowAbortOnNull")!);
+        Assert.NotNull(abortOnNull);
 
         var p = P<int?>("x");
         var before = p.NullColHandler;
-        p.SetInvalidOnNull(true);
+        p.SetAbortOnNull(true);
         Assert.NotSame(before, p.NullColHandler);
     }
 

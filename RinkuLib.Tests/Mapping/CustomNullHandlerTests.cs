@@ -26,7 +26,7 @@ public class CustomNullHandlerTests {
             generator.Emit(OpCodes.Stloc, elementLocal);
             return null;
         }
-        public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) => this;
+        public INullColHandler SetAbortOnNull(Type type, bool abortOnNull) => this;
     }
 
     sealed class CollapsingHandler : INullColHandler {
@@ -41,12 +41,12 @@ public class CustomNullHandlerTests {
             nullSetPoint.MakeNullJump(generator);
             return null;
         }
-        public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull) => this;
+        public INullColHandler SetAbortOnNull(Type type, bool abortOnNull) => this;
     }
 
     public record Pair(int Id, string Name) : IDbReadable;
 
-    public record Collapsible([InvalidOnNull] int? Id, string Name) : IDbReadable;
+    public record Collapsible([AbortOnNull] int? Id, string Name) : IDbReadable;
 
     static readonly ColumnInfo[] PairCols = [new("Id", typeof(int), true), new("Name", typeof(string), true)];
 
@@ -77,9 +77,9 @@ public class CustomNullHandlerTests {
     }
 
     [Fact]
-    public void A_root_marked_invalid_on_null_collapses_to_the_default() {
+    public void A_root_marked_abort_on_null_collapses_to_the_default() {
         var cols = PairCols;
-        var parser = TypeParser.GetTypeParser<Collapsible>(ref cols, InvalidOnNullAndNullableHandle.Instance);
+        var parser = TypeParser.GetTypeParser<Collapsible>(ref cols, AbortOnNullAndNullableHandle.Instance);
         using var reader = Rows.Reader(PairCols, [3, "c"]);
         reader.Read();
         Assert.Equal(3, parser.Parse(reader).Result!.Id);

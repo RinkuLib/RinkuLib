@@ -151,8 +151,8 @@ public class RegistrationResidualTests {
         Assert.True(TypeParsingInfoHelper.UpdateNullColHandler(info, _ => NotNullHandle.Instance));
         Assert.Same(NotNullHandle.Instance, info.Slot.NullColHandler);
         Assert.True(TypeParsingInfoHelper.UpdateNullColHandler(info, "Slot", NullableTypeHandle.Instance));
-        Assert.True(TypeParsingInfoHelper.SetInvalidOnNull(info, "Slot", true));
-        Assert.True(TypeParsingInfoHelper.SetInvalidOnNull(info, _ => false));
+        Assert.True(TypeParsingInfoHelper.SetAbortOnNull(info, "Slot", true));
+        Assert.True(TypeParsingInfoHelper.SetAbortOnNull(info, _ => false));
         Assert.Equal(4, info.NullCalls);
     }
 

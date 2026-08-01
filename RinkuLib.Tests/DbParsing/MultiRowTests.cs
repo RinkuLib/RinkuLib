@@ -23,13 +23,13 @@ public class MultiRowTests {
     public sealed record Point(int Id, string Name) : IDbReadable;
     public sealed record Boxed(int Id, Point Sub) : IDbReadable;
 
-    public sealed record Child([InvalidOnNull] int Id, string Value) : IDbReadable;
+    public sealed record Child([AbortOnNull] int Id, string Value) : IDbReadable;
     public sealed record Parent([property: GroupKey] int Id, string Name, List<Child> Children) : IDbReadable;
     public sealed record RegionParent([property: GroupKey] int RegionId, [property: GroupKey] int Id, string Name, List<Child> Children) : IDbReadable;
-    public sealed record Order([InvalidOnNull] int Id, decimal Amount) : IDbReadable;
+    public sealed record Order([AbortOnNull] int Id, decimal Amount) : IDbReadable;
     public sealed record SiblingParent([property: GroupKey] int Id, string Name, List<Child> Children, List<Order> Orders) : IDbReadable;
 
-    public sealed record Grand([InvalidOnNull] int Id, string Data) : IDbReadable;
+    public sealed record Grand([AbortOnNull] int Id, string Data) : IDbReadable;
     public sealed record NChild([property: GroupKey] int Id, string Value, List<Grand> Grands) : IDbReadable;
     public sealed record NParent([property: GroupKey] int Id, string Name, List<NChild> Children) : IDbReadable;
 
@@ -39,7 +39,7 @@ public class MultiRowTests {
     public readonly record struct ProductKey(int Region, int Sku) : IDbReadable;
     public sealed record Listing([property: GroupKey] ProductKey Key, string Name, List<Child> Children) : IDbReadable;
 
-    public sealed record Item([InvalidOnNull] int Id, string Name) : IDbReadable;
+    public sealed record Item([AbortOnNull] int Id, string Name) : IDbReadable;
     public sealed record Bucket(string Category, List<Item> Items) : IDbReadable {
         [GroupKey]
         public static (bool Same, string Next) SameCategory(string stored, string category) {

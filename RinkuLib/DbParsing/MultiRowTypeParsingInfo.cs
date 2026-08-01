@@ -74,7 +74,7 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo {
 
         if (!TryGetInfo(elementType, out var elementInfo))
             return null;
-        var elementParamInfo = new ParamInfo(elementType, InvalidOnNullAndNotNullHandle.Instance, paramInfo.NameComparer);
+        var elementParamInfo = new ParamInfo(elementType, AbortOnNullAndNotNullHandle.Instance, paramInfo.NameComparer);
         var elementNode = elementInfo.TryGetParser(elementType, previousUsages, elementParamInfo, columns, colModifier, ref colUsage, registerRecursively);
         return elementNode is null ? null
             : new AccumulatorPlan(elementNode, elementType, accumulatorType, add, initialState, finish, paramInfo.NullColHandler);

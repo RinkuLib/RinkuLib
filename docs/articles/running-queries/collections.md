@@ -1,6 +1,6 @@
 # Collections
 
-A value can hold a collection of others, an artist its albums. The rows carrying them reach the value two ways, reading separate result sets or folding a join, and you pick per query.
+A value can hold a collection. There is two main ways to handle it, reading separate result sets or folding a join.
 
 ## Multiple result sets
 
@@ -33,7 +33,7 @@ The reader owns the command and disposes it with itself. More on the [multiple r
 
 ## The join fold
 
-The other way asks for the nested shape over a join. Rinku folds the repeated rows back, each parent holding its children, and no grouping is written by hand. The repeating entries are handled.
+Select a nested shape over a join. Rinku folds the repeated rows back, each parent holding its children, and no grouping is written by hand. The repeating entries are handled.
 
 ```sql
 SELECT ar.Id, ar.Name, al.Id AS AlbumsId, al.Title AS AlbumsTitle
@@ -56,7 +56,7 @@ List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
 // Artist(2, "Queen", [Album(20, "Jazz")])
 ```
 
-A collection like `List<T>` is a multi-row type, consuming consecutive rows and folding them into one value. Rinku folds only consecutive rows, so a value's rows must arrive together. Order the query by the grouping value when the source does not already. Which columns group the rows is the boundary, covered in [Grouping](grouping.md), and by default it is the values before the first collection.
+A collection like `List<T>` is a multi-row type, consuming consecutive rows and folding them into one value. Rinku folds only consecutive rows, so a value's rows must arrive together. Order the query by the grouping value when the source does not already. Which columns group the rows is the boundary, covered in [Grouping](../mapping/grouping.md), and by default it is the values before the first collection.
 
 ## Column prefixes
 
@@ -85,10 +85,10 @@ public record Roster(int Team, List<string> Players);
 // -> Roster(1, ["Ada", "Bo"])
 ```
 
-An object drops when it collapses on an `[InvalidOnNull]` column that is null.
+An object drops when it collapses on an `[AbortOnNull]` column that is null.
 
 ```csharp
-public record Album([InvalidOnNull] int Id, string Title) : IDbReadable;
+public record Album([AbortOnNull] int Id, string Title) : IDbReadable;
 public record Artist(int Id, string Name, List<Album> Albums);
 
 // Id | Name  | AlbumsId | AlbumsTitle
@@ -96,15 +96,21 @@ public record Artist(int Id, string Name, List<Album> Albums);
 // -> Artist(3, "Bjork", [])
 ```
 
-An element that still builds is kept, null fields and all. The tag here has no collapsing column, so it stays.
+When a `LEFT JOIN` produces `NULL` values, Rinku attempts to instantiate the type using those `NULL`s. Without `[AbortOnNull]`, the outcome depends entirely on your parameter types:
 
 ```csharp
-public record Tag(int? Id, string? Text) : IDbReadable;
+// Value types throw: non-nullable parameters (like int) cannot accept database NULL.
+public record Album(int Id, string Title) : IDbReadable;
+// -> Throws an exception when encountering nulls.
+
+// Reference types (like string) accept null by default, creating an element full of nulls.
+public record Tag(string Id, string Text) : IDbReadable;
 public record Post(int Id, List<Tag> Tags);
 
 // Id | TagsId | TagsText
 // 5  | null   | null
-// -> Post(5, [Tag(null, null)])
+// -> Post(5, [Tag(null, null)]) // Adds a probably unwanted partial object
+
 ```
 
 `[KeepNullElements]` keeps null elements as the default. Without it, nulls are skipped. `[NotNull]` throws when a null element is encountered.
@@ -146,11 +152,11 @@ public record Course(int Id, string Name, List<Module> Modules);
 
 ## Side by side
 
-Two collections fold from the same rows. A row that carries no data for one of them collapses that element on its `[InvalidOnNull]` column, so each keeps only the rows that built.
+Two collections fold from the same rows. A row that carries no data for one of them collapses that element on its `[AbortOnNull]` column, so each keeps only the rows that built.
 
 ```csharp
-public record Item([InvalidOnNull] int Id, decimal Price) : IDbReadable;
-public record Note([InvalidOnNull] int Id, string Text) : IDbReadable;
+public record Item([AbortOnNull] int Id, decimal Price) : IDbReadable;
+public record Note([AbortOnNull] int Id, string Text) : IDbReadable;
 public record Order(int Id, List<Item> Items, List<Note> Notes);
 
 // Id | ItemsId | ItemsPrice | NotesId | NotesText
@@ -160,4 +166,4 @@ public record Order(int Id, List<Item> Items, List<Note> Notes);
 // -> Order(1, [Item(10, 9.99), Item(11, 4.00)], [Note(20, "gift wrap")])
 ```
 
-A collection other than the built-in `List`, `IEnumerable`, and arrays is registered on [Custom multi-row types](custom-multi-row-types.md).
+A collection other than the built-in `List`, `IEnumerable`, and arrays is registered on [Custom multi-row types](../mapping/custom-multi-row-types.md).

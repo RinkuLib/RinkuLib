@@ -1,299 +1,304 @@
 # Grouping
 
-Rows fold into a value while its boundary holds, the columns that tell one value from the next. By default the boundary is every value before the first collection. A rule can name it instead, and that rule sits in one of two places, on a construction path or on the type.
+Rows fold into a value while their grouping rule holds. By default, this rule is inferred from the construction path. An explicit rule can be named instead, sitting either on a construction path or on the type.
 
-## The default boundary
+## The default rule
 
-Every value before the first collection is the boundary. When it changes, a new value begins.
+Every value before the first multi-row type (like a list, or a custom aggregate) forms the grouping rule. When any of those values change, a new value begins.
 
-```csharp
-public record Regional(int Region, List<decimal> Amounts) : IDbReadable;
-Regional first = GetSales.Query<Regional>(cnn);
-
-// Region | Amounts
-// 1      | 9.99
-// 1      | 4.00
-// 2      | 5.00
-// -> Regional(1, [9.99, 4.00]), the read stopping at the 2
-```
-
-A value after the first collection is not part of the boundary. It is read once, from the value's first row.
+Even when querying a single item rather than a list, the engine knows it must read multiple rows to build the result because of that multi-row type, stopping only when the grouping rule breaks.
 
 ```csharp
-public record Basket(int Id, List<int> Items, decimal Total);
+public record Artist(int Id, string Name, List<string> Albums) : IDbReadable;
+Artist first = db.Query<Artist>();
 
-// Id | Items | Total
-// 1  | 10    | 14.00
-// 1  | 4     | 14.00
-// -> Basket(1, [10, 4], 14.00)
+// Id | Name   | Albums
+// 1  | AC/DC  | For Those About To Rock
+// 1  | AC/DC  | Let There Be Rock
+// 2  | Accept | Restless and Wild
+// -> Artist(1, "AC/DC", ["For Those About To Rock", "Let There Be Rock"]), the read stopping at the 2
+
 ```
 
-With nothing before the first collection, every row folds into one value.
+A value after the first multi-row type is not part of the rule. It is read once, from the value's first row.
 
 ```csharp
-public record Pair(List<int> Numbers, List<string> Words) : IDbReadable;
+public record Invoice(int Id, List<int> LineIds, decimal Total) : IDbReadable;
+var invoice = db.Query<List<Invoice>>();
 
-// Numbers | Words
-// 1       | a
-// 2       | b
-// -> Pair([1, 2], ["a", "b"])
+// Id  | LineIds | Total
+// 100 | 15      | 14.00
+// 100 | 16      | 13.00 - if the value is different from the first, it will be lost 
+// 101 | 17      | 15.00
+// -> [Invoice(100, [15, 16], 14.00), Invoice(101, [17], 15.00)]
+
 ```
 
-A value after a collection with nothing before it has no boundary to infer, and the build throws `MissingGroupBoundary`.
+With only multi-row types, every row folds into one value.
+
+```csharp
+public record TrackList(List<string> TrackNames, List<decimal> Prices) : IDbReadable;
+var trackList = db.Query<TrackList>();
+
+// TrackNames       | Prices
+// Breaking The Law | 0.99
+// Run to the Hills | 1.99
+// -> TrackList(["Breaking The Law", "Run to the Hills"], [0.99, 1.99])
+
+```
+
+A value after a multi-row type with nothing before it has no rule to infer, and the build throws `MissingGroupBoundary`.
 
 ```csharp
 public record Report(List<int> Rows, int Total);
 // throws MissingGroupBoundary, nothing tells one report from the next
+
 ```
 
-## A key on a construction
-
-`[GroupKey]` on a constructor parameter names the boundary for that construction. It reads that parameter's column and can sit anywhere, so a key after the collection reads a layout the default rejects.
-
-```csharp
-public record Statement(List<int> Lines, [GroupKey] int AccountId) : IDbReadable;
-
-// Lines | AccountId
-// 10    | 1
-// 11    | 1
-// 20    | 2
-// -> Statement([10, 11], 1), Statement([20], 2)
-```
-
-Marking several parameters names a composite. It narrows the boundary to the columns you mark, so an unmarked value before the collection is read once rather than compared. Here `Region` and `Day` group and `Rate` stays out.
-
-```csharp
-public record Line(int Sku, int Qty) : IDbReadable;
-public record Sale([GroupKey] int Region, [GroupKey] int Day, decimal Rate, List<Line> Lines);
-
-// Region | Day | Rate | LinesSku | LinesQty
-// 1      | 5   | 1.02 | 400      | 2
-// 1      | 5   | 1.03 | 401      | 1
-// 1      | 6   | 1.05 | 402      | 5
-// -> Sale(1, 5, 1.02, [two lines]), Sale(1, 6, 1.05, [one line])
-```
-
-## A key on the type
-
-A rule on the type applies whichever construction is chosen. `[GroupKeyColumns]` identifies the columns to group by, matching them by name.
-
-```csharp
-[GroupKeyColumns("Number")]
-public record Account(string Holder, List<int> Entries);
-
-// Number | Holder | Entries
-// 1      | Ada    | 10
-// 1      | Ada    | 11
-// 2      | Bo     | 20
-// -> Account(Ada) with [10, 11], Account(Bo) with [20]
-```
-
-`[GroupKey]` on a member identifies the grouping column.
-
-```csharp
-public class Account : IDbReadable {
-    [GroupKey]
-    public int Number { get; set; }
-    public string Holder { get; set; }
-    public List<int> Entries { get; set; }
-}
-
-// Number | Holder | Entries
-// 1      | Ada    | 10
-// 1      | Ada    | 11
-// 2      | Bo     | 20
-// -> Account with Number=1, Holder="Ada", Entries=[10, 11]
-//    Account with Number=2, Holder="Bo", Entries=[20]
-```
-
-Several `[GroupKey]` members compose a composite key.
-
-```csharp
-public class Sale : IDbReadable {
-    [GroupKey]
-    public int Region { get; set; }
-    [GroupKey]
-    public int Day { get; set; }
-    public decimal Rate { get; set; }
-    public List<int> Amounts { get; set; }
-}
-
-// Region | Day | Rate | Amounts
-// 1      | 5   | 1.02 | 100
-// 1      | 5   | 1.03 | 200
-// 1      | 6   | 1.05 | 300
-// -> Sale with Region=1, Day=5 groups first two rows
-//    Sale with Region=1, Day=6 groups third row
-```
-
-`[Alt]` on a member matches an alternate column name.
-
-```csharp
-public class Account : IDbReadable {
-    [GroupKey]
-    [Alt("AccountNumber")]
-    public int Number { get; set; }
-    public string Holder { get; set; }
-}
-
-// AccountNumber | Holder
-// 1             | Ada
-// 1             | Ada
-// 2             | Bo
-// -> Number matches "AccountNumber" column, groups by it
-```
-
-## Method boundaries
-
-A boundary is an implementation, and equality is the built-in one. A static method is another, using its own logic to decide the boundary. The method returns whether the value continues into the same group (`Same`) and the key to carry to the next row (`Next`), its parameters after the stored key negotiated like any reader.
-
-```csharp
-static (bool Same, TKey Next) Method(TKey stored, ...negotiated readers)
-```
-
-A method boundary can be marked on the type with `[GroupKey]` or on a construction with `[GroupKeyMethod(name)]` — the same rule, stored and resolved differently.
-
-On the type:
-
-```csharp
-public class SessionGroup : IDbReadable {
-    public SessionGroup(DateTime sessionDate, List<int> values) {
-        SessionDate = sessionDate;
-        Values = values;
-    }
-    public DateTime SessionDate { get; }
-    public List<int> Values { get; }
-    [GroupKey]
-    public static (bool Same, DateTime Next) BySessionDate(DateTime previous, DateTime sessionDate)
-        => (sessionDate == previous, sessionDate);
-}
-
-// SessionDate | Values
-// 2026-07-30  | 10
-// 2026-07-30  | 11
-// 2026-07-31  | 20
-// -> SessionGroup(2026-07-30, [10, 11]), SessionGroup(2026-07-31, [20])
-```
-
-On a construction, naming the method:
-
-```csharp
-public class DailyReport : IDbReadable {
-    [GroupKeyMethod(nameof(ByDate))]
-    public DailyReport(DateTime date, List<int> readings) {
-        Date = date;
-        Readings = readings;
-    }
-    public DateTime Date { get; }
-    public List<int> Readings { get; }
-    public static (bool Same, DateTime Next) ByDate(DateTime previous, DateTime date) => (date == previous, date);
-}
-```
-
-The method's parameters after the stored key are negotiated readers, so they support the full `INameComparer` infrastructure — `[Alt]` to match alternate column names, just like members do.
+If the chosen construction path is the parameterless ctor, it requires an explicit rule.
 
 ```csharp
 public class Report : IDbReadable {
-    public Report(List<int> values) { Values = values; }
-    public List<int> Values { get; }
-    [GroupKey]
-    public static (bool Same, int Next) BySourceId(int previous, [Alt("SourceKey")] int sourceId)
-        => (sourceId == previous, sourceId);
+    public Report() { }
+    public int ID { get; set; }
+    public List<int> Values { get; set; }
 }
 
-// SourceKey | Values
-// 1         | 10
-// 1         | 11
-// 2         | 20
-// -> Report([10, 11]), Report([20])
+// Throws an error at build time
+
 ```
 
-A rule you write yourself is an `IGroupingRule`, set through [runtime configuration](#setting-the-boundary-at-runtime) or made by your own attribute like the built-in ones.
+## Explicit keys
+
+Explicit keys replace the default rule. They are used to fix a shape mismatch or to optimize performance. You can define them on a specific construction path or globally on the type.
+
+On a **construction path**, `[GroupKey]` on a parameter names the column.
+
+```csharp
+// Optimization: The default rule would compare every scalar before the list.
+// By marking Id, the engine only compares Id, skipping Name, Email, and Phone.
+public record Customer([GroupKey] int Id, string Name, string Email, string Phone, List<Invoice> Invoices) : IDbReadable;
+
+// Shape mismatch: The default rule rejects keys placed after a multi-row type. 
+// An explicit key allows it.
+public record Invoice(List<int> LineIds, [GroupKey] int InvoiceId) : IDbReadable;
+var invoices = db.Query<List<Invoice>>();
+
+// LineIds | InvoiceId
+// 15      | 100
+// 16      | 100
+// 20      | 101
+// -> [Invoice([15, 16], 100), Invoice([20], 101)]
+
+```
+
+On the **type**, `[GroupKey]` on a property sets a baseline rule for the type, serving as the default unless a specific construction path overrides it. 
+
+It also makes parameterless constructors usable.
+
+```csharp
+public class Playlist : IDbReadable {
+    [GroupKey]
+    public int PlaylistId { get; set; }
+    public string Name { get; set; }
+    public List<string> Tracks { get; set; }
+}
+var playlists = db.Query<List<Playlist>>();
+
+// PlaylistId | Name  | Tracks
+// 1          | Heavy | Track A
+// 1          | Heavy | Track B
+// 2          | Light | Track C
+// -> [Playlist(PlaylistId=1, Name="Heavy", Tracks=["Track A", "Track B"]),
+//    Playlist(PlaylistId=2, Name="Light", Tracks=["Track C"])]
+
+```
+
+`[GroupKeyColumns]` identifies the grouping rule by using the columns directly (by using the name).
+
+```csharp
+// CustomerId is present in the database result set, but it is not stored 
+// as a parameter on the record. It is used strictly to drive the grouping rule.
+[GroupKeyColumns("CustomerId")]
+public record Customer(string FirstName, string LastName, List<int> InvoiceIds) : IDbReadable;
+var customers = db.Query<List<Customer>>();
+
+// CustomerId | FirstName | LastName | InvoiceIds
+// 1          | Ada       | Lovelace | 100
+// 1          | Ada       | Lovelace | 101
+// 2          | Alan      | Turing   | 102
+// -> [Customer("Ada", "Lovelace", [100, 101]), 
+//    Customer("Alan", "Turing", [102])]
+
+```
+
+## Composite keys
+
+Marking multiple properties or parameters composes a composite key, grouping rows when *all* of those values match.
+
+```csharp
+public class OrderItem : IDbReadable {
+    [GroupKey]
+    public int OrderId { get; set; }
+    [GroupKey]
+    public int ProductId { get; set; }
+    public List<string> SerialNumbers { get; set; }
+}
+var items = db.Query<List<OrderItem>>();
+
+// OrderId | ProductId | SerialNumbers
+// 50      | 101       | SN-001
+// 50      | 101       | SN-002
+// 50      | 102       | SN-003
+// 51      | 101       | SN-004
+// -> [OrderItem(OrderId=50, ProductId=101, SerialNumbers=["SN-001", "SN-002"]),
+//    OrderItem(OrderId=50, ProductId=102, SerialNumbers=["SN-003"]),
+//    OrderItem(OrderId=51, ProductId=101, SerialNumbers=["SN-004"])]
+
+```
+
+## Alternate column names
+
+You can use `[Alt]` to match a group key property or parameter to a database column with a different name.
+
+```csharp
+public class Employee : IDbReadable {
+    [GroupKey]
+    [Alt("EmployeeId")]
+    public int Id { get; set; }
+    public List<string> Territories { get; set; }
+}
+var employees = db.Query<List<Employee>>();
+
+// EmployeeId | Territories
+// 7          | North
+// 7          | South
+// 8          | East
+// -> [Employee(Id=7, Territories=["North", "South"]),
+//    Employee(Id=8, Territories=["East"])]
+
+```
+
+## Method rules
+
+Equality is the built-in rule. A static method provides a custom rule. The method returns whether the value continues into the same group (`Same`) and the key to carry to the next row (`Next`).
+
+Its parameters after the stored key are negotiated like any reader, supporting mapping attributes like `[Alt]`.
+
+```csharp
+static (bool Same, TKey Next) Method(TKey stored, ...negotiated readers)
+
+```
+
+A method rule can be placed on a construction path using `[GroupKeyMethod(name)]`, or on the type by marking the static method itself with `[GroupKey]`.
+
+On a **construction path**:
+
+```csharp
+public class MonthlySalesReport : IDbReadable {
+    [GroupKeyMethod(nameof(ByMonth))]
+    public MonthlySalesReport(DateTime month, List<decimal> invoiceTotals) {
+        Month = month;
+        InvoiceTotals = invoiceTotals;
+    }
+    
+    public DateTime Month { get; }
+    public List<decimal> InvoiceTotals { get; }
+
+    public static (bool Same, DateTime Next) ByMonth(DateTime stored, DateTime invoiceDate) 
+    {
+        var rowMonth = new DateTime(invoiceDate.Year, invoiceDate.Month, 1);
+        return (rowMonth == stored, rowMonth);
+    }
+}
+var reports = db.Query<MonthlySalesReport>();
+
+// InvoiceDate | InvoiceTotals
+// 2026-01-15  | 10.99
+// 2026-01-22  | 15.00
+// 2026-02-05  | 8.99
+// -> MonthlySalesReport(2026-01-01, [10.99, 15.00]), MonthlySalesReport(2026-02-01, [8.99])
+
+```
+
+On the **type**:
+
+```csharp
+public record ShipmentBatch([Alt("ShippedAt")] DateTime batchStartDate, List<string> items) : IDbReadable {
+    [GroupKey]
+    public static (bool Same, DateTime Next) WithinBatchWindow(DateTime anchorDate, DateTime shippedAt) {
+        const double maxWindowDays = 7;
+        if ((shippedAt - anchorDate).TotalDays <= maxWindowDays)
+            return (true, anchorDate);
+        return (false, shippedAt);
+    }
+}
+
+```
 
 ## Which rule wins
 
-The boundary is chosen per construction path, most specific first:
+The grouping rule is chosen per construction path, most specific first:
 
-1. The chosen construction's own key, its `[GroupKey]` parameters or a `[GroupKeyMethod]`.
-2. The type's key, a `[GroupKey]` member or a static `[GroupKey]` method.
-3. The chosen construction's default, the values before its first collection.
+1. **Path explicit:** If there is a grouping rule on the path that is chosen.
+2. **Type explicit:** If there is a grouping rule that is set on the type.
+3. **Path default:** If no grouping rules are set.
 
-A type with two constructions groups by whichever the result's columns select. Neither here marks a key, so each falls to its own default.
+A type with multiple constructions infers a different default rule depending on which columns the database returns.
 
 ```csharp
 public class Route : IDbReadable {
-    public Route(int Line, List<int> stops) {
-        Key = Line;
-        Stops = stops;
-    }
-    public Route(int From, int To, List<int> stops) {
-        Key = From * 1000 + To;
-        Stops = stops;
-    }
-    public int Key { get; }
-    public List<int> Stops { get; }
+    public Route(int Line, List<int> stops) { ... }
+    public Route(int From, int To, List<int> stops) { ... }
 }
 
-// A Line column selects the first construction, grouping by Line:
-// Line | Stops -> Route(Key 1, [10, 11]), Route(Key 2, [20])
+// Line column available -> selects first construction, defaults to grouping by Line
+// From and To columns available -> selects second construction, defaults to grouping by both
 
-// From and To select the second, grouping by both:
-// From | To | Stops -> Route(Key 1005, [10, 11]), Route(Key 1006, [20])
 ```
 
-A type-level rule can be overridden on a specific construction path. Here, the type groups by `Region`, but the first construction groups by `Date` instead.
+A specific construction path can explicitly override a type-level rule.
 
 ```csharp
 [GroupKeyColumns("Region")]
 public class Sale : IDbReadable {
-    public Sale([GroupKey] DateTime date, List<int> amounts) {
-        Date = date;
-        Region = null!;
-        Amounts = amounts;
-    }
-    public Sale(string region, List<int> amounts) {
-        Date = default;
-        Region = region;
-        Amounts = amounts;
-    }
-    public DateTime Date { get; }
-    public string Region { get; }
-    public List<int> Amounts { get; }
+    public Sale([GroupKey] DateTime date, List<int> amounts) { ... }
+    public Sale(string region, List<int> amounts) { ... }
 }
 
-// When Date is available, the first construction is chosen and groups by Date (path rule overrides type rule):
-// Date       | Amounts
-// 2026-07-30 | 100
-// 2026-07-30 | 200
-// 2026-07-31 | 300
-// -> Sale(2026-07-30, [100, 200]), Sale(2026-07-31, [300])
+// Date column available -> first path chosen, overrides type rule to group by Date
+// Region column available -> second path chosen, falls back to type rule (Region)
 
-// When only Region is available, the second construction is chosen and groups by Region (uses type rule):
-// Region | Amounts
-// West   | 100
-// West   | 200
-// East   | 300
-// -> Sale(West, [100, 200]), Sale(East, [300])
 ```
 
-A construction carries parameter keys or a method reference, never both, and a type carries member keys or a method, never both. A parameterless constructor has no parameters to mark, so it cannot override the type-level rule and requires the type to have one. If the type has no grouping rule, negotiation fails.
-
-The key is negotiated apart from the construction, so a construction can map every parameter and still fail. A key naming a column the result does not carry throws `GroupKeyUnmapped`, even when the construction itself was satisfiable.
-
-## Setting the boundary at runtime
-
-A type's boundary can be set before its parser is built, without changing the type. The forms taking an `IGroupingRule` take a rule of your own or a built-in one built by hand, and the last sets it on one construction path by its parameter types rather than on the type.
+Only **one rule source** can be used at a time on the same target (type, or specific path).
 
 ```csharp
-TypeParsingInfoHelper.SetGroupKey<Artist>(nameof(Artist.Id));                     // an equality key
-TypeParsingInfoHelper.SetGroupKey<Sale>(nameof(Sale.Region), nameof(Sale.Day));   // composite
-TypeParsingInfoHelper.SetGroupKeyMethod<Window>(nameof(Window.WithinFive));       // a method boundary
-TypeParsingInfoHelper.SetGroupKey<Artist>(customRule);                            // a rule of your own
-TypeParsingInfoHelper.SetGroupKey<Artist>(customRule, typeof(int), typeof(List<Album>)); // on one construction path
+public class InvalidBatch : IDbReadable {
+    // Throws ConflictingGroupKey: Cannot mix grouping rule types
+    [GroupKeyMethod(nameof(ByWindow))]
+    public InvalidBatch([GroupKey] int id, List<string> items) { ... }
+
+    public static (bool Same, int Next) ByWindow(int stored, int current) => ...
+}
+
+```
+
+## Setting the rule at runtime
+
+
+```csharp
+TypeParsingInfoHelper.SetGroupKey<Playlist>(nameof(Playlist.PlaylistId));                      // equality key
+TypeParsingInfoHelper.SetGroupKey<CustomerSummary>(nameof(CustomerSummary.CustomerId), "Country"); // composite
+TypeParsingInfoHelper.SetGroupKeyMethod<MonthlySalesReport>(nameof(MonthlySalesReport.ByMonth)); // method rule
+
+// Set a custom IGroupingRule on a specific construction path
+TypeParsingInfoHelper.SetGroupKey<Invoice>(customRule, typeof(int), typeof(List<InvoiceLine>)); 
+
 ```
 
 ## Errors
 
-- `MissingGroupBoundary`, a value sits after a collection with no boundary to infer.
-- `GroupKeyUnmapped`, a declared key names a column the result does not carry.
-- `ConflictingGroupKey`, a member key and a method key on one type, or parameter keys and a method reference on one construction.
+* `MissingGroupBoundary`, a value sits after a multi-row type with no rule to infer.
+* `GroupKeyUnmapped`, a declared key names a column the result does not carry.
+* `ConflictingGroupKey`, a member key and a method key on one type, or parameter keys and a method reference on one construction.

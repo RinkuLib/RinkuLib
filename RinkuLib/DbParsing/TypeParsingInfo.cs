@@ -292,24 +292,24 @@ public static class TypeParsingInfoHelper {
         => ApplyNullColHandler(info, modifier);
     /// <summary>
     /// Configures the null-value response behavior for the slots matching <paramref name="defaultName"/>.
-    /// The simplest form of <see cref="SetInvalidOnNull(TypeParsingInfo, Func{ParamInfo, bool?})"/>.
+    /// The simplest form of <see cref="SetAbortOnNull(TypeParsingInfo, Func{ParamInfo, bool?})"/>.
     /// </summary>
     /// <param name="info"></param>
     /// <param name="defaultName">The parameter name in C#.</param>
-    /// <param name="invalidOnNull">Wether or not the parameter should be invalid when null</param>
-    public static bool SetInvalidOnNull(this TypeParsingInfo info, string defaultName, bool invalidOnNull)
+    /// <param name="abortOnNull">Wether or not the parameter should be aborted when null</param>
+    public static bool SetAbortOnNull(this TypeParsingInfo info, string defaultName, bool abortOnNull)
         => ApplyNullColHandler(info, p => p.NameComparer.Contains(defaultName)
-            ? p.NullColHandler.SetInvalidOnNull(p.Type, invalidOnNull) : null);
+            ? p.NullColHandler.SetAbortOnNull(p.Type, abortOnNull) : null);
     /// <summary>
-    /// Updates the invalid-on-null behavior of the slots. The form that gives full control:
+    /// Updates the AbortOnNull behavior of the slots. The form that gives full control:
     /// the <paramref name="modifier"/> sees each slot and decides.
     /// </summary>
     /// <param name="info"></param>
     /// <param name="modifier">A delegate that receives each slot and returns whether it should be
-    /// invalid when null (returning null leaves the slot as is)</param>
-    public static bool SetInvalidOnNull(this TypeParsingInfo info, Func<ParamInfo, bool?> modifier)
+    /// abort when null (returning null leaves the slot as is)</param>
+    public static bool SetAbortOnNull(this TypeParsingInfo info, Func<ParamInfo, bool?> modifier)
         => ApplyNullColHandler(info, p => modifier(p) is bool b
-            ? p.NullColHandler.SetInvalidOnNull(p.Type, b) : null);
+            ? p.NullColHandler.SetAbortOnNull(p.Type, b) : null);
     /// <summary>
     /// Manually add a member to fill after construction: an existing <see cref="MemberParser"/>.
     /// </summary>
@@ -377,7 +377,7 @@ public interface ICanUpdateAltNames {
 }
 /// <summary>
 /// Governs the null handling of an info's own slots. The single primitive every null-handling helper
-/// (<c>UpdateNullColHandler</c>, <c>SetInvalidOnNull</c>) is derived from: invalid-on-null is just a
+/// (<c>UpdateNullColHandler</c>, <c>SetAbortOnNull</c>) is derived from: AbortOnNull is just a
 /// transform on a slot's <see cref="INullColHandler"/>.
 /// </summary>
 public interface ICanUpdateNullColHandlers {

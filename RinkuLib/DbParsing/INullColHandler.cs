@@ -6,7 +6,7 @@ namespace RinkuLib.DbParsing;
 /// nulls becomes absent instead of an instance of blanks.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
-public sealed class InvalidOnNullAttribute : Attribute;
+public sealed class AbortOnNullAttribute : Attribute;
 /// <summary>
 /// Builds the null rule for a member from its reflection metadata, the seam behind an attribute that changes
 /// how a column's <c>NULL</c> is treated.
@@ -39,7 +39,7 @@ public interface INullColHandler {
     /// <summary>
     /// The same rule switched to also collapse the owning object when the value is <c>NULL</c>, or back.
     /// </summary>
-    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull);
+    public INullColHandler SetAbortOnNull(Type type, bool abortOnNull);
 }
 /// <summary>The null rule that substitutes the type's default when a column is <c>NULL</c>.</summary>
 public class NullableTypeHandle : INullColHandler {
@@ -63,8 +63,8 @@ public class NullableTypeHandle : INullColHandler {
     /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => false;
     /// <inheritdoc/>
-    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
-        => invalidOnNull ? InvalidOnNullAndNullableHandle.Instance : this;
+    public INullColHandler SetAbortOnNull(Type type, bool abortOnNull)
+        => abortOnNull ? AbortOnNullAndNullableHandle.Instance : this;
 }
 /// <summary>The null rule for collection elements marked with [KeepNullElements], keeps the element as the type's default.</summary>
 public class KeepNullElementsHandle : INullColHandler {
@@ -87,14 +87,14 @@ public class KeepNullElementsHandle : INullColHandler {
     /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => false;
     /// <inheritdoc/>
-    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
-        => invalidOnNull ? this : this;
+    public INullColHandler SetAbortOnNull(Type type, bool abortOnNull)
+        => abortOnNull ? this : this;
 }
 /// <summary>The null rule that collapses the owning object when a column is <c>NULL</c>, otherwise a default.</summary>
-public class InvalidOnNullAndNullableHandle : INullColHandler {
+public class AbortOnNullAndNullableHandle : INullColHandler {
     /// <summary>Singleton</summary>
-    public static InvalidOnNullAndNullableHandle Instance { get; } = new();
-    private InvalidOnNullAndNullableHandle() { }
+    public static AbortOnNullAndNullableHandle Instance { get; } = new();
+    private AbortOnNullAndNullableHandle() { }
     /// <inheritdoc/>
     public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         nullSetPoint.MakeNullJump(generator);
@@ -110,8 +110,8 @@ public class InvalidOnNullAndNullableHandle : INullColHandler {
     /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => true;
     /// <inheritdoc/>
-    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
-        => invalidOnNull ? this : NullableTypeHandle.Instance;
+    public INullColHandler SetAbortOnNull(Type type, bool abortOnNull)
+        => abortOnNull ? this : NullableTypeHandle.Instance;
 }
 /// <summary>The null rule that throws when a column is <c>NULL</c>, the default for a non-nullable value.</summary>
 public class NotNullHandle : INullColHandler {
@@ -133,14 +133,14 @@ public class NotNullHandle : INullColHandler {
     /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => false;
     /// <inheritdoc/>
-    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
-        => invalidOnNull ? InvalidOnNullAndNotNullHandle.Instance : this;
+    public INullColHandler SetAbortOnNull(Type type, bool abortOnNull)
+        => abortOnNull ? AbortOnNullAndNotNullHandle.Instance : this;
 }
 /// <summary>The null rule that collapses the owning object when a column is <c>NULL</c>, otherwise throws.</summary>
-public class InvalidOnNullAndNotNullHandle : INullColHandler {
+public class AbortOnNullAndNotNullHandle : INullColHandler {
     /// <summary>Singleton</summary>
-    public static InvalidOnNullAndNotNullHandle Instance { get; } = new();
-    private InvalidOnNullAndNotNullHandle() { }
+    public static AbortOnNullAndNotNullHandle Instance { get; } = new();
+    private AbortOnNullAndNotNullHandle() { }
     /// <inheritdoc/>
     public Label? HandleNull(Type parentType, Type closedType, string paramName, Generator generator, NullSetPoint nullSetPoint) {
         nullSetPoint.MakeNullJump(generator);
@@ -156,6 +156,6 @@ public class InvalidOnNullAndNotNullHandle : INullColHandler {
     /// <inheritdoc/>
     public bool NeedNullJumpSetPoint(Type closedType) => true;
     /// <inheritdoc/>
-    public INullColHandler SetInvalidOnNull(Type type, bool invalidOnNull)
-        => invalidOnNull ? this : NotNullHandle.Instance;
+    public INullColHandler SetAbortOnNull(Type type, bool abortOnNull)
+        => abortOnNull ? this : NotNullHandle.Instance;
 }

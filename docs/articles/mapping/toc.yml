@@ -4,8 +4,6 @@
   href: objects.md
 - name: Nullability
   href: nullability.md
-- name: Collections
-  href: collections.md
 - name: Grouping
   href: grouping.md
 - name: Custom Multi-Row Types

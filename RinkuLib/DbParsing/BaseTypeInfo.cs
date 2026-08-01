@@ -70,7 +70,7 @@ public class CtorTypeInfo : TypeParsingInfo {
     }
     internal static readonly ParamInfo InfoNullable = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo InfoNotNullable = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
-    internal static readonly ParamInfo InfoSkip = new(ParamInfo.NoType, InvalidOnNullAndNotNullHandle.Instance, NoNameComparer.Instance);
+    internal static readonly ParamInfo InfoSkip = new(ParamInfo.NoType, AbortOnNullAndNotNullHandle.Instance, NoNameComparer.Instance);
     /// <inheritdoc/>
     public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
         if (!previousUsages.CanContinue(currentClosedType, colUsage.NbUsed, out previousUsages))

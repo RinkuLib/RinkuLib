@@ -576,7 +576,7 @@ internal static class MultiRowEmitter {
 
     /// <summary>
     /// Emits <c>bool TryReadElem(object, DbDataReader, out E)</c>: it reads one element with the single-row
-    /// emit, and a collapse (an <c>[InvalidOnNull]</c> null) lands on <c>value = default; return false</c> so
+    /// emit, and a collapse (an <c>[AbortOnNull]</c> null) lands on <c>value = default; return false</c> so
     /// the accumulator skips the add. The bool carries the signal for both reference and value-type elements.
     /// </summary>
     private static MethodBuilder EmitTryReadElement(TypeBuilder tb, DbItemPlan element, Type elementType, ColumnInfo[] cols, string tag, out object? targetObj) {

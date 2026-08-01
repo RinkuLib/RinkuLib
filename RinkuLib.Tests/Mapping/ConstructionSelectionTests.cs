@@ -102,9 +102,9 @@ public class ConstructionSelectionTests {
     }
 
     [Fact]
-    public void SetInvalidOnNull_by_visitor_collapses_the_object() {
+    public void SetAbortOnNull_by_visitor_collapses_the_object() {
         Assert.True(TypeParsingInfo.GetOrAdd<CollapsingParcel>()
-            .SetInvalidOnNull(slot => slot.Type == typeof(int) ? true : null));
+            .SetAbortOnNull(slot => slot.Type == typeof(int) ? true : null));
         ColumnInfo[] cols = [
             new("Id", typeof(int), false),
             new("ContentsTrackingId", typeof(int), true),

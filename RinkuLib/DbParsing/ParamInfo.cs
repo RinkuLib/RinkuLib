@@ -38,7 +38,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>
     /// Updates the <see cref="NullColHandler"/> to handle a recovery jump if a null is encountered.
     /// </summary>
-    public void SetInvalidOnNull(bool invalidOnNull) => NullColHandler = NullColHandler.SetInvalidOnNull(Type, invalidOnNull);
+    public void SetAbortOnNull(bool abortOnNull) => NullColHandler = NullColHandler.SetAbortOnNull(Type, abortOnNull);
     /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
     public virtual void UpdateColModifier(ref ColModifier mod) { }
     /// <summary>
@@ -101,7 +101,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <list type="bullet">
     /// <item>If any attribute implements <see cref="IParamInfoMaker"/>, it takes control and creates the matcher.</item>
     /// <item><see cref="AltAttribute"/> instances are collected to build optimized <see cref="INameComparer"/> versions.</item>
-    /// <item>Null-handling is resolved by <see cref="GetDeclaredNullColHandler"/> (<see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>, <see cref="InvalidOnNullAttribute"/>, or a custom <see cref="INullColHandlerMaker"/>), falling back to the type's own nullability.</item>
+    /// <item>Null-handling is resolved by <see cref="GetDeclaredNullColHandler"/> (<see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>, <see cref="AbortOnNullAttribute"/>, or a custom <see cref="INullColHandlerMaker"/>), falling back to the type's own nullability.</item>
     /// </list>
     /// </remarks>
     public static ParamInfo Create(Type type, string? name, object[] attributes, object? param = null) {
@@ -146,22 +146,22 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// </summary>
     private static INullColHandler DefaultNullColHandler(Type type)
         => TypeParsingInfo.TryGetInfo(type, out var info) && info is MultiRowTypeParsingInfo
-            ? InvalidOnNullAndNotNullHandle.Instance
+            ? AbortOnNullAndNotNullHandle.Instance
             : type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
     /// <summary>
     /// Resolves the nullability that a set of attributes declares, a custom
     /// <see cref="INullColHandlerMaker"/>, <see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>,
-    /// composed with <see cref="InvalidOnNullAttribute"/>. This is the resolution <see cref="Create"/> uses
+    /// composed with <see cref="AbortOnNullAttribute"/>. This is the resolution <see cref="Create"/> uses
     /// before falling back to the type's own nullability.
     /// </summary>
     /// <returns>The declared handler, or <see langword="null"/> when nothing is declared.</returns>
     public static INullColHandler? GetDeclaredNullColHandler(Type type, string? name, object[] attributes, object? param = null) {
         INullColHandler? handler = null;
-        bool isInvalidOnNull = false;
+        bool isAbortOnNull = false;
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
-            if (attr is InvalidOnNullAttribute)
-                isInvalidOnNull = true;
+            if (attr is AbortOnNullAttribute)
+                isAbortOnNull = true;
             if (attr is INullColHandlerMaker nchm)
                 handler = nchm.MakeColHandler(type, name, attributes, param);
             if (attr is NotNullAttribute)
@@ -169,10 +169,10 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
             if (attr is MaybeNullAttribute)
                 handler = NullableTypeHandle.Instance;
         }
-        if (!isInvalidOnNull)
+        if (!isAbortOnNull)
             return handler;
         handler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
-        return handler.SetInvalidOnNull(type, true);
+        return handler.SetAbortOnNull(type, true);
     }
     /// <summary>A delegate to implement your own name comparer dispatching strategy</summary>
     public static NameComparerFactory ComparerFactory { get; set; } = DispatchComparer;

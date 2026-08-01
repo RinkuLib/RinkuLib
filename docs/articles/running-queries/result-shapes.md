@@ -33,7 +33,7 @@ await foreach (var t in GetTracks.StreamQueryAsync<Track>(cnn))   // async strea
 
 `List<T>` buffers every row. `IEnumerable<T>` and `IAsyncEnumerable<T>` produce rows as you enumerate, keeping memory flat on large results. Zero rows give an empty collection.
 
-When `T` is itself nested, a `List<Artist>` whose `Artist` holds a `List<Album>`, a join's repeated rows fold back into it. See [collections](../mapping/collections.md).
+When `T` is itself nested, a `List<Artist>` whose `Artist` holds a `List<Album>`, a join's repeated rows fold back into it. See [collections](collections.md).
 
 A streamed result waits. `Query<IEnumerable<T>>` runs nothing when you call it, the command goes off on the first step of walking the rows, and the reader closes when the walk ends, whether you reach the last row or leave the loop early.
 
@@ -65,7 +65,7 @@ They answer two separate questions.
 | `List<T>` / `IEnumerable<T>` | empty collection | one element | all rows |
 | `Single<T>` | a default `Single<T>` | the object | **throws** |
 
-**Whether the value may be null.** A row can carry a `NULL`, or a nested object can [collapse](../mapping/nullability.md#invalidonnull-collapse-the-object) to nothing. By default that throws. A null-accepting shape takes it instead.
+**Whether the value may be null.** A row can carry a `NULL`, or a nested object can [collapse](../mapping/nullability.md#abortonnull-collapse-the-object) to nothing. By default that throws. A null-accepting shape takes it instead.
 
 | Ask for | Null value |
 | --- | --- |

@@ -36,7 +36,7 @@ An empty collection counts as not supplied, so an optional `?@ids_X` clause is p
 
 ### A nested object is null even though some of its columns had values.
 
-A slot marked `[InvalidOnNull]` collapses the whole nested object when its column is NULL. That is its purpose, typically for outer joins. See [nullability](../mapping/nullability.md).
+A slot marked `[AbortOnNull]` collapses the whole nested object when its column is NULL. That is its purpose, typically for outer joins. See [nullability](../mapping/nullability.md).
 
 ### A nested type is not being mapped at all.
 

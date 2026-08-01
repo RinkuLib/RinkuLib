@@ -8,7 +8,7 @@ namespace RinkuLib.Tests.Mapping;
 
 /// <summary>
 /// Complex members map from prefixed columns (<c>ContentsWeight</c> fills <c>Contents.Weight</c>),
-/// and <c>[InvalidOnNull]</c> collapses a whole nested object to null when its key column is null.
+/// and <c>[AbortOnNull]</c> collapses a whole nested object to null when its key column is null.
 /// </summary>
 public class NestedMappingTests {
     private static readonly ColumnInfo[] ShipmentCols = [
@@ -31,7 +31,7 @@ public class NestedMappingTests {
     }
 
     [Fact]
-    public void InvalidOnNull_collapses_the_nested_struct_to_null() {
+    public void AbortOnNull_collapses_the_nested_struct_to_null() {
         var shipment = Rows.ParseOne<Delivery>(ShipmentCols, 200, DBNull.Value, 0.0, "Ground", DBNull.Value);
         Assert.Equal(200, shipment.ShipmentId);
         Assert.Null(shipment.Contents);
@@ -111,7 +111,7 @@ public class NestedMappingTests {
     }
 
     [Fact]
-    public void InvalidOnNull_deep_in_the_chain_collapses_upward() {
+    public void AbortOnNull_deep_in_the_chain_collapses_upward() {
         ColumnInfo[] cols = [
             new("id", typeof(int), false),
             new("MiddleID", typeof(int), false),
@@ -229,7 +229,7 @@ public class NestedMappingTests {
     }
 }
 
-public record struct Parcel([InvalidOnNull] int TrackingId, double Weight) : IDbReadable;
+public record struct Parcel([AbortOnNull] int TrackingId, double Weight) : IDbReadable;
 public class RoutingLabel : IDbReadable {
     [NotNull] public string ServiceLevel { get; set; } = null!;
     public string? Notes { get; set; }
@@ -240,17 +240,17 @@ public class Delivery(int shipmentId, Parcel? contents, RoutingLabel routing) : 
     public RoutingLabel Routing { get; } = routing;
 }
 public record class Staff(int ID, string Name, [Alt("Boss")] Staff? Supervisor = null);
-public record class GuardedStaff([InvalidOnNull] int ID, string Name, [Alt("Boss")] GuardedStaff? Supervisor = null);
+public record class GuardedStaff([AbortOnNull] int ID, string Name, [Alt("Boss")] GuardedStaff? Supervisor = null);
 public record class ChainTop(int ID, ChainMiddle Middle) : IDbReadable;
 public record class ChainMiddle(int ID, ChainBottom Bottom) : IDbReadable;
 public record class ChainTopNullableBottom(int ID, ChainMiddleNullable Middle) : IDbReadable;
 public record class ChainMiddleNullable(int ID, ChainBottom? Bottom) : IDbReadable;
 public record class ChainTopCollapsing(int ID, ChainMiddleCollapsing Middle) : IDbReadable;
-public record class ChainMiddleCollapsing(int ID, [InvalidOnNull] ChainBottom Bottom) : IDbReadable;
-public record struct ChainBottom([InvalidOnNull] int ID, string Name) : IDbReadable;
+public record class ChainMiddleCollapsing(int ID, [AbortOnNull] ChainBottom Bottom) : IDbReadable;
+public record struct ChainBottom([AbortOnNull] int ID, string Name) : IDbReadable;
 
 public enum Money { CAD = 1, EUR = 2, GBP = 3 }
-public record struct Cost<T>([InvalidOnNull] T Amount, Money Currency) : IDbReadable where T : struct;
+public record struct Cost<T>([AbortOnNull] T Amount, Money Currency) : IDbReadable where T : struct;
 [method: CanCompleteWithMembers]
 public class Annotated<T, TSource>([NotNull] T Value) : IDbReadable where T : notnull {
     public T Value { get; } = Value;

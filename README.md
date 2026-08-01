@@ -51,6 +51,20 @@ List<Invoice> invoices = GetInvoices.Query<List<Invoice>>(cnn);
 // each Invoice.Customer is filled from CustomerId and CustomerName
 ```
 
+SQL repeats rows on a join, the engine fold them into nested shapes automatically.
+
+```csharp
+public record Album(int Id, string Title) : IDbReadable;
+public record Artist(int Id, string Name, List<Album> Albums);
+
+static readonly QueryCommand GetArtists = new(
+    "SELECT ar.Id, ar.Name, al.Id AS AlbumsId, al.Title AS AlbumsTitle " +
+    "FROM artists ar JOIN albums al ON al.ArtistId = ar.Id ORDER BY ar.Id");
+
+List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
+// artists[0].Albums holds the albums gathered from that artist's rows
+```
+
 ## Make parts of the SQL optional
 
 Mark the optional parts of a template, and the values you supply decide what stays.

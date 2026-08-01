@@ -35,24 +35,6 @@ Optional<Track> maybe = GetTrackById.Query<Optional<Track>>(cnn, new { id = 99 }
 
 Every shape and its zero-row behavior is on [result shapes](result-shapes.md).
 
-## A join folds into nested objects
-
-A join repeats the parent on every child row. Ask for the nested shape and the rows fold back into it, each parent holding its children.
-
-```csharp
-public record Album(int Id, string Title) : IDbReadable;
-public record Artist(int Id, string Name, List<Album> Albums);
-
-static readonly QueryCommand GetArtists = new(
-    "SELECT ar.Id, ar.Name, al.Id AS AlbumsId, al.Title AS AlbumsTitle " +
-    "FROM artists ar JOIN albums al ON al.ArtistId = ar.Id ORDER BY ar.Id");
-
-List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
-// artists[0].Albums holds the albums gathered from that artist's rows
-```
-
-The same reading folds a set or an aggregate as readily as a list. See [custom multi-row types](../mapping/custom-multi-row-types.md).
-
 ## Parameters
 
 Pass an object whose members match the parameter names, case-insensitive. Anonymous objects, records, and DTOs all work, and unmatched members are ignored.
@@ -142,6 +124,25 @@ using (cmd) {
 ```
 
 See [multiple result sets](multiple-results.md).
+
+## A join folds into nested objects
+
+A join repeats the parent on every child row.
+
+```csharp
+public record Album(int Id, string Title) : IDbReadable;
+public record Artist(int Id, string Name, List<Album> Albums);
+
+static readonly QueryCommand GetArtists = new(
+    "SELECT ar.Id, ar.Name, al.Id AS AlbumsId, al.Title AS AlbumsTitle " +
+    "FROM artists ar JOIN albums al ON al.ArtistId = ar.Id ORDER BY ar.Id");
+
+List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
+// artists[0].Albums holds the albums gathered from that artist's rows
+```
+
+See [collections](collections.md).
+
 
 ## The SQL string on the connection
 

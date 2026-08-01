@@ -9,16 +9,16 @@ using Xunit;
 namespace RinkuLib.Tests.Mapping;
 
 /// <summary>
-/// The null rules at work: invalid-on-null collapsing the owning object, defaults substituted per value
+/// The null rules at work: AbortOnNull collapsing the owning object, defaults substituted per value
 /// kind, and the wrapper shapes built around non-simple element parsers.
 /// </summary>
 public class NullHandlingAndShapeTests {
 
-    public record struct CollapseInner(int A, [InvalidOnNull] int? B) : IDbReadable;
+    public record struct CollapseInner(int A, [AbortOnNull] int? B) : IDbReadable;
     public record CollapseOuter(int Id, CollapseInner? Inner) : IDbReadable;
 
     [Fact]
-    public void An_invalid_on_null_slot_collapses_its_owner() {
+    public void An_abort_on_null_slot_collapses_its_owner() {
         ColumnInfo[] cols = [
             new("Id", typeof(int), false),
             new("InnerA", typeof(int), false),
@@ -33,15 +33,15 @@ public class NullHandlingAndShapeTests {
     }
 
     [Fact]
-    public void Every_handle_flips_between_plain_and_invalid_on_null() {
-        Assert.Same(InvalidOnNullAndNullableHandle.Instance, NullableTypeHandle.Instance.SetInvalidOnNull(typeof(int?), true));
-        Assert.Same(NullableTypeHandle.Instance, NullableTypeHandle.Instance.SetInvalidOnNull(typeof(int?), false));
-        Assert.Same(InvalidOnNullAndNullableHandle.Instance, InvalidOnNullAndNullableHandle.Instance.SetInvalidOnNull(typeof(int?), true));
-        Assert.Same(NullableTypeHandle.Instance, InvalidOnNullAndNullableHandle.Instance.SetInvalidOnNull(typeof(int?), false));
-        Assert.Same(InvalidOnNullAndNotNullHandle.Instance, NotNullHandle.Instance.SetInvalidOnNull(typeof(int), true));
-        Assert.Same(NotNullHandle.Instance, NotNullHandle.Instance.SetInvalidOnNull(typeof(int), false));
-        Assert.Same(InvalidOnNullAndNotNullHandle.Instance, InvalidOnNullAndNotNullHandle.Instance.SetInvalidOnNull(typeof(int), true));
-        Assert.Same(NotNullHandle.Instance, InvalidOnNullAndNotNullHandle.Instance.SetInvalidOnNull(typeof(int), false));
+    public void Every_handle_flips_between_plain_and_abort_on_null() {
+        Assert.Same(AbortOnNullAndNullableHandle.Instance, NullableTypeHandle.Instance.SetAbortOnNull(typeof(int?), true));
+        Assert.Same(NullableTypeHandle.Instance, NullableTypeHandle.Instance.SetAbortOnNull(typeof(int?), false));
+        Assert.Same(AbortOnNullAndNullableHandle.Instance, AbortOnNullAndNullableHandle.Instance.SetAbortOnNull(typeof(int?), true));
+        Assert.Same(NullableTypeHandle.Instance, AbortOnNullAndNullableHandle.Instance.SetAbortOnNull(typeof(int?), false));
+        Assert.Same(AbortOnNullAndNotNullHandle.Instance, NotNullHandle.Instance.SetAbortOnNull(typeof(int), true));
+        Assert.Same(NotNullHandle.Instance, NotNullHandle.Instance.SetAbortOnNull(typeof(int), false));
+        Assert.Same(AbortOnNullAndNotNullHandle.Instance, AbortOnNullAndNotNullHandle.Instance.SetAbortOnNull(typeof(int), true));
+        Assert.Same(NotNullHandle.Instance, AbortOnNullAndNotNullHandle.Instance.SetAbortOnNull(typeof(int), false));
     }
 
 
@@ -92,11 +92,11 @@ public class NullHandlingAndShapeTests {
 
     public class SkippingMember : IDbReadable {
         public int Id { get; set; }
-        [InvalidOnNull] public int? Extra { get; set; }
+        [AbortOnNull] public int? Extra { get; set; }
     }
 
     [Fact]
-    public void An_invalid_on_null_member_is_skipped_when_its_column_is_null() {
+    public void An_abort_on_null_member_is_skipped_when_its_column_is_null() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Extra", typeof(int), true)];
         var present = Rows.ParseOne<SkippingMember>(cols, 1, 5);
         Assert.Equal(5, present.Extra);
@@ -123,7 +123,7 @@ public class NullHandlingAndShapeTests {
 
     public record DocTrack(int Id, string Name, double Weight) : IDbReadable;
     public record DocTrackNullable(int Id, string Name, double? Weight) : IDbReadable;
-    public record DocTrackCollapsing(int Id, string Name, [InvalidOnNull] double Weight) : IDbReadable;
+    public record DocTrackCollapsing(int Id, string Name, [AbortOnNull] double Weight) : IDbReadable;
     public record DocTrackNotNull(int Id, [System.Diagnostics.CodeAnalysis.NotNull] string Name) : IDbReadable;
 
     static readonly ColumnInfo[] TrackCols = [
@@ -146,12 +146,12 @@ public class NullHandlingAndShapeTests {
             () => Rows.ParseOne<DocTrackNotNull>(idName, 1, DBNull.Value));
     }
 
-    public record DocAlbum([InvalidOnNull] int Id, string Title) : IDbReadable;
+    public record DocAlbum([AbortOnNull] int Id, string Title) : IDbReadable;
     public record DocTrackWithAlbum(int Id, string Name, DocAlbum? Album) : IDbReadable;
 
     /// <summary>
     /// The slot that identifies the joined object carries
-    /// <c>[InvalidOnNull]</c>, so a row that matched nothing leaves the slot null rather than an object of
+    /// <c>[AbortOnNull]</c>, so a row that matched nothing leaves the slot null rather than an object of
     /// zeroes.
     /// </summary>
     [Fact]
