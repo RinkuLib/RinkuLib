@@ -49,15 +49,24 @@ public class QuickStartDocumentationTests(SqliteDb db) : IClassFixture<SqliteDb>
     [Fact]
     public void Scalars_writes_and_optional_variables_follow_the_quick_start_examples() {
         using var cnn = db.GetConnection();
-        Assert.Equal(3, CountUsers.Query<int>(cnn));
-        Assert.Equal(3, CountUsers.ExecuteScalar<int>(cnn));
-        Assert.Equal(4, AddUser.ExecuteScalar<int>(cnn, new { name = "New User" }));
+        try {
+            Assert.Equal(3, CountUsers.Query<int>(cnn));
+            Assert.Equal(3, CountUsers.ExecuteScalar<int>(cnn));
+            Assert.Equal(4, AddUser.ExecuteScalar<int>(cnn, new { name = "New User" }));
 
-        Assert.Equal(1, RenameUser.Execute(cnn, new { id = 2, name = "Victor" }));
+            Assert.Equal(1, RenameUser.Execute(cnn, new { id = 2, name = "Victor" }));
 
-        var search = new QueryCommand("SELECT ID, Name, Email FROM Users WHERE Name LIKE ?@name AND ID > ?@afterId");
-        var result = search.Query<List<QuickStartUser>>(cnn, new { name = "%John%" });
-        Assert.Equal([new QuickStartUser(1, "John", null)], result);
+            var search = new QueryCommand("SELECT ID, Name, Email FROM Users WHERE Name LIKE ?@name AND ID > ?@afterId");
+            var result = search.Query<List<QuickStartUser>>(cnn, new { name = "%John%" });
+            Assert.Equal([new QuickStartUser(1, "John", null)], result);
+        }
+        finally {
+            if (cnn.State != System.Data.ConnectionState.Open)
+                cnn.Open();
+            using var cleanup = cnn.CreateCommand();
+            cleanup.CommandText = "DELETE FROM Users WHERE ID > 3; UPDATE Users SET Name = 'Victor' WHERE ID = 2";
+            cleanup.ExecuteNonQuery();
+        }
     }
 }
 

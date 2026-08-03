@@ -64,8 +64,9 @@ public static class TypeParser {
             }
         }
         lock (DefaultTypeParsingInfo.WriteLock) {
+            version = TypeParsingInfo.CurrentConfigurationVersion;
             var current = ReadingInfos;
-            for (int i = readingInfos.Length; i < current.Length; i++) {
+            for (int i = 0; i < current.Length; i++) {
                 var (schema, nullCol, entryVersion, p) = current[i];
                 if (entryVersion == version && p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
                     cols = schema;
@@ -73,9 +74,10 @@ public static class TypeParser {
                 }
             }
             var unusual = MakeParser<T>(cols, nullColHandler);
+            var recordedVersion = TypeParsingInfo.CurrentConfigurationVersion;
             var updated = new (ColumnInfo[], INullColHandler, int, object)[current.Length + 1];
             current.CopyTo(updated, 0);
-            updated[current.Length] = (cols, nullColHandler, version, unusual);
+            updated[current.Length] = (cols, nullColHandler, recordedVersion, unusual);
             ReadingInfos = updated;
             return unusual;
         }

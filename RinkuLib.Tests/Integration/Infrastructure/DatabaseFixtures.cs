@@ -101,7 +101,27 @@ public class DBFixture<T> : IAsyncLifetime where T : IDbConnection {
         if (Container is not null)
             await Container.StartAsync();
         ConnectionString = CnnStrGetter();
+        if (typeof(T) == typeof(SqlConnection) || typeof(T).FullName == "System.Data.SqlClient.SqlConnection")
+            await WaitForSqlServerSystemDatabasesAsync();
     }
+
+    private async Task WaitForSqlServerSystemDatabasesAsync() {
+        for (var attempt = 0; attempt < 60; attempt++) {
+            try {
+                using var cnn = (System.Data.Common.DbConnection)(object)GetConnection();
+                await cnn.OpenAsync();
+                using var cmd = cnn.CreateCommand();
+                cmd.CommandText = "SELECT DB_ID(N'tempdb')";
+                if (Convert.ToInt32(await cmd.ExecuteScalarAsync()) == 2)
+                    return;
+            }
+            catch (System.Data.Common.DbException) when (attempt < 59) { }
+            catch (InvalidOperationException) when (attempt < 59) { }
+            await Task.Delay(500);
+        }
+        throw new InvalidOperationException("SQL Server did not make tempdb available during fixture startup.");
+    }
+
     public async ValueTask DisposeAsync() {
         if (Container is not null)
             await Container.DisposeAsync();
