@@ -47,7 +47,7 @@ public static class ErrorCodes {
     public const string MissingGroupBoundary = "RINKU3002";
     /// <summary>A declared group key matched no column in the result, so the boundary cannot be read.</summary>
     public const string GroupKeyUnmapped = "RINKU3003";
-    /// <summary>Two group key declarations conflict at the same level, a member key and a method key on the type, or parameter keys and a method reference on one construction.</summary>
+    /// <summary>Grouping declarations from incompatible rule families conflict at the same type or construction level.</summary>
     public const string ConflictingGroupKey = "RINKU3004";
 
     /// <summary>The query returned no rows and the requested shape requires one.</summary>
@@ -87,6 +87,8 @@ public static class ErrorCodes {
     public const string AttributeOnWrongMemberType = "RINKU5006";
     /// <summary>A type was asked for an operation it does not carry, such as being built from JSON.</summary>
     public const string OperationNotSupportedForType = "RINKU5007";
+    /// <summary>A default type option was changed after its automatic shape was initialized.</summary>
+    public const string ConfigurationAfterUse = "RINKU5008";
 
     /// <summary>
     /// A type's shape gives the copier nothing to work with, so tracking cannot keep the original to

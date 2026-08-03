@@ -17,7 +17,7 @@ public static class TypeParser {
     /// The cache for parsers requested and root nullability. Copy-on-write so readers scan lock-free
     /// while writers swap in a grown array under <see cref="DefaultTypeParsingInfo.WriteLock"/>.
     /// </summary>
-    internal static (ColumnInfo[] Schema, INullColHandler NullColHandler, object Parser)[] ReadingInfos = [];
+    internal static (ColumnInfo[] Schema, INullColHandler NullColHandler, int Version, object Parser)[] ReadingInfos = [];
     /// <summary>The fallback maker, the object parser, that claims any <c>T</c> no other maker did.</summary>
     public static readonly DefaultTypeParserMaker DefaultTypeParserMaker = new();
     /// <summary>
@@ -56,8 +56,9 @@ public static class TypeParser {
     public static ITypeParser<T> GetTypeParser<T>(ref ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
         nullColHandler ??= GetDefaultNullColHandler<T>();
         var readingInfos = ReadingInfos;
-        foreach (var (schema, nullCol, p) in readingInfos) {
-            if (p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
+        int version = TypeParsingInfo.CurrentConfigurationVersion;
+        foreach (var (schema, nullCol, entryVersion, p) in readingInfos) {
+            if (entryVersion == version && p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
                 cols = schema;
                 return parser;
             }
@@ -65,16 +66,16 @@ public static class TypeParser {
         lock (DefaultTypeParsingInfo.WriteLock) {
             var current = ReadingInfos;
             for (int i = readingInfos.Length; i < current.Length; i++) {
-                var (schema, nullCol, p) = current[i];
-                if (p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
+                var (schema, nullCol, entryVersion, p) = current[i];
+                if (entryVersion == version && p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
                     cols = schema;
                     return parser;
                 }
             }
             var unusual = MakeParser<T>(cols, nullColHandler);
-            var updated = new (ColumnInfo[], INullColHandler, object)[current.Length + 1];
+            var updated = new (ColumnInfo[], INullColHandler, int, object)[current.Length + 1];
             current.CopyTo(updated, 0);
-            updated[current.Length] = (cols, nullColHandler, unusual);
+            updated[current.Length] = (cols, nullColHandler, version, unusual);
             ReadingInfos = updated;
             return unusual;
         }

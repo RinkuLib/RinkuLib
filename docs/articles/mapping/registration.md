@@ -19,7 +19,7 @@ public record Artist(int Id, string Name) : IDbReadable;
 public record Album(int Id, string Title, Artist Artist);   // Artist resolves as a nested slot
 ```
 
-`[AreReadable]` on a constructor or factory, registering all of its parameter types, one entry point for a whole graph:
+`[AreReadable]` on a constructor or factory, registering its parameter types:
 
 ```csharp
 [method: AreReadable]
@@ -27,13 +27,14 @@ public record Invoice(int Id, Customer Customer, Address Shipping);
 // Customer and Address register along with Invoice
 ```
 
-`[AreReadableRecursive]` on a constructor or factory, registering all of its parameter types and recursing into their nested parameters:
+Generic parsing info registers its own generic arguments when the caller asks for parameter registration. This is one level at a time:
 
 ```csharp
-[method: AreReadableRecursive]
-public record Report(int Id, List<Item> Items);
-// Item registers along with Report, and since List<> recurses,
-// Item's own parameters are registered too
+[method: AreReadable]
+public record Report(int Id, KeyValuePair<Customer, Address> Pair);
+// Report registers KeyValuePair<Customer, Address>.
+// KeyValuePair's parsing info registers Customer and Address.
+// A generic type nested inside Customer is not walked automatically.
 ```
 
 And manually:
@@ -42,7 +43,37 @@ And manually:
 var info = TypeParsingInfo.GetOrAdd<Address>();
 ```
 
-Separate from the rules, a type's implementation may register more on its own: `List<TInner>` and `Optional<TInner>` register their element, which is why querying `List<Track>` makes `Track` usable too. When a construction path is marked with `[AreReadableRecursive]`, its parameters are registered recursively, so nested types within those parameters also get registered.
+If the database exposes a custom scalar type, register its conversion once. The target can then be used as a
+scalar result, constructor parameter, or nested member:
+
+```csharp
+public readonly record struct RegisteredDate(DateTime Value) : IDbReadable;
+
+TypeConverterRegistry.Register<DateTime, RegisteredDate>(
+    value => new RegisteredDate(value.AddDays(1)));
+
+// A DateTime column now maps to RegisteredDate.
+```
+
+The registry is the convenience path. Implement `ITypeConverter` or register another `TypeParsingInfo` when
+the conversion needs complete control.
+
+If a provider reports a type that its reader cannot fetch through the CLR type it reports, register the reader
+callback from the provider adapter. Rinku does not reference the provider:
+
+```csharp
+// PostgreSQL reports an array column as System.Array.
+// Npgsql knows that the value is really an int[] and can read it that way.
+DbColumnReaderRegistry.Register<Array, int[]>(
+    (reader, ordinal) => reader.GetFieldValue<int[]>(ordinal));
+
+int[] values = GetValues.Query<int[]>(cnn);
+```
+
+The callback chooses the provider value type. The normal mapping and null handling continue after the callback.
+This is also the complete takeover point for provider result values.
+
+Separate from the rules, each type parsing implementation decides what its own generic arguments mean. `List<TInner>` registers `TInner` when its caller passes `[AreReadable]`; it does not walk generic arguments inside `TInner`. A custom `TypeParsingInfo` can make the same decision in its own implementation.
 
 ## Generic types
 
@@ -89,3 +120,6 @@ bool b = info.AddPossibleConstruction(typeof(Coordinates).GetConstructors()[0]);
 ```
 
 When an info does not implement a helper's interface, the helper returns `false` instead of throwing. So you match on the interface, never on a concrete type. Your own info can implement any of these interfaces, and the same helpers work on it just as they do on the default.
+
+Register and configure before concurrent query use. A mapping change advances the parser configuration
+generation, so a later parser request rebuilds the affected schema instead of reusing an old plan.

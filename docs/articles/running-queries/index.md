@@ -37,13 +37,13 @@ Every shape and its zero-row behavior is on [result shapes](result-shapes.md).
 
 ## Parameters
 
-Pass an object whose members match the parameter names, case-insensitive. Anonymous objects, records, and DTOs all work, and unmatched members are ignored.
+Pass any object whose public readable fields or properties match the parameter names, case-insensitive. Unmatched members are ignored. This includes anonymous types, ordinary classes, records, and structs.
 
 ```csharp
 static readonly QueryCommand ByComposer = new(
     "SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE Composer = @composer AND UnitPrice >= @minPrice");
 
-var tracks = ByComposer.Query<List<Track>>(cnn, new { composer = "AC/DC", minPrice = 0.99m });
+var tracks = ByComposer.Query<List<Track>>(cnn, new { Composer = "AC/DC", MINPRICE = 0.99m });
 ```
 
 When C# logic should set the values instead, use a builder. Both roads are covered on [supplying values](parameters.md).
@@ -57,15 +57,21 @@ var tracks = b.Query<List<Track>>(cnn);
 
 ## Writes and scalars
 
-`Execute` returns the affected-row count, `ExecuteScalar<T>` a single value.
+`Execute` returns the affected-row count. `ExecuteScalar<T>` is for a command
+whose operation is execution and which also returns one value, such as an
+`INSERT ... RETURNING Id`. A `SELECT` that reads one scalar is also a normal
+query, so `Query<T>` is valid there.
 
 ```csharp
 static readonly QueryCommand UpdatePrice = new(
     "UPDATE tracks SET UnitPrice = @price WHERE TrackId = @id");
 static readonly QueryCommand CountTracks = new("SELECT COUNT(*) FROM tracks");
+static readonly QueryCommand InsertTrack = new(
+    "INSERT INTO tracks (Name) VALUES (@name) RETURNING TrackId");
 
 int affected = UpdatePrice.Execute(cnn, new { id = 10, price = 1.29m });
-int total    = CountTracks.ExecuteScalar<int>(cnn);
+int total    = CountTracks.Query<int>(cnn);
+int trackId  = InsertTrack.ExecuteScalar<int>(cnn, new { name = "New" });
 ```
 
 ## Async
@@ -93,18 +99,39 @@ var slow = GetTracks.Query<List<Track>>(cnn, new { albumId = 1 }, timeout: 60);
 var rows = await GetTracks.QueryAsync<List<Track>>(cnn, new { albumId = 1 }, ct: token);
 ```
 
-## Reuse one DbCommand across a batch
+## Set parameters manually
 
-Bind a builder to a single `DbCommand` and a loop stops rebuilding it each pass.
+Use a `QueryBuilder` when the code assembles the parameter values manually.
+
 
 ```csharp
-static readonly QueryCommand Insert = new("INSERT INTO playlists (Name) VALUES (@name)");
+static readonly QueryCommand Search = new("""
+    SELECT * FROM tracks WHERE ArtistId = @artistId AND 
+    UnitPrice >= @minPrice AND Name LIKE CONCAT('%', @name, '%')
+""");
 
-using var sqlCmd = new SqlCommand();
-var batch = Insert.StartBuilder(sqlCmd);
-foreach (var name in names) {
-    batch.Use("@name", name);
-    batch.Execute(cnn);
+var builder = Search.StartBuilder();
+builder.Use("@artistId", artistId);
+builder.Use("@minPrice", minimumPrice);
+builder.Use('@', "name", namePattern);
+
+List<Track> tracks = builder.Query<List<Track>>(cnn);
+```
+
+## Reuse one DbCommand across a batch
+
+Bind the command once. Each `UseWith` replaces the parameter values before the
+next execution.
+
+```csharp
+static readonly QueryCommand UpdatePlaylist = new(
+    "UPDATE playlists SET Name = @name, IsPublic = @isPublic WHERE PlaylistId = @playlistId");
+
+using var sqlCmd = cnn.CreateCommand();
+var batch = UpdatePlaylist.StartBuilder(sqlCmd);
+foreach (var playlist in playlists) {
+    batch.UseWith(playlist);
+    batch.Execute();
 }
 ```
 
@@ -116,11 +143,9 @@ One command, several selects, read in order.
 static readonly QueryCommand Dashboard = new(
     "SELECT * FROM artists WHERE ArtistId = @id; SELECT * FROM albums WHERE ArtistId = @id");
 
-using var multi = Dashboard.ExecuteMultiReader(cnn, out DbCommand cmd, new { id = 1 });
-using (cmd) {
-    Artist artist      = multi.Query<Artist>();
-    List<Album> albums = multi.Query<List<Album>>();
-}
+using var multi = Dashboard.ExecuteMultiReader(cnn, new { id = 1 });
+Artist artist      = multi.Query<Artist>();
+artist.Albums      = multi.Query<List<Album>>();
 ```
 
 See [multiple result sets](multiple-results.md).
@@ -154,22 +179,33 @@ List<Track> tracks = cnn.Query<List<Track>>(
     new { albumId = 1 });
 ```
 
-## Naming the variables yourself
+## Stored procedures
 
-A constructor takes the variables instead of reading them out of the text, so the two are independent.
+A procedure name has no SQL text for Rinku to inspect, so provide its parameter
+names when declaring the command.
 
 ```csharp
-static readonly QueryCommand Renumber = new("dbo.RenumberTracks", ["albumId", "moved"]);
+static readonly QueryCommand Renumber = new(
+    "dbo.RenumberTracks", ["albumId", "moved"]);
 
 int affected = Renumber.Execute(cnn, new { albumId = 1, moved = 0 });
 ```
 
-A stored procedure is the natural fit, its name holding nothing to read, so `CommandType.StoredProcedure` is what the constructor assumes. The third argument sets it, `CommandType.Text` for SQL.
-
-A connection can supply the list instead, reading from the database what the procedure declares, the types, sizes and directions along with the names.
+A connection can provide the list instead, reading the procedure declaration
+from the database, including parameter names, types, sizes, and directions.
 
 ```csharp
 static readonly QueryCommand Renumber = QueryCommand.FromProc("dbo.RenumberTracks", cnn);
+```
+
+The same explicit-name constructor also works for normal SQL. `CommandType.Text`
+selects SQL instead of a stored procedure.
+
+```csharp
+static readonly QueryCommand UpdateTrack = new(
+    "UPDATE tracks SET Name = @name WHERE TrackId = @id",
+    ["name", "id"],
+    CommandType.Text);
 ```
 
 ## A DbCommand you already have
@@ -216,7 +252,8 @@ The `?@` toggle is a structural rule the engine applies to every keyword section
 | Goal | Method | Sync return | Async return |
 | --- | --- | --- | --- |
 | Insert / Update / Delete | `Execute` | `int` | `Task<int>` |
-| Single value | `ExecuteScalar<T>` | `T` | `Task<T>` |
+| One scalar from a `SELECT` | `Query<T>` | `T` | `Task<T>` |
+| One value returned by an execution | `ExecuteScalar<T>` | `T` | `Task<T>` |
 | One row (throws if none) | `Query<T>` | `T` | `Task<T>` |
 | One row or empty | `Query<Optional<T>>` | `Optional<T>` | `Task<Optional<T>>` |
 | Exactly one row | `Query<Single<T>>` | `Single<T>` | `Task<Single<T>>` |

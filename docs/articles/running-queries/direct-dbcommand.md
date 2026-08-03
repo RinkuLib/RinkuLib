@@ -12,11 +12,12 @@ cmd.Parameters.Add(new SqlParameter("@id", 10));
 Track track = Tracks.Query(cmd);
 ```
 
-Writes and scalars sit on the command:
+Writes and returned values sit on the command. For a `SELECT` that reads one
+scalar, use the query parser instead:
 
 ```csharp
 int affected = updateCmd.Execute(disposeCommand: true);
-int total    = countCmd.ExecuteScalar<int>(disposeCommand: true);
+int total    = countCmd.Query<int>(disposeCommand: true);
 ```
 
 Async and streaming:

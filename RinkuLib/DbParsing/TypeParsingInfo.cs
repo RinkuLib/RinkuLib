@@ -5,6 +5,9 @@ using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
 
 namespace RinkuLib.DbParsing;
+
+/// <summary>Marks type metadata whose value is folded across multiple result rows.</summary>
+public interface IMultiRowTypeParsingInfo;
 /// <summary>
 /// How a type is read, its constructors and factory methods to try and its members to fill, the recipe the
 /// object parser follows. Register or refine one to change how a type maps, add an alternative name, pin a
@@ -12,6 +15,9 @@ namespace RinkuLib.DbParsing;
 /// an open generic definition covers every closed form that has no entry of its own.
 /// </summary>
 public abstract class TypeParsingInfo {
+    private static int ConfigurationVersion;
+    internal static int CurrentConfigurationVersion => Volatile.Read(ref ConfigurationVersion);
+    internal static void TouchConfiguration() => Interlocked.Increment(ref ConfigurationVersion);
     internal static readonly ParamInfo NullableTransientParamInfo = new(ParamInfo.NoType, NullableTypeHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo NotNullTransientParamInfo = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
     /// <summary>Identify if the instance can actualy handle the <see cref="Type"/> of <paramref name="TargetType"/></summary>
@@ -164,6 +170,7 @@ public abstract class TypeParsingInfo {
     public static void AddOrSet(Type type, TypeParsingInfo typeParsingInfo) {
         typeParsingInfo.ValidateCanUseType(type);
         TypeInfos[type] = typeParsingInfo;
+        TouchConfiguration();
     }
     /// <summary>
     /// Standard access point to retrieve or create a type's metadata registry.
@@ -173,16 +180,26 @@ public abstract class TypeParsingInfo {
     public static void AddOrSet<T>(TypeParsingInfo typeParsingInfo, bool saveAsGenericDefinitionWhenGeneric = true) => AddOrSet(saveAsGenericDefinitionWhenGeneric && typeof(T).IsGenericType ? typeof(T).GetGenericTypeDefinition() : typeof(T), typeParsingInfo);
 
     /// <summary>
-    /// Evaluates a received schema against the registered metadata to emit a specialized parser.
+    /// Registers the generic arguments owned by <paramref name="type"/> when the caller's construction
+    /// requested parameter registration. This is deliberately one level only. The child that owns the
+    /// generic type decides whether and how its own arguments are registered.
     /// </summary>
-    /// <remarks>
-    /// The default logic evaluates <see cref="DefaultTypeParsingInfo.PossibleConstructors"/> and
-    /// <see cref="DefaultTypeParsingInfo.AvailableMembers"/> against the provided <paramref name="columns"/> schema.
-    /// </remarks>
-    /// <returns>
-    /// A configured <see cref="DbItemPlan"/> if the schema satisfies a construction path, otherwise null.
-    /// </returns>
-    public abstract DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false);
+    protected static void RegisterGenericArguments(Type type, MethodCtorInfo.AdditionalFlags callerFlags) {
+        if (!callerFlags.HasFlag(MethodCtorInfo.AdditionalFlags.ParametersAreReadable) || !type.IsGenericType)
+            return;
+        foreach (var argument in type.GetGenericArguments())
+            ForceGet(argument);
+    }
+
+    /// <summary>Evaluates a received schema and emits a specialized parser when the schema is supported.</summary>
+    /// <param name="currentClosedType">The closed type being parsed.</param>
+    /// <param name="previousUsages">The recursion state for the current path.</param>
+    /// <param name="paramInfo">The slot rules for the value being parsed.</param>
+    /// <param name="columns">The result columns available to the parser.</param>
+    /// <param name="colModifier">The current column matching modifiers.</param>
+    /// <param name="colUsage">The columns already consumed by the current path.</param>
+    /// <param name="callerFlags">Flags from the construction path that requested this child.</param>
+    public abstract DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, MethodCtorInfo.AdditionalFlags callerFlags = default);
 }
 /// <summary>Reshapes a registered type's mapping, its alternative names, null rules, construction paths, and members.</summary>
 public static class TypeParsingInfoHelper {
@@ -211,19 +228,47 @@ public static class TypeParsingInfoHelper {
         editable.GroupKey = rule;
         return true;
     }
+    /// <summary>Clears the type or construction group boundary, returning false when the info does not expose one.</summary>
+    public static bool ClearGroupKey(this TypeParsingInfo info) {
+        if (info is not ICanUpdateGroupKey editable)
+            return false;
+        editable.GroupKey = null;
+        return true;
+    }
     /// <summary>Sets the type-level group boundary of <typeparamref name="T"/> to <paramref name="rule"/>.</summary>
     public static void SetGroupKey<T>(IGroupingRule rule) => SetOrThrow<T>(rule);
-    /// <summary>Sets the group boundary of the construction of <typeparamref name="T"/> whose parameter types are <paramref name="constructionParameters"/>, overriding the type rule when that path is chosen.</summary>
-    public static void SetGroupKey<T>(IGroupingRule rule, params Type[] constructionParameters) {
-        if (TypeParsingInfo.ForceGet(typeof(T)) is not ICanProvideConstructions provider)
-            throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{typeof(T)} does not expose its constructions");
+    /// <summary>Clears the type-level group boundary of <typeparamref name="T"/> so inference applies.</summary>
+    public static void ClearGroupKey<T>() => ClearOrThrow<T>();
+    /// <summary>Gets the construction path with the specified parameter types.</summary>
+    public static MethodCtorInfo GetConstruction(this TypeParsingInfo info, params Type[] constructionParameters) {
+        if (info is not ICanProvideConstructions provider)
+            throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{info.GetType()} does not expose its constructions");
         foreach (var mci in provider.PossibleConstructors)
-            if (SameShape(mci, constructionParameters)) {
-                mci.GroupKey = rule;
-                return;
-            }
+            if (SameShape(mci, constructionParameters))
+                return mci;
         throw new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable,
-            $"{typeof(T)} has no construction taking ({string.Join(", ", constructionParameters.Select(t => t.Name))})");
+            $"no construction takes ({string.Join(", ", constructionParameters.Select(t => t.Name))})");
+    }
+    /// <summary>Gets the exact constructor or factory method registered in the type info.</summary>
+    public static MethodCtorInfo GetConstruction(this TypeParsingInfo info, System.Reflection.MethodBase construction) {
+        if (info is not ICanProvideConstructions provider)
+            throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{info.GetType()} does not expose its constructions");
+        foreach (var mci in provider.PossibleConstructors)
+            if (mci.MethodBase == construction || IsClosedMatch(mci.MethodBase, construction, construction.DeclaringType))
+                return mci;
+        throw new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable,
+            $"{construction} is not a registered construction");
+    }
+    /// <summary>Gets a construction path of <typeparamref name="T"/> by parameter types.</summary>
+    public static MethodCtorInfo GetConstruction<T>(params Type[] constructionParameters)
+        => TypeParsingInfo.ForceGet(typeof(T)).GetConstruction(constructionParameters);
+    /// <summary>Gets the exact registered construction path of <typeparamref name="T"/>.</summary>
+    public static MethodCtorInfo GetConstruction<T>(System.Reflection.MethodBase construction)
+        => TypeParsingInfo.ForceGet(typeof(T)).GetConstruction(construction);
+    private static bool IsClosedMatch(System.Reflection.MethodBase registered, System.Reflection.MethodBase requested, Type? requestedDeclaringType) {
+        if (requestedDeclaringType is null || !requestedDeclaringType.IsGenericType || registered.DeclaringType != requestedDeclaringType.GetGenericTypeDefinition())
+            return false;
+        return registered.GetClosedMember(requestedDeclaringType) == requested;
     }
     private static bool SameShape(MethodCtorInfo mci, Type[] parameterTypes) {
         if (mci.Parameters.Length != parameterTypes.Length)
@@ -252,6 +297,10 @@ public static class TypeParsingInfoHelper {
     }
     private static void SetOrThrow<T>(IGroupingRule rule) {
         if (!TypeParsingInfo.ForceGet(typeof(T)).SetGroupKey(rule))
+            throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{typeof(T)} does not expose an editable group boundary");
+    }
+    private static void ClearOrThrow<T>() {
+        if (!TypeParsingInfo.ForceGet(typeof(T)).ClearGroupKey())
             throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"{typeof(T)} does not expose an editable group boundary");
     }
     /// <summary>

@@ -1,5 +1,8 @@
 using System.Collections;
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
+
+#pragma warning disable CS8765, CS8767 // These test doubles model legacy ADO.NET nullability contracts.
 
 namespace RinkuLib.Tests.Infrastructure;
 
@@ -10,7 +13,7 @@ namespace RinkuLib.Tests.Infrastructure;
 public sealed class LegacyCommand : IDbCommand {
     public LegacyParameterCollection Parameters { get; } = new();
     IDataParameterCollection IDbCommand.Parameters => Parameters;
-    public string CommandText { get; set; } = "";
+    public string CommandText { get; [param: AllowNull] set; } = "";
     public int CommandTimeout { get; set; }
     public CommandType CommandType { get; set; }
     public IDbConnection? Connection { get; set; }
@@ -34,8 +37,8 @@ public sealed class LegacyParameter : IDbDataParameter {
     public DbType DbType { get; set; }
     public ParameterDirection Direction { get; set; }
     public bool IsNullable => false;
-    public string? ParameterName { get; set; }
-    public string? SourceColumn { get; set; }
+    public string ParameterName { get; [param: AllowNull] set; } = "";
+    public string SourceColumn { get; [param: AllowNull] set; } = "";
     public DataRowVersion SourceVersion { get; set; }
     public object? Value { get; set; }
 }
@@ -48,8 +51,8 @@ public sealed class LegacyParameterCollection : IDataParameterCollection {
     public bool IsSynchronized => false;
     public object SyncRoot => this;
     public object? this[int index] { get => Items[index]; set => Items[index] = value; }
-    public object? this[string parameterName] {
-        get => Items.FirstOrDefault(p => (p as IDataParameter)?.ParameterName == parameterName);
+    public object this[string parameterName] {
+        get => Items.FirstOrDefault(p => (p as IDataParameter)?.ParameterName == parameterName)!;
         set { }
     }
     public int Add(object? value) { Items.Add(value); return Items.Count - 1; }

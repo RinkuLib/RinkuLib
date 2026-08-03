@@ -4,6 +4,10 @@ using System.Reflection;
 namespace RinkuLib.DbParsing;
 /// <summary>Use to actualy create the comparer</summary>
 public delegate INameComparer NameComparerFactory(Type type, string? name, string[] altNames, object[] attributes, object? param, List<INameComparerMaker> nameComparerMakers);
+
+/// <summary>Requires the database column type to equal the parameter or member type.</summary>
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class ExactTypeAttribute : Attribute;
 /// <summary>
 /// Handles the standard negotiation flow for constructor parameters, properties, and fields.
 /// </summary>
@@ -26,15 +30,36 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>
     /// The current strategy for handling database NULL values.
     /// </summary>
-    public INullColHandler NullColHandler { get => field; set => Interlocked.Exchange(ref field, value); } = NullColHandler;
+    public INullColHandler NullColHandler {
+        get => field;
+        set {
+            Interlocked.Exchange(ref field, value);
+            TypeParsingInfo.TouchConfiguration();
+        }
+    } = NullColHandler;
     /// <summary>
     /// The logic used to match column names against this member's identifiers.
     /// </summary>
-    public INameComparer NameComparer { get => field; set => Interlocked.Exchange(ref field, value); } = NameComparer;
+    public INameComparer NameComparer {
+        get => field;
+        set {
+            Interlocked.Exchange(ref field, value);
+            TypeParsingInfo.TouchConfiguration();
+        }
+    } = NameComparer;
     /// <summary>
     /// The C# type of the parameter or member. (Can be generic)
     /// </summary>
     public Type Type = Type;
+    /// <summary>Whether scalar negotiation requires the exact column type.</summary>
+    /// <remarks>The stateful form lives on <see cref="ParamInfoPlus"/> so ordinary slots stay compact.</remarks>
+    public virtual bool RequireExactType {
+        get => false;
+        set {
+            if (value)
+                throw new InvalidOperationException($"{nameof(RequireExactType)} requires {nameof(ParamInfoPlus)}.");
+        }
+    }
     /// <summary>
     /// Updates the <see cref="NullColHandler"/> to handle a recovery jump if a null is encountered.
     /// </summary>
@@ -109,6 +134,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
         UsageFlags usageFlags = default;
         bool hasNoName = false;
+        bool requireExactType = false;
         List<INameComparerMaker> nameComparersMakers = [];
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
@@ -118,6 +144,8 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 altCount++;
             if (attr is NoNameAttribute)
                 hasNoName = true;
+            if (attr is ExactTypeAttribute)
+                requireExactType = true;
             if (attr is INameComparerMaker mkr)
                 nameComparersMakers.Add(mkr);
             if (attr is IParamInfoMaker mm)
@@ -137,6 +165,12 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         }
         INameComparer comparer = ComparerFactory(type, hasNoName ? null : name, altNames, attributes, param, nameComparersMakers);
         var matcher = maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
+        if (requireExactType) {
+            if (matcher is not ParamInfoPlus)
+                matcher = new ParamInfoPlus(matcher.Type, matcher.NullColHandler, matcher.NameComparer,
+                    IColModifier.Nothing, IFallbackParserGetter.Nothing);
+            ((ParamInfoPlus)matcher).RequireExactType = true;
+        }
         return matcher;
     }
     /// <summary>
@@ -145,7 +179,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// own nullability.
     /// </summary>
     private static INullColHandler DefaultNullColHandler(Type type)
-        => TypeParsingInfo.TryGetInfo(type, out var info) && info is MultiRowTypeParsingInfo
+        => TypeParsingInfo.TryGetInfo(type, out var info) && info is IMultiRowTypeParsingInfo
             ? AbortOnNullAndNotNullHandle.Instance
             : type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
     /// <summary>

@@ -11,11 +11,11 @@ namespace RinkuLib.DbParsing;
 public sealed class EqualityGroupingRule : IGroupingRule {
     private readonly object[] Sources;
     /// <summary>A key over one or more marked members (properties or fields).</summary>
-    public EqualityGroupingRule(params MemberInfo[] members) => Sources = members;
+    public EqualityGroupingRule(params MemberInfo[] members) => Sources = RequireSources(members);
     /// <summary>A key over one or more marked construction parameters.</summary>
-    public EqualityGroupingRule(params ParameterInfo[] parameters) => Sources = parameters;
+    public EqualityGroupingRule(params ParameterInfo[] parameters) => Sources = RequireSources(parameters);
     /// <summary>A key over one or more columns named directly, each read as whatever type its column carries.</summary>
-    public EqualityGroupingRule(params string[] columns) => Sources = columns;
+    public EqualityGroupingRule(params string[] columns) => Sources = RequireSources(columns);
     /// <inheritdoc/>
     public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
         colModifier.Flags |= UsageFlags.CanReuse | UsageFlags.RemoveSequentialRead;
@@ -39,6 +39,11 @@ public sealed class EqualityGroupingRule : IGroupingRule {
         _ => throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"a group key member must be a property or field, not {member?.GetType()}"),
     };
     private static (INameComparer, Type) FromParam(ParameterInfo p) => (Usable(p, ParamInfo.TryNew(p)).NameComparer, p.ParameterType);
+    private static object[] RequireSources<T>(T[] sources) {
+        if (sources is null || sources.Length == 0)
+            throw new RinkuConfigurationException(ErrorCodes.GroupKeyUnmapped, "an equality group key requires at least one source");
+        return sources.Cast<object>().ToArray();
+    }
     /// <summary>Closes a member declared on a generic definition to the spanning type, so a key on a generic member reads its resolved type.</summary>
     private static MemberInfo Closed(Type spanningType, MemberInfo member) {
         if (member.DeclaringType is { IsGenericTypeDefinition: true } && spanningType.IsGenericType)
@@ -111,13 +116,13 @@ internal sealed class InferredGroupingRule(IReadOnlyList<DbItemPlan> arguments, 
     public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
         int firstAccumulator = arguments.Count;
         for (int i = 0; i < arguments.Count; i++)
-            if (arguments[i] is AccumulatorPlan) {
+            if (arguments[i] is IMultiRowPlan) {
                 firstAccumulator = i;
                 break;
             }
         if (firstAccumulator == 0) {
             for (int i = 1; i < arguments.Count; i++)
-                if (arguments[i] is not AccumulatorPlan)
+                if (arguments[i] is not IMultiRowPlan)
                     throw new RinkuConfigurationException(ErrorCodes.MissingGroupBoundary,
                         $"{resultType} has a value after a collection and no group key to tell its groups apart; mark its key with [GroupKey]");
             return AlwaysGroupedBoundary.Instance;

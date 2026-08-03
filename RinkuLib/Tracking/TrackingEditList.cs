@@ -81,11 +81,20 @@ public class TrackingEditList<TOg, TEdit, TEditItem, TMetadata, TEditProcessor>(
     public TMetadata? GetMetadata(int index) => Get(index).Metadata;
     ///<inheritdoc/>
     public override bool CommitEdit(int index) {
-        if (!_processor.DoCommit)
-            return base.CommitEdit(index);
         ref var item = ref Get(index);
         if (!item.IsEditing)
             return true;
+
+        if (_processor.DoValidate) {
+            var validation = _processor.Validate(item.CurrentValue, this);
+            item.SetMetadata(validation);
+            if (!_processor.IsValid(validation))
+                return false;
+        }
+
+        if (!_processor.DoCommit)
+            return item.CommitEdit();
+
         if (item.EditableValue is null)
             return false;
         var meta = _processor.Commit(item.EditableValue);

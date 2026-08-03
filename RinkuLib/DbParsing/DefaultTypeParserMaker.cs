@@ -47,7 +47,7 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
             new(dm.GetILGenerator());
 #endif
         Label? nullJump = rd.NeedNullSetPoint(cols) ? gen.DefineLabel() : null;
-        ((SimpleDbItemParser)rd).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default, out var targetObj);
+        ((ISimpleDbItemPlan)rd).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default, out var targetObj);
         if (nullJump.HasValue) {
             var parsed = gen.DefineLabel();
             gen.Emit(OpCodes.Br, parsed);
@@ -77,7 +77,7 @@ public class DefaultTypeParserMaker : ITypeParserMaker {
                 ? InfoNotNullable
                 : new(ParamInfo.NoType, nullColHandler, NoNameComparer.Instance);
         var colUsage = new ColumnUsage(stackalloc bool[cols.Length]);
-        return TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(T), new([], 0), paramInfo, cols, new(), ref colUsage, false);
+        return TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(T), new([], 0), paramInfo, cols, new(), ref colUsage);
     }
 
     /// <summary>

@@ -15,7 +15,7 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
             throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, $"The type may only be {typeof(DynaObject)}");
     }
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo? paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, MethodCtorInfo.AdditionalFlags callerFlags = default) {
         if (!previousUsages.CanContinue(currentClosedType, colUsage.NbUsed, out previousUsages))
             return null;
         Mapper mapper = MakeMapper(columns, colUsage);
@@ -30,7 +30,7 @@ internal class DynaObjectTypeInfo : TypeParsingInfo {
             var type = i >= DynaObjParser.MaxArguments ? typeof(object) : col.Type;
             if (type.IsValueType && col.IsNullable && Nullable.GetUnderlyingType(type) is null)
                 type = typeof(Nullable<>).MakeGenericType(type);
-            var r = ForceGet(type).TryGetParser(type, previousUsages, NullableTransientParamInfo, columns, colModifier, ref colUsage, registerRecursively);
+            var r = ForceGet(type).TryGetParser(type, previousUsages, NullableTransientParamInfo, columns, colModifier, ref colUsage);
             if (r is null)
                 return null;
             if (i < DynaObjParser.MaxArguments)
@@ -113,11 +113,11 @@ public class DynaObjParser(Type[] Arguments, DbItemPlan[] Parameters, Mapper Map
         return true;
     }
     /// <inheritdoc/>
-    internal override IEnumerable<DbItemPlan> Children => Parameters;
+    public override IEnumerable<DbItemPlan> Children => Parameters;
     /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
         for (int i = 0; i < Parameters.Length; i++)
-            ((SimpleDbItemParser)Parameters[i]).Emit(cols, generator, nullSetPoint, out _);
+            ((ISimpleDbItemPlan)Parameters[i]).Emit(cols, generator, nullSetPoint, out _);
         int argCount = Arguments.Length;
         var ctor = DynaTypes[argCount].MakeGenericType(Arguments).GetConstructor([.. Arguments, typeof(Mapper)])
             ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"the ctor for {nameof(DynaObject)} with {argCount} arguments cannot be found");
@@ -145,20 +145,20 @@ public class DynaObjParserInfinite(Type[] Arguments, DbItemPlan[] Parameters, Ma
         return true;
     }
     /// <inheritdoc/>
-    internal override IEnumerable<DbItemPlan> Children => Parameters;
+    public override IEnumerable<DbItemPlan> Children => Parameters;
     /// <inheritdoc/>
     public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
         if (Parameters.Length <= ArgumentCount || Arguments.Length != ArgumentCount)
             throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"the dyna emitter got {Parameters.Length} parameters and {Arguments.Length} arguments for an arity of {ArgumentCount}");
         var arrLen = Parameters.Length - ArgumentCount;
         for (int i = 0; i < ArgumentCount; i++)
-            ((SimpleDbItemParser)Parameters[i]).Emit(cols, generator, nullSetPoint, out _);
+            ((ISimpleDbItemPlan)Parameters[i]).Emit(cols, generator, nullSetPoint, out _);
         generator.Emit(OpCodes.Ldc_I4, arrLen);
         generator.Emit(OpCodes.Newarr, typeof(object));
         for (int i = 0; i < arrLen; i++) {
             generator.Emit(OpCodes.Dup);
             generator.Emit(OpCodes.Ldc_I4, i);
-            ((SimpleDbItemParser)Parameters[ArgumentCount + i]).Emit(cols, generator, nullSetPoint, out _);
+            ((ISimpleDbItemPlan)Parameters[ArgumentCount + i]).Emit(cols, generator, nullSetPoint, out _);
             generator.Emit(OpCodes.Stelem_Ref);
         }
         var ctor = typeof(DynaObjectInfinite<,,,,,,,,,,,>).MakeGenericType(Arguments).GetConstructor([.. Arguments, typeof(object[]), typeof(Mapper)])

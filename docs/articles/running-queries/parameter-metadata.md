@@ -18,6 +18,26 @@ Pin a parameter's metadata up front instead of letting it be learned.
 TrackCmd.UpdateParamCache("@Name", TypedDbParamCache.Get(DbType.AnsiStringFixedLength, 1000));
 ```
 
+## Converting a custom parameter value
+
+Use `ConvertedDbParamInfo<T>` when the value needs conversion but the normal parameter lifecycle is enough.
+
+```csharp
+sealed class NamesParam : ConvertedDbParamInfo<Names>
+{
+    protected override object ConvertValue(Names value)
+        => string.Join(',', value.Items);
+
+    protected override void ConfigureParameter(IDbDataParameter parameter)
+        => parameter.DbType = DbType.String;
+}
+
+Search.UpdateParamCache("@names", new NamesParam());
+```
+
+The wrapper creates the parameter, updates it on reuse, removes it when the value becomes null, and supports
+both command interfaces. Inherit directly from `DbParamInfo` when the parameter needs a different lifecycle.
+
 ## Output parameters
 
 Direction is part of the metadata. Pin an output parameter with a directional cache, run through an overload that hands you the command, and read the value once the read completes. `Execute`, `ExecuteScalar`, `Query`, and their async forms all take an `out DbCommand`, like the reader methods.

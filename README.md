@@ -33,7 +33,8 @@ Album one                 = GetAlbums.Query<Album>(cnn, new { artistId = 1 });  
 IEnumerable<Album> stream = GetAlbums.Query<IEnumerable<Album>>(cnn, new { artistId = 1 }); // streamed
 ```
 
-For a single value, `ExecuteScalar<T>` returns it. See [running queries](https://rinkulib.github.io/RinkuLib/articles/running-queries/index.html).
+For a value returned by an execution, `ExecuteScalar<T>` returns it. A scalar
+`SELECT` can use `Query<T>` as a normal one-row read. See [running queries](https://rinkulib.github.io/RinkuLib/articles/running-queries/index.html).
 
 ## Map onto nested types
 
@@ -102,18 +103,20 @@ Full docs at <https://rinkulib.github.io/RinkuLib/> (or browse [`docs/`](docs/in
 
 ## Performance
 
-Measured with BenchmarkDotNet against a real database (lower is better, ratios relative to the Dapper baseline). Comparable time, consistently lower allocations, Rinku builds the `DbCommand` directly and reuses compiled, schema-keyed mappers.
+Measured with BenchmarkDotNet against a real database (lower is better, ratios relative to the Dapper baseline). Rinku is generally close to Dapper's execution time and often allocates less, while also supporting registered and native multi-row mapping.
 
 | Method | Mean | Ratio | Allocated | Alloc Ratio |
 |---|---|---|---|---|
-| Dapper_QueryFirst | 526.8 us | 1.00 | 3.66 KB | 1.00 |
-| Rinku_QueryT | 508.6 us | 0.97 | 3.07 KB | 0.84 |
-| Dapper_QueryUnbuffered | 602.6 us | 1.00 | 20.84 KB | 1.00 |
-| Rinku_QueryIEnumerable | 601.1 us | 1.00 | 15.46 KB | 0.74 |
-| Dapper_Execute | 1,476.8 us | 1.00 | 2.33 KB | 1.00 |
-| Rinku_Execute | 1,443.6 us | 0.98 | 1.76 KB | 0.76 |
+| Dapper_QueryFirst | 565.4 us | 1.00 | 15.87 KB | 1.00 |
+| Rinku_QueryT | 559.8 us | 0.99 | 14.69 KB | 0.93 |
+| Dapper_QueryUnbuffered | 63.62 ms | 1.00 | 29.76 MB | 1.00 |
+| Rinku_QueryIEnumerable | 62.92 ms | 0.99 | 29.42 MB | 0.99 |
+| Dapper_OneToManyMultiMap | 11.37 ms | 1.00 | 3.30 MB | 1.00 |
+| Rinku_OneToManyNative | 10.54 ms | 0.93 | 2.15 MB | 0.65 |
+| Dapper_Execute | 1.513 ms | 1.00 | 6.13 KB | 1.00 |
+| Rinku_Execute | 1.485 ms | 0.98 | 5.02 KB | 0.82 |
 
-The full 15-group comparison and how to reproduce it are in [the performance reference](https://rinkulib.github.io/RinkuLib/articles/reference/performance.html). RinkuLib began as a Dapper extension. Building the whole `DbCommand` efficiently is what led to adding the mapping side too.
+The full comparison and how to reproduce it are in [the performance reference](https://rinkulib.github.io/RinkuLib/articles/reference/performance.html). RinkuLib began as a Dapper extension for conditional SQL, but limitation on the control over the `DbCommand` made me make this whole library.
 
 ## License
 

@@ -112,6 +112,32 @@ if (TypeParsingInfo.GetOrAdd<UserProfile>() is ICanProvideConstructions info) {
 
 Assigning validates every entry (the result must be assignable to the type) and throws otherwise.
 
+## Configuring one path
+
+Get the path from the type info. The returned object owns its path settings.
+
+```csharp
+var info = TypeParsingInfo.GetOrAdd<UserProfile>();
+var path = info.GetConstruction(typeof(int), typeof(string));
+
+path.GroupKey = new EqualityGroupingRule(["Id"]);
+path.Flags |= MethodCtorInfo.AdditionalFlags.CanCompleteWithMembers;
+
+// Path parameters own their matching and null rules.
+path.Parameters[0].UpdateAltName(_ => new NameComparer("UserId"));
+path.Parameters[1].SetAbortOnNull(true);
+```
+
+Use the exact constructor or factory when parameter types are not enough.
+
+```csharp
+var factory = typeof(UserProfile).GetMethod(nameof(UserProfile.FromImport))!;
+var path = info.GetConstruction(factory);
+path.GroupKey = customRule;
+```
+
+The same path object is used for grouping, flags, parameters, names, null handling, and any future path setting. Type-level helpers configure only type-level behavior.
+
 ## Post-construction members
 
 `AvailableMembers` is the same story for the members filled after construction, the public fields (not `readonly` or `const`) and properties with a public setter (`init` excluded). `AddMember` appends one by hand, the counterpart to `AddPossibleConstruction`. It takes a field, a property, or a setter method, an external `static` one taking `(instance, value)` on a non-generic class or an instance one taking `(value)`, and derives the column's type the same way discovery does.

@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using RinkuLib.Tools;
 
 namespace RinkuLib.DbParsing;
@@ -10,13 +11,16 @@ public class BaseTypeInfo : TypeParsingInfo {
     private BaseTypeInfo() {}
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type TargetType) {
-        if (!TargetType.IsBaseType() && !TargetType.IsEnum)
+        if (!TargetType.IsBaseType() && !TargetType.IsEnum
+            && !TypeConverterRegistry.HasTarget(TargetType)
+            && !DbColumnReaderRegistry.HasValueType(TargetType))
             throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo, "Only supports base types or enums");
     }
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, MethodCtorInfo.AdditionalFlags callerFlags = default) {
         int i = 0;
         ITypeConverter? converter = null;
+        IColumnReader? columnReader = null;
         paramInfo.UpdateColModifier(ref colModifier);
         var flags = colModifier.Flags;
         if (colModifier.SwapFirstAt >= 0 && colUsage.NbUsed == colModifier.SwapFirstAt)
@@ -29,7 +33,7 @@ public class BaseTypeInfo : TypeParsingInfo {
                     i = columns.Length;
                 else {
                     var column = columns[i];
-                    if (!paramInfo.NameComparer.Match(column.Name, colModifier.Comparers) || !ITypeConverter.TryGetConverter(column.Type, currentClosedType, out converter))
+                    if (!paramInfo.NameComparer.Match(column.Name, colModifier.Comparers) || !TryGetConverter(column, currentClosedType, paramInfo, out converter, out columnReader))
                         i = columns.Length;
                 }
             }
@@ -39,14 +43,23 @@ public class BaseTypeInfo : TypeParsingInfo {
                 if (!canReuse && colUsage.IsUsed(i))
                     continue;
                 var column = columns[i];
-                if (paramInfo.NameComparer.Match(column.Name, colModifier.Comparers) && ITypeConverter.TryGetConverter(column.Type, currentClosedType, out converter))
+                if (paramInfo.NameComparer.Match(column.Name, colModifier.Comparers) && TryGetConverter(column, currentClosedType, paramInfo, out converter, out columnReader))
                     break;
             }
         }
         if (i >= columns.Length || converter is null)
             return paramInfo.FallbackTryGetParser(currentClosedType);
         colUsage.Use(i);
-        return new BasicParser(previousUsages.LatestUsedType, converter, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, i);
+        return new BasicParser(previousUsages.LatestUsedType, converter, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, i, columnReader);
+    }
+
+    private static bool TryGetConverter(ColumnInfo column, Type targetType, ParamInfo paramInfo,
+        [MaybeNullWhen(false)] out ITypeConverter converter, out IColumnReader? columnReader) {
+        DbColumnReaderRegistry.TryGet(column.Type, out columnReader);
+        var sourceType = columnReader?.ValueType ?? column.Type;
+        return paramInfo.RequireExactType
+            ? ITypeConverter.TryGetExactConverter(sourceType, targetType, out converter)
+            : ITypeConverter.TryGetConverter(sourceType, targetType, out converter);
     }
 }
 /// <summary>
@@ -72,7 +85,8 @@ public class CtorTypeInfo : TypeParsingInfo {
     internal static readonly ParamInfo InfoNotNullable = new(ParamInfo.NoType, NotNullHandle.Instance, NoNameComparer.Instance);
     internal static readonly ParamInfo InfoSkip = new(ParamInfo.NoType, AbortOnNullAndNotNullHandle.Instance, NoNameComparer.Instance);
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, MethodCtorInfo.AdditionalFlags callerFlags = default) {
+        RegisterGenericArguments(currentClosedType, callerFlags);
         if (!previousUsages.CanContinue(currentClosedType, colUsage.NbUsed, out previousUsages))
             return null;
         var ctors = currentClosedType.GetConstructors();
@@ -96,9 +110,9 @@ public class CtorTypeInfo : TypeParsingInfo {
         for (int i = 0; i < readers.Length; i++) {
             var type = parameters[i].ParameterType;
             var info = ForceGet(type);
-            var itemParamInfo = info is MultiRowTypeParsingInfo ? InfoSkip
+            var itemParamInfo = info is IMultiRowTypeParsingInfo ? InfoSkip
                 : !type.IsValueType || Nullable.GetUnderlyingType(type) is not null ? InfoNullable : InfoNotNullable;
-            var r = info.TryGetParser(type, previousUsages, itemParamInfo, columns, colModifier, ref colUsage, false);
+            var r = info.TryGetParser(type, previousUsages, itemParamInfo, columns, colModifier, ref colUsage);
             if (r is null) {
                 colUsage.Rollback(checkpoint, lastIndUsed);
                 return null;

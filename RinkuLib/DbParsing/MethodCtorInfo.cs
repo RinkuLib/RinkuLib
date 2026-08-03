@@ -16,11 +16,7 @@ public class CanCompleteWithMembersAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
 public sealed class AreReadableAttribute : Attribute;
 /// <summary>
-/// Defines that all parameter types and nested generic types should be registered if they aren't
-/// </summary>
-[AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
-public sealed class AreReadableRecursiveAttribute : Attribute;
-/// <summary>
+/// A validated candidate for object instantiation, wrapping a
 /// A validated candidate for object instantiation, wrapping a
 /// <see cref="ConstructorInfo"/> or static <see cref="MethodInfo"/>.
 /// </summary>
@@ -37,17 +33,19 @@ public class MethodCtorInfo {
         /// Will automaticaly register the type of tha parameters if they are not allready registered
         /// </summary>
         ParametersAreReadable = 0b10,
-        /// <summary>
-        /// Will automatically register parameter types recursively, including nested generic types
-        /// </summary>
-        ParametersAreReadableRecursively = 0b100
     }
     /// <summary>The constructor or static method used for instantiation.</summary>
     public readonly MethodBase MethodBase;
     /// <summary>The matchers for each parameter in the method signature.</summary>
     public readonly ParamInfo[] Parameters;
     /// <summary>Flags indicating additional info used in various situations</summary>
-    public readonly AdditionalFlags Flags;
+    public AdditionalFlags Flags {
+        get => field;
+        set {
+            field = value;
+            TypeParsingInfo.TouchConfiguration();
+        }
+    }
     /// <summary>
     /// Indicate that the engine can continue to map additional properties or fields 
     /// after the primary method/constructor has been called.
@@ -57,10 +55,6 @@ public class MethodCtorInfo {
     /// Will automaticaly register the type of tha parameters if they are not allready registered
     /// </summary>
     public bool ParametersAreReadable => Flags.HasFlag(AdditionalFlags.ParametersAreReadable);
-    /// <summary>
-    /// Will automatically register parameter types recursively, including nested generic types
-    /// </summary>
-    public bool ParametersAreReadableRecursively => Flags.HasFlag(AdditionalFlags.ParametersAreReadableRecursively);
     /// <summary>
     /// Resolves the type that this method/constructor produces.
     /// </summary>
@@ -85,6 +79,7 @@ public class MethodCtorInfo {
         set {
             _groupKey = value;
             _groupKeyResolved = true;
+            TypeParsingInfo.TouchConfiguration();
         }
     }
     private static IGroupingRule? MakeGroupKey(MethodBase construction)
@@ -149,8 +144,6 @@ public class MethodCtorInfo {
             flags |= AdditionalFlags.CanCompleteWithMembers;
         if (MethodBase.IsDefined(typeof(AreReadableAttribute)))
             flags |= AdditionalFlags.ParametersAreReadable;
-        if (MethodBase.IsDefined(typeof(AreReadableRecursiveAttribute)))
-            flags |= AdditionalFlags.ParametersAreReadableRecursively;
         mci = new(MethodBase, Parameters!, flags, true);
         return true;
     }

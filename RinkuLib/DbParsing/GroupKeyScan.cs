@@ -7,20 +7,20 @@ namespace RinkuLib.DbParsing;
 /// An attribute that makes a group boundary <see cref="IGroupingRule"/>. The registration scan finds every attribute
 /// implementing this on one level (a type and its members, or a construction and its parameters) and lets it build
 /// the rule, so a new grouping mechanism is its own attribute and <see cref="IGroupingRule"/> with no change to the
-/// scan. An attribute either composes with others of its kind on the level into one rule (marked members, marked
-/// parameters) or stands alone (a boundary method), and the scan refuses a standalone that shares its level.
+/// scan. Each maker declares whether its declarations compose on a level or must stand alone. The scan compares all
+/// maker types it finds, so the conflict rule applies to any future grouping mechanism, not a fixed pair of built-ins.
 /// </summary>
 public interface IGroupingRuleMaker {
-    /// <summary>Whether this attribute on <paramref name="carrier"/> composes one rule with others of its kind on the same level, or stands alone there.</summary>
+    /// <summary>Whether this declaration composes with declarations from the same maker family on the same level, or stands alone there.</summary>
     bool Composes(ICustomAttributeProvider carrier);
-    /// <summary>Builds the rule from every carrier that declared this attribute on one level; a standalone attribute gets its single carrier.</summary>
+    /// <summary>Builds the rule from the carriers declared by this maker on one level; a standalone maker gets its single carrier.</summary>
     IGroupingRule MakeRule(IReadOnlyList<ICustomAttributeProvider> carriers);
 }
 
 /// <summary>
-/// Finds the <see cref="IGroupingRuleMaker"/>s on one level and lets them build the rule. A level is a type and its
-/// members or a construction and its parameters. A standalone key may not share its level with any other key, and one
-/// level composes a single kind, so mixing kinds or a standalone with others throws <c>ConflictingGroupKey</c>.
+/// Finds grouping rule declarations on one level and lets them build the rule. A level is a type and its members or a
+/// construction and its parameters. A standalone rule may not share its level with other declarations, and one level
+/// composes one compatible rule family, so incompatible families throw <c>ConflictingGroupKey</c>.
 /// </summary>
 internal static class GroupKeyScan {
     public static IGroupingRule? Resolve(Type owner, IEnumerable<ICustomAttributeProvider> carriers) {
@@ -36,7 +36,7 @@ internal static class GroupKeyScan {
                 $"{owner} has a group key that stands alone next to other group keys on one level; that key is the only one on its level");
         if (found.Select(f => f.Attr.GetType()).Distinct().Count() > 1)
             throw new RinkuConfigurationException(ErrorCodes.ConflictingGroupKey,
-                $"{owner} composes group keys of more than one kind on one level; a level composes one kind");
+                $"{owner} composes declarations from more than one grouping rule family on one level");
         return found[0].Attr.MakeRule([.. found.Select(f => f.Carrier)]);
     }
 }
@@ -52,7 +52,7 @@ public static class GroupKeyNegotiation {
     public static DbItemPlan NegotiateReader(INameComparer name, Type type, ColumnInfo[] columns, ColModifier colModifier, string describe) {
         var param = new ParamInfo(type, type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance, name);
         var usage = new ColumnUsage(new bool[columns.Length]);
-        return TypeParsingInfo.ForceGet(type).TryGetParser(type, new([], 0), param, columns, colModifier, ref usage, false)
+        return TypeParsingInfo.ForceGet(type).TryGetParser(type, new([], 0), param, columns, colModifier, ref usage)
             ?? throw new RinkuConfigurationException(ErrorCodes.GroupKeyUnmapped, $"the group key {describe} matched no column");
     }
 }

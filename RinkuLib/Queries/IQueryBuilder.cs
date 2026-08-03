@@ -39,6 +39,12 @@ public interface IQueryBuilder {
     /// Turns everything off, back to the state of a fresh builder.
     /// </summary>
     void Reset();
+    /// <summary>Copies usable values from a parameter object into the builder.</summary>
+    void UseWith(object parameterObject);
+    /// <inheritdoc cref="UseWith(object)"/>
+    void UseWith<T>(T parameterObject) where T : notnull;
+    /// <inheritdoc cref="UseWith(object)"/>
+    void UseWith<T>(ref T parameterObject) where T : notnull;
     /// <summary>
     /// Turns on a condition, a piece that carries no value (a conditional marker or a projected column).
     /// </summary>
@@ -90,13 +96,4 @@ public interface IQueryBuilder {
     /// <param name="variableIndex">The variable index.</param>
     /// <param name="value">The value to bind.</param>
     void Use(int variableIndex, object? value);
-    /// <summary>
-    /// Sets every variable and condition at once from <paramref name="parameterObj"/>, matching its members
-    /// to keys by name. The same object you would pass straight to a run, applied to the builder instead.
-    /// </summary>
-    public void UseWith(object parameterObj);
-    /// <inheritdoc cref="UseWith(object)"/>
-    public void UseWith<T>(T parameterObj) where T : notnull;
-    /// <inheritdoc cref="UseWith(object)"/>
-    public void UseWith<T>(ref T parameterObj) where T : notnull;
 }

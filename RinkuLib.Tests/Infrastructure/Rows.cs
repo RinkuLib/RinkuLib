@@ -8,7 +8,7 @@ namespace RinkuLib.Tests.Infrastructure;
 /// Builds in-memory readers from a column schema and rows, the input every mapping test parses from.
 /// </summary>
 public static class Rows {
-    public static DataTableReader Reader(ColumnInfo[] columns, params object[][] rows) {
+    public static DataTableReader Reader(ColumnInfo[] columns, params object?[][] rows) {
         DataTable table = new();
         foreach (var col in columns)
             table.Columns.Add(new DataColumn(col.Name, col.Type) { AllowDBNull = col.IsNullable });
@@ -26,7 +26,7 @@ public static class Rows {
     }
 
     /// <summary>Parses every row of the given data as <typeparamref name="T"/>.</summary>
-    public static List<T> ParseAll<T>(ColumnInfo[] columns, params object[][] rows) {
+    public static List<T> ParseAll<T>(ColumnInfo[] columns, params object?[][] rows) {
         using var reader = Reader(columns, rows);
         var parser = TypeParser.GetTypeParser<T>(ref columns);
         var results = new List<T>();

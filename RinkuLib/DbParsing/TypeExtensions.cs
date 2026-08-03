@@ -97,7 +97,8 @@ public static class TypeExtensions {
             || type == typeof(Guid) || type == typeof(object) || type == typeof(float) || type == typeof(double)
             || type == typeof(char) || type == typeof(byte) || type == typeof(short) || type == typeof(byte[])
             || type == typeof(sbyte) || type == typeof(ushort) || type == typeof(uint) || type == typeof(ulong)
-            || type == typeof(TimeSpan) || type == typeof(DateTimeOffset);
+            || type == typeof(TimeSpan) || type == typeof(DateTimeOffset)
+            || type == typeof(DateOnly) || type == typeof(TimeOnly);
     }
     /// <summary>
     /// Check if the type can hold a <see langword="null"/> value

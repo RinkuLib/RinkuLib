@@ -58,6 +58,14 @@ public class FlagUpdater(UsageFlags Flags, bool Subtree = false) : IColModifier 
 /// plan the reading-order and default attributes assemble.
 /// </summary>
 public class ParamInfoPlus(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, IColModifier colModifier, IFallbackParserGetter fallbackParserGetter) : ParamInfo(Type, NullColHandler, NameComparer) {
+    /// <summary>When true, scalar negotiation accepts only the exact column type.</summary>
+    public override bool RequireExactType {
+        get => field;
+        set {
+            field = value;
+            TypeParsingInfo.TouchConfiguration();
+        }
+    }
     /// <inheritdoc/>
     public IColModifier ColModifier { get => field; set => Interlocked.Exchange(ref field, value); } = colModifier;
     /// <inheritdoc/>

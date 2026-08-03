@@ -118,13 +118,13 @@ internal static class ShallowCopier<T> where T : IEnumerable {
                 Type collectionType = typeof(ICollection<>).MakeGenericType(elementType);
 
                 if (collectionType.IsAssignableFrom(type)) {
-                    MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateShallowCollection), BindingFlags.Public | BindingFlags.Static)!
+                        MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateShallowCollection), BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
                         .MakeGenericMethod(type, elementType);
                     return CompileCollectionHelper(emptyCtor, helper, type, sourceParam);
                 }
             }
             if (typeof(IList).IsAssignableFrom(type)) {
-                MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateShallowList), BindingFlags.Public | BindingFlags.Static)!;
+                    MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateShallowList), BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
                 return CompileCollectionHelper(emptyCtor, helper, type, sourceParam);
             }
         }
@@ -177,7 +177,7 @@ internal static class DeepCopier<T> where T : IEnumerable {
             Type? genericDict = type.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDictionary<,>));
             if (genericDict != null) {
                 Type[] args = genericDict.GetGenericArguments();
-                MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateDeepDictionary), BindingFlags.Public | BindingFlags.Static)!
+                MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateDeepDictionary), BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
                     .MakeGenericMethod(type, args[0], args[1]);
                 return CompileCollectionHelper(emptyCtor, helper, type, sourceParam);
             }
@@ -186,17 +186,17 @@ internal static class DeepCopier<T> where T : IEnumerable {
                 Type elementType = genericEnumerable.GetGenericArguments()[0];
                 Type collectionType = typeof(ICollection<>).MakeGenericType(elementType);
                 if (collectionType.IsAssignableFrom(type)) {
-                    MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateDeepCollection), BindingFlags.Public | BindingFlags.Static)!
+                    MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateDeepCollection), BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
                         .MakeGenericMethod(type, elementType);
                     return CompileCollectionHelper(emptyCtor, helper, type, sourceParam);
                 }
             }
             if (typeof(IDictionary).IsAssignableFrom(type)) {
-                MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateDeepNonGenericDictionary), BindingFlags.Public | BindingFlags.Static)!;
+                MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateDeepNonGenericDictionary), BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
                 return CompileCollectionHelper(emptyCtor, helper, type, sourceParam);
             }
             if (typeof(IList).IsAssignableFrom(type)) {
-                MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateDeepList), BindingFlags.Public | BindingFlags.Static)!;
+                MethodInfo helper = typeof(CollectionCopyExtensions).GetMethod(nameof(CollectionCopyExtensions.PopulateDeepList), BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
                 return CompileCollectionHelper(emptyCtor, helper, type, sourceParam);
             }
         }

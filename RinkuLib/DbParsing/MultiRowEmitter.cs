@@ -25,7 +25,7 @@ internal static class MultiRowEmitter {
     /// <summary>Builds the multi-row parser for <typeparamref name="T"/> from its negotiated plan.</summary>
     internal static ITypeParser<T> Build<T>(DbItemPlan rd, ColumnInfo[] cols)
         => DbItemPlan.AllSimple(rd) ? BuildCollapsed<T>(rd, cols)
-         : rd is AccumulatorPlan acc ? BuildCollectionRoot<T>(acc, cols)
+         : rd is IMultiRowPlan acc ? BuildCollectionRoot<T>(acc, cols)
          : BuildSpine<T>(rd, cols);
 
     /// <summary>
@@ -35,11 +35,13 @@ internal static class MultiRowEmitter {
     /// collection at the top without a dedicated parser. The boundary never changes, so the read runs to the
     /// end of the rows.
     /// </summary>
-    private static ITypeParser<T> BuildCollectionRoot<T>(AccumulatorPlan acc, ColumnInfo[] cols) {
+    private static ITypeParser<T> BuildCollectionRoot<T>(IMultiRowPlan acc, ColumnInfo[] cols) {
         var (tb, stateInterface) = BeginState(typeof(T));
         var master = new Level { ResultType = typeof(T), IsMaster = true, Boundary = AlwaysGroupedBoundary.Instance };
         master.CaptureInto = master;
-        master.CtorSlots = [ClassifySlot(acc, typeof(T), member: null, tb, cols, master, "0")];
+        if (acc is not DbItemPlan accPlan)
+            throw Unsupported($"a multi-row plan that is not a DbItemPlan ({acc.GetType().Name})");
+        master.CtorSlots = [ClassifySlot(accPlan, typeof(T), member: null, tb, cols, master, "0")];
         return Close<T>(Assemble(tb, stateInterface, typeof(T), master), collection: true);
     }
 
@@ -149,7 +151,7 @@ internal static class MultiRowEmitter {
 
     private sealed class Level {
         public Type ResultType = null!;
-        public ConstructorInfo Ctor = null!;
+        public MethodBase Construction = null!;
         public Slot[] CtorSlots = null!;
         public List<Slot> MemberSlots = [];
         public GroupingBoundary? Boundary;
@@ -163,7 +165,7 @@ internal static class MultiRowEmitter {
         public MethodBuilder? CloseMethod;
         public Level CaptureInto = null!;
         /// <summary>A collection root has no constructor; its <c>Build</c> finishes its single buffer slot instead of invoking one.</summary>
-        public bool BuildsFromBuffer => Ctor is null;
+        public bool BuildsFromBuffer => Construction is null;
     }
 
     /// <summary>
@@ -172,8 +174,8 @@ internal static class MultiRowEmitter {
     /// is the flush cascade the master's boundary switches and end-of-data both call.
     /// </summary>
     private static ITypeParser<T> BuildSpine<T>(DbItemPlan rd, ColumnInfo[] cols) {
-        if (rd is not CustomClassParser root)
-            throw NotYet($"a multi-row root of shape {rd.GetType().Name}");
+        if (rd is not ICompositeDbItemPlan root)
+            throw Unsupported($"a multi-row root of shape {rd.GetType().Name}");
         var (tb, stateInterface) = BeginState(typeof(T));
         var master = BuildLevel(root, tb, cols, isMaster: true, parentBuffer: null, tag: "0");
         return Close<T>(Assemble(tb, stateInterface, typeof(T), master));
@@ -208,14 +210,12 @@ internal static class MultiRowEmitter {
             il.Emit(OpCodes.Ldsfld, targetField);
     }
 
-    private static Level BuildLevel(CustomClassParser node, TypeBuilder tb, ColumnInfo[] cols, bool isMaster, FieldBuilder? parentBuffer, string tag, Level? hoistTo = null) {
+    private static Level BuildLevel(ICompositeDbItemPlan node, TypeBuilder tb, ColumnInfo[] cols, bool isMaster, FieldBuilder? parentBuffer, string tag, Level? hoistTo = null) {
         StateTypeAssembly.AllowAccessTo(node.ResultType.Assembly);
-        if (node.Construction is not ConstructorInfo ctor)
-            throw NotYet($"a spanning construction that is not a constructor ({node.Construction.GetType().Name})");
-
-        var ctorParams = ctor.GetParameters();
+        var construction = node.Construction;
+        var ctorParams = construction.GetParameters();
         var args = node.ConstructorArguments;
-        var level = new Level { ResultType = node.ResultType, Ctor = ctor, IsMaster = isMaster, ParentBuffer = parentBuffer };
+        var level = new Level { ResultType = node.ResultType, Construction = construction, IsMaster = isMaster, ParentBuffer = parentBuffer };
         level.CaptureInto = hoistTo ?? level;
         level.CtorSlots = new Slot[args.Count];
         for (int i = 0; i < args.Count; i++)
@@ -224,8 +224,6 @@ internal static class MultiRowEmitter {
             level.MemberSlots.Add(ClassifySlot(plan, MemberValueType(member), member, tb, cols, level, $"{tag}_m{level.MemberSlots.Count}"));
 
         if (hoistTo is not null) {
-            if (node.GroupKey is not null)
-                throw NotYet("a group key on a nested object that is not a collection element");
             return level;
         }
 
@@ -244,7 +242,7 @@ internal static class MultiRowEmitter {
     /// boundary; the member key, the method, and the always-grouped boundary all reach emit through
     /// <see cref="GroupingBoundary"/>.
     /// </summary>
-    private static GroupingBoundary BuildBoundary(CustomClassParser node, TypeBuilder tb, ColumnInfo[] cols, string tag)
+    private static GroupingBoundary BuildBoundary(ICompositeDbItemPlan node, TypeBuilder tb, ColumnInfo[] cols, string tag)
         => (node.GroupKey ?? new InferredGroupingRule(node.ConstructorArguments, (MethodBase)node.Construction, node.ResultType))
             .MakeBoundary(node.ResultType, cols, node.Context, new BoundaryBuild(tb, cols, tag));
 
@@ -256,7 +254,7 @@ internal static class MultiRowEmitter {
     private static Slot ClassifySlot(DbItemPlan plan, Type slotType, MemberInfo? member, TypeBuilder tb, ColumnInfo[] cols, Level level, string tag) {
         var into = level.CaptureInto;
         Slot slot;
-        if (plan is AccumulatorPlan acc) {
+        if (plan is IMultiRowPlan acc) {
             var buffer = tb.DefineField($"_b{tag}", acc.BufferType, Priv);
             StateTypeAssembly.AllowAccessTo(acc.ElementType.Assembly);
             if (DbItemPlan.AllSimple(acc.Element)) {
@@ -267,9 +265,9 @@ internal static class MultiRowEmitter {
                 CaptureTarget(slot, tobj, tb, tag);
                 into.SimpleBuffers.Add(slot);
             }
-            else if (acc.Element is CustomClassParser sub) {
+            else if (acc.Element is ICompositeDbItemPlan sub) {
                 if (into.Child is not null)
-                    throw NotYet("two sibling collections that both span rows (a cross-product)");
+                    throw Unsupported("two sibling collections that both span rows in one nested element");
                 var subLevel = BuildLevel(sub, tb, cols, isMaster: false, parentBuffer: buffer, tag: tag);
                 subLevel.ParentAdd = acc.AddMethod;
                 slot = new Slot {
@@ -279,7 +277,7 @@ internal static class MultiRowEmitter {
                 into.Child = subLevel;
             }
             else
-                throw NotYet($"a spanning collection element of shape {acc.Element.GetType().Name}");
+                throw Unsupported($"a spanning collection element of shape {acc.Element.GetType().Name}");
         }
         else if (DbItemPlan.AllSimple(plan)) {
             slot = new Slot {
@@ -289,12 +287,12 @@ internal static class MultiRowEmitter {
             CaptureTarget(slot, tobj, tb, tag);
             into.Simples.Add(slot);
         }
-        else if (plan is CustomClassParser directSpanning) {
+        else if (plan is ICompositeDbItemPlan directSpanning) {
             var subLevel = BuildLevel(directSpanning, tb, cols, isMaster: false, parentBuffer: null, tag: tag, hoistTo: into);
             slot = new Slot { Kind = SlotKind.SubLevelDirect, SubLevel = subLevel, Member = member };
         }
         else
-            throw NotYet($"a nested spanning member of shape {plan.GetType().Name}");
+            throw Unsupported($"a nested spanning member of shape {plan.GetType().Name}");
         return slot;
     }
 
@@ -309,7 +307,7 @@ internal static class MultiRowEmitter {
         PropertyInfo p => p.PropertyType,
         FieldInfo f => f.FieldType,
         MethodInfo m => m.GetParameters()[^1].ParameterType,
-        _ => throw NotYet($"a construction member of kind {member.MemberType}"),
+        _ => throw Unsupported($"a construction member of kind {member.MemberType}"),
     };
 
     /// <summary>Every buffer this level owns, reaching through inlined direct sub-objects whose buffers live on their own slots.</summary>
@@ -405,7 +403,10 @@ internal static class MultiRowEmitter {
     private static void EmitConstructNode(ILGenerator il, Level level) {
         foreach (var s in level.CtorSlots)
             EmitLoadSlotValue(il, s);
-        il.Emit(OpCodes.Newobj, level.Ctor);
+        if (level.Construction is ConstructorInfo ctor)
+            il.Emit(OpCodes.Newobj, ctor);
+        else
+            il.Emit(OpCodes.Call, (MethodInfo)level.Construction);
         if (level.MemberSlots.Count == 0)
             return;
         var instance = il.DeclareLocal(level.ResultType);
@@ -562,7 +563,7 @@ internal static class MultiRowEmitter {
             new(mb.GetILGenerator());
 #endif
         Label? nullJump = node.NeedNullSetPoint(cols) ? gen.DefineLabel() : null;
-        ((SimpleDbItemParser)node).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default, out targetObj);
+        ((ISimpleDbItemPlan)node).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default, out targetObj);
         if (nullJump.HasValue) {
             var parsed = gen.DefineLabel();
             gen.Emit(OpCodes.Br, parsed);
@@ -591,7 +592,7 @@ internal static class MultiRowEmitter {
 #endif
         bool collapses = element.NeedNullSetPoint(cols);
         Label collapse = gen.DefineLabel();
-        ((SimpleDbItemParser)element).Emit(cols, gen, collapses ? new(collapse, 0) : default, out targetObj);
+        ((ISimpleDbItemPlan)element).Emit(cols, gen, collapses ? new(collapse, 0) : default, out targetObj);
         var tmp = gen.DeclareLocal(elementType);
         gen.Emit(OpCodes.Stloc, tmp);
         gen.Emit(OpCodes.Ldarg_2);
@@ -656,6 +657,6 @@ internal static class MultiRowEmitter {
 
     private static string StateName(Type resultType) => $"State_{resultType.Name}_{Guid.NewGuid():N}";
 
-    private static RinkuInternalException NotYet(string what)
-        => new(ErrorCodes.InternalInvariant, $"multi-row emit does not yet support {what}");
+    private static RinkuConfigurationException Unsupported(string what)
+        => new(ErrorCodes.OperationNotSupportedForType, $"multi-row mapping does not support {what}");
 }

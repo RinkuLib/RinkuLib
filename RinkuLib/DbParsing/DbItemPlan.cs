@@ -31,7 +31,7 @@ public abstract class DbItemPlan {
     /// This node's children in the plan tree, for the walk that decides whether the whole plan is single-row.
     /// Leaves have none.
     /// </summary>
-    internal virtual IEnumerable<DbItemPlan> Children => [];
+    public virtual IEnumerable<DbItemPlan> Children => [];
     /// <summary>
     /// Whether <paramref name="node"/> and everything beneath it is a <see cref="SimpleDbItemParser"/>, the
     /// one condition for the single compiled delegate. There is no capability flag, the ability to emit single
@@ -39,7 +39,7 @@ public abstract class DbItemPlan {
     /// not one fails it, so any plan containing one takes the multi-row road.
     /// </summary>
     internal static bool AllSimple(DbItemPlan node) {
-        if (node is not SimpleDbItemParser)
+        if (node is not ISimpleDbItemPlan)
             return false;
         foreach (var child in node.Children)
             if (!AllSimple(child))
@@ -124,13 +124,35 @@ public abstract class DbItemPlan {
             generator.Emit(OpCodes.Call, m);
     }
 }
+/// <summary>Emits a plan that reads its value from the current row.</summary>
+public interface ISimpleDbItemPlan {
+    /// <summary>Emits the row read and leaves the value on the evaluation stack.</summary>
+    void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject);
+}
+
+/// <summary>Describes a composite plan that constructs a value from parameter and member plans.</summary>
+public interface ICompositeDbItemPlan {
+    /// <summary>The type constructed by this plan.</summary>
+    Type ResultType { get; }
+    /// <summary>The constructor or factory method used by this plan.</summary>
+    MethodBase Construction { get; }
+    /// <summary>The plans for constructor or factory parameters.</summary>
+    IReadOnlyList<DbItemPlan> ConstructorArguments { get; }
+    /// <summary>The plans for values assigned after construction.</summary>
+    IReadOnlyList<(MemberInfo Member, DbItemPlan Plan)> PostMembers { get; }
+    /// <summary>The explicit grouping rule, or null when the emitter should infer one.</summary>
+    IGroupingRule? GroupKey { get; }
+    /// <summary>The name matching context used while negotiating this plan.</summary>
+    ColModifier Context { get; }
+}
+
 /// <summary>
 /// A node that can read its value from the current row alone, the more specific parser the single-row road is
 /// built from. The base <see cref="DbItemPlan"/> is the general, multi-row case and carries no single-row
 /// emit, this is the specialization that does. When every node in a plan is one of these the plan takes the
 /// happy path, the single compiled delegate, otherwise the multi-row road negotiates a state object instead.
 /// </summary>
-public abstract class SimpleDbItemParser : DbItemPlan {
+public abstract class SimpleDbItemParser : DbItemPlan, ISimpleDbItemPlan {
     /// <summary>
     /// Reads this node's value from the current row, handling a <c>NULL</c> and any type conversion.
     /// </summary>
@@ -175,4 +197,26 @@ public readonly struct NullSetPoint(Label Label, int NbOnStack) {
             generator.Emit(OpCodes.Pop);
         generator.Emit(OpCodes.Br, Label);
     }
+}
+
+/// <summary>
+/// Describes a plan that folds one element from each row into an accumulator.
+/// The default multi-row emitter consumes this capability; another plan implementation can provide the same
+/// behavior without deriving from the built-in accumulator plan.
+/// </summary>
+public interface IMultiRowPlan {
+    /// <summary>The plan that reads one element from a row.</summary>
+    DbItemPlan Element { get; }
+    /// <summary>The type supplied to the accumulator's add method.</summary>
+    Type ElementType { get; }
+    /// <summary>The type stored while rows are being folded.</summary>
+    Type BufferType { get; }
+    /// <summary>The method that folds one element into the accumulator.</summary>
+    System.Reflection.MethodInfo AddMethod { get; }
+    /// <summary>The construction that creates an empty accumulator.</summary>
+    System.Reflection.MethodBase InitialState { get; }
+    /// <summary>The construction that turns the accumulator into the result, or <see langword="null"/> when it is the result.</summary>
+    System.Reflection.MethodBase? Construct { get; }
+    /// <summary>The null rule for an element that collapses during reading.</summary>
+    INullColHandler NullRule { get; }
 }

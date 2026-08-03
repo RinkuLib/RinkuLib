@@ -83,16 +83,22 @@ Every wrapper converts implicitly to its inner `T`, so you can pass it wherever 
 
 ## Scalars
 
-A primitive `T` maps the first column of the first row. `ExecuteScalar<T>` runs the command and returns that single value.
+A primitive `T` maps the first column of the first row. `Query<T>` is valid when
+the command is a `SELECT` whose result is one scalar. `ExecuteScalar<T>` is the
+matching shape for an execution that also returns one value.
 
 ```csharp
-int count = CountTracks.ExecuteScalar<int>(cnn);
-int alt   = CountTracks.Query<int>(cnn);   // also works
+int count = CountTracks.Query<int>(cnn);              // SELECT: read one scalar
+int alt   = CountTracks.ExecuteScalar<int>(cnn);      // also works
 ```
 
 ## Tuples
 
 Ask for a `ValueTuple` and its elements are taken in order, the tuple names (`Item1`, `Item2`, ...) ignored. Each element then negotiates as usual. A basic type has no name left to match, so it takes the next column. A complex element still matches its own members by name.
+
+Every tuple element must negotiate successfully. A row with fewer columns than the tuple has no tuple parser; use a
+type with a construction path whose final parameter has a default, or provide separate construction paths, when two
+row shapes are both valid.
 
 ```csharp
 // Basic: strictly by column order

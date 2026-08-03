@@ -14,7 +14,7 @@ namespace RinkuLib.DbParsing;
 /// multi-row type. The element read per row is the collection's generic argument or array element, or, for a
 /// value that is no collection, the single parameter of <see cref="Add"/>.
 /// </summary>
-public class MultiRowTypeParsingInfo : TypeParsingInfo {
+public class MultiRowTypeParsingInfo : TypeParsingInfo, IMultiRowTypeParsingInfo {
     /// <summary>
     /// The construction that seeds an empty accumulator, a parameterless constructor or a static factory. The
     /// accumulator each row folds into is its declaring type (a constructor) or its return (a factory).
@@ -65,7 +65,8 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo {
     }
 
     /// <inheritdoc/>
-    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, bool registerRecursively = false) {
+    public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, MethodCtorInfo.AdditionalFlags callerFlags = default) {
+        RegisterGenericArguments(currentClosedType, callerFlags);
         var elementType = ElementOf(currentClosedType);
         var initialState = Close(InitialState, elementType);
         var finish = Finish is null ? null : Close(Finish, elementType);
@@ -75,7 +76,7 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo {
         if (!TryGetInfo(elementType, out var elementInfo))
             return null;
         var elementParamInfo = new ParamInfo(elementType, AbortOnNullAndNotNullHandle.Instance, paramInfo.NameComparer);
-        var elementNode = elementInfo.TryGetParser(elementType, previousUsages, elementParamInfo, columns, colModifier, ref colUsage, registerRecursively);
+        var elementNode = elementInfo.TryGetParser(elementType, previousUsages, elementParamInfo, columns, colModifier, ref colUsage);
         return elementNode is null ? null
             : new AccumulatorPlan(elementNode, elementType, accumulatorType, add, initialState, finish, paramInfo.NullColHandler);
     }
@@ -146,25 +147,25 @@ public sealed class KeepNullElementsAttribute : Attribute, INullColHandlerMaker 
 /// <c>Add</c>, and <see cref="Construct"/> turns it into the declared result, so a list, a set filled in place, or
 /// an aggregate that keeps a running sum all take the same road, differing only in these pieces.
 /// </summary>
-internal sealed class AccumulatorPlan(DbItemPlan element, Type elementType, Type accumulatorType, MethodInfo add, MethodBase initialState, MethodBase? construct, INullColHandler nullRule) : DbItemPlan {
+internal sealed class AccumulatorPlan(DbItemPlan element, Type elementType, Type accumulatorType, MethodInfo add, MethodBase initialState, MethodBase? construct, INullColHandler nullRule) : DbItemPlan, IMultiRowPlan {
     /// <summary>The plan that reads one element from a row.</summary>
-    internal DbItemPlan Element => element;
+    public DbItemPlan Element => element;
     /// <summary>The collection's own null rule, what to do when an element flows up null: skip, keep (add the default), or throw. The element itself is read with a fixed collapse rule and never null-handled.</summary>
-    internal INullColHandler NullRule => nullRule;
+    public INullColHandler NullRule => nullRule;
     /// <summary>The element type each row folds in, what <see cref="AddMethod"/> takes.</summary>
-    internal Type ElementType => elementType;
+    public Type ElementType => elementType;
     /// <summary>The accumulator instance type, seeded once per group and folded into each row; this is the buffer.</summary>
-    internal Type BufferType => accumulatorType;
+    public Type BufferType => accumulatorType;
     /// <summary>The <c>Add</c> that folds one element into the accumulator; a non-void return is discarded.</summary>
-    internal MethodInfo AddMethod => add;
+    public MethodInfo AddMethod => add;
     /// <summary>The construction that seeds the accumulator, a constructor or a static factory the emit calls.</summary>
-    internal MethodBase InitialState => initialState;
+    public MethodBase InitialState => initialState;
     /// <summary>The constructor or factory from the accumulator to the result, or <see langword="null"/> when the accumulator already is the result.</summary>
-    internal MethodBase? Construct => construct;
+    public MethodBase? Construct => construct;
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => false;
     /// <inheritdoc/>
     public override bool IsSequencial(ref int previousIndex) => false;
     /// <inheritdoc/>
-    internal override IEnumerable<DbItemPlan> Children => [element];
+    public override IEnumerable<DbItemPlan> Children => [element];
 }

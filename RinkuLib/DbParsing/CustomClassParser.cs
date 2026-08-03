@@ -9,7 +9,7 @@ namespace RinkuLib.DbParsing;
 /// A composite parser that builds complex types and fills their members.
 /// It coordinates the evaluation stack to satisfy constructor parameters and setter methods.
 /// </summary>
-public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemPlan> Parameters, List<(MemberInfo, DbItemPlan)>? Members = null) : SimpleDbItemParser {
+public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemPlan> Parameters, List<(MemberInfo, DbItemPlan)>? Members = null) : SimpleDbItemParser, ICompositeDbItemPlan {
     private readonly Type ParentType = ParentType;
     private readonly Type Type = Type;
     private readonly string ParamName = ParamName;
@@ -19,7 +19,7 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
     private readonly List<(MemberInfo, DbItemPlan)> Members = Members ?? EmptyMembers;
     private static readonly List<(MemberInfo, DbItemPlan)> EmptyMembers = [];
     /// <summary>The constructor or factory this node builds its instance with, what the multi-row emit calls.</summary>
-    internal MemberInfo Construction => MethodBase;
+    internal MethodBase Construction => (MethodBase)MethodBase;
     /// <summary>The construction arguments in order, each a plan for one constructor or factory parameter.</summary>
     internal IReadOnlyList<DbItemPlan> ConstructorArguments => Readers;
     /// <summary>The members filled after construction, each a target and its plan.</summary>
@@ -30,6 +30,12 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
     internal IGroupingRule? GroupKey { get; init; }
     /// <summary>The name-matching context this node negotiated in, so the key can match its columns the same way.</summary>
     internal ColModifier Context { get; init; }
+    Type ICompositeDbItemPlan.ResultType => Type;
+    MethodBase ICompositeDbItemPlan.Construction => (MethodBase)MethodBase;
+    IReadOnlyList<DbItemPlan> ICompositeDbItemPlan.ConstructorArguments => Readers;
+    IReadOnlyList<(MemberInfo Member, DbItemPlan Plan)> ICompositeDbItemPlan.PostMembers => Members;
+    IGroupingRule? ICompositeDbItemPlan.GroupKey => GroupKey;
+    ColModifier ICompositeDbItemPlan.Context => Context;
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedNullJumpSetPoint(Type);
     /// <inheritdoc/>
@@ -43,7 +49,7 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
         return true;
     }
     /// <inheritdoc/>
-    internal override IEnumerable<DbItemPlan> Children {
+    public override IEnumerable<DbItemPlan> Children {
         get {
             foreach (var reader in Readers)
                 yield return reader;
@@ -62,7 +68,7 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
                 jump = generator.DefineLabel();
                 localSetPoint = new(jump.Value, 0);
             }
-            ((SimpleDbItemParser)reader).Emit(cols, generator, localSetPoint.WithItemOnStack(i), out targetObject);
+            ((ISimpleDbItemPlan)reader).Emit(cols, generator, localSetPoint.WithItemOnStack(i), out targetObject);
         }
         EmitMemberDispatch(generator, MethodBase);
         var under = Nullable.GetUnderlyingType(Type);
@@ -90,7 +96,7 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
             var (member, reader) = Members[i];
             Label? l = reader.NeedNullSetPoint(cols) ? generator.DefineLabel() : null;
             generator.Emit(opCode, instanceLocal);
-            ((SimpleDbItemParser)reader).Emit(cols, generator, l.HasValue ? new(l.Value, 1) : default, out _);
+            ((ISimpleDbItemPlan)reader).Emit(cols, generator, l.HasValue ? new(l.Value, 1) : default, out _);
             EmitMemberDispatch(generator, member);
             if (l.HasValue)
                 generator.MarkLabel(l.Value);

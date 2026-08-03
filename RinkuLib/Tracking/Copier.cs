@@ -27,15 +27,15 @@ public interface ICopyable<T>
     /// </remarks>
     T Copy();
 }
-/// <summary>
-/// Base class for attributes that inject custom cloning logic via IL generation.
-/// </summary>
-/// <remarks>
-/// Use this to mark fields that require specialized treatment during the cloning 
-/// process, such as deep-copying specific references.
-/// </remarks>
+/// <summary>Core contract for a field copy plan emitted into the clone method.</summary>
+public interface ICopyFieldPlan
+{
+    /// <summary>Emits the copy for <paramref name="field"/>.</summary>
+    void Emit(FieldInfo field, ILGenerator il, LocalBuilder clone);
+}
+/// <summary>Base attribute for a built-in or custom field copy plan.</summary>
 [AttributeUsage(AttributeTargets.Field)]
-public abstract class CopyFieldAttribute : Attribute
+public abstract class CopyFieldAttribute : Attribute, ICopyFieldPlan
 {
     /// <summary>
     /// Emits IL instructions to copy the field value to the target clone.
@@ -97,6 +97,8 @@ public static class CopyExtensions {
 public static class Copier<T> {
     private static readonly CopyDelegate<T> _defaultStrategy = Build();
     private static CopyDelegate<T> _strategy = _defaultStrategy;
+    private static readonly object ConfigurationLock = new();
+    private static Dictionary<FieldInfo, ICopyFieldPlan> FieldPlans = [];
     /// <summary>
     /// Executes the current cloning strategy for the type.
     /// </summary>
@@ -122,12 +124,37 @@ public static class Copier<T> {
     /// <summary>
     /// Reverts the cloning strategy to the original, automatically detected implementation.
     /// </summary>
-    public static void ResetStrategy() => _strategy = _defaultStrategy;
-    private static CopyDelegate<T> Build() {
+    public static void ResetStrategy() => _strategy = Build(FieldPlans);
+    /// <summary>
+    /// Registers or replaces the plan for one field in the automatic clone strategy.
+    /// </summary>
+    /// <param name="field">A field declared by <typeparamref name="T"/> or one of its base types.</param>
+    /// <param name="plan">The field copy plan.</param>
+    /// <remarks>Register during setup. The next automatic copy uses the rebuilt strategy.</remarks>
+    public static void RegisterFieldPlan(FieldInfo field, ICopyFieldPlan plan) {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(plan);
+        if (field.IsStatic || field.IsLiteral)
+            throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Field '{field}' cannot be copied.");
+        if (!field.DeclaringType!.IsAssignableFrom(typeof(T)))
+            throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Field '{field}' is not declared by '{typeof(T)}' or one of its base types.");
+        lock (ConfigurationLock) {
+            FieldPlans = new(FieldPlans) { [field] = plan };
+            _strategy = Build(FieldPlans);
+        }
+    }
+    /// <summary>Removes all runtime field plans and restores the attribute-only automatic strategy.</summary>
+    public static void ResetFieldPlans() {
+        lock (ConfigurationLock) {
+            FieldPlans = [];
+            _strategy = _defaultStrategy;
+        }
+    }
+    private static CopyDelegate<T> Build(IReadOnlyDictionary<FieldInfo, ICopyFieldPlan>? fieldPlans = null) {
         Type type = typeof(T);
         if (typeof(ICopyable<T>).IsAssignableFrom(type))
             return BuildCopyableStrategy(type);
-        return BuildCloneStrategy(type);
+        return BuildCloneStrategy(type, fieldPlans);
     }
     private static CopyDelegate<T> BuildCopyableStrategy(Type type) {
         MethodInfo copyMethod = type.GetMethod(nameof(ICopyable<>.Copy), BindingFlags.Instance | BindingFlags.Public)!
@@ -143,7 +170,7 @@ public static class Copier<T> {
         il.Emit(OpCodes.Ret);
         return dm.CreateDelegate<CopyDelegate<T>>();
     }
-    private static CopyDelegate<T> BuildCloneStrategy(Type type) {
+    private static CopyDelegate<T> BuildCloneStrategy(Type type, IReadOnlyDictionary<FieldInfo, ICopyFieldPlan>? fieldPlans) {
         DynamicMethod dm = new("Clone_" + type.Name, type, [type], type.Module, true);
         ILGenerator il = dm.GetILGenerator();
         bool isStruct = type.IsValueType;
@@ -160,15 +187,17 @@ public static class Copier<T> {
             il.Emit(OpCodes.Castclass, type);
             il.Emit(OpCodes.Stloc, clone);
         }
-        PatchFields(type, il, clone);
+        PatchFields(type, il, clone, fieldPlans);
         il.Emit(OpCodes.Ldloc, clone);
         il.Emit(OpCodes.Ret);
         return dm.CreateDelegate<CopyDelegate<T>>();
     }
     private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
-    private static void PatchFields(Type type, ILGenerator il, LocalBuilder clone) {
+    private static void PatchFields(Type type, ILGenerator il, LocalBuilder clone, IReadOnlyDictionary<FieldInfo, ICopyFieldPlan>? fieldPlans) {
         for (Type? current = type; current != null && current != typeof(object); current = current.BaseType)
             foreach (FieldInfo field in current.GetFields(Flags))
-                field.GetCustomAttribute<CopyFieldAttribute>(false)?.Emit(field, il, clone);
+                (fieldPlans is not null && fieldPlans.TryGetValue(field, out var runtimePlan)
+                    ? runtimePlan
+                    : field.GetCustomAttribute<CopyFieldAttribute>(false))?.Emit(field, il, clone);
     }
 }

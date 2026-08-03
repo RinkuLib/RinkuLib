@@ -36,6 +36,8 @@ public interface ITypeConverter {
             return false;
         }
         outputType = t ?? outputType;
+        if (TypeConverterRegistry.TryGet(sourceType, outputType, out converter))
+            return true;
         if (sourceType == typeof(string) && outputType.IsEnum) {
             converter = new StringToEnumConverter(outputType);
             return true;
@@ -121,6 +123,24 @@ public interface ITypeConverter {
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Finds an identity converter only when the source and target types are exactly equal. Nullable targets
+    /// compare their underlying type because the reader column carries nullability separately.
+    /// </summary>
+    public static bool TryGetExactConverter(Type sourceType, Type outputType, [MaybeNullWhen(false)] out ITypeConverter converter) {
+        converter = null;
+        var underlying = Nullable.GetUnderlyingType(outputType);
+        var target = underlying ?? outputType;
+        if (sourceType != target)
+            return false;
+        if (TypeConverterRegistry.TryGet(sourceType, target, out converter))
+            return true;
+        converter = underlying is null
+            ? new IdentityConverter(target)
+            : new NullableWrapperConverter(new IdentityConverter(target));
+        return true;
     }
 }
 /// <summary>No-op: Source and Target are already compatible.</summary>

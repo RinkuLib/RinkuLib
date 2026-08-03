@@ -178,62 +178,49 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     public readonly string GetQueryText()
         => QueryCommand.QueryText.Parse(Variables);
 
-
-
-    /// <inheritdoc/>
+    /// <summary>
+    /// Replaces the current values from an object and immediately synchronizes the live command.
+    /// Special handlers process the raw values during synchronization.
+    /// </summary>
     public void UseWith(object parameterObj) {
+        ClearForUseWith();
         Type type = parameterObj.GetType();
-        IntPtr handle = type.TypeHandle.Value;
-        var cache = QueryCommand.GetAccessorCache(handle, type);
-        UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
+        var cache = QueryCommand.GetUseWithAccessorCache(type.TypeHandle.Value, type);
+        cache.Bind(parameterObj, Variables);
+        QueryCommand.SetCommand(Command, Variables);
     }
-    /// <inheritdoc/>
+
+    /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(T parameterObj) where T : notnull {
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var cache = QueryCommand.GetAccessorCache(handle, typeof(T));
-        if (!typeof(T).IsValueType) {
-            UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
-            return;
+        ClearForUseWith();
+        var cache = QueryCommand.GetUseWithAccessorCache(typeof(T).TypeHandle.Value, typeof(T));
+        if (!typeof(T).IsValueType)
+            cache.Bind(parameterObj!, Variables);
+        else {
+            var typed = Unsafe.As<UseWithAccessorCache, StructUseWithAccessorCache<T>>(ref cache);
+            typed.GenericBind(ref parameterObj, Variables);
         }
-        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        UpdateCommand(new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue));
+        QueryCommand.SetCommand(Command, Variables);
     }
-    /// <inheritdoc/>
+
+    /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var cache = QueryCommand.GetAccessorCache(handle, typeof(T));
-        if (!typeof(T).IsValueType) {
-            UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
-            return;
+        ClearForUseWith();
+        var cache = QueryCommand.GetUseWithAccessorCache(typeof(T).TypeHandle.Value, typeof(T));
+        if (!typeof(T).IsValueType)
+            cache.Bind(parameterObj!, Variables);
+        else {
+            var typed = Unsafe.As<UseWithAccessorCache, StructUseWithAccessorCache<T>>(ref cache);
+            typed.GenericBind(ref parameterObj, Variables);
         }
-        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        UpdateCommand(new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue));
+        QueryCommand.SetCommand(Command, Variables);
     }
-#if NET9_0_OR_GREATER
-    private void UpdateCommand<T>(T accessor) where T : ITypeAccessor, allows ref struct
-#else
-    private void UpdateCommand(TypeAccessor accessor) 
-#endif
-    {
-        var mapper = QueryCommand.Mapper;
-        var endVariables = QueryCommand.StartBoolCond;
-        var total = mapper.Count;
-        int i = 0;
-        for (; i < endVariables; i++)
-            Use(i, accessor.IsUsed(i) ? accessor.GetValue(i) : null);
-        for (; i < total; i++)
-            Variables[i] = accessor.IsUsed(i) ? QueryBuilder.Used : null;
+
+    private readonly void ClearForUseWith() {
+        Command.Parameters.Clear();
+        Array.Clear(Variables, 0, Variables.Length);
     }
-#if !NET9_0_OR_GREATER
-    private void UpdateCommand<T>(TypeAccessor<T> accessor) {
-        var mapper = QueryCommand.Mapper;
-        var endVariables = QueryCommand.StartBoolCond;
-        var total = mapper.Count;
-        int i = 0;
-        for (; i < endVariables; i++)
-            Use(i, accessor.IsUsed(i) ? accessor.GetValue(i) : null);
-        for (; i < total; i++)
-            Variables[i] = accessor.IsUsed(i) ? QueryBuilder.Used : null;
-    }
-#endif
+
+
+
 }

@@ -30,7 +30,7 @@ public record class MemberParser {
     /// <param name="Param">The matcher for database negotiation.</param>
     /// <exception cref="Exception">Thrown if the member is static, read-only, or type-mismatched.</exception>
     public MemberParser(MemberInfo Member, ParamInfo Param) {
-        var val = Validate(Member, Param);
+        var val = Validate(Member, Param, allowNonPublicSetter: false);
         if (val is Exception ex)
             throw ex;
         this.Member = Member;
@@ -51,9 +51,10 @@ public record class MemberParser {
     /// <param name="member">The candidate member for parsing.</param>
     /// <param name="param">The matcher to associate with the member.</param>
     /// <param name="memberParser">When this method returns, contains the parser if successful, otherwise null.</param>
+    /// <param name="allowNonPublicSetter">Whether a non-public property setter may be used.</param>
     /// <returns><c>true</c> if the member is a valid, writable target, otherwise <c>false</c>.</returns>
-    public static bool TryNew(MemberInfo member, ParamInfo param,  [MaybeNullWhen(false)] out MemberParser memberParser) {
-        var val = Validate(member, param);
+    public static bool TryNew(MemberInfo member, ParamInfo param, [MaybeNullWhen(false)] out MemberParser memberParser, bool allowNonPublicSetter = false) {
+        var val = Validate(member, param, allowNonPublicSetter);
         if (val is not Type t) {
             memberParser = null;
             return false;
@@ -66,8 +67,9 @@ public record class MemberParser {
     /// </summary>
     /// <param name="member">The member to check.</param>
     /// <param name="param">The matcher to compare against.</param>
+    /// <param name="allowNonPublicSetter">Whether a non-public property setter may be used.</param>
     /// <returns>The <see cref="Type"/> of the declaring object if valid, otherwise an <see cref="Exception"/>.</returns>
-    private static object Validate(MemberInfo member, ParamInfo param) {
+    private static object Validate(MemberInfo member, ParamInfo param, bool allowNonPublicSetter) {
         bool isWriteable = false;
         Type? detectedMemberType = null;
         Type? detectedTargetType = null;
@@ -79,7 +81,7 @@ public record class MemberParser {
 
                 detectedMemberType = prop.PropertyType;
                 detectedTargetType = prop.DeclaringType;
-                isWriteable = prop.CanWrite && prop.GetSetMethod(nonPublic: false) != null;
+                isWriteable = prop.CanWrite && prop.GetSetMethod(nonPublic: allowNonPublicSetter) != null;
                 break;
 
             case FieldInfo field:

@@ -58,4 +58,4 @@ Two conventions in the shape:
 | `NetUserSecrets` | path to the `.csproj` | `:`-separated path into `secrets.json` |
 | `LaunchSettings` | uses `Properties/launchSettings.json` | `ProfileName:VariableName` |
 
-`XmlFile`, `IniFile`, `DotEnvFile`, and `MsBuildProject` also exist. `VsDataConnection` and `CloudSecret` are reserved, not yet implemented.
+`XmlFile`, `IniFile`, `DotEnvFile`, and `MsBuildProject` also exist. `VsDataConnection` and `CloudSecret` remain unavailable because they require host-specific integrations that are outside the PowerTools assembly.

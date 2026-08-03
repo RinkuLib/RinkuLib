@@ -217,7 +217,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = cache.Behavior;
+                var behavior = cache.Behavior & ~CommandBehavior.SingleResult;
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
@@ -225,11 +225,15 @@ public static class DBCommandExtensions {
                 reader = cmd.ExecuteReader(behavior);
                 wasClosed = false;
                 var parser = cache.UpdateCache(cmd, reader);
+                T result;
                 if (!reader.Read())
-                    return parser.Default();
-                if (parser is ISimpleParser<T> simple)
-                    return simple.RowParser(reader);
-                return parser.Parse(reader).Result;
+                    result = parser.Default();
+                else if (parser is ISimpleParser<T> simple)
+                    result = simple.RowParser(reader);
+                else
+                    result = parser.Parse(reader).Result;
+                ResultSetDrainer.Drain(reader);
+                return result;
             }
             finally {
                 reader?.Dispose();
@@ -256,7 +260,7 @@ public static class DBCommandExtensions {
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
             try {
-                var behavior = cache.Behavior;
+                var behavior = cache.Behavior & ~CommandBehavior.SingleResult;
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
@@ -264,11 +268,15 @@ public static class DBCommandExtensions {
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
                 wasClosed = false;
                 var parser = await cache.UpdateCacheAsync(cmd, reader, ct).ConfigureAwait(false);
+                T result;
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                    return parser.Default();
-                if (parser is ISimpleParser<T> simple)
-                    return simple.RowParser(reader);
-                return (await parser.ParseAsync(reader, ct).ConfigureAwait(false)).Result;
+                    result = parser.Default();
+                else if (parser is ISimpleParser<T> simple)
+                    result = simple.RowParser(reader);
+                else
+                    result = (await parser.ParseAsync(reader, ct).ConfigureAwait(false)).Result;
+                await ResultSetDrainer.DrainAsync(reader, ct).ConfigureAwait(false);
+                return result;
             }
             finally {
                 reader?.Dispose();

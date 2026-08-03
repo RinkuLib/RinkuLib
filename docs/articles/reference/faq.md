@@ -18,6 +18,12 @@ Yes, that is the intended usage. The command holds no per-call state, and its in
 
 It is not guaranteed to work. The command reuses the row parser it learned from the first result it saw, and nothing accounts for a provider typing the same query differently, `COUNT(*)` as an `int` on one and a `bigint` on another. Declare one command per provider.
 
+### Does Rinku rewrite named parameters for positional providers?
+
+No automatic rewrite is performed. Rinku can still reproduce positional SQL: keep the provider's `?` placeholders, declare the variables in positional order, and supply a custom parameter-info implementation when the provider needs special parameter creation.
+
+See [positional SQL](../running-queries/parameters.md#positional-sql).
+
 ### The clause is in the SQL but the provider throws about a missing parameter.
 
 A plain `@Id` is static text, the engine does not manage its presence. If its clause stays and you never supplied a value, the provider throws at execution. Mark it `?@Id` when its presence should follow the value. See [conditional SQL](../conditional-sql/index.md#markers-are-opt-in).

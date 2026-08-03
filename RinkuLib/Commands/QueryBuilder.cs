@@ -18,7 +18,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// The value stored for a condition that is on but carries no data. Pass it where a value is expected
     /// to mean "present" for a toggle-only piece.
     /// </summary>
-    public static readonly object Used = new();
+    public static readonly object Used = AccessorUsageMarker.Value;
     /// <summary> The command these values run against. </summary>
     public readonly QueryCommand QueryCommand = QueryCommand;
     /// <summary>
@@ -117,60 +117,33 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <inheritdoc/>
     public readonly string GetQueryText()
         => QueryCommand.QueryText.Parse(Variables);
-    /// <inheritdoc/>
+
+    /// <summary>Copies the usable values from an object into this builder.</summary>
     public void UseWith(object parameterObj) {
         Type type = parameterObj.GetType();
-        IntPtr handle = type.TypeHandle.Value;
-        var cache = QueryCommand.GetAccessorCache(handle, type);
-        UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
+        var cache = QueryCommand.GetUseWithAccessorCache(type.TypeHandle.Value, type);
+        cache.Bind(parameterObj, Variables);
     }
-    /// <inheritdoc/>
+
+    /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(T parameterObj) where T : notnull {
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var cache = QueryCommand.GetAccessorCache(handle, typeof(T));
+        var cache = QueryCommand.GetUseWithAccessorCache(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType) {
-            UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
+            cache.Bind(parameterObj!, Variables);
             return;
         }
-        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        UpdateCommand(new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue));
+        var typed = Unsafe.As<UseWithAccessorCache, StructUseWithAccessorCache<T>>(ref cache);
+        typed.GenericBind(ref parameterObj, Variables);
     }
-    /// <inheritdoc/>
+
+    /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var cache = QueryCommand.GetAccessorCache(handle, typeof(T));
+        var cache = QueryCommand.GetUseWithAccessorCache(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType) {
-            UpdateCommand(new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue));
+            cache.Bind(parameterObj!, Variables);
             return;
         }
-        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        UpdateCommand(new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue));
+        var typed = Unsafe.As<UseWithAccessorCache, StructUseWithAccessorCache<T>>(ref cache);
+        typed.GenericBind(ref parameterObj, Variables);
     }
-#if NET9_0_OR_GREATER
-    private void UpdateCommand<T>(T accessor) where T : ITypeAccessor, allows ref struct
-#else
-    private void UpdateCommand(TypeAccessor accessor)
-#endif
-    {
-        var mapper = QueryCommand.Mapper;
-        var endVariables = QueryCommand.StartBoolCond;
-        var total = mapper.Count;
-        int i = 0;
-        for (; i < endVariables; i++)
-            Use(i, accessor.IsUsed(i) ? accessor.GetValue(i) : null);
-        for (; i < total; i++)
-            Variables[i] = accessor.IsUsed(i) ? Used : null;
-    }
-#if !NET9_0_OR_GREATER
-    private void UpdateCommand<T>(TypeAccessor<T> accessor) {
-        var mapper = QueryCommand.Mapper;
-        var endVariables = QueryCommand.StartBoolCond;
-        var total = mapper.Count;
-        int i = 0;
-        for (; i < endVariables; i++)
-            Use(i, accessor.IsUsed(i) ? accessor.GetValue(i) : null);
-        for (; i < total; i++)
-            Variables[i] = accessor.IsUsed(i) ? Used : null;
-    }
-#endif
 }

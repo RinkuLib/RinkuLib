@@ -1,5 +1,8 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
+
+#pragma warning disable CS8765, CS8767 // These test doubles model legacy ADO.NET nullability contracts.
 
 namespace RinkuLib.Tests.Infrastructure;
 
@@ -92,7 +95,7 @@ public sealed class PlainEnumerableReader(DbDataReader inner) : IDataReader, Sys
 /// </summary>
 public sealed class BrokenConnection : DbConnection {
     public bool Closed;
-    public override string? ConnectionString { get; set; }
+    public override string ConnectionString { get; [param: AllowNull] set; } = "";
     public override string Database => "Broken";
     public override string DataSource => "None";
     public override string ServerVersion => "0.0";
@@ -111,7 +114,7 @@ public sealed class BrokenConnection : DbConnection {
 /// <see cref="DbDataReader"/>, the provider shape whose reader must be used as-is rather than wrapped.
 /// </summary>
 public sealed class PassthroughCommand(DbCommand inner) : IDbCommand {
-    public string CommandText { get => inner.CommandText; set => inner.CommandText = value!; }
+    public string CommandText { get => inner.CommandText; [param: AllowNull] set => inner.CommandText = value!; }
     public int CommandTimeout { get => inner.CommandTimeout; set => inner.CommandTimeout = value; }
     public CommandType CommandType { get => inner.CommandType; set => inner.CommandType = value; }
     public IDbConnection? Connection { get => inner.Connection; set => inner.Connection = (DbConnection?)value; }
@@ -130,7 +133,7 @@ public sealed class PassthroughCommand(DbCommand inner) : IDbCommand {
 
 /// <summary>An <see cref="IDbCommand"/> whose connection is a <see cref="BrokenConnection"/>.</summary>
 public sealed class BrokenPlainCommand(BrokenConnection cnn) : IDbCommand {
-    public string? CommandText { get; set; }
+    public string CommandText { get; [param: AllowNull] set; } = "";
     public int CommandTimeout { get; set; }
     public CommandType CommandType { get; set; }
     public IDbConnection? Connection { get => cnn; set { } }
@@ -153,7 +156,7 @@ public sealed class BrokenPlainCommand(BrokenConnection cnn) : IDbCommand {
 /// </summary>
 public sealed class PlainConnection(DbConnection inner) : IDbConnection {
     public DbConnection Inner => inner;
-    public string ConnectionString { get => inner.ConnectionString; set => inner.ConnectionString = value!; }
+    public string ConnectionString { get => inner.ConnectionString; [param: AllowNull] set => inner.ConnectionString = value!; }
     public int ConnectionTimeout => inner.ConnectionTimeout;
     public string Database => inner.Database;
     public ConnectionState State => inner.State;
@@ -172,7 +175,7 @@ public sealed class PlainConnection(DbConnection inner) : IDbConnection {
 /// </summary>
 public sealed class PlainCommand(DbCommand inner) : IDbCommand {
     public DbCommand Inner => inner;
-    public string CommandText { get => inner.CommandText; set => inner.CommandText = value!; }
+    public string CommandText { get => inner.CommandText; [param: AllowNull] set => inner.CommandText = value!; }
     public int CommandTimeout { get => inner.CommandTimeout; set => inner.CommandTimeout = value; }
     public CommandType CommandType { get => inner.CommandType; set => inner.CommandType = value; }
     public IDbConnection? Connection { get => inner.Connection; set => inner.Connection = (DbConnection?)value; }

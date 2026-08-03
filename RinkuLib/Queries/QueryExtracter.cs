@@ -241,6 +241,11 @@ public unsafe ref struct QueryExtracter {
                 if (!PrevBoundary || CurrentQuote != 0)
                     continue;
                 PrevBoundary = false;
+                if (*CurrentChar == variableChar && CurrentChar[1] == variableChar) {
+                    Builder[BuilderInd++] = CurrentChar[1];
+                    CurrentChar++;
+                    continue;
+                }
                 if (TryManageVariable(variableChar)) { }
                 else if (*CurrentChar == JoinAndOrChar) {
                     if (IsOr(CurrentChar + 1) || IsAnd(CurrentChar + 1))

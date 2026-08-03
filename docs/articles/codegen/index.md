@@ -40,7 +40,7 @@ public static class DbCommands {
 }
 
 /// <Schema LastUpdated="2026-06-28T14:05" />
-public partial record GetTracksByAlbumResult(int Id, [TrueName("Track Name")] string TrackName, decimal UnitPrice);
+public partial record GetTracksByAlbumResult(int Id, [TrueName("Track Name")] string? Track_Name, decimal UnitPrice);
 ```
 
 Rules the generator follows:

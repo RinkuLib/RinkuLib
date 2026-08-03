@@ -315,7 +315,8 @@ satisfiable path. `IDbReadable` on `Artist` is the shortest fix.
 public record Artist(int Id, string Name) : IDbReadable;
 ```
 
-`[AreReadable]` on a constructor registers a whole graph, and `TypeParsingInfo.GetOrAdd<Artist>()` covers a
+`[AreReadable]` on a constructor registers its parameter types, and each generic parsing implementation may
+register its own direct generic arguments. `TypeParsingInfo.GetOrAdd<Artist>()` covers a
 type you cannot annotate, see [registration](../mapping/registration.md).
 
 When the columns are right and a slot has none, [objects](../mapping/objects.md#default-values) covers
@@ -508,6 +509,17 @@ class Args {
 ```csharp
 JsonSerializer.Deserialize<DynaObject>("{}", options);   // RINKU5007
 ```
+
+## RINKU5008, configuration changed after use {#rinku5008}
+
+```csharp
+var info = (DefaultTypeParsingInfo)TypeParsingInfo.GetOrAdd<ExternalRow>();
+_ = TypeParser.GetTypeParser<ExternalRow>(ref columns);
+info.UsePrivateMembers = true;   // RINKU5008
+```
+
+Default type options that change automatic discovery must be set before the type is first parsed. This
+keeps a configured shape from changing underneath an already built parser.
 
 A `DynaObject` takes its shape from the columns a reader returned, so there is nothing to rebuild it from
 on the way back in. Writing one to JSON works, reading one does not.

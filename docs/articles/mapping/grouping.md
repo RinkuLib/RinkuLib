@@ -2,6 +2,8 @@
 
 Rows fold into a value while their grouping rule holds. By default, this rule is inferred from the construction path. An explicit rule can be named instead, sitting either on a construction path or on the type.
 
+A grouping rule is a general boundary strategy. The library includes equality, composite equality, column, and method-based rules, but those are built-in choices, not the complete set of possible rules. A custom rule can use any state and comparison logic that fits the row shape.
+
 ## The default rule
 
 Every value before the first multi-row type (like a list, or a custom aggregate) forms the grouping rule. When any of those values change, a new value begins.
@@ -179,9 +181,9 @@ var employees = db.Query<List<Employee>>();
 
 ```
 
-## Method rules
+## A built-in method rule
 
-Equality is the built-in rule. A static method provides a custom rule. The method returns whether the value continues into the same group (`Same`) and the key to carry to the next row (`Next`).
+Equality is the simplest built-in rule. A static method is another built-in rule for boundaries that need custom state. The method returns whether the value continues into the same group (`Same`) and the key to carry to the next row (`Next`). Other rule implementations can use different inputs and state.
 
 Its parameters after the stored key are negotiated like any reader, supporting mapping attributes like `[Alt]`.
 
@@ -271,11 +273,11 @@ public class Sale : IDbReadable {
 
 ```
 
-Only **one rule source** can be used at a time on the same target (type, or specific path).
+Only one compatible rule declaration can be used at a time on the same target (type, or specific path). Declarations that belong to different rule families cannot be combined at that level.
 
 ```csharp
 public class InvalidBatch : IDbReadable {
-    // Throws ConflictingGroupKey: Cannot mix grouping rule types
+    // Throws ConflictingGroupKey: these declarations request incompatible rule families
     [GroupKeyMethod(nameof(ByWindow))]
     public InvalidBatch([GroupKey] int id, List<string> items) { ... }
 
@@ -286,19 +288,66 @@ public class InvalidBatch : IDbReadable {
 
 ## Setting the rule at runtime
 
+Configure grouping before the first parser is built for the type and result shape.
+The runtime rule replaces the rule found by attributes.
 
 ```csharp
 TypeParsingInfoHelper.SetGroupKey<Playlist>(nameof(Playlist.PlaylistId));                      // equality key
 TypeParsingInfoHelper.SetGroupKey<CustomerSummary>(nameof(CustomerSummary.CustomerId), "Country"); // composite
+TypeParsingInfoHelper.SetGroupKeyColumns<ImportRow>("AccountId", "Currency");                  // columns, no members needed
 TypeParsingInfoHelper.SetGroupKeyMethod<MonthlySalesReport>(nameof(MonthlySalesReport.ByMonth)); // method rule
 
-// Set a custom IGroupingRule on a specific construction path
-TypeParsingInfoHelper.SetGroupKey<Invoice>(customRule, typeof(int), typeof(List<InvoiceLine>)); 
+// Get a path, then configure the path itself
+var path = TypeParsingInfo.GetOrAdd<Invoice>()
+    .GetConstruction(typeof(int), typeof(List<InvoiceLine>));
+path.GroupKey = customRule;
 
+// Select the exact path when two factories have the same parameter types
+var factory = typeof(Invoice).GetMethod(nameof(Invoice.FromImport))!;
+TypeParsingInfo.GetOrAdd<Invoice>().GetConstruction(factory).GroupKey = customRule;
+
+// A path method rule uses the same public rule as [GroupKeyMethod]
+var method = typeof(Invoice).GetMethod(nameof(Invoice.SameInvoice))!;
+TypeParsingInfo.GetOrAdd<Invoice>()
+    .GetConstruction(typeof(int), typeof(List<InvoiceLine>)).GroupKey = new MethodGroupingRule(method);
+
+// Remove an attribute rule and let the normal fallback apply
+TypeParsingInfoHelper.ClearGroupKey<Invoice>();
+TypeParsingInfo.GetOrAdd<Invoice>().GetConstruction(factory).GroupKey = null;
+
+```
+
+Complete takeover uses the public interfaces. The library does not need to know the rule or the type metadata implementation.
+
+```csharp
+public sealed class MyTypeInfo : TypeParsingInfo, ICanUpdateGroupKey {
+    private readonly DefaultTypeParsingInfo inner = new(typeof(Invoice));
+    public IGroupingRule? GroupKey { get; set; }
+
+    public override void ValidateCanUseType(Type targetType)
+        => inner.ValidateCanUseType(targetType);
+
+    public override DbItemPlan? TryGetParser(
+        Type currentClosedType,
+        RecursiveInfo previousUsages,
+        ParamInfo paramInfo,
+        ColumnInfo[] columns,
+        ColModifier colModifier,
+        ref ColumnUsage colUsage,
+        MethodCtorInfo.AdditionalFlags callerFlags = default) {
+        inner.GroupKey = GroupKey;
+        return inner.TryGetParser(currentClosedType, previousUsages, paramInfo, columns,
+            colModifier, ref colUsage, callerFlags);
+    }
+}
+
+var info = new MyTypeInfo();
+TypeParsingInfo.AddOrSet<Invoice>(info);
+info.SetGroupKey(myRule); // any IGroupingRule implementation can take control
 ```
 
 ## Errors
 
 * `MissingGroupBoundary`, a value sits after a multi-row type with no rule to infer.
 * `GroupKeyUnmapped`, a declared key names a column the result does not carry.
-* `ConflictingGroupKey`, a member key and a method key on one type, or parameter keys and a method reference on one construction.
+* `ConflictingGroupKey`, incompatible grouping declarations on one type or one construction path. For example, two declarations may request different rule families at the same level.

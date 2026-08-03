@@ -40,16 +40,18 @@ static readonly QueryCommand GetArtistById =
 Artist artist = GetArtistById.Query<Artist>(cnn, new { id = 1 });
 ```
 
-Anonymous objects, records, and DTOs all work. A member with no matching parameter is ignored.
+Anonymous objects or any type works. A member with no matching parameter is simply ignored.
 
 ## Scalars and non-queries
 
 ```csharp
 static readonly QueryCommand CountArtists = new("SELECT COUNT(*) FROM artists");
 static readonly QueryCommand RenameArtist = new("UPDATE artists SET Name = @name WHERE ArtistId = @id");
+static readonly QueryCommand AddArtist = new("INSERT INTO artists (Name) VALUES (@name) RETURNING ArtistId");
 
-int total    = CountArtists.ExecuteScalar<int>(cnn);
-int affected = RenameArtist.Execute(cnn, new { id = 1, name = "Queen" });
+int total     = CountArtists.Query<int>(cnn);
+int affected  = RenameArtist.Execute(cnn, new { id = 1, name = "Queen" });
+int artistId  = AddArtist.ExecuteScalar<int>(cnn, new { name = "New Artist" });
 ```
 
 ## One command that adapts

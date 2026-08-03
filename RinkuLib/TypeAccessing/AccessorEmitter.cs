@@ -86,3 +86,17 @@ public class MemberValueEmitter(Type targetType, MemberInfo member) : IAccessorE
             il.Emit(OpCodes.Box, mType);
     }
 }
+
+/// <summary>
+/// Associates an accessor handler with a member, or with the whole parameter type when
+/// <see cref="Member"/> is <see langword="null"/>.
+/// </summary>
+/// <remarks>
+/// This is the runtime form of placing an <see cref="AccessorEmiterHandler"/> attribute
+/// on a type or member. It is useful when the parameter type cannot be modified.
+/// </remarks>
+public readonly record struct AccessorHandlerRegistration(MemberInfo? Member, AccessorEmiterHandler Handler) {
+    /// <summary>Creates a registration for the whole type.</summary>
+    public AccessorHandlerRegistration(AccessorEmiterHandler handler)
+        : this(null, handler) { }
+}
