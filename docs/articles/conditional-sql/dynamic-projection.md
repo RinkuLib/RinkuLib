@@ -110,9 +110,21 @@ SELECT Composer FROM tracks
 ```
 
 ```sql
-?SELECT DISTINCT ??? Title, Composer FROM tracks
+?SELECT DISTINCT??? Title, Composer FROM tracks
 
 -- only Composer on
+SELECT DISTINCT Composer FROM tracks
+```
+
+The wall keys nothing of its own, so the columns stay keyed by their names and the modifier it holds out belongs to none of them. Put a marker on the modifier to make it conditional too.
+
+```sql
+?SELECT /*UseDistinct*/DISTINCT??? Title, Composer FROM tracks
+
+-- Composer on, UseDistinct off
+SELECT Composer FROM tracks
+
+-- Composer and UseDistinct on
 SELECT DISTINCT Composer FROM tracks
 ```
 

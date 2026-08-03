@@ -47,41 +47,41 @@ TypeParsingInfo.GetOrAdd<Track>().UpdateNullColHandler(slot =>
         : null);                   // null leaves the slot as is
 ```
 
-## `[InvalidOnNull]`, collapse the object
+## `[AbortOnNull]`, collapse the object
 
-`[InvalidOnNull]` on a slot means that if its value is `NULL`, the object is not built at all. The typical case is an optional joined object, where a missing match leaves its columns all `NULL`.
+`[AbortOnNull]` on a slot means that if its value is `NULL`, the object is not built at all. The typical case is an optional joined object, where a missing match leaves its columns all `NULL`.
 
 ```csharp
-public record struct Package([InvalidOnNull] int TrackingId, double Weight) : IDbReadable;
+public record struct Package([AbortOnNull] int TrackingId, double Weight) : IDbReadable;
 
 public record Shipment(int Id, Package? Contents);
 // TrackingId NULL -> Contents is null, not a Package full of zeroes
 ```
 
-The runtime form is `SetInvalidOnNull`, the same simple-then-visitor pair as `UpdateNullColHandler` above. By slot name:
+The runtime form is `SetAbortOnNull`, the same simple-then-visitor pair as `UpdateNullColHandler` above. By slot name:
 
 ```csharp
-TypeParsingInfo.GetOrAdd<Package>().SetInvalidOnNull("TrackingId", true);
+TypeParsingInfo.GetOrAdd<Package>().SetAbortOnNull("TrackingId", true);
 ```
 
 Or the visitor overload, returning null to leave a slot as is:
 
 ```csharp
-TypeParsingInfo.GetOrAdd<Package>().SetInvalidOnNull(slot =>
+TypeParsingInfo.GetOrAdd<Package>().SetAbortOnNull(slot =>
     slot.Type == typeof(int) ? true : null);
 ```
 
 A collapse abandons the current object and lands on the slot that holds it. What happens there depends on that slot:
 
 - A nullable slot (a reference type or `Nullable<T>`) receives `null`.
-- A non-nullable slot throws, the same `NullValueAssignmentException` a plain `NULL` gives it. Mark that slot `[InvalidOnNull]` too and it collapses in turn, carrying the abandonment up to its own parent.
+- A non-nullable slot throws, the same `NullValueAssignmentException` a plain `NULL` gives it. Mark that slot `[AbortOnNull]` too and it collapses in turn, carrying the abandonment up to its own parent.
 - At the top level, the collapse is a null result. A null-accepting shape takes it as empty, `MaybeNull<T>` or `OptionalNullable<T>` for a reference type, `T?` for a struct. Plain `T`, `Optional<T>`, and `OptionalStruct<T>` throw. These are the same shapes that accept a `NULL` value, see [result shapes](../running-queries/result-shapes.md).
 
 ```csharp
-public record struct Bottom([InvalidOnNull] int Key, string Name) : IDbReadable;
-public record Middle(int Id, [InvalidOnNull] Bottom Bottom) : IDbReadable;
+public record struct Bottom([AbortOnNull] int Key, string Name) : IDbReadable;
+public record Middle(int Id, [AbortOnNull] Bottom Bottom) : IDbReadable;
 public record Top(int Id, Middle? Middle);
-// Bottom.Key is NULL -> Bottom collapses -> Middle's [InvalidOnNull] Bottom collapses Middle -> Top.Middle (nullable) is null
+// Bottom.Key is NULL -> Bottom collapses -> Middle's [AbortOnNull] Bottom collapses Middle -> Top.Middle (nullable) is null
 ```
 
 Note the difference with [result shapes](../running-queries/result-shapes.md): zero rows is a query-level outcome, a `NULL` column is a slot-level one.

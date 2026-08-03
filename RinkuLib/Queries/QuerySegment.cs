@@ -46,9 +46,6 @@ public record struct Condition(int CondIndex, int SegmentInd, int Length, int Nb
         int c = SegmentInd.CompareTo(other.SegmentInd);
         if (c != 0)
             return c;
-        c = other.Length.CompareTo(Length);
-        if (c != 0)
-            return c;
-        return other.NbConditionSkip.CompareTo(NbConditionSkip);
+        return other.Length.CompareTo(Length);
     }
 }

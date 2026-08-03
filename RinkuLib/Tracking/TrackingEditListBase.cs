@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 
@@ -20,7 +20,7 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
             OnListChanged(new ListChangedEventArgs(ListChangedType.ItemChanged, index));
         }
     }
-    private TEdit GetValue(int index) => Get(index).CurrentValue ?? throw new Exception($"No values were available to display at index {index}");
+    private TEdit GetValue(int index) => Get(index).CurrentValue ?? throw new RinkuTrackingException(ErrorCodes.NoCurrentValue, $"No values were available to display at index {index}");
     /// <inheritdoc/>
     public bool HasEditValue(int index, [MaybeNullWhen(false)] out TEdit editValue) {
         ref var item = ref Get(index);
@@ -221,7 +221,7 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
     /// <summary>A typed implementation of <see cref="IBindingList.AddNew"/></summary>
     public virtual TEdit AddNew() {
         if (_addNewFactory is null)
-            throw new InvalidOperationException("Cannot add a new item. Provide a factory or handle the AddingNew event.");
+            throw new RinkuTrackingException(ErrorCodes.NoAddNewFactory, "Cannot add a new item. Provide a factory or handle the AddingNew event");
 
         var newItem = _addNewFactory();
         EndNew(_addNewPos);

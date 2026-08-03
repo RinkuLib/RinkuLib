@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Reflection.Emit;
 using RinkuLib.Tools;
 
@@ -17,7 +17,7 @@ public sealed class ForBoolCondAttribute : AccessorEmiterHandler {
         ArgumentNullException.ThrowIfNull(member);
         if (!(member is PropertyInfo p && p.PropertyType == typeof(bool)
             || member is FieldInfo f && f.FieldType == typeof(bool)))
-            throw new Exception($"When using {typeof(ForBoolCondAttribute)}, the type must be of type {typeof(bool)}");
+            throw new RinkuConfigurationException(ErrorCodes.AttributeOnWrongMemberType, $"When using {typeof(ForBoolCondAttribute)}, the type must be of type {typeof(bool)}");
         var index = mapper.GetIndex(member.Name);
         if (index < 0)
             return;

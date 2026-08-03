@@ -1,5 +1,11 @@
 # Coming from Dapper
 
+This page compares the core `Dapper` package and its `Dapper.SqlBuilder`
+companion with Rinku. It is based on Dapper's public API and the upstream
+[`tests/Dapper.Tests`](https://github.com/DapperLib/Dapper/tree/main/tests/Dapper.Tests)
+cases. `Dapper.Rainbow` and the Entity Framework packages are separate
+libraries and are outside this comparison.
+
 RinkuLib began as a Dapper extension, so the patterns carry over. There are two calling styles, and both mirror a Dapper call.
 
 - Hand the SQL to the connection. This reads almost like Dapper, and the command is built once and cached by the string.
@@ -37,14 +43,14 @@ Each reads either way, `cnn.Query<List<T>>(sql, p)` or `cmd.Query<List<T>>(cnn, 
 
 ## Parameters
 
-The anonymous-object habit carries over unchanged, and records or DTOs work the same. Member names match variables case-insensitively, unmatched members are ignored.
+The anonymous-object habit carries over unchanged. Any object or struct with public readable fields or properties can supply values. Member names match variables case-insensitively, and unmatched members are ignored.
 
 ```csharp
 // Dapper
-cnn.Query<Album>("... WHERE ArtistId = @artistId", new { artistId = 1 });
+cnn.Query<Album>("... WHERE ArtistId = @artistId", new { ArtistID = 1 });
 
 // RinkuLib
-cnn.Query<List<Album>>("... WHERE ArtistId = @artistId", new { artistId = 1 });
+cnn.Query<List<Album>>("... WHERE ArtistId = @artistId", new { ArtistID = 1 });
 ```
 
 When C# logic should set the values instead of an object, a builder is the other road.
@@ -56,6 +62,204 @@ List<Album> albums = b.Query<List<Album>>(cnn);
 ```
 
 The extra abilities (usage attributes, builders) are on [supplying values](../running-queries/parameters.md).
+
+## Dapper capabilities in Rinku
+
+This is a capability comparison, not a list of matching method names. Rinku moves
+some choices from the call to the cached command, the result type, registration,
+or a composable handler.
+
+| Dapper operation | Rinku expression |
+| --- | --- |
+| `Execute(sql, parameters)` | `QueryCommand.Execute` or `QueryBuilder.Execute` |
+| `Execute(sql, IEnumerable<T>)` | one `QueryBuilderCommand` and `UseWith` for each item |
+| `ExecuteReader` for a `DataTable` or `DataSet` | `ExecuteReader`, then use the returned reader directly |
+| stored procedure execution | `CommandType.StoredProcedure` or `StoredProcedure` registration |
+| output and return-value parameters | directional `DbParamInfo`, then read the handed-back command |
+| `DynamicParameters` | `QueryBuilder`, a registered parameter object, or `DbParamInfo` |
+| `SqlBuilder` | conditional SQL and handlers |
+| `QueryMultiple` | `ExecuteMultiReader` and `MultiReader` |
+| `GetRowParser<T>` | `TypeParser.GetTypeParser<T>` and type registration |
+| per-row type switching | `GetCurrentSetParser<T>` or a custom parser selected by the caller |
+| multi-map with `splitOn` | registered nested types, tuples, or a custom construction path |
+| custom result type handler | `TypeConverterRegistry`, `ITypeConverter`, or a custom parser |
+| custom parameter type handler | `ConvertedDbParamInfo<T>` or a custom `DbParamInfo` |
+| `DbString` | a `DbParamInfo` that sets provider type, size, and encoding |
+| table-valued parameter | a provider-specific `DbParamInfo` |
+| literal replacement (`{=value}`) | query handlers such as `_N`, `_S`, and `_R` |
+| `dynamic` result | `DynaObject` |
+| buffered and unbuffered queries | `List<T>`, `IEnumerable<T>`, and `StreamQueryAsync<T>` |
+| async, cancellation, transactions, and timeout | the async, cancellation, transaction, and timeout overloads |
+
+For the upstream core operations and test cases, Rinku has an expression of
+the same underlying capability. The APIs are not identical, and Rinku's null
+and registration rules remain its own rules.
+
+The batch form is not a missing capability. It is a small wrapper around a
+reusable command, and the explicit loop leaves the caller in control of each
+item:
+
+```csharp
+var update = new QueryCommand(
+    "UPDATE tracks SET Name = @name WHERE Id = @id");
+using var command = cnn.CreateCommand();
+var batch = update.StartBuilder(command);
+
+foreach (var item in items) {
+    batch.UseWith(item);       // conditions, handlers, and custom DbParamInfo still apply
+    batch.Execute();           // the same DbCommand is reused
+}
+```
+
+The equivalent Dapper call chooses the parameter object and performs the loop
+inside Dapper:
+
+```csharp
+cnn.Execute(
+    "UPDATE tracks SET Name = @name WHERE Id = @id",
+    items);
+```
+
+The difference is the location of the loop, not the database operation or the
+mapping capability.
+
+For example, a multiple-result query and a dynamic result use the same cached
+command and reader infrastructure:
+
+```csharp
+var builder = Search.StartBuilder();
+builder.Use("@artistId", 1);
+builder.Use("WithTracks");
+
+using var multi = builder.ExecuteMultiReader(cnn);
+List<Album> albums = multi.Query<List<Album>>();
+List<Track> tracks = multi.Query<List<Track>>();
+
+// A Dapper dynamic row is read as Rinku's dynamic shape.
+List<DynaObject> rows = Search.Query<List<DynaObject>>(cnn, new { artistId = 1 });
+```
+
+Dapper provider cases can be reproduced through Rinku's provider-neutral entrypoints. Rinku does not pretend
+to be a provider implementation. The provider adapter supplies the provider-specific operation, while Rinku
+keeps the command and mapping pipeline generic:
+
+```csharp
+// The adapter knows how to read the provider's native array value.
+DbColumnReaderRegistry.Register<Array, int[]>(
+    (reader, ordinal) => reader.GetFieldValue<int[]>(ordinal));
+```
+
+The adapter can also take complete control of a provider parameter through `DbParamInfo`. Other provider
+seams include `IDbParamInfoGetter.ParamGetterMakers` for reading provider-resolved parameter metadata and
+`StoredProcedure.ParameterDeriver` for provider procedure metadata. A Dapper test that exercises provider
+behavior uses the same SQL and result shape, then installs the provider behavior through one of these seams.
+The provider is external to Rinku, but the capability remains available to the application.
+
+Positional parameters follow the same rule. Rinku does not rewrite named SQL into `?` placeholders, but a
+caller can provide positional SQL and an external `DbParamInfo` that creates the provider parameters in order:
+
+```csharp
+using System.Data;
+
+var query = new QueryCommand(
+    "UPDATE tracks SET Name = ? WHERE Id = ?",
+    ["0", "1"],
+    CommandType.Text);
+
+query.UpdateParamCache("@0", new PositionalParamInfo());
+query.UpdateParamCache("@1", new PositionalParamInfo());
+var positional = query.StartBuilder();
+positional.Use("@0", "Live");
+positional.Use("@1", 7);
+positional.Execute(cnn);
+```
+
+The SQL remains provider-specific, but the registration and execution path remain under the caller's control.
+
+Dapper multi-map uses `splitOn` because its mapping is chosen for one run. Rinku registers the nested types
+once, then negotiation finds their columns from the type and name rules:
+
+```csharp
+public class RegisteredChild {
+    public int Id { get; set; }
+    public string Name { get; set; } = null!;
+}
+public record RegisteredParent(int Id, RegisteredChild Child) : IDbReadable;
+
+_ = TypeParsingInfo.GetOrAdd<RegisteredChild>();
+static readonly QueryCommand Query = new("SELECT Id, ChildId, ChildName FROM rows");
+RegisteredParent row = Query.Query<RegisteredParent>(cnn);
+// Id | ChildId | ChildName -> RegisteredParent(Id, RegisteredChild(Id, Name))
+```
+
+There is no per-run split string. A user-controlled `TypeParsingInfo` or construction path can replace the
+default negotiation when the normal names are not enough.
+
+## Differences to keep in mind
+
+Rinku keeps its own null rule. A null column is accepted by a nullable slot, and a non-nullable slot
+raises `NullValueAssignmentException`. Dapper can leave a constructor or member default in this case when
+`ApplyNullValues` is off. The Rinku tests assert the Rinku rule instead of copying that setting.
+
+The same rule applies to a custom value type. Give the type a construction path or register one, then use
+the normal parameter path when writing it:
+
+```csharp
+public readonly record struct LocalDate(DateTime Value) : IDbReadable;
+
+public sealed record Invoice(LocalDate Date) : IDbReadable;
+
+// Read: a DateTime Value column can use LocalDate(DateTime).
+// The convenience registries cover the common custom scalar case.
+TypeConverterRegistry.Register<DateTime, RegisteredDate>(value => new RegisteredDate(value.AddDays(1)));
+
+// For a provider-specific or multi-step binding rule, implement DbParamInfo directly.
+sealed class LocalDateParam : DbParamInfo
+{
+    public LocalDateParam() : base(true) { }
+
+    public override bool SaveUse(string name, IDbCommand cmd, ref object value)
+    {
+        var p = Add(name, cmd, (LocalDate)value);
+        value = p;
+        return true;
+    }
+
+    public override bool Use(string name, IDbCommand cmd, object value)
+    {
+        Add(name, cmd, (LocalDate)value);
+        return true;
+    }
+
+    public override bool Use(string name, DbCommand cmd, object value)
+    {
+        Add(name, cmd, (LocalDate)value);
+        return true;
+    }
+
+    private static IDbDataParameter Add(string name, IDbCommand cmd, LocalDate value)
+    {
+        var p = (IDbDataParameter)cmd.CreateParameter();
+        p.ParameterName = name;
+        p.DbType = DbType.DateTime;
+        p.Value = value.Value;
+        cmd.Parameters.Add(p);
+        return p;
+    }
+
+    public override bool Update(IDbCommand cmd, ref object current, object newValue)
+    {
+        ((IDbDataParameter)current).Value = ((LocalDate)newValue).Value;
+        return true;
+    }
+
+    public override void Remove(IDbCommand cmd, object current)
+        => DbParamInfo.RemoveSingle(((IDbDataParameter)current).ParameterName, cmd);
+}
+```
+
+The convenience registries are optional default implementations. `ITypeConverter` and `DbParamInfo` remain
+the complete-takeover interfaces when their options are not enough.
 
 ## IN clauses
 

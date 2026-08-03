@@ -109,15 +109,6 @@ public interface ITypeParser<T> : ITypeParser {
     /// <inheritdoc cref="Query(DbCommand, ICache, bool)"/>
     public Task<T> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default);
 }
-/// <summary>
-/// A parser that must see the reader before it can work, for a shape whose plan depends on the actual columns.
-/// </summary>
-public interface IInitableTypeParser<T> : ITypeParser<T> {
-    /// <summary>Prepares the parser from the command and its reader, before the first row is read.</summary>
-    public void Init(IDbCommand cmd, DbDataReader reader);
-    /// <inheritdoc cref="Init"/>
-    public Task InitAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default);
-}
 /// <summary>Helpers for bridging sequences into async streams.</summary>
 public static class EnumHelper {
     /// <summary>Wraps a synchronous sequence as an <see cref="IAsyncEnumerable{T}"/>, honoring cancellation between items.</summary>

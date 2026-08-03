@@ -1,4 +1,4 @@
-﻿namespace RinkuLib.DbParsing;
+namespace RinkuLib.DbParsing;
 
 /// <summary>A simple struct used track the usage of the columns</summary>
 public ref struct ColumnUsage(Span<bool> Span) {
@@ -20,7 +20,7 @@ public ref struct ColumnUsage(Span<bool> Span) {
     /// </summary>
     public readonly void InitCheckpoint(Span<bool> checkpoint, out int lastUsed) {
         if (checkpoint.Length != Span.Length)
-            throw new Exception($"must be the same length expected:{Span.Length} actual:{checkpoint.Length}");
+            throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"must be the same length expected:{Span.Length} actual:{checkpoint.Length}");
         for (var i = 0; i < Span.Length; i++)
             checkpoint[i] = Span[i];
         lastUsed = LastIndexUsed;
@@ -30,7 +30,7 @@ public ref struct ColumnUsage(Span<bool> Span) {
     /// </summary>
     public void Rollback(scoped Span<bool> checkpoint, int lastUsed) {
         if (checkpoint.Length != Span.Length)
-            throw new Exception($"must be the same length expected:{Span.Length} actual:{checkpoint.Length}");
+            throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"must be the same length expected:{Span.Length} actual:{checkpoint.Length}");
         for (var i = 0; i < Span.Length; i++)
             Span[i] = checkpoint[i];
         LastIndexUsed = lastUsed;

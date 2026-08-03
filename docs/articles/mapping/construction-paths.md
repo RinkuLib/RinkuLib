@@ -86,7 +86,17 @@ TypeParsingInfo.GetOrAdd(typeof(Box<>))
 // Box<int> builds through Create<int>, Box<string> through Create<string>, from the one registration
 ```
 
-Two rules apply to the method's shape. Its type arguments must match the returned type's exactly (order and count), and its declaring type cannot itself be generic, the engine needs a fixed host to resolve the call. A factory declared on the generic type itself is instead non-generic (`static Box<T> Create(T)` inside `Box<T>`), since the type already supplies the parameter, and that form is discovered without registering anything.
+Two rules apply to the method's shape. Its type arguments must match the returned type's exactly (order and count), and its declaring type cannot itself be generic, the engine needs a fixed host to resolve the call.
+
+Where the type parameter comes from is what decides the shape. On an outside host the method supplies it, above. On the type itself the type already supplies it, so the factory carries none and is found without registering anything.
+
+```csharp
+public class Box<T> {
+    internal Box(T value) => Value = value;
+    public T Value { get; }
+    public static Box<T> Create(T value) => new(value);   // found on its own
+}
+```
 
 ### Replacing the set
 
@@ -101,6 +111,32 @@ if (TypeParsingInfo.GetOrAdd<UserProfile>() is ICanProvideConstructions info) {
 ```
 
 Assigning validates every entry (the result must be assignable to the type) and throws otherwise.
+
+## Configuring one path
+
+Get the path from the type info. The returned object owns its path settings.
+
+```csharp
+var info = TypeParsingInfo.GetOrAdd<UserProfile>();
+var path = info.GetConstruction(typeof(int), typeof(string));
+
+path.GroupKey = new EqualityGroupingRule(["Id"]);
+path.Flags |= MethodCtorInfo.AdditionalFlags.CanCompleteWithMembers;
+
+// Path parameters own their matching and null rules.
+path.Parameters[0].UpdateAltName(_ => new NameComparer("UserId"));
+path.Parameters[1].SetAbortOnNull(true);
+```
+
+Use the exact constructor or factory when parameter types are not enough.
+
+```csharp
+var factory = typeof(UserProfile).GetMethod(nameof(UserProfile.FromImport))!;
+var path = info.GetConstruction(factory);
+path.GroupKey = customRule;
+```
+
+The same path object is used for grouping, flags, parameters, names, null handling, and any future path setting. Type-level helpers configure only type-level behavior.
 
 ## Post-construction members
 

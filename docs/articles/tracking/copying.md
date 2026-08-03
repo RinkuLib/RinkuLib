@@ -39,3 +39,21 @@ Invoice snapshot = invoice.Copy();
 ## Custom clone logic
 
 Implement `ICopyable<T>` to take over the whole clone for a type. For direct collection clones without a containing object, `CollectionCopyExtensions` offers shallow (shared elements) and deep (cloned elements) copies.
+
+When the type is external, register a field plan during setup:
+
+```csharp
+public sealed class ExternalInvoice {
+    public Address Address = null!;
+}
+
+Copier<ExternalInvoice>.RegisterFieldPlan(
+    typeof(ExternalInvoice).GetField(nameof(ExternalInvoice.Address))!,
+    new CopyAttribute());
+
+ExternalInvoice snapshot = source.Copy()!;
+// Address is cloned even though ExternalInvoice has no attributes.
+```
+
+`ICopyFieldPlan` is the core contract. `CopyAttribute`, `ShallowCollectionAttribute`,
+`DeepCollectionAttribute`, and `CopyUsingMethodAttribute` are built-in implementations.

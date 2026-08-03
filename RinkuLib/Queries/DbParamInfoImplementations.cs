@@ -18,8 +18,7 @@ public sealed class ScaledDbParamCache(DbType type, byte precision, byte scale) 
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
         p.DbType = Type;
-        p.Precision = Precision;
-        p.Scale = Scale;
+        SetPrecisionScale(p, Precision, Scale);
         p.Value = value;
         cmd.Parameters.Add(p);
         return true;
@@ -40,8 +39,7 @@ public sealed class ScaledDbParamCache(DbType type, byte precision, byte scale) 
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
         p.DbType = Type;
-        p.Precision = Precision;
-        p.Scale = Scale;
+        SetPrecisionScale(p, Precision, Scale);
         p.Value = value;
         cmd.Parameters.Add(p);
         value = p;
@@ -65,6 +63,17 @@ public sealed class ScaledDbParamCache(DbType type, byte precision, byte scale) 
     /// <inheritdoc/>
     public override void Remove(IDbCommand cmd, object? currentValue)
         => cmd.Parameters.Remove(currentValue);
+
+    internal static void SetPrecisionScale(IDbDataParameter p, byte precision, byte scale) {
+        if (p is DbParameter dp) {
+            dp.Precision = precision;
+            dp.Scale = scale;
+        }
+        else {
+            p.Precision = precision;
+            p.Scale = scale;
+        }
+    }
 }
 
 /// <summary>
@@ -85,8 +94,7 @@ public sealed class DirectionalScaledDbParamCache(ParameterDirection direction, 
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
         p.DbType = Type;
-        p.Precision = Precision;
-        p.Scale = Scale;
+        ScaledDbParamCache.SetPrecisionScale(p, Precision, Scale);
         p.Value = value;
         p.Direction = Direction;
         cmd.Parameters.Add(p);
@@ -109,8 +117,7 @@ public sealed class DirectionalScaledDbParamCache(ParameterDirection direction, 
         var p = cmd.CreateParameter();
         p.ParameterName = paramName;
         p.DbType = Type;
-        p.Precision = Precision;
-        p.Scale = Scale;
+        ScaledDbParamCache.SetPrecisionScale(p, Precision, Scale);
         p.Value = value;
         p.Direction = Direction;
         cmd.Parameters.Add(p);

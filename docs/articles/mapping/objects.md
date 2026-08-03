@@ -19,7 +19,63 @@ public class Playlist {                                         // parameterless
 }
 ```
 
+Private members stay out of automatic discovery unless the default parsing info opts in:
+
+```csharp
+public class ExternalRow : IDbReadable
+{
+    private int Id { get; set; }
+    public int ReadId() => Id;
+}
+
+var info = (DefaultTypeParsingInfo)TypeParsingInfo.GetOrAdd<ExternalRow>();
+info.UsePrivateMembers = true;
+// The Id column now fills the private setter.
+```
+
+The flag affects the default implementation only. A custom `TypeParsingInfo` remains free to choose its
+own member rules, and an individual member can always be registered explicitly.
+
 A column matches a slot when the name matches (case-insensitive) and the type is convertible. Among the viable paths, the engine takes the first one the columns fully satisfy. Paths are kept most-specific first, so that first match is usually correct. The exact ordering is on [construction paths](construction-paths.md).
+
+## Exact scalar types
+
+Conversion is the default:
+
+```csharp
+public record Amount(int Value);
+
+// Value is int, the column is long: the path is still valid
+```
+
+Use `[ExactType]` when a parameter or member must receive the same type as the column:
+
+```csharp
+public record StrictAmount([ExactType] int Value);
+
+public class StrictRow : IDbReadable {
+    [ExactType]
+    public int Value { get; set; }
+}
+
+// StrictAmount with an int column: valid
+// StrictAmount with a long column: no matching path
+// StrictRow with a long column: no matching path
+```
+
+The runtime form uses the extended slot matcher:
+
+```csharp
+var path = TypeParsingInfo.GetOrAdd<StrictAmount>()
+    .GetConstruction(typeof(int));
+var slot = path.Parameters[0] as ParamInfoPlus
+    ?? new ParamInfoPlus(path.Parameters[0].Type, path.Parameters[0].NullColHandler,
+        path.Parameters[0].NameComparer, IColModifier.Nothing, IFallbackParserGetter.Nothing);
+slot.RequireExactType = true;
+path.Parameters[0] = slot;
+```
+
+Nullable targets still compare their underlying type. `[ExactType] int?` accepts an `int` column that may contain `NULL`, but not a `long` column.
 
 ## Default values
 

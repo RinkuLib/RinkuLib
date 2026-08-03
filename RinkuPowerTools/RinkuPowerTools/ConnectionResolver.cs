@@ -25,7 +25,7 @@ public static class ConnectionResolver {
             ConnectionSourceType.LaunchSettings => await ParseLaunchSettingsAsync(projectDirectory, extractionPath, ct),
             ConnectionSourceType.VsDataConnection => await ParseVsDataConnectionAsync(target, ct),
             ConnectionSourceType.CloudSecret => await ParseCloudSecretAsync(target, extractionPath, ct),
-            _ => throw new NotImplementedException($"Resolution for {sourceType} is not fully implemented.")
+            _ => throw new NotSupportedException($"Connection source '{sourceType}' is not supported.")
         };
     }
 
@@ -189,13 +189,13 @@ public static class ConnectionResolver {
     }
 
     private static Task<string> ParseVsDataConnectionAsync(string connectionName, CancellationToken ct) {
-        throw new NotImplementedException("Retrieving connections from Visual Studio Server Explorer out-of-process requires IVsDataConnectionManager via BrokeredServices.");
+        throw new NotSupportedException("Visual Studio Server Explorer connections require the Visual Studio brokered service and are not available to this resolver.");
     }
 
     private static Task<string> ParseCloudSecretAsync(string vaultUri, string? secretName, CancellationToken ct) {
         if (string.IsNullOrWhiteSpace(secretName))
             throw new ArgumentException("Cloud Vault requires a secret name.");
 
-        throw new NotImplementedException("Cloud Key Vault resolution requires Azure.Identity package integration.");
+        throw new NotSupportedException("Cloud Key Vault resolution requires an application-provided Azure credential integration.");
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
@@ -16,7 +16,8 @@ public class CanCompleteWithMembersAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
 public sealed class AreReadableAttribute : Attribute;
 /// <summary>
-/// A validated candidate for object instantiation, wrapping a 
+/// A validated candidate for object instantiation, wrapping a
+/// A validated candidate for object instantiation, wrapping a
 /// <see cref="ConstructorInfo"/> or static <see cref="MethodInfo"/>.
 /// </summary>
 public class MethodCtorInfo {
@@ -31,14 +32,20 @@ public class MethodCtorInfo {
         /// <summary>
         /// Will automaticaly register the type of tha parameters if they are not allready registered
         /// </summary>
-        ParametersAreReadable = 0b10
+        ParametersAreReadable = 0b10,
     }
     /// <summary>The constructor or static method used for instantiation.</summary>
     public readonly MethodBase MethodBase;
     /// <summary>The matchers for each parameter in the method signature.</summary>
     public readonly ParamInfo[] Parameters;
     /// <summary>Flags indicating additional info used in various situations</summary>
-    public readonly AdditionalFlags Flags;
+    public AdditionalFlags Flags {
+        get => field;
+        set {
+            field = value;
+            TypeParsingInfo.TouchConfiguration();
+        }
+    }
     /// <summary>
     /// Indicate that the engine can continue to map additional properties or fields 
     /// after the primary method/constructor has been called.
@@ -52,7 +59,31 @@ public class MethodCtorInfo {
     /// Resolves the type that this method/constructor produces.
     /// </summary>
     public Type TargetType => MethodBase is MethodInfo method ? method.ReturnType : MethodBase.DeclaringType
-                ?? throw new InvalidOperationException($"{nameof(MethodBase)} must be a {nameof(MethodInfo)} or a {nameof(ConstructorInfo)} and have a DeclaringType.");
+                ?? throw new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, $"{nameof(MethodBase)} must be a {nameof(MethodInfo)} or a {nameof(ConstructorInfo)} and have a DeclaringType");
+    private IGroupingRule? _groupKey;
+    private bool _groupKeyResolved;
+    /// <summary>
+    /// The grouping rule this construction declares, its <see cref="GroupKeyAttribute"/> parameters or a
+    /// <see cref="GroupKeyMethodAttribute"/>, which overrides the type-level rule when this construction is chosen.
+    /// <see langword="null"/> when it declares none, so the type's rule (or the default) applies. Read once from the
+    /// attributes, or set directly to override a construction's boundary at registration time.
+    /// </summary>
+    public IGroupingRule? GroupKey {
+        get {
+            if (!_groupKeyResolved) {
+                _groupKey = MakeGroupKey(MethodBase);
+                _groupKeyResolved = true;
+            }
+            return _groupKey;
+        }
+        set {
+            _groupKey = value;
+            _groupKeyResolved = true;
+            TypeParsingInfo.TouchConfiguration();
+        }
+    }
+    private static IGroupingRule? MakeGroupKey(MethodBase construction)
+        => GroupKeyScan.Resolve(construction.DeclaringType!, [construction, .. construction.GetParameters()]);
     /// <summary>
     /// Initializes a new instance of <see cref="MethodCtorInfo"/>.
     /// </summary>
@@ -134,19 +165,19 @@ public class MethodCtorInfo {
     /// <returns>An <see cref="Exception"/> if invalid, otherwise null.</returns>
     public static Exception? Validate(MethodBase methodBase, ParamInfo[]? parameters) {
         if (parameters is null)
-            return new Exception("parameters cant be null");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "parameters cant be null");
         if (parameters.Length == 0)
-            return new Exception("cannot use parameterless ctor or method");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "cannot use parameterless ctor or method");
         var methodParameters = methodBase.GetParameters();
         if (methodParameters.Length != parameters.Length)
-            return new Exception("all the parameters must match with the ctor or method parameters");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "all the parameters must match with the ctor or method parameters");
         for (int i = 0; i < parameters.Length; i++)
             if (methodParameters[i].ParameterType != parameters[i].Type)
-                return new Exception("all the parameters must match with the ctor or method parameters");
+                return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "all the parameters must match with the ctor or method parameters");
         if (methodBase is ConstructorInfo)
             return null;
         if (methodBase is not MethodInfo method)
-            return new Exception("methodBase base must be constructorInfo or methodInfo");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "methodBase base must be constructorInfo or methodInfo");
         return ValidateMethodReturn(method);
     }
     /// <summary>
@@ -154,26 +185,26 @@ public class MethodCtorInfo {
     /// </summary>
     public static Exception? ValidateMethodReturn(MethodInfo method) {
         if (!method.IsStatic)
-            return new Exception("method must be static");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must be static");
         if (method.DeclaringType == method.ReturnType) {
             if (method.IsGenericMethod)
-                return new Exception("static method from the same type must be nonGeneric");
+                return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory on the type it builds takes its type parameters from that type, so it must not be generic itself");
             return null;
         }
         if (!method.ReturnType.IsGenericType) {
             if (method.IsGenericMethod)
-                return new Exception("method should not be generic");
+                return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory returning a non-generic type must not be generic itself");
             return null;
         }
         if (!method.IsGenericMethod)
-            return new Exception("method should have the same generic parameters as returning type");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must carry the same type parameters as the type it returns, in the same order");
         var typeArgs = method.ReturnType.GetGenericArguments();
         var methodArgs = method.GetGenericArguments();
         if (typeArgs.Length != methodArgs.Length)
-            return new Exception("method should have the same generic parameters as returning type");
+            return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must carry the same type parameters as the type it returns, in the same order");
         for (int j = 0; j < typeArgs.Length; j++)
             if (typeArgs[j] != methodArgs[j])
-                return new Exception("method should have the same generic parameters as returning type");
+                return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must carry the same type parameters as the type it returns, in the same order");
         return null;
     }
     /// <summary>
@@ -233,7 +264,7 @@ public class MethodCtorInfo {
             return false;
         for (int i = 0; i < Parameters.Length; i++) {
             if (Parameters[i].Type != b.Parameters[i].Type ||
-                string.Equals(Parameters[i].NameComparer.GetDefaultName(), b.Parameters[i].NameComparer.GetDefaultName(), StringComparison.OrdinalIgnoreCase)) {
+                !string.Equals(Parameters[i].NameComparer.GetDefaultName(), b.Parameters[i].NameComparer.GetDefaultName(), StringComparison.OrdinalIgnoreCase)) {
                 return false;
             }
         }

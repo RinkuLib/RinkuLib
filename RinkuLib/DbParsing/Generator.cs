@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
@@ -35,9 +35,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
 
     private int labelCounter = 0;
 
-    // ----------------------------------------
-    // LOCALS
-    // ----------------------------------------
     /// <summary>
     /// An wrapper to reuse locals instead of creating a new one each time
     /// </summary>
@@ -61,16 +58,11 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // LABELS
-    // ----------------------------------------
     /// <inheritdoc/>
     public override Label DefineLabel() {
         var label = Il.DefineLabel();
         var name = $"L{labelCounter++:000}";
         LabelNames[label] = name;
-
-        //Write($"[IL] DefineLabel {name}");
         return label;
     }
 
@@ -82,9 +74,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // BASIC EMITS
-    // ----------------------------------------
     /// <inheritdoc/>
     public override int ILOffset => Il.ILOffset;
 
@@ -146,9 +135,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // COMPLEX EMITS
-    // ----------------------------------------
     /// <inheritdoc/>
     public override void Emit(OpCode opcode, Label label) {
         var name = LabelNames.TryGetValue(label, out var n) ? n : "(unknown)";
@@ -170,23 +156,32 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
 
     /// <inheritdoc/>
     public override void Emit(OpCode opcode, ConstructorInfo con) {
-        Write($"[IL] Emit {opcode} ctor {con.DeclaringType.ShortName()}..ctor({ShortParams(con)})");
+        Write(Describe($"[IL] Emit {opcode} ctor ", () => $"{con.DeclaringType.ShortName()}..ctor({ShortParams(con)})", con.Name));
         Il.Emit(opcode, con);
     }
 
     /// <inheritdoc/>
     public override void Emit(OpCode opcode, MethodInfo meth) {
-        Write($"[IL] Emit {opcode} {meth.ReturnType.ShortName()} {meth.DeclaringType.ShortName()}.{meth.Name}({ShortParams(meth)})");
+        Write(Describe($"[IL] Emit {opcode} ", () => $"{meth.ReturnType.ShortName()} {meth.DeclaringType.ShortName()}.{meth.Name}({ShortParams(meth)})", meth.Name));
         Il.Emit(opcode, meth);
     }
 
     /// <inheritdoc/>
     public override void Emit(OpCode opcode, FieldInfo field) {
-        Write($"[IL] Emit {opcode} {field.FieldType.ShortName()} {field.DeclaringType.ShortName()}.{field.Name}");
+        Write(Describe($"[IL] Emit {opcode} ", () => $"{field.FieldType.ShortName()} {field.DeclaringType.ShortName()}.{field.Name}", field.Name));
         Il.Emit(opcode, field);
     }
     private static string ShortParams(MethodBase method) {
         return string.Join(", ", method.GetParameters().Select(p => p.ParameterType.ShortName()));
+    }
+    /// <summary>Describes a member for the trace, falling back to its name when it is a builder whose type is not yet baked.</summary>
+    private static string Describe(string prefix, Func<string> full, string name) {
+        try {
+            return prefix + full();
+        }
+        catch (NotSupportedException) {
+            return prefix + name;
+        }
     }
 
     /// <inheritdoc/>
@@ -196,9 +191,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // CALL EMITS
-    // ----------------------------------------
     /// <inheritdoc/>
     public override void EmitCall(OpCode opcode, MethodInfo methodInfo, Type[]? optionalParameterTypes) {
         Write($"[IL] EmitCall {opcode} method={methodInfo.DeclaringType.ShortName()}.{methodInfo.Name}({ShortParams(methodInfo)})");
@@ -218,9 +210,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     }
 
 
-    // ----------------------------------------
-    // EXCEPTIONS + SCOPE
-    // ----------------------------------------
     /// <inheritdoc/>
     public override Label BeginExceptionBlock() {
         Write("[IL] BeginExceptionBlock");

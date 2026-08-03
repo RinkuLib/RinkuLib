@@ -6,7 +6,9 @@ How a `DbParameter` gets its type and size. The default needs no configuration. 
 
 1. On a variable's first use, a plain `DbParameter` is created with just the value. The provider infers the rest.
 2. Right after execution, the command captures each parameter's resolved metadata (type, size) and caches it.
-3. Every later call binds that parameter precisely, which helps plan reuse and driver overhead.
+3. Every later call binds that parameter from the cache, which helps plan reuse and driver overhead.
+
+A captured size is rounded up to 100, 500, 4000, or unbounded before it is cached, so a `varchar` learned at 50 binds at 100. Sizes group into a handful of buckets instead of one cache entry per length, and a plan is reused across calls whose values differ in length. Pin the size yourself, below, when a parameter needs an exact one.
 
 ## Setting it yourself
 
@@ -15,6 +17,26 @@ Pin a parameter's metadata up front instead of letting it be learned.
 ```csharp
 TrackCmd.UpdateParamCache("@Name", TypedDbParamCache.Get(DbType.AnsiStringFixedLength, 1000));
 ```
+
+## Converting a custom parameter value
+
+Use `ConvertedDbParamInfo<T>` when the value needs conversion but the normal parameter lifecycle is enough.
+
+```csharp
+sealed class NamesParam : ConvertedDbParamInfo<Names>
+{
+    protected override object ConvertValue(Names value)
+        => string.Join(',', value.Items);
+
+    protected override void ConfigureParameter(IDbDataParameter parameter)
+        => parameter.DbType = DbType.String;
+}
+
+Search.UpdateParamCache("@names", new NamesParam());
+```
+
+The wrapper creates the parameter, updates it on reuse, removes it when the value becomes null, and supports
+both command interfaces. Inherit directly from `DbParamInfo` when the parameter needs a different lifecycle.
 
 ## Output parameters
 
@@ -38,6 +60,7 @@ The details that matter:
 - Providers fill outputs when the reader closes. A buffered shape completes its read before returning. A streamed shape fills them only after enumeration finishes.
 - A [builder bound to your own command](parameters.md#a-builder-bound-to-one-dbcommand) works the same way, its command is yours already.
 - `DirectionalScaledDbParamCache` is the same with precision and scale, for decimals.
+- A command built by [`QueryCommand.FromProc`](index.md#naming-the-variables-yourself) has this done for it. The procedure states the direction and the size, so an output needs no pinning of its own and the size is kept as stated rather than rounded.
 
 ## Plugging in a provider
 

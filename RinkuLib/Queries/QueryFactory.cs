@@ -1,4 +1,5 @@
-﻿using System.Buffers;
+using System.Buffers;
+using System.Diagnostics;
 using RinkuLib.Tools;
 
 namespace RinkuLib.Queries;
@@ -82,16 +83,46 @@ public struct QueryFactory {
             var endIndex = seg.Start + seg.Length - seg.ExcessOrInd;
             if (endIndex <= seg.Start)
                 continue;
-            if (Query[endIndex] == ';')
-                Segments[i].ExcessOrInd = 0;
-            else if (char.IsWhiteSpace(Query[endIndex - 1]))
+            Debug.Assert(Query[endIndex] != ';', "an excess trim point can never land on a statement separator");
+            if (char.IsWhiteSpace(Query[endIndex - 1]))
                 Segments[i].ExcessOrInd++;
         }
     }
 
+    /// <summary>
+    /// Fills in the pieces for a command whose variables are named rather than read out of the text. The text is taken
+    /// as written and every name becomes a required variable, which is what a call that carries its parameters
+    /// somewhere other than its SQL needs, a stored procedure most of all.
+    /// </summary>
+    /// <param name="commandText">The text to send, a procedure's name or any SQL, used exactly as given.</param>
+    /// <param name="variableNames">
+    /// The parameters to bind, in order. A name already marked as a variable is taken as written, and one
+    /// that is not is marked with <see cref="DefaultVariableChar"/>, so <c>Id</c> and <c>@Id</c> name the
+    /// same parameter. Nothing here is parsed, so there is no template to say which character marks a
+    /// variable and the app-wide one answers.
+    /// </param>
+    public QueryFactory(string commandText, IEnumerable<string> variableNames) {
+        ArgumentNullException.ThrowIfNull(commandText);
+        ArgumentNullException.ThrowIfNull(variableNames);
+        var variableChar = DefaultVariableChar;
+        var keys = new List<string>();
+        foreach (var name in variableNames) {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new RinkuTemplateException(ErrorCodes.EmptyConditionKey, "a named variable cannot be blank");
+            keys.Add(char.IsLetterOrDigit(name[0]) || name[0] == '_' ? variableChar + name : name);
+        }
+        BaseHandlerPresenceMap = BaseHandlerMapper.PresenceMap;
+        Query = commandText;
+        Segments = [new(0, commandText.Length, 0, false, null)];
+        Mapper = keys.Count == 0 ? Mapper.GetEmptyMapper() : Mapper.GetMapper(keys);
+        NbNormalVar = Mapper.Count;
+        NbRequired = Mapper.Count;
+        Conditions = [MakeSentinel()];
+    }
     private readonly Condition MakeSentinel() => new(Mapper.Count, Segments.Length, -1, 0, true);
     private readonly void UpdateCondToSkip() {
-        Array.Sort(Conditions);
+        var sorted = Conditions.OrderBy(c => c).ToArray();
+        sorted.CopyTo(Conditions.AsSpan());
         var len = Conditions.Length - 1;
         for (int i = 0; i < len; i++) {
             ref var cond = ref Conditions[i];
@@ -146,7 +177,7 @@ public struct QueryFactory {
         if (segInd - 1 >= 0 && Segments[segInd - 1].Handler is null)
             Segments[segInd - 1].ExcessOrInd = cond.PrevSegmentExcess;
         if (!Mapper.TryGetValue(cond.Cond, out var condMapperInd))
-            throw new Exception($"Comment conditions using variables must exist in the query: {cond.Cond}");
+            throw new RinkuTemplateException(ErrorCodes.ConditionVariableNotInQuery, $"the marker names \"{cond.Cond}\", which the query does not contain");
         var isOrIdentifier = 0;
         if (cond.Type == CondInfo.OrComment)
             isOrIdentifier = -1;
@@ -217,7 +248,7 @@ public struct QueryFactory {
         for (int i = 0; i < condInfos.Length; i++) {
             ref var cond = ref condInfos[i];
             if (!cond.IsFinished)
-                throw new Exception($"conditions {cond.Cond} was not finished [{cond.StartIndex}-{cond.EndIndex}]");
+                throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"conditions {cond.Cond} was not finished [{cond.StartIndex}-{cond.EndIndex}]");
             if (cond.Type >= CondInfo.Special) {
                 segmentIndexes.Add(cond.VarIndex);
                 segmentIndexes.Add(cond.VarIndex + cond.Cond.Length + 2);

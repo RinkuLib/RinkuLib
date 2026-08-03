@@ -14,9 +14,10 @@ namespace RinkuLib.DbParsing;
 /// </summary>
 public static class TypeParser {
     /// <summary>
-    /// The cache for parsers requested and root nullability.
+    /// The cache for parsers requested and root nullability. Copy-on-write so readers scan lock-free
+    /// while writers swap in a grown array under <see cref="DefaultTypeParsingInfo.WriteLock"/>.
     /// </summary>
-    internal static readonly List<(ColumnInfo[] Schema, INullColHandler NullColHandler, object Parser)> ReadingInfos = [];
+    internal static (ColumnInfo[] Schema, INullColHandler NullColHandler, int Version, object Parser)[] ReadingInfos = [];
     /// <summary>The fallback maker, the object parser, that claims any <c>T</c> no other maker did.</summary>
     public static readonly DefaultTypeParserMaker DefaultTypeParserMaker = new();
     /// <summary>
@@ -24,13 +25,10 @@ public static class TypeParser {
     /// Insert your own ahead of the defaults to add a shape (see the parsers guide).
     /// </summary>
     public static readonly List<ITypeParserMaker> TypeParserMakers = [
-        new ReusingBaseTypeParserMaker([typeof(IEnumerable<>), typeof(List<>)],
-            (def, itemType, ref _) => (def == typeof(IEnumerable<>))
-                ? typeof(EnumerableTypeParser<>).MakeGenericType(itemType)
-                : typeof(ListTypeParser<>).MakeGenericType(itemType),
-            (def, itemType, ref _) => (def == typeof(IEnumerable<>))
-                ? typeof(FastEnumerableTypeParser<>).MakeGenericType(itemType)
-                : typeof(FastListTypeParser<>).MakeGenericType(itemType)
+        new EnumerableTypeParserMaker(),
+        new ReusingBaseTypeParserMaker([typeof(List<>)],
+            (def, itemType, ref _) => typeof(ListTypeParser<>).MakeGenericType(itemType),
+            (def, itemType, ref _) => typeof(FastListTypeParser<>).MakeGenericType(itemType)
         ),
         new ReusingBaseTypeParserMaker([typeof(Optional<>), typeof(OptionalStruct<>), typeof(OptionalNullable<>)],
             (def, itemType, ref _) => typeof(OptionalTypeParser<,>).MakeGenericType(def.MakeGenericType(itemType), itemType),
@@ -58,15 +56,29 @@ public static class TypeParser {
     public static ITypeParser<T> GetTypeParser<T>(ref ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
         nullColHandler ??= GetDefaultNullColHandler<T>();
         var readingInfos = ReadingInfos;
-        foreach (var (schema, nullCol, p) in readingInfos) {
-            if (p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
+        int version = TypeParsingInfo.CurrentConfigurationVersion;
+        foreach (var (schema, nullCol, entryVersion, p) in readingInfos) {
+            if (entryVersion == version && p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
                 cols = schema;
                 return parser;
             }
         }
         lock (DefaultTypeParsingInfo.WriteLock) {
+            version = TypeParsingInfo.CurrentConfigurationVersion;
+            var current = ReadingInfos;
+            for (int i = 0; i < current.Length; i++) {
+                var (schema, nullCol, entryVersion, p) = current[i];
+                if (entryVersion == version && p is ITypeParser<T> parser && nullCol == nullColHandler && cols.EquivalentTo(schema)) {
+                    cols = schema;
+                    return parser;
+                }
+            }
             var unusual = MakeParser<T>(cols, nullColHandler);
-            ReadingInfos.Add(new(cols, nullColHandler, unusual));
+            var recordedVersion = TypeParsingInfo.CurrentConfigurationVersion;
+            var updated = new (ColumnInfo[], INullColHandler, int, object)[current.Length + 1];
+            current.CopyTo(updated, 0);
+            updated[current.Length] = (cols, nullColHandler, recordedVersion, unusual);
+            ReadingInfos = updated;
             return unusual;
         }
     }
@@ -78,13 +90,13 @@ public static class TypeParser {
                 break;
             }
         if (!typeParserMaker.TryMakeParser<T>(nullColHandler, cols, out var info))
-            throw new Exception($"cannot make the parser for {typeof(T)} with the schema ({string.Join(", ", cols.Select(c => $"{c.Type.ShortName()}{(c.IsNullable ? "?" : "")} {c.Name}"))})");
+            Refuse.NoParser(typeof(T), cols);
         return info;
     }
     /// <summary>The parser for <typeparamref name="T"/> over the columns of <typeparamref name="TSchema"/>, taken from its shape rather than a result.</summary>
     public static ITypeParser<T> GetTypeParser<TSchema, T>(out ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
-        var res = GetTypeParser<T>(ref TypeSchema<T>._schema, nullColHandler);
-        cols = TypeSchema<T>._schema;
+        var res = GetTypeParser<T>(ref TypeSchema<TSchema>._schema, nullColHandler);
+        cols = TypeSchema<TSchema>._schema;
         return res;
     }
     /// <summary>The parser for <typeparamref name="T"/> over the columns derived from <paramref name="type"/>.</summary>

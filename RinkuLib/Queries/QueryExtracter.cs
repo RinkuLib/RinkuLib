@@ -1,6 +1,7 @@
-﻿using System.Buffers;
+using System.Buffers;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using RinkuLib.Tools;
-using static System.Collections.Specialized.BitVector32;
 
 namespace RinkuLib.Queries;
 
@@ -106,7 +107,7 @@ internal struct CondInfo {
         EndIndex = endIndex;
     }
     public override readonly string ToString()
-        => $"{Cond}, {(Type < (char)32 ? (int)Type : Type)}, {StartIndex}, {EndIndex}";
+        => $"{Cond}, {(Type < (char)32 ? (object)(int)Type : Type)}, {StartIndex}, {EndIndex}";
     public void UpdateSelectCond(string cond, int currentStart, int prevSegExcess) {
         if (StartIndex < 0)
             StartIndex = currentStart;
@@ -120,6 +121,12 @@ internal struct CondInfo {
         StartIndex = StartInd;
 
     }
+    /// <summary>
+    /// Re-records the nesting level the marker sits at. A marker opening a parenthesis is read before that
+    /// level is known to be a section level, so it is recorded one bit short and has to be corrected once
+    /// the bit is set, or nothing at that level ever matches it to close its footprint.
+    /// </summary>
+    public void UpdateNestingLevel(ulong parMap) => ParMapOrExcesses = parMap;
     public readonly bool IsFinished => Flags.HasFlag(CondFlags.Finished);
     public readonly bool IsRequired => Flags.HasFlag(CondFlags.IsRequired);
     public readonly bool NeedSectionToFinish => Flags.HasFlag(CondFlags.NeedSectionToFinish);
@@ -193,7 +200,7 @@ public unsafe ref struct QueryExtracter {
     private PooledArray<CondInfo>.Locked SegmentQuery(string query, char variableChar, out string newQuery) {
         Length = query.Length;
         if (Length <= 1)
-            throw new Exception($"invalid query \"{query}\", must contains at least 2 letters");
+            throw new RinkuTemplateException(ErrorCodes.QueryTooShort, $"invalid query \"{query}\", must contains at least 2 letters");
         Conditions = new PooledArray<CondInfo>();
         Builder = ArrayPool<char>.Shared.Rent((int)(Length * 1.1));
         BuilderSpan = Builder;
@@ -204,9 +211,9 @@ public unsafe ref struct QueryExtracter {
         var excesses = ArrayPool<int>.Shared.Rent(64);
         ParMap = 1;
 
-        fixed (int* ps = startIndexes)
-        fixed (int* pe = excesses)
-        fixed (char* p = query) {
+        fixed (int* ps = &MemoryMarshal.GetReference(startIndexes.AsSpan()))
+        fixed (int* pe = &MemoryMarshal.GetReference(excesses.AsSpan()))
+        fixed (char* p = &MemoryMarshal.GetReference(query.AsSpan())) {
             CurrentChar = p;
             CurrentStart = ps;
             CurrentExcess = pe;
@@ -217,11 +224,15 @@ public unsafe ref struct QueryExtracter {
                     ManageBoundary();
                     continue;
                 }
+                if (CurrentQuote == 0 && *CurrentChar == '-' && CurrentChar[1] == '-') {
+                    ManageLineComment();
+                    continue;
+                }
                 if (*CurrentChar == OptionalVariableIdentifier && CurrentChar[1] != variableChar) {
                     if (CurrentChar[1] == OptionalVariableIdentifier
                         && CurrentChar[2] == OptionalVariableIdentifier) {
                         BuilderInd--;
-                        UpdateConditionsEnd(BuilderInd, false, 0);
+                        UpdateConditionsEnd(BuilderInd, false, 0, keepUnstartedColumn: true);
                         UpdateCurrentStart(BuilderInd, 0);
                         CurrentChar += 2;
                     }
@@ -230,6 +241,11 @@ public unsafe ref struct QueryExtracter {
                 if (!PrevBoundary || CurrentQuote != 0)
                     continue;
                 PrevBoundary = false;
+                if (*CurrentChar == variableChar && CurrentChar[1] == variableChar) {
+                    Builder[BuilderInd++] = CurrentChar[1];
+                    CurrentChar++;
+                    continue;
+                }
                 if (TryManageVariable(variableChar)) { }
                 else if (*CurrentChar == JoinAndOrChar) {
                     if (IsOr(CurrentChar + 1) || IsAnd(CurrentChar + 1))
@@ -284,6 +300,9 @@ public unsafe ref struct QueryExtracter {
         var endInd = BuilderInd - 2;
         if (needSpace)
             endInd++;
+        else
+            while (endInd > 0 && char.IsWhiteSpace(Builder[endInd - 1]))
+                endInd--;
         if ((secLen == 6 || secLen == 11) && (IsInsert(CurrentChar) || IsValues(CurrentChar)))
             ContainingParantesis = true;
         else if (ContainingParantesis && ParMap == 1)
@@ -308,22 +327,18 @@ public unsafe ref struct QueryExtracter {
         return true;
     }
 
-    private const ulong BoundaryMask = 0x800930100002601;
+    private const ulong BoundaryMask = 0x800938500002601;
     private static bool IsBoundary(char c)
-        => c < 64 && (BoundaryMask >> c & 1) == 1;
+        => c < 64 ? (BoundaryMask >> c & 1) == 1 : c == '[' || c == ']' || c == '`';
     private void ManageBoundary() {
         var c = *CurrentChar;
-        if (ManageQuote(c)) {
-            PrevBoundary = true;
-            return;
-        }
-        if (CurrentQuote != 0)
+        PrevBoundary = true;
+        if (ManageQuote(c))
             return;
         if (TryManageComment(true)) {
             CurrentChar--;
             return;
         }
-        PrevBoundary = true;
         if (c == '(')
             RaiseParentesis(true);
         else if (c == ')')
@@ -353,7 +368,7 @@ public unsafe ref struct QueryExtracter {
                 break;
             }
             if (i < LastUnfinishedSection)
-                throw new Exception($"The {SelectColumnAlwaysUsed} may only be used in a dynamic projection context {new string(Builder.AsSpan(0, BuilderInd))}");
+                throw new RinkuTemplateException(ErrorCodes.ProjectionOnlyConstruct, $"The {SelectColumnAlwaysUsed} may only be used in a dynamic projection context {new string(Builder.AsSpan(0, BuilderInd))}");
             Conditions.RemoveAt(i);
             if (i == LastUnfinishedSection) {
                 for (; i < Conditions.Length; i++)
@@ -379,7 +394,8 @@ public unsafe ref struct QueryExtracter {
             CurrentChar++;
         }
         CurrentChar++;
-        while (!IsBoundary(*CurrentChar) && *CurrentChar != JoinAndOrChar) {
+        while (!IsBoundary(*CurrentChar) && *CurrentChar != JoinAndOrChar
+            && !(*CurrentChar == '-' && CurrentChar[1] == '-')) {
             Builder[BuilderInd++] = *CurrentChar;
             CurrentChar++;
         }
@@ -404,7 +420,12 @@ public unsafe ref struct QueryExtracter {
         CurrentChar--;
         return true;
     }
-    private bool TryManageComment(bool currentCharAddedToBuilder) {
+    /// <param name="currentCharAddedToBuilder">Whether the <c>/</c> already went into the builder.</param>
+    /// <param name="minStart">
+    /// The earliest index a clause marker's footprint may start at. A marker sitting right after an opening
+    /// parenthesis would otherwise walk back onto it and prune it, leaving its closing half behind.
+    /// </param>
+    private bool TryManageComment(bool currentCharAddedToBuilder, int minStart = 0) {
         if (*CurrentChar != '/' || CurrentChar[1] != '*')
             return false;
         if (currentCharAddedToBuilder)
@@ -417,7 +438,7 @@ public unsafe ref struct QueryExtracter {
             while (!(*CurrentChar == '*' && CurrentChar[1] == '/') && CurrentChar < LastChar)
                 Builder[BuilderInd++] = *CurrentChar++;
             if (CurrentChar >= LastChar)
-                throw new Exception("comment unclosed");
+                throw new RinkuTemplateException(ErrorCodes.UnclosedComment, "comment unclosed");
             CurrentChar++;
             Builder[BuilderInd++] = '*';
             Builder[BuilderInd++] = '/';
@@ -429,7 +450,7 @@ public unsafe ref struct QueryExtracter {
         while (true) {
             var cond = GetCommentString(out var isNot);
             if (string.IsNullOrWhiteSpace(cond))
-                throw new Exception($"Cannot have a whitespace condition {new string(Builder)}");
+                throw new RinkuTemplateException(ErrorCodes.EmptyConditionKey, $"Cannot have a whitespace condition {new string(Builder)}");
             nbCond++;
             ind = BuilderInd - 1;
             if (ind < 0)
@@ -442,8 +463,7 @@ public unsafe ref struct QueryExtracter {
         }
         CurrentChar += 2;
         SkipWhiteSpace();
-        if (nbCond <= 0)
-            return true;
+        Debug.Assert(nbCond > 0, "the marker loop always collects at least one condition");
         if (MatchSection(CurrentChar, out var secLen)) { }
         else if (*CurrentChar == OptionalVariableIdentifier && IsSelect(CurrentChar + 1))
             secLen = 6;
@@ -451,12 +471,25 @@ public unsafe ref struct QueryExtracter {
             return true;
         LastCondSectionLength = (uint)nbCond << 16 | (uint)secLen;
         ind = BuilderInd - 1;
+        while (ind > 0 && char.IsWhiteSpace(Builder[ind - 1]) && char.IsWhiteSpace(Builder[ind]))
+            ind--;
+        if (ind < minStart)
+            ind = minStart;
         if (ind < 0)
             ind = 0;
         for (; nbCond > 0; nbCond--) {
             Conditions[^nbCond].UpdateCommentAsSectionComment(ind);
         }
         return true;
+    }
+    /// <summary>
+    /// Copies a <c>--</c> comment through to the end of its line without reading it, the opening dash
+    /// already being in the builder. What sits in one is text, so a variable or a marker written there is
+    /// neither, and the line stays in the query as written.
+    /// </summary>
+    private void ManageLineComment() {
+        while (CurrentChar + 1 < LastChar && CurrentChar[1] != '\n' && CurrentChar[1] != '\r')
+            Builder[BuilderInd++] = *++CurrentChar;
     }
     private void SkipWhiteSpace() {
         while (char.IsWhiteSpace(*CurrentChar)) {
@@ -477,18 +510,19 @@ public unsafe ref struct QueryExtracter {
             CurrentChar++;
         }
         if (CurrentChar >= LastChar)
-            throw new Exception("comment unclosed");
+            throw new RinkuTemplateException(ErrorCodes.UnclosedComment, "comment unclosed");
         isNot = *start == CondInfo.NotCommentChar;
         if (isNot)
             start++;
         var i = (int)(CurrentChar - start);
-        while (char.IsWhiteSpace(start[i - 1]))
+        while (i > 0 && char.IsWhiteSpace(start[i - 1]))
             i--;
         return new string(start, 0, i);
     }
     private bool ManageQuote(char c) {
-        if (c == CurrentQuote) {
-            CurrentQuote = 0;
+        if (CurrentQuote != 0) {
+            if (c == CurrentQuote)
+                CurrentQuote = 0;
             return true;
         }
         if (c == '[') {
@@ -503,18 +537,22 @@ public unsafe ref struct QueryExtracter {
     }
     private void RaiseParentesis(bool checkSection) {
         if (ParMap >= 0x8000000000000000UL)
-            throw new Exception("cannot have more than 64 level deep of parentesis / cases");
+            throw new RinkuTemplateException(ErrorCodes.ScopeTooDeep, "cannot have more than 63 level deep of parentesis / cases");
         CurrentStart++;
         CurrentExcess++;
         UpdateCurrentStart(BuilderInd, 0);
         ParMap <<= 1;
         if (!checkSection)
             return;
+        var afterParenthesis = BuilderInd;
         CurrentChar++;
         SkipWhiteSpace();
-        if (TryManageComment(false))
-            if (LastCondSectionLength > 0)
+        if (TryManageComment(false, afterParenthesis))
+            if (LastCondSectionLength > 0) {
                 ParMap |= 1;
+                for (int i = (int)(LastCondSectionLength >> 16); i > 0; i--)
+                    Conditions[^i].UpdateNestingLevel(ParMap);
+            }
         if (MatchSection(CurrentChar, out _) || (ParMap == 0b10 && ContainingParantesis))
             ParMap |= 1;
         CurrentChar--;
@@ -522,7 +560,7 @@ public unsafe ref struct QueryExtracter {
     private void LowerParentesis() {
         UpdateConditionsEnd(BuilderInd - 1, true, 0);
         if (ParMap == 1)
-            throw new Exception("too many closing parentesis / cases");
+            throw new RinkuTemplateException(ErrorCodes.UnbalancedScope, "too many closing parentesis / cases");
         ParMap >>= 1;
         CurrentStart--;
         CurrentExcess--;
@@ -590,11 +628,21 @@ public unsafe ref struct QueryExtracter {
         "then",
         ";"
     ];
-    private static bool MatchSection(char* ptr, out int secLen) {
+    /// <summary>
+    /// Whether a section keyword starts here, and how long it is.
+    /// </summary>
+    /// <remarks>
+    /// The character after a keyword is read first, since that is what tells a keyword from a word that
+    /// merely starts like one, and a keyword longer than the text that is left cannot be there at all. The
+    /// text ends at <see cref="LastChar"/>, which addresses the terminator and is a boundary like any other,
+    /// so a keyword closing the query still matches while nothing is read past it.
+    /// </remarks>
+    private bool MatchSection(char* ptr, out int secLen) {
+        var remaining = (int)(LastChar - ptr);
         for (int i = 0; i < SQLSections.Length; i++) {
             var sec = SQLSections[i];
             secLen = sec.Length;
-            if (!IsBoundary(ptr[secLen]))
+            if (secLen > remaining || !IsBoundary(ptr[secLen]))
                 continue;
             for (int j = 0; j < secLen; j++)
                 if (sec[j] != (ptr[j] | 0x20))
@@ -606,7 +654,17 @@ public unsafe ref struct QueryExtracter {
         secLen = 0;
         return false;
     }
-    private bool UpdateConditionsEnd(int segmentEndIndex, bool isSection, uint currentExcess) {
+    /// <summary>Closes every footprint that ends at this point, naming a projection's column as it goes.</summary>
+    /// <param name="segmentEndIndex">Where the footprints being closed end.</param>
+    /// <param name="isSection">Whether a section keyword starts here.</param>
+    /// <param name="currentExcess">The boundary token's length, carried for the trim.</param>
+    /// <param name="keepUnstartedColumn">
+    /// Whether a dynamic projection's column that has not begun yet is left open. A boundary that ends a
+    /// column names it from the text in front of it, and a wall placed before the first column has only the
+    /// modifier it was written to isolate. The wall says the column starts after it, so the column waits for
+    /// the boundary that really ends it.
+    /// </param>
+    private bool UpdateConditionsEnd(int segmentEndIndex, bool isSection, uint currentExcess, bool keepUnstartedColumn = false) {
         int j = Conditions.Length - 1;
         var nbSectionComment = (int)(LastCondSectionLength >> 16);
         j -= nbSectionComment;
@@ -616,6 +674,8 @@ public unsafe ref struct QueryExtracter {
             if (cond.IsFinished)
                 continue;
             if (cond.ParMapOrExcesses != ParMap || (cond.NeedSectionToFinish && !isSection))
+                break;
+            if (keepUnstartedColumn && cond.Cond is null)
                 break;
             if (cond.Cond is null)
                 cond.UpdateSelectCond(FindSelectName(isSection ? segmentEndIndex : segmentEndIndex - 1), *CurrentStart, *CurrentExcess);
@@ -644,7 +704,7 @@ public unsafe ref struct QueryExtracter {
         if (quote != 0) {
             end--;
             start--;
-            while (Builder[start] == quote)
+            while (Builder[start] != quote)
                 start--;
         }
         else {

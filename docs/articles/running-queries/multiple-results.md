@@ -6,16 +6,14 @@ A command with several selects returns several result sets. `ExecuteMultiReader`
 static readonly QueryCommand Dashboard = new(
     "SELECT * FROM artists WHERE ArtistId = @id; SELECT * FROM albums WHERE ArtistId = @id");
 
-using var multi = Dashboard.ExecuteMultiReader(cnn, out DbCommand cmd, new { id = 1 });
-using (cmd) {
-    Artist artist      = multi.Query<Artist>();       // first set
-    List<Album> albums = multi.Query<List<Album>>();  // second set
-}
+using var multi = Dashboard.ExecuteMultiReader(cnn, new { id = 1 });
+Artist artist      = multi.Query<Artist>();       // first set
+List<Album> albums = multi.Query<List<Album>>();  // second set
 ```
 
 `Query<T>` works like everywhere else. `T` picks one row, `List<T>` all rows, `IEnumerable<T>` a stream. Each call advances to the next result set, and non-returning sets are skipped automatically.
 
-The `out DbCommand` is yours. Keep it to read [output parameters](parameter-metadata.md#output-parameters), and dispose it along with the reader. It is assigned synchronously, so the async form composes with `await`.
+The `MultiReader` owns the command in this form. Use the `out DbCommand` overload when you need to read [output parameters](parameter-metadata.md#output-parameters), and dispose that command along with the reader.
 
 ```csharp
 using var multi = await Dashboard.ExecuteMultiReaderAsync(cnn, out DbCommand cmd, new { id = 1 }, ct: ct);

@@ -34,6 +34,7 @@ var simple = playlists.ToTrackingList();
 
 var validated = playlists.ToTrackingList<Playlist, string?>(
     validator: (p, _) => string.IsNullOrWhiteSpace(p?.Name) ? "Name is required" : null);
+var validation = (IValidatableEditableList<Playlist, string?>)validated;
 ```
 
 ## Edit processors

@@ -1,4 +1,4 @@
-﻿using System.Data.Common;
+using System.Data.Common;
 using System.Reflection;
 using System.Reflection.Emit;
 
@@ -84,7 +84,6 @@ public static class TypeExtensions {
         if (!t.IsGenericType)
             return t.Name;
 
-        // Formats Reference`2[[Int32...]] into Reference<Int32, String>
         var args = string.Join(", ", t.GetGenericArguments().Select(ShortName));
         string name = t.Name.Split('`')[0];
         return $"{name}<{args}>";
@@ -95,8 +94,11 @@ public static class TypeExtensions {
     public static bool IsBaseType(this Type type) {
         return type == typeof(int) || type == typeof(string) || type == typeof(DateTime)
             || type == typeof(bool) || type == typeof(long) || type == typeof(decimal)
-            || type == typeof(Guid) || type == typeof(object) || type == typeof(float) || type == typeof(double) 
-            || type == typeof(char) || type == typeof(byte) || type == typeof(short) || type == typeof(byte[]);
+            || type == typeof(Guid) || type == typeof(object) || type == typeof(float) || type == typeof(double)
+            || type == typeof(char) || type == typeof(byte) || type == typeof(short) || type == typeof(byte[])
+            || type == typeof(sbyte) || type == typeof(ushort) || type == typeof(uint) || type == typeof(ulong)
+            || type == typeof(TimeSpan) || type == typeof(DateTimeOffset)
+            || type == typeof(DateOnly) || type == typeof(TimeOnly);
     }
     /// <summary>
     /// Check if the type can hold a <see langword="null"/> value
@@ -149,7 +151,7 @@ public static class TypeExtensions {
     /// </summary>
     public static ConstructorInfo GetNullableConstructor(this Type type) {
         if (!type.IsValueType)
-            throw new Exception("type must be a value type in order to have a nullable ctor");
+            throw new ArgumentException($"{type} must be a value type to have a Nullable<> constructor", nameof(type));
         var ctor = type switch {
             _ when type == typeof(int) => _Ni32Ctor,
             _ when type == typeof(DateTime) => _NdtCtor,
@@ -167,7 +169,7 @@ public static class TypeExtensions {
         if (ctor is not null)
             return ctor;
         return typeof(Nullable<>).MakeGenericType(type).GetConstructor([type])
-                ?? throw new Exception($"Could not find Nullable constructor for {type.Name}");
+                ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Could not find Nullable constructor for {type.Name}");
     }
     /// <summary>
     /// Determines if two types share the same representation on the CIL evaluation stack.
@@ -217,13 +219,13 @@ public static class TypeExtensions {
         if (!closedType.IsGenericType)
             return member;
         if (member is FieldInfo fi)
-            return FieldInfo.GetFieldFromHandle(fi.FieldHandle, closedType.TypeHandle);
+            return closedType.GetMemberWithSameMetadataDefinitionAs(fi);
         if (member is ConstructorInfo ci)
             return ConstructorInfo.GetMethodFromHandle(ci.MethodHandle, closedType.TypeHandle)!;
         if (member is PropertyInfo pi)
-            member = pi.GetSetMethod(true) ?? throw new InvalidOperationException("Property has no setter");
+            member = pi.GetSetMethod(true) ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, "Property has no setter");
         if (member is not MethodInfo mi)
-            throw new NotImplementedException($"Member type {member.GetType()} not supported.");
+            throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Member type {member.GetType()} not supported");
         if (mi.IsGenericMethod)
             return mi.MakeGenericMethod(closedType.GetGenericArguments());
         return MethodBase.GetMethodFromHandle(mi.MethodHandle, closedType.TypeHandle)!;

@@ -75,7 +75,7 @@ public static class QueryBuilderExtensions {
         /// <param name="cnn">The connection to execute on</param>
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
-        public T ExecuteScalar<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
+        public T? ExecuteScalar<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
@@ -88,7 +88,7 @@ public static class QueryBuilderExtensions {
         /// <param name="transaction">The transaction to execute on</param>
         /// <param name="timeout">The timeout for the command</param>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T> ExecuteScalarAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public Task<T?> ExecuteScalarAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
@@ -223,14 +223,14 @@ public static class QueryBuilderExtensions {
             return cmd.ExecuteAsync(true, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <inheritdoc cref="QueryBuilderExtensions.ExecuteScalar{T}(QueryBuilder, DbConnection, DbTransaction, int?)"/>
-        public T ExecuteScalar<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
+        public T? ExecuteScalar<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
             return cmd.ExecuteScalar<T>(true, command.NeedToCache(vars) ? command : null);
         }
         /// <inheritdoc cref="QueryBuilderExtensions.ExecuteScalarAsync{T}(QueryBuilder, DbConnection, DbTransaction, int?, CancellationToken)"/>
-        public Task<T> ExecuteScalarAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+        public Task<T?> ExecuteScalarAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);

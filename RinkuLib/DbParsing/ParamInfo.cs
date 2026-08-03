@@ -1,9 +1,13 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace RinkuLib.DbParsing;
 /// <summary>Use to actualy create the comparer</summary>
 public delegate INameComparer NameComparerFactory(Type type, string? name, string[] altNames, object[] attributes, object? param, List<INameComparerMaker> nameComparerMakers);
+
+/// <summary>Requires the database column type to equal the parameter or member type.</summary>
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class ExactTypeAttribute : Attribute;
 /// <summary>
 /// Handles the standard negotiation flow for constructor parameters, properties, and fields.
 /// </summary>
@@ -26,19 +30,40 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>
     /// The current strategy for handling database NULL values.
     /// </summary>
-    public INullColHandler NullColHandler { get => field; set => Interlocked.Exchange(ref field, value); } = NullColHandler;
+    public INullColHandler NullColHandler {
+        get => field;
+        set {
+            Interlocked.Exchange(ref field, value);
+            TypeParsingInfo.TouchConfiguration();
+        }
+    } = NullColHandler;
     /// <summary>
     /// The logic used to match column names against this member's identifiers.
     /// </summary>
-    public INameComparer NameComparer { get => field; set => Interlocked.Exchange(ref field, value); } = NameComparer;
+    public INameComparer NameComparer {
+        get => field;
+        set {
+            Interlocked.Exchange(ref field, value);
+            TypeParsingInfo.TouchConfiguration();
+        }
+    } = NameComparer;
     /// <summary>
     /// The C# type of the parameter or member. (Can be generic)
     /// </summary>
     public Type Type = Type;
+    /// <summary>Whether scalar negotiation requires the exact column type.</summary>
+    /// <remarks>The stateful form lives on <see cref="ParamInfoPlus"/> so ordinary slots stay compact.</remarks>
+    public virtual bool RequireExactType {
+        get => false;
+        set {
+            if (value)
+                throw new InvalidOperationException($"{nameof(RequireExactType)} requires {nameof(ParamInfoPlus)}.");
+        }
+    }
     /// <summary>
     /// Updates the <see cref="NullColHandler"/> to handle a recovery jump if a null is encountered.
     /// </summary>
-    public void SetInvalidOnNull(bool invalidOnNull) => NullColHandler = NullColHandler.SetInvalidOnNull(Type, invalidOnNull);
+    public void SetAbortOnNull(bool abortOnNull) => NullColHandler = NullColHandler.SetAbortOnNull(Type, abortOnNull);
     /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
     public virtual void UpdateColModifier(ref ColModifier mod) { }
     /// <summary>
@@ -48,10 +73,10 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// </summary>
     public virtual void EnterSubtree(ref ColModifier mod, int nbUsed) { }
     /// <summary>
-    /// Provide a way to retrieve a <see cref="DbItemParser"/> when the normal way fails
+    /// Provide a way to retrieve a <see cref="DbItemPlan"/> when the normal way fails
     /// </summary>
     /// <returns></returns>
-    public virtual DbItemParser? FallbackTryGetParser(Type type) => null;
+    public virtual DbItemPlan? FallbackTryGetParser(Type type) => null;
     /// <summary>
     /// Adds an alternative name to the existing <see cref="NameComparer"/>.
     /// </summary>
@@ -101,7 +126,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <list type="bullet">
     /// <item>If any attribute implements <see cref="IParamInfoMaker"/>, it takes control and creates the matcher.</item>
     /// <item><see cref="AltAttribute"/> instances are collected to build optimized <see cref="INameComparer"/> versions.</item>
-    /// <item>Null-handling is resolved by <see cref="GetDeclaredNullColHandler"/> (<see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>, <see cref="InvalidOnNullAttribute"/>, or a custom <see cref="INullColHandlerMaker"/>), falling back to the type's own nullability.</item>
+    /// <item>Null-handling is resolved by <see cref="GetDeclaredNullColHandler"/> (<see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>, <see cref="AbortOnNullAttribute"/>, or a custom <see cref="INullColHandlerMaker"/>), falling back to the type's own nullability.</item>
     /// </list>
     /// </remarks>
     public static ParamInfo Create(Type type, string? name, object[] attributes, object? param = null) {
@@ -109,6 +134,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
         UsageFlags usageFlags = default;
         bool hasNoName = false;
+        bool requireExactType = false;
         List<INameComparerMaker> nameComparersMakers = [];
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
@@ -118,6 +144,8 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 altCount++;
             if (attr is NoNameAttribute)
                 hasNoName = true;
+            if (attr is ExactTypeAttribute)
+                requireExactType = true;
             if (attr is INameComparerMaker mkr)
                 nameComparersMakers.Add(mkr);
             if (attr is IParamInfoMaker mm)
@@ -126,7 +154,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                 ufm.UpdateFlags(param, ref usageFlags);
         }
         var nullColHandler = GetDeclaredNullColHandler(type, name, attributes, param)
-            ?? (type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance);
+            ?? DefaultNullColHandler(type);
         string[] altNames = [];
         if (altCount > 0) {
             altNames = new string[altCount];
@@ -136,22 +164,38 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                     altNames[altIdx++] = alt.AlternativeName;
         }
         INameComparer comparer = ComparerFactory(type, hasNoName ? null : name, altNames, attributes, param, nameComparersMakers);
-        return maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
+        var matcher = maker.MakeMatcher(type, nullColHandler, comparer, name, attributes, usageFlags, param);
+        if (requireExactType) {
+            if (matcher is not ParamInfoPlus)
+                matcher = new ParamInfoPlus(matcher.Type, matcher.NullColHandler, matcher.NameComparer,
+                    IColModifier.Nothing, IFallbackParserGetter.Nothing);
+            ((ParamInfoPlus)matcher).RequireExactType = true;
+        }
+        return matcher;
     }
+    /// <summary>
+    /// The null rule for a type when nothing is declared: the collapse rule for a registered multi-row type (a
+    /// collection or aggregate) so a null element flows up out of the fold and is skipped, otherwise the type's
+    /// own nullability.
+    /// </summary>
+    private static INullColHandler DefaultNullColHandler(Type type)
+        => TypeParsingInfo.TryGetInfo(type, out var info) && info is IMultiRowTypeParsingInfo
+            ? AbortOnNullAndNotNullHandle.Instance
+            : type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
     /// <summary>
     /// Resolves the nullability that a set of attributes declares, a custom
     /// <see cref="INullColHandlerMaker"/>, <see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>,
-    /// composed with <see cref="InvalidOnNullAttribute"/>. This is the resolution <see cref="Create"/> uses
+    /// composed with <see cref="AbortOnNullAttribute"/>. This is the resolution <see cref="Create"/> uses
     /// before falling back to the type's own nullability.
     /// </summary>
     /// <returns>The declared handler, or <see langword="null"/> when nothing is declared.</returns>
     public static INullColHandler? GetDeclaredNullColHandler(Type type, string? name, object[] attributes, object? param = null) {
         INullColHandler? handler = null;
-        bool isInvalidOnNull = false;
+        bool isAbortOnNull = false;
         for (int i = 0; i < attributes.Length; i++) {
             var attr = attributes[i];
-            if (attr is InvalidOnNullAttribute)
-                isInvalidOnNull = true;
+            if (attr is AbortOnNullAttribute)
+                isAbortOnNull = true;
             if (attr is INullColHandlerMaker nchm)
                 handler = nchm.MakeColHandler(type, name, attributes, param);
             if (attr is NotNullAttribute)
@@ -159,10 +203,10 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
             if (attr is MaybeNullAttribute)
                 handler = NullableTypeHandle.Instance;
         }
-        if (!isInvalidOnNull)
+        if (!isAbortOnNull)
             return handler;
         handler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
-        return handler.SetInvalidOnNull(type, true);
+        return handler.SetAbortOnNull(type, true);
     }
     /// <summary>A delegate to implement your own name comparer dispatching strategy</summary>
     public static NameComparerFactory ComparerFactory { get; set; } = DispatchComparer;
@@ -216,7 +260,7 @@ internal class DefaultParamInfoMaker : IParamInfoMaker {
     public ParamInfo MakeMatcher(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, string? name, object[] attributes, UsageFlags usageFlags, object? param) {
         var fallback = param is ParameterInfo pp && pp.IsTypeDefault() ? DefaultValueFallback.Instance : IFallbackParserGetter.Nothing;
         if (usageFlags != default || fallback != IFallbackParserGetter.Nothing) {
-            var modeFlags = usageFlags & ~UsageFlags.Subtree;   // the reading-order mode, without the scope marker
+            var modeFlags = usageFlags & ~UsageFlags.Subtree;  
             var colModifier = modeFlags == default
                 ? IColModifier.Nothing
                 : new FlagUpdater(modeFlags, usageFlags.HasFlag(UsageFlags.Subtree));

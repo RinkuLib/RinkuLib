@@ -16,7 +16,7 @@ public sealed class SimpleTypeParser<T>(CommandBehavior Behavior, Func<DbDataRea
     public Func<DbDataReader, T> RowParser => Parser;
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override T Default() => throw new Exception("No values were returned from the query");
+    public override T Default() => throw new RinkuNoRowsException();
     /// <inheritdoc/>
     public override (bool CanContinue, T Result) Parse(DbDataReader reader) {
         var res = Parser(reader);

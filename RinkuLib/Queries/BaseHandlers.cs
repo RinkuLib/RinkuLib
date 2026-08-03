@@ -5,9 +5,9 @@ namespace RinkuLib.Queries;
 /// Escapes and injects a string literal directly into the SQL text.
 /// </summary>
 /// <remarks>
-/// Wraps the provided value in single quotes. If the value is not a string, 
-/// it performs a <c>ToString()</c> conversion. 
-/// Use this for values that should be treated as SQL string literals.
+/// Wraps the provided value in single quotes and doubles every single quote inside it, so the literal the
+/// value produces is the value and nothing more. If the value is not a string, it performs a
+/// <c>ToString()</c> conversion. Use this for values that should be treated as SQL string literals.
 /// </remarks>
 public class StringVariableHandler() : IQuerySegmentHandler {
     /// <summary>Singleton for <see cref="StringVariableHandler"/></summary>
@@ -21,7 +21,13 @@ public class StringVariableHandler() : IQuerySegmentHandler {
         if (value is not string str)
             str = value.ToString() ?? "";
         sb.Append('\'');
-        sb.Append(str);
+        var rest = str.AsSpan();
+        for (int quote = rest.IndexOf('\''); quote >= 0; quote = rest.IndexOf('\'')) {
+            sb.Append(rest[..(quote + 1)]);
+            sb.Append('\'');
+            rest = rest[(quote + 1)..];
+        }
+        sb.Append(rest);
         sb.Append('\'');
     }
 }
@@ -44,10 +50,11 @@ public class RawVariableHandler() : IQuerySegmentHandler {
         => sb.Append(value.ToString());
 }
 /// <summary>
-/// Injects an integer directly into the SQL text.
+/// Injects a number directly into the SQL text.
 /// </summary>
 /// <remarks>
-/// Optimized for numeric values that do not require quotes or escaping.
+/// Optimized for numeric values that do not require quotes or escaping. An enum writes its numeric value, a
+/// bool writes 1 or 0, and any other numeric type is written with invariant formatting.
 /// </remarks>
 public class NumberVariableHandler() : IQuerySegmentHandler {
     /// <summary>Singleton for <see cref="NumberVariableHandler"/></summary>
@@ -57,6 +64,27 @@ public class NumberVariableHandler() : IQuerySegmentHandler {
     /// </summary>
     public static NumberVariableHandler Build(string _) => Instance;
     /// <inheritdoc/>
-    public void Handle(ref ValueStringBuilder sb, object value)
-        => sb.Append((int)value);
+    public void Handle(ref ValueStringBuilder sb, object value) {
+        switch (value) {
+            case int i:
+                sb.Append(i);
+                break;
+            case bool b:
+                sb.Append(b ? '1' : '0');
+                break;
+            case Enum e:
+                sb.Append(Convert.ToInt64(e).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                break;
+            default:
+                if (value is IFormattable formattable) {
+                    sb.Append(formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture));
+                    break;
+                }
+                if (!Caster.TryCast<object, decimal>(value, out var number))
+                    throw new RinkuBindingException(ErrorCodes.HandlerValueType,
+                        $"the _N handler writes a number, and {value.GetType()} does not convert to one");
+                sb.Append(number.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                break;
+        }
+    }
 }

@@ -1,4 +1,6 @@
-﻿using System.Buffers;
+using System.Buffers;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -50,8 +52,7 @@ internal struct AsciiMapperBuilder {
     private static MaskedCharComparer? SharedComparer;
     internal AsciiMapperBuilder(Span<string> Keys) {
         var length = Keys.Length;
-        if (length <= 1)
-            throw new Exception();
+        Debug.Assert(length > 2, "Error: Must have more than 2 keys");
         MaxDepth = -1;
         Steps = [];
         UsedKeys = ArrayPool<string>.Shared.Rent(length);
@@ -61,8 +62,6 @@ internal struct AsciiMapperBuilder {
         Interlocked.CompareExchange(ref SharedComparer, CharComparer, null);
         ArrayPool<string>.Shared.Return(UsedKeys);
         UsedKeys = null!;
-        if (Steps.Length == 0)
-            return;
         uint[] newArr = new uint[MaxReserved];
         Array.Copy(Steps, newArr, MaxReserved);
         ArrayPool<uint>.Shared.Return(Steps);
@@ -75,7 +74,7 @@ internal struct AsciiMapperBuilder {
         var bit256 = new BitCounter256();
         var multi = new MultiBitCounter();
         for (int i = 0; i < Keys.Length; i++) {
-            var k = Keys[i] ?? throw new NullReferenceException("A key in the set was null");
+            var k = Keys[i] ?? throw new ArgumentNullException($"Keys[{i}]", "A key in the set was null");
             UsedKeys[i] = k;
             var l = k.Length;
             bit256.Set(l & 255);
@@ -115,7 +114,7 @@ internal struct AsciiMapperBuilder {
     private readonly unsafe int GetTerminalStepIndex(string key, out bool hasAlt, out int depth) {
         hasAlt = false;
         var len = key.Length;
-        fixed (char* p = key) {
+        fixed (char* p = &System.Runtime.InteropServices.MemoryMarshal.GetReference(key.AsSpan())) {
             char* keyPtr = p;
             uint step = Steps[len & LengthMask];
             uint lastStep = 0;
@@ -162,7 +161,6 @@ internal struct AsciiMapperBuilder {
     private static (int charInd, int mask, int decal) Decode(uint step)
         => ((int)(step >> 24), (int)((step >> 16) & 0xFF), (ushort)step);
 #if !NETCOREAPP3_0_OR_GREATER
-// This table must be present in the class for the legacy path
 private static readonly byte[] DeBruijnLookup64 = [
     0,  1,  48, 2,  57, 49, 28, 3,  61, 58, 50, 42, 38, 29, 17, 4,
     62, 54, 59, 36, 51, 47, 43, 25, 41, 39, 33, 30, 24, 18, 12, 5,
@@ -240,7 +238,7 @@ private static readonly byte[] DeBruijnLookup64 = [
             if (keysStart == keysEnd)
                 return true;
         }
-        return false;
+        throw new RinkuInternalException(ErrorCodes.InternalInvariant, "the key walk ran past its end without settling");
     }
     private uint MakeStep(int keysStart, int nb) {
         var (counter, charIndex) = GetBestBitCounter(keysStart, nb);
@@ -257,15 +255,14 @@ private static readonly byte[] DeBruijnLookup64 = [
         return step;
     }
     private static bool AllEqualIgnoreCase(ReadOnlySpan<string> span) {
-        if (span.Length < 2)
-            return true;
+        Debug.Assert(span.Length >= 2, "Error: Must have at least 2 keys in the group");
         string first = span[0];
         int len = first.Length;
         for (int i = 1; i < span.Length; i++) {
             string s = span[i];
             if (ReferenceEquals(s, first))
                 continue;
-            if (s == null || s.Length != len)
+            if (s.Length != len)
                 return false;
             var a = first.AsSpan();
             var b = s.AsSpan();

@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -72,14 +72,11 @@ public class LetterMap<T> : IDictionary<char, T> {
     }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static int Rank(uint mask, int idx) {
-        // mask & ((1u << idx) - 1) zeroes out everything above the index
         uint target = mask & ((1u << idx) - 1);
 
 #if NETCOREAPP3_0_OR_GREATER
         return System.Numerics.BitOperations.PopCount(target);
 #else
-    // Software fallback: SWAR (SIMD Within A Register) algorithm
-    // This is the fastest way to count bits without hardware intrinsics
     target = target - ((target >> 1) & 0x55555555);
     target = (target & 0x33333333) + ((target >> 2) & 0x33333333);
     return (int)((((target + (target >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24);
@@ -241,8 +238,6 @@ public class LetterMap<T> : IDictionary<char, T> {
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    /* ================= Core ================= */
-
     void Set(char key, T value) {
         int i = Idx(key);
         uint bit = 1u << i;
@@ -254,12 +249,9 @@ public class LetterMap<T> : IDictionary<char, T> {
         }
 
         var arr = _values;
-        var newArr = new T[arr == null ? 1 : arr.Length + 1];
-
-        if (arr != null) {
-            Array.Copy(arr, 0, newArr, 0, r);
-            Array.Copy(arr, r, newArr, r + 1, arr.Length - r);
-        }
+        var newArr = new T[arr.Length + 1];
+        Array.Copy(arr, 0, newArr, 0, r);
+        Array.Copy(arr, r, newArr, r + 1, arr.Length - r);
 
         newArr[r] = value;
         _values = newArr;

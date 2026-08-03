@@ -14,17 +14,18 @@ public class Playlist { public int Id { get; set; } public string? Name { get; s
 var playlists = LoadPlaylists();
 var list = playlists.ToTrackingList<Playlist, string?>(
     validator: (p, _) => string.IsNullOrWhiteSpace(p?.Name) ? "Name is required" : null);
+var validated = (IValidatableEditableList<Playlist, string?>)list;
 
 // edit: a lazy copy is made, the original stays untouched
-list.EnsureEditing(0, out Playlist draft);
+validated.EnsureEditing(0, out Playlist draft);
 draft.Name = "Renamed";
 
-if (list.Validate(0)) {
-    list.CommitEdit(0);                     // the edit becomes the new original
+if (validated.Validate(0)) {
+    validated.CommitEdit(0);                // the edit becomes the new original
 }
 else {
-    string? error = list.GetMetadata(0);    // "Name is required"
-    list.CancelEdit(0);                     // discard, keep the original
+    string? error = validated.GetMetadata(0); // "Name is required"
+    validated.CancelEdit(0);                 // discard, keep the original
 }
 
 // removals are tracked too

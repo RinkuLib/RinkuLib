@@ -4,6 +4,10 @@
   href: objects.md
 - name: Nullability
   href: nullability.md
+- name: Grouping
+  href: grouping.md
+- name: Custom Multi-Row Types
+  href: custom-multi-row-types.md
 - name: DynaObject
   href: dynaobject.md
 - name: Registration

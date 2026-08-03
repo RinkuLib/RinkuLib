@@ -42,7 +42,7 @@ public static class QueryBuilderCommandExtensions {
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and return the scalar value.
         /// </summary>
-        public T ExecuteScalar<T>() {
+        public T? ExecuteScalar<T>() {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
@@ -53,7 +53,7 @@ public static class QueryBuilderCommandExtensions {
         /// Executes the managed <see cref="DbCommand"/> and return the scalar value.
         /// </summary>
         /// <param name="ct">The fowarded cancellation token</param>
-        public Task<T> ExecuteScalarAsync<T>(CancellationToken ct = default) {
+        public Task<T?> ExecuteScalarAsync<T>(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
@@ -171,7 +171,7 @@ public static class QueryBuilderCommandExtensions {
             return cmd.ExecuteAsync(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteScalar{T}(QueryBuilderCommand{DbCommand})"/>
-        public T ExecuteScalar<T>() {
+        public T? ExecuteScalar<T>() {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
@@ -179,7 +179,7 @@ public static class QueryBuilderCommandExtensions {
             return cmd.ExecuteScalar<T>(false, command.NeedToCache(vars) ? command : null);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteScalarAsync{T}(QueryBuilderCommand{DbCommand}, CancellationToken)"/>
-        public Task<T> ExecuteScalarAsync<T>(CancellationToken ct = default) {
+        public Task<T?> ExecuteScalarAsync<T>(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;

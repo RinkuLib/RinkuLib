@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
@@ -34,8 +35,14 @@ public class QueryCommand : IQueryCommand, ICache {
     public readonly QueryText QueryText;
     /// <summary> The row parsers learned so far, one per result shape seen, reused across runs. </summary>
     public ParsingCacheItem[] ParsingCache = [];
-    private IntPtr[] _handles = [];
-    private TypeAccessorCache[] _funcs = [];
+    /// <summary>
+    /// The accessor learned for each parameter-object type, kept as one array so a lookup that runs without
+    /// the lock cannot pair a handle with the plan of another type.
+    /// </summary>
+    private (IntPtr Handle, TypeAccessorCache Cache)[] _accessors = [];
+    /// <summary>The independent <c>UseWith</c> accessor learned for each parameter-object type.</summary>
+    private (IntPtr Handle, UseWithAccessorCache Cache)[] _useWithAccessors = [];
+    private readonly Dictionary<Type, IReadOnlyList<AccessorHandlerRegistration>> _accessorRegistrations = [];
     /// <summary>
     /// Guards the shared accessor cache while it learns how to read a new parameter object type.
     /// </summary>
@@ -63,6 +70,21 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <inheritdoc/>
     public readonly int StartBoolCond;
     /// <summary>
+    /// How the provider reads this command's text. <see cref="System.Data.CommandType.Text"/> for SQL, which
+    /// is what a template is, and <see cref="System.Data.CommandType.StoredProcedure"/> for a command whose
+    /// text names a procedure.
+    /// </summary>
+    public readonly CommandType CommandType;
+    /// <summary>
+    /// Puts the run's text on the command, and the reading it needs when that is not the provider's default.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void SetText(IDbCommand cmd, string text) {
+        cmd.CommandText = text;
+        if (CommandType != CommandType.Text)
+            cmd.CommandType = CommandType;
+    }
+    /// <summary>
     /// Defines a command from a SQL template. The template is read once, here, and the command is then reused
     /// for every run.
     /// </summary>
@@ -70,8 +92,53 @@ public class QueryCommand : IQueryCommand, ICache {
     /// <param name="variableChar">The character that marks a variable, <c>@</c> when left unset.</param>
     public QueryCommand(string query, char variableChar = default)
         : this(new QueryFactory(query, variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap)) { }
+    /// <summary>
+    /// Defines a command whose parameters are named rather than read out of its text, and says how the
+    /// provider should read the text. A stored procedure is the case this exists for: the text is the
+    /// procedure's name, which carries no variables to find, so the parameters are given instead.
+    /// </summary>
+    /// <param name="commandText">The text to send, used exactly as given, with no markers read from it.</param>
+    /// <param name="variableNames">
+    /// The parameters to bind, in order. Each is required, so a run supplies them all. A name may be written
+    /// with or without the variable character.
+    /// </param>
+    /// <param name="commandType">How the provider reads the text.</param>
+    /// <example>
+    /// <code>
+    /// static readonly QueryCommand Renumber =
+    ///     new("dbo.RenumberTracks", ["albumId", "moved"], CommandType.StoredProcedure);
+    ///
+    /// Renumber.Execute(cnn, new { albumId = 1, moved = 0 });
+    /// </code>
+    /// </example>
+    public QueryCommand(string commandText, IEnumerable<string> variableNames, CommandType commandType = CommandType.StoredProcedure)
+        : this(new QueryFactory(commandText, variableNames), commandType) { }
+
+    /// <summary>
+    /// Registers runtime accessor handlers for a parameter type. This is the runtime form of placing
+    /// <see cref="AccessorEmiterHandler"/> attributes on that type or its members.
+    /// </summary>
+    /// <typeparam name="T">The parameter type the registrations apply to.</typeparam>
+    /// <param name="registrations">The type or member handlers to use when reading <typeparamref name="T"/>.</param>
+    /// <remarks>Register handlers during setup, before using the command concurrently.</remarks>
+    public void RegisterAccessorHandlers<T>(params AccessorHandlerRegistration[] registrations) {
+        ArgumentNullException.ThrowIfNull(registrations);
+        lock (TypeAccessorSharedLock) {
+            _accessorRegistrations[typeof(T)] = [.. registrations];
+            var handle = typeof(T).TypeHandle.Value;
+            _accessors = [.. _accessors.Where(x => x.Handle != handle)];
+            _useWithAccessors = [.. _useWithAccessors.Where(x => x.Handle != handle)];
+        }
+    }
     /// <summary>Defines a command from an already-parsed template, the extension point a subclass builds on.</summary>
-    protected QueryCommand(QueryFactory factory) {
+    protected QueryCommand(QueryFactory factory) : this(factory, CommandType.Text) { }
+    /// <summary>
+    /// Defines a command from an already-parsed template, saying how the provider should read the text.
+    /// </summary>
+    /// <param name="factory">The template already read into its pieces.</param>
+    /// <param name="commandType">How the provider reads the text.</param>
+    protected QueryCommand(QueryFactory factory, CommandType commandType) {
+        CommandType = commandType;
         Mapper = factory.Mapper;
         var segments = factory.Segments;
         var queryString = factory.Query;
@@ -79,9 +146,30 @@ public class QueryCommand : IQueryCommand, ICache {
         StartBaseHandlers = StartBoolCond - factory.NbBaseHandlers;
         StartSpecialHandlers = StartBaseHandlers - factory.NbSpecialHandlers;
         var specialHandlers = SpecialHandler.GetHandlers(StartSpecialHandlers, StartBaseHandlers, Mapper, queryString, segments);
-        QueryText = new(queryString, segments, factory.Conditions);
+        QueryText = QueryText.Create(queryString, segments, factory.Conditions, StartSpecialHandlers, StartBoolCond - StartSpecialHandlers);
         Parameters = new(factory.NbNormalVar, specialHandlers);
     }
+    /// <summary>
+    /// A command for a stored procedure, read from the database. What the procedure declares is what the
+    /// command binds, so the names, their types, their sizes and their directions all come from the one
+    /// place that knows them.
+    /// </summary>
+    /// <param name="procedureName">The procedure to call.</param>
+    /// <param name="connection">The connection to ask, opened for the question if it is not already.</param>
+    /// <remarks>
+    /// Asking costs a round trip, so this belongs where a command is built, once, and not in a call. Without
+    /// a connection to ask, name the parameters yourself with
+    /// <see cref="QueryCommand(string, IEnumerable{string}, CommandType)"/>.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// static readonly QueryCommand Renumber = QueryCommand.FromProc("dbo.RenumberTracks", cnn);
+    ///
+    /// Renumber.Execute(cnn, new { albumId = 1, moved = 0 });
+    /// </code>
+    /// </example>
+    public static QueryCommand FromProc(string procedureName, IDbConnection connection)
+        => StoredProcedure.From(connection, procedureName);
     /// <summary>
     /// Looks up the row parser already learned for this run's shape, so a warm command can read the result
     /// without inspecting the columns again. Returns <see langword="false"/> when nothing is cached yet.
@@ -95,8 +183,9 @@ public class QueryCommand : IQueryCommand, ICache {
             ref var entry = ref cacheArray[i];
             if (entry.ResultSetIndex != resultSetIndex)
                 goto NextEntry;
-            int idxLen = entry.CondStates.Length;
-            ref int pBase = ref MemoryMarshal.GetReference(entry.CondStates);
+            var condStates = entry.CondStates;
+            int idxLen = condStates.Length;
+            ref int pBase = ref MemoryMarshal.GetArrayDataReference(condStates);
             for (int j = 0; j < idxLen; j++) {
                 int packed = Unsafe.Add(ref pBase, j);
                 if (Unsafe.Add(ref pUsage, packed >> 1) != ((packed & 1) != 0))
@@ -123,8 +212,11 @@ public class QueryCommand : IQueryCommand, ICache {
 
         for (int i = 0; i < cacheLen; i++) {
             ref var entry = ref cacheArray[i];
-            int idxLen = entry.CondStates.Length;
-            ref int pBase = ref MemoryMarshal.GetArrayDataReference(entry.CondStates);
+            if (entry.ResultSetIndex != resultSetIndex)
+                goto NextEntry;
+            var condStates = entry.CondStates;
+            int idxLen = condStates.Length;
+            ref int pBase = ref MemoryMarshal.GetArrayDataReference(condStates);
             for (int j = 0; j < idxLen; j++) {
                 int packed = Unsafe.Add(ref pBase, j);
                 if ((Unsafe.Add(ref usageBase, packed >> 1) is not null) != ((packed & 1) != 0))
@@ -132,8 +224,6 @@ public class QueryCommand : IQueryCommand, ICache {
             }
 
             parser = entry.Parser as ITypeParser<T>;
-            if (entry.ResultSetIndex != resultSetIndex)
-                return false;
             if (parser is not null)
                 return !NeedToCache(usageMap);
 
@@ -206,9 +296,7 @@ public class QueryCommand : IQueryCommand, ICache {
         var ind = Mapper.GetIndex(paramName);
         if (ind < 0 || ind >= StartBaseHandlers)
             return false;
-        Parameters.UpdateCache(ind, paramInfo);
-        return true;
-
+        return Parameters.UpdateCache(ind, paramInfo);
     }
     /// <inheritdoc/>
     public bool SetCommand(IDbCommand cmd, object?[] variables) {
@@ -226,13 +314,20 @@ public class QueryCommand : IQueryCommand, ICache {
         }
 
         ref object? pSpecialVar = ref Unsafe.Add(ref pVar, varInfos.Length);
+        ref SpecialHandler pHandlers = ref MemoryMarshal.GetArrayDataReference(handlers);
         for (int i = 0; i < handlers.Length; i++) {
             ref var currentVar = ref Unsafe.Add(ref pSpecialVar, i);
-            if (currentVar is not null)
-                handlers[i].Use(cmd, currentVar);
+            if (currentVar is null)
+                continue;
+            var handler = Unsafe.Add(ref pHandlers, i);
+            if (!handler.CanHandle(ref currentVar)) {
+                currentVar = null;
+                continue;
+            }
+            handler.Use(cmd, ref currentVar);
         }
 
-        cmd.CommandText = QueryText.Parse(variables);
+        SetText(cmd, QueryText.Parse(variables));
 
         return true;
     }
@@ -252,68 +347,49 @@ public class QueryCommand : IQueryCommand, ICache {
         }
 
         ref object? pSpecialVar = ref Unsafe.Add(ref pVar, varInfos.Length);
+        ref SpecialHandler pHandlers = ref MemoryMarshal.GetArrayDataReference(handlers);
         for (int i = 0; i < handlers.Length; i++) {
             ref var currentVar = ref Unsafe.Add(ref pSpecialVar, i);
             if (currentVar is null)
                 continue;
-            if (currentVar is IEnumerable && currentVar is not string && !HasAny(ref Unsafe.As<object, IEnumerable>(ref currentVar))) {
+            var handler = Unsafe.Add(ref pHandlers, i);
+            if (!handler.CanHandle(ref currentVar)) {
                 currentVar = null;
                 continue;
             }
-            handlers[i].Use(cmd, currentVar);
+            handler.Use(cmd, ref currentVar);
         }
 
-        cmd.CommandText = QueryText.Parse(variables);
+        SetText(cmd, QueryText.Parse(variables));
 
         return true;
     }
-    internal static bool HasAny(ref IEnumerable value) {
-        if (value is not IEnumerable source)
-            return true;
-        if (source is IEnumerable<object> enu && enu.TryGetNonEnumeratedCount(out var nb)) {
-            if (nb <= 0)
-                return false;
-            return true;
-        }
-        if (source is ICollection col) {
-            if (col.Count <= 0)
-                return false;
-            return true;
-        }
-        if (source.TryGetNonEnumeratedCount(out nb)) {
-            if (nb <= 0)
-                return false;
-            return true;
-        }
-        var e = source.GetEnumerator();
-        if (e.MoveNext()) {
-            value = new PeekableWrapper(e.Current, e);
-            return true;
-        }
-        (e as IDisposable)?.Dispose();
-        return false;
-    }
-
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand(IDbCommand cmd, object? parameterObj, Span<bool> usageMap) {
-        if (parameterObj is null)
-            return ActualSetCommand(cmd, new NoTypeAccessor(), usageMap);
+        if (parameterObj is null) {
+            usageMap.Clear();
+            SetText(cmd, QueryText.Parse(usageMap, EmptyHandlerValues()));
+            return true;
+        }
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
         var cache = GetAccessorCache(handle, type);
-        return ActualSetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+        return FinishSetCommand(cmd, cache.Bind(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand(DbCommand cmd, object? parameterObj, Span<bool> usageMap) {
-        if (parameterObj is null)
-            return ActualSetCommand(cmd, new NoTypeAccessor(), usageMap);
+        if (parameterObj is null) {
+            usageMap.Clear();
+            SetText(cmd, QueryText.Parse(usageMap, EmptyHandlerValues()));
+            return true;
+        }
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
         var cache = GetAccessorCache(handle, type);
-        return ActualSetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+        return FinishSetCommand(cmd, cache.Bind(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -321,9 +397,9 @@ public class QueryCommand : IQueryCommand, ICache {
         IntPtr handle = typeof(T).TypeHandle.Value;
         var cache = GetAccessorCache(handle, typeof(T));
         if (!typeof(T).IsValueType)
-            return ActualSetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+            return FinishSetCommand(cmd, cache.Bind(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        return ActualSetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
+        return FinishSetCommand(cmd, c.GenericBind(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
 
     /// <inheritdoc/>
@@ -332,9 +408,9 @@ public class QueryCommand : IQueryCommand, ICache {
         IntPtr handle = typeof(T).TypeHandle.Value;
         var cache = GetAccessorCache(handle, typeof(T));
         if (!typeof(T).IsValueType)
-            return ActualSetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+            return FinishSetCommand(cmd, cache.Bind(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        return ActualSetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
+        return FinishSetCommand(cmd, c.GenericBind(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
 
     /// <inheritdoc/>
@@ -343,9 +419,9 @@ public class QueryCommand : IQueryCommand, ICache {
         IntPtr handle = typeof(T).TypeHandle.Value;
         var cache = GetAccessorCache(handle, typeof(T));
         if (!typeof(T).IsValueType)
-            return ActualSetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+            return FinishSetCommand(cmd, cache.Bind(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        return ActualSetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
+        return FinishSetCommand(cmd, c.GenericBind(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -353,181 +429,96 @@ public class QueryCommand : IQueryCommand, ICache {
         IntPtr handle = typeof(T).TypeHandle.Value;
         var cache = GetAccessorCache(handle, typeof(T));
         if (!typeof(T).IsValueType)
-            return ActualSetCommand(cmd, new TypeAccessor(parameterObj, cache.GetUsage, cache.GetValue), usageMap);
+            return FinishSetCommand(cmd, cache.Bind(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        return ActualSetCommand(cmd, new TypeAccessor<T>(ref parameterObj, c.GenericGetUsage, c.GenericGetValue), usageMap);
+        return FinishSetCommand(cmd, c.GenericBind(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
+    /// <summary>
+    /// A run that supplies nothing still has to answer for the handler spots the template keeps, so the slots
+    /// are there and empty rather than absent, and a spot that needed one is refused by name.
+    /// </summary>
+    private Span<object?> EmptyHandlerValues()
+        => QueryText.HandlerValuesLength <= 0 ? default : new object?[QueryText.HandlerValuesLength];
     /// <summary>
     /// The cached plan for reading a parameter object of the given type, its members mapped to this command's
     /// keys. Built on first sight of the type and reused after, so binding a familiar object type is cheap.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TypeAccessorCache GetAccessorCache(IntPtr handle, Type type) {
-        var hds = _handles;
-        var funcs = _funcs;
-        for (int i = 0; i < hds.Length; i++)
-            if (hds[i] == handle)
-                return funcs[i];
+        var accessors = _accessors;
+        for (int i = 0; i < accessors.Length; i++)
+            if (accessors[i].Handle == handle)
+                return accessors[i].Cache;
         lock (TypeAccessorSharedLock) {
-            for (int i = 0; i < _handles.Length; i++)
-                if (_handles[i] == handle)
-                    return _funcs[i];
-            var method = typeof(TypeAccessorCacher<>).MakeGenericType(type).GetMethod(nameof(TypeAccessorCacher<>.GetOrGenerate), BindingFlags.Public | BindingFlags.Static);
-            var res = (TypeAccessorCache)method!.Invoke(null, [Mapper])!;
-            int len = _handles.Length;
-            var newH = new IntPtr[len + 1];
-            var newF = new TypeAccessorCache[len + 1];
-            _handles.CopyTo(newH, 0);
-            _funcs.CopyTo(newF, 0);
-            newH[len] = handle;
-            newF[len] = res;
-            _handles = newH;
-            _funcs = newF;
+            accessors = _accessors;
+            for (int i = 0; i < accessors.Length; i++)
+                if (accessors[i].Handle == handle)
+                    return accessors[i].Cache;
+            var method = typeof(TypeAccessorCacher<>).MakeGenericType(type)
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Single(x => x.Name == nameof(TypeAccessorCacher<>.GetOrGenerate) && x.GetParameters().Length == 5);
+            TypeAccessorCache res;
+            _accessorRegistrations.TryGetValue(type, out var registrations);
+            try {
+                res = (TypeAccessorCache)method.Invoke(null, [Mapper, registrations ?? [], Parameters._specialHandlers,
+                    StartSpecialHandlers, StartBoolCond])!;
+            }
+            catch (TargetInvocationException e) when (e.InnerException is not null) {
+                ExceptionDispatchInfo.Capture(e.InnerException).Throw();
+                throw;
+            }
+            _accessors = [.. accessors, (handle, res)];
             return res;
         }
     }
-#if NET9_0_OR_GREATER
-    private bool ActualSetCommand<T>(IDbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
-#else
-    private bool ActualSetCommand(IDbCommand cmd, NoTypeAccessor accessor, Span<bool> usageMap) {
-#endif
-        Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
+
+    /// <summary>Gets the independent accessor cache used by <c>UseWith</c>.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public UseWithAccessorCache GetUseWithAccessorCache(IntPtr handle, Type type) {
+        var accessors = _useWithAccessors;
+        for (int i = 0; i < accessors.Length; i++)
+            if (accessors[i].Handle == handle)
+                return accessors[i].Cache;
+        lock (TypeAccessorSharedLock) {
+            accessors = _useWithAccessors;
+            for (int i = 0; i < accessors.Length; i++)
+                if (accessors[i].Handle == handle)
+                    return accessors[i].Cache;
+            _accessorRegistrations.TryGetValue(type, out var registrations);
+            var method = typeof(TypeAccessorCacher<>).MakeGenericType(type)
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Single(x => x.Name == nameof(TypeAccessorCacher<>.GetOrGenerateUseWith)
+                    && x.GetParameters().Length == (registrations is null ? 4 : 5));
+            try {
+                object?[] args = registrations is null
+                    ? [Mapper, Parameters._specialHandlers, StartSpecialHandlers, StartBoolCond]
+                    : [Mapper, registrations, Parameters._specialHandlers, StartSpecialHandlers, StartBoolCond];
+                var cache = (UseWithAccessorCache)method.Invoke(null, args)!;
+                _useWithAccessors = [.. accessors, (handle, cache)];
+                return cache;
+            }
+            catch (TargetInvocationException e) when (e.InnerException is not null) {
+                ExceptionDispatchInfo.Capture(e.InnerException).Throw();
+                throw;
+            }
+        }
+    }
+    private bool FinishSetCommand(IDbCommand cmd, object?[] handlerValues, Span<bool> usageMap) {
         var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
+        for (int i = StartSpecialHandlers; i < StartBaseHandlers; i++) {
+            if (!usageMap[i])
+                continue;
+            ref object? value = ref handlerValues[i - StartSpecialHandlers];
+            var handler = handlers[i - StartSpecialHandlers];
+            if (!handler.CanHandle(ref value)) {
+                usageMap[i] = false;
+                continue;
+            }
+            handler.Use(cmd, ref value);
+        }
+        SetText(cmd, QueryText.Parse(usageMap, handlerValues));
         return true;
     }
-#if NET9_0_OR_GREATER
-    private bool ActualSetCommand<T>(DbCommand cmd, T accessor, Span<bool> usageMap) where T : ITypeAccessor, allows ref struct {
-#else
-    private bool ActualSetCommand(DbCommand cmd, NoTypeAccessor accessor, Span<bool> usageMap) {
-#endif
-        Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
-        return true;
-    }
-#if !NET9_0_OR_GREATER
-    private bool ActualSetCommand(IDbCommand cmd, TypeAccessor accessor, Span<bool> usageMap) {
-        Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
-        return true;
-    }
-    private bool ActualSetCommand(DbCommand cmd, TypeAccessor accessor, Span<bool> usageMap) {
-        Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
-        return true;
-    }
-    private bool ActualSetCommand<T>(IDbCommand cmd, TypeAccessor<T> accessor, Span<bool> usageMap) {
-        Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
-        return true;
-    }
-    private bool ActualSetCommand<T>(DbCommand cmd, TypeAccessor<T> accessor, Span<bool> usageMap) {
-        Debug.Assert(usageMap.Length == Mapper.Count);
-        var varInfos = Parameters._variablesInfo;
-        var handlers = Parameters._specialHandlers;
-
-        ref string pKeys = ref Mapper.KeysStartPtr;
-        var total = Mapper.Count;
-        int i = 0;
-        for (; i < StartSpecialHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, accessor.GetValue(i));
-
-        for (; i < StartBaseHandlers; i++)
-            if (usageMap[i] = accessor.IsUsed(i))
-                handlers[i].Use(cmd, accessor.GetValue(i));
-
-        for (; i < total; i++)
-            usageMap[i] = accessor.IsUsed(i);
-
-        cmd.CommandText = QueryText.Parse(usageMap, accessor);
-        return true;
-    }
-#endif
 }
 
 internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumerable<object>, IDisposable {

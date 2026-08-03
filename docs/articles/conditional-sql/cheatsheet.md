@@ -7,7 +7,7 @@
 | `/*Key*/` | Conditional footprint under a custom key | `/*ShowPrice*/UnitPrice` |
 | `/*@Var*/` | Conditional footprint tied to a variable | `/*@AlbumId*/AlbumId = ...` |
 | `|` `&` in a marker | Combine keys, or / and, left to right | `/*A|B&C*/` |
-| `!` in a marker | Negate a key, keep the footprint when it is absent | `/*!All*/` |
+| `!` in a marker | Negate a key, keep the footprint when it is absent, no space after it | `/*!All*/` |
 | `&AND` / `&OR` / `&,` | Weld footprints into one | `?@A &AND ?@B` |
 | `???` | Boundary a footprint cannot cross, emits nothing | `SELECT DISTINCT ??? /*X*/Id, Name` |
 | `?SELECT` | Dynamic projection, each column becomes a condition | `?SELECT AlbumId AS Id, Title FROM ...` |
@@ -19,5 +19,6 @@
 | `@Var_R` | Raw SQL, unescaped, injection risk | `FROM @Table_R` |
 | `@Var_X` | Collection spread into parameters | `IN (@GenreIds_X)` |
 | `/*~ ... */` | Literal comment, kept in the output | `/*~ hint */SELECT ...` |
+| `-- ...` | Line comment, kept in the output, nothing in it is read | `SELECT Id -- @x is a note` |
 
 Details: [optional variables](optional-variables.md), [conditional markers](conditional-markers.md), [dynamic projection](dynamic-projection.md), [handlers](handlers.md).

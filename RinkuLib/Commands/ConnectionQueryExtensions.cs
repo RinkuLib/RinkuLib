@@ -38,16 +38,16 @@ public static class ConnectionQueryExtensions {
     public static Task<int> ExecuteAsync(this DbConnection cnn, string sql, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
         GetOrCreateCommand(sql).ExecuteAsync(cnn, out cmd, parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static T ExecuteScalar<T>(this DbConnection cnn, string sql, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) =>
+    public static T? ExecuteScalar<T>(this DbConnection cnn, string sql, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) =>
         GetOrCreateCommand(sql).ExecuteScalar<T>(cnn, parametersObj, transaction, timeout);
     /// <summary>Runs <paramref name="sql"/> and returns the first column of the first row as <typeparamref name="T"/>, handing back the command in <paramref name="cmd"/> to read output parameters and dispose.</summary>
-    public static T ExecuteScalar<T>(this DbConnection cnn, string sql, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) =>
+    public static T? ExecuteScalar<T>(this DbConnection cnn, string sql, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) =>
         GetOrCreateCommand(sql).ExecuteScalar<T>(cnn, out cmd, parametersObj, transaction, timeout);
     /// <summary>Asynchronously runs <paramref name="sql"/> and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static Task<T> ExecuteScalarAsync<T>(this DbConnection cnn, string sql, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
+    public static Task<T?> ExecuteScalarAsync<T>(this DbConnection cnn, string sql, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
         GetOrCreateCommand(sql).ExecuteScalarAsync<T>(cnn, parametersObj, transaction, timeout, ct);
     /// <summary>Asynchronously runs <paramref name="sql"/> and returns the first column of the first row as <typeparamref name="T"/>, handing back the command in <paramref name="cmd"/> to read output parameters and dispose.</summary>
-    public static Task<T> ExecuteScalarAsync<T>(this DbConnection cnn, string sql, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
+    public static Task<T?> ExecuteScalarAsync<T>(this DbConnection cnn, string sql, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
         GetOrCreateCommand(sql).ExecuteScalarAsync<T>(cnn, out cmd, parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> and returns its <see cref="DbDataReader"/>, with the owning command in <paramref name="cmd"/>.</summary>
     public static DbDataReader ExecuteReader(this DbConnection cnn, string sql, out DbCommand cmd, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) =>
@@ -96,16 +96,16 @@ public static class ConnectionQueryExtensions {
     public static Task<int> ExecuteAsync(this IDbConnection cnn, string sql, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
         GetOrCreateCommand(sql).ExecuteAsync(cnn, out cmd, parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static T ExecuteScalar<T>(this IDbConnection cnn, string sql, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) =>
+    public static T? ExecuteScalar<T>(this IDbConnection cnn, string sql, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) =>
         GetOrCreateCommand(sql).ExecuteScalar<T>(cnn, parametersObj, transaction, timeout);
     /// <summary>Runs <paramref name="sql"/> and returns the first column of the first row as <typeparamref name="T"/>, handing back the command in <paramref name="cmd"/> to read output parameters and dispose.</summary>
-    public static T ExecuteScalar<T>(this IDbConnection cnn, string sql, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) =>
+    public static T? ExecuteScalar<T>(this IDbConnection cnn, string sql, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) =>
         GetOrCreateCommand(sql).ExecuteScalar<T>(cnn, out cmd, parametersObj, transaction, timeout);
     /// <summary>Asynchronously runs <paramref name="sql"/> and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static Task<T> ExecuteScalarAsync<T>(this IDbConnection cnn, string sql, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
+    public static Task<T?> ExecuteScalarAsync<T>(this IDbConnection cnn, string sql, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
         GetOrCreateCommand(sql).ExecuteScalarAsync<T>(cnn, parametersObj, transaction, timeout, ct);
     /// <summary>Asynchronously runs <paramref name="sql"/> and returns the first column of the first row as <typeparamref name="T"/>, handing back the command in <paramref name="cmd"/> to read output parameters and dispose.</summary>
-    public static Task<T> ExecuteScalarAsync<T>(this IDbConnection cnn, string sql, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
+    public static Task<T?> ExecuteScalarAsync<T>(this IDbConnection cnn, string sql, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) =>
         GetOrCreateCommand(sql).ExecuteScalarAsync<T>(cnn, out cmd, parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> and returns its <see cref="DbDataReader"/>, with the owning command in <paramref name="cmd"/>.</summary>
     public static DbDataReader ExecuteReader(this IDbConnection cnn, string sql, out IDbCommand cmd, object? parametersObj = null, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) =>
@@ -142,10 +142,10 @@ public static class ConnectionQueryExtensions {
     public static Task<int> ExecuteAsync<TObj>(this DbConnection cnn, string sql, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteAsync(cnn, parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> with a statically typed parameter object and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static T ExecuteScalar<T, TObj>(this DbConnection cnn, string sql, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
+    public static T? ExecuteScalar<T, TObj>(this DbConnection cnn, string sql, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteScalar<T, TObj>(cnn, parametersObj, transaction, timeout);
     /// <summary>Asynchronously runs <paramref name="sql"/> with a statically typed parameter object and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static Task<T> ExecuteScalarAsync<T, TObj>(this DbConnection cnn, string sql, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
+    public static Task<T?> ExecuteScalarAsync<T, TObj>(this DbConnection cnn, string sql, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteScalarAsync<T, TObj>(cnn, parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> with a statically typed parameter object and returns its <see cref="DbDataReader"/>, with the owning command in <paramref name="cmd"/>.</summary>
     public static DbDataReader ExecuteReader<TObj>(this DbConnection cnn, string sql, out DbCommand cmd, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
@@ -179,10 +179,10 @@ public static class ConnectionQueryExtensions {
     public static Task<int> ExecuteAsync<TObj>(this IDbConnection cnn, string sql, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteAsync(cnn, parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> with a statically typed parameter object and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static T ExecuteScalar<T, TObj>(this IDbConnection cnn, string sql, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
+    public static T? ExecuteScalar<T, TObj>(this IDbConnection cnn, string sql, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteScalar<T, TObj>(cnn, parametersObj, transaction, timeout);
     /// <summary>Asynchronously runs <paramref name="sql"/> with a statically typed parameter object and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static Task<T> ExecuteScalarAsync<T, TObj>(this IDbConnection cnn, string sql, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
+    public static Task<T?> ExecuteScalarAsync<T, TObj>(this IDbConnection cnn, string sql, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteScalarAsync<T, TObj>(cnn, parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> with a statically typed parameter object and returns its <see cref="DbDataReader"/>, with the owning command in <paramref name="cmd"/>.</summary>
     public static DbDataReader ExecuteReader<TObj>(this IDbConnection cnn, string sql, out IDbCommand cmd, TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
@@ -213,10 +213,10 @@ public static class ConnectionQueryExtensions {
     public static Task<int> ExecuteAsync<TObj>(this DbConnection cnn, string sql, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteAsync(cnn, ref parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> taking the parameter object by reference to avoid a copy, and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static T ExecuteScalar<T, TObj>(this DbConnection cnn, string sql, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
+    public static T? ExecuteScalar<T, TObj>(this DbConnection cnn, string sql, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteScalar<T, TObj>(cnn, ref parametersObj, transaction, timeout);
     /// <summary>Asynchronously runs <paramref name="sql"/> taking the parameter object by reference to avoid a copy, and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static Task<T> ExecuteScalarAsync<T, TObj>(this DbConnection cnn, string sql, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
+    public static Task<T?> ExecuteScalarAsync<T, TObj>(this DbConnection cnn, string sql, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteScalarAsync<T, TObj>(cnn, ref parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> taking the parameter object by reference to avoid a copy, and returns its <see cref="DbDataReader"/>, with the owning command in <paramref name="cmd"/>.</summary>
     public static DbDataReader ExecuteReader<TObj>(this DbConnection cnn, string sql, out DbCommand cmd, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
@@ -250,10 +250,10 @@ public static class ConnectionQueryExtensions {
     public static Task<int> ExecuteAsync<TObj>(this IDbConnection cnn, string sql, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteAsync(cnn, ref parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> taking the parameter object by reference to avoid a copy, and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static T ExecuteScalar<T, TObj>(this IDbConnection cnn, string sql, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
+    public static T? ExecuteScalar<T, TObj>(this IDbConnection cnn, string sql, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteScalar<T, TObj>(cnn, ref parametersObj, transaction, timeout);
     /// <summary>Asynchronously runs <paramref name="sql"/> taking the parameter object by reference to avoid a copy, and returns the first column of the first row as <typeparamref name="T"/>.</summary>
-    public static Task<T> ExecuteScalarAsync<T, TObj>(this IDbConnection cnn, string sql, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
+    public static Task<T?> ExecuteScalarAsync<T, TObj>(this IDbConnection cnn, string sql, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).ExecuteScalarAsync<T, TObj>(cnn, ref parametersObj, transaction, timeout, ct);
     /// <summary>Runs <paramref name="sql"/> taking the parameter object by reference to avoid a copy, and returns its <see cref="DbDataReader"/>, with the owning command in <paramref name="cmd"/>.</summary>
     public static DbDataReader ExecuteReader<TObj>(this IDbConnection cnn, string sql, out IDbCommand cmd, ref TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull =>

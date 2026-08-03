@@ -31,7 +31,23 @@ await foreach (var t in GetTracks.StreamQueryAsync<Track>(cnn))   // async strea
     Process(t);
 ```
 
-`List<T>` buffers every row. `IEnumerable<T>` and `IAsyncEnumerable<T>` produce rows as you enumerate, keeping memory flat on large results. A streamed result holds the reader open while you iterate, so finish or dispose it before reusing the connection. Zero rows give an empty collection.
+`List<T>` buffers every row. `IEnumerable<T>` and `IAsyncEnumerable<T>` produce rows as you enumerate, keeping memory flat on large results. Zero rows give an empty collection.
+
+When `T` is itself nested, a `List<Artist>` whose `Artist` holds a `List<Album>`, a join's repeated rows fold back into it. See [collections](collections.md).
+
+A streamed result waits. `Query<IEnumerable<T>>` runs nothing when you call it, the command goes off on the first step of walking the rows, and the reader closes when the walk ends, whether you reach the last row or leave the loop early.
+
+```csharp
+var tracks = GetTracks.Query<IEnumerable<Track>>(cnn);   // nothing has run
+foreach (var t in tracks)                                // runs it here
+    Process(t);                                          // reader closed at the end
+```
+
+A result you decide not to walk holds nothing, and walking one twice runs the command twice. Ask for `List<T>` when you mean to read the rows more than once.
+
+Two things follow from the waiting. A command handed back by the `out DbCommand` overloads has not run yet, so its output parameters fill only once you walk the rows. And what the database refuses surfaces where you walk, not where you asked for the result.
+
+`QueryAsync<IEnumerable<T>>` waits the same way, and awaiting it gives a sequence, not an async stream. The rows still come as you walk them and the walk is a synchronous one. `StreamQueryAsync<T>` is the async stream, and the one to reach for when the rows should come asynchronously.
 
 ## The built-in shapes
 
@@ -49,7 +65,7 @@ They answer two separate questions.
 | `List<T>` / `IEnumerable<T>` | empty collection | one element | all rows |
 | `Single<T>` | a default `Single<T>` | the object | **throws** |
 
-**Whether the value may be null.** A row can carry a `NULL`, or a nested object can [collapse](../mapping/nullability.md#invalidonnull-collapse-the-object) to nothing. By default that throws. A null-accepting shape takes it instead.
+**Whether the value may be null.** A row can carry a `NULL`, or a nested object can [collapse](../mapping/nullability.md#abortonnull-collapse-the-object) to nothing. By default that throws. A null-accepting shape takes it instead.
 
 | Ask for | Null value |
 | --- | --- |
@@ -67,16 +83,22 @@ Every wrapper converts implicitly to its inner `T`, so you can pass it wherever 
 
 ## Scalars
 
-A primitive `T` maps the first column of the first row. `ExecuteScalar<T>` runs the command and returns that single value.
+A primitive `T` maps the first column of the first row. `Query<T>` is valid when
+the command is a `SELECT` whose result is one scalar. `ExecuteScalar<T>` is the
+matching shape for an execution that also returns one value.
 
 ```csharp
-int count = CountTracks.ExecuteScalar<int>(cnn);
-int alt   = CountTracks.Query<int>(cnn);   // also works
+int count = CountTracks.Query<int>(cnn);              // SELECT: read one scalar
+int alt   = CountTracks.ExecuteScalar<int>(cnn);      // also works
 ```
 
 ## Tuples
 
 Ask for a `ValueTuple` and its elements are taken in order, the tuple names (`Item1`, `Item2`, ...) ignored. Each element then negotiates as usual. A basic type has no name left to match, so it takes the next column. A complex element still matches its own members by name.
+
+Every tuple element must negotiate successfully. A row with fewer columns than the tuple has no tuple parser; use a
+type with a construction path whose final parameter has a default, or provide separate construction paths, when two
+row shapes are both valid.
 
 ```csharp
 // Basic: strictly by column order

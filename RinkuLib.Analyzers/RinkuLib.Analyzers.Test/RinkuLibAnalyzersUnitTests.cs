@@ -6,11 +6,74 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using VerifySync = RinkuLib.Analyzers.Test.CSharpAnalyzerVerifier<
     RinkuLib.Analyzers.SyncBasedOnAnalyzer>;
 
+using VerifyAddBasedOn = RinkuLib.Analyzers.Test.CSharpAnalyzerVerifier<
+    RinkuLib.Analyzers.AddBasedOnAnalyzer>;
+
+using VerifyBasedOn = RinkuLib.Analyzers.Test.CSharpAnalyzerVerifier<
+    RinkuLib.Analyzers.BasedOnAnalyzer>;
+
+using VerifyInvocation = RinkuLib.Analyzers.Test.CSharpAnalyzerVerifier<
+    RinkuLib.Analyzers.MethodInvocationCompletionAnalyzer>;
+
 using VerifyFix = RinkuLib.Analyzers.Test.CSharpCodeFixVerifier<
     RinkuLib.Analyzers.BasedOnAnalyzer,
     RinkuLib.Analyzers.BasedOnLastModifiedCodeFixProvider>;
 
 namespace RinkuLib.Analyzers.Test {
+
+    [TestClass]
+    public class BasedOnAnalyzerCoverageTests {
+
+        [TestMethod]
+        public async Task A_Type_Without_BasedOn_Reports_The_OptIn_Diagnostic() {
+            var testCode = @"
+public class {|#0:CustomerDto|} { }
+";
+
+            var expected = VerifyAddBasedOn.Diagnostic(AddBasedOnAnalyzer.DiagnosticId)
+                .WithLocation(0)
+                .WithArguments("CustomerDto");
+
+            await VerifyAddBasedOn.VerifyAnalyzerAsync(testCode, expected);
+        }
+
+        [TestMethod]
+        public async Task A_BasedOn_Link_Reports_The_Linked_Symbol_For_Its_Code_Action() {
+            var testCode = @"
+public class CustomerEntity { }
+
+/// <BasedOn cref=""CustomerEntity""/>
+public class {|#0:CustomerDto|} { }
+";
+
+            var expected = VerifyBasedOn.Diagnostic(BasedOnAnalyzer.DiagnosticId)
+                .WithLocation(0)
+                .WithArguments("CustomerEntity");
+
+            await VerifyBasedOn.VerifyAnalyzerAsync(testCode, expected);
+        }
+
+        [TestMethod]
+        public async Task A_Method_Reference_In_An_Incomplete_Body_Offers_Invocation_Generation() {
+            var testCode = @"
+class Commands {
+    int Save() => 1;
+    object Build() => {|#0:Save|};
+}
+";
+
+            var expected = VerifyInvocation.Diagnostic(MethodInvocationCompletionAnalyzer.DiagnosticId)
+                .WithLocation(0)
+                .WithArguments("Save");
+            var test = new VerifyInvocation.Test {
+                TestCode = testCode,
+                CompilerDiagnostics = CompilerDiagnostics.None,
+            };
+            test.ExpectedDiagnostics.Add(expected);
+
+            await test.RunAsync();
+        }
+    }
 
     [TestClass]
     public class SyncBasedOnAnalyzerTests {
@@ -84,9 +147,6 @@ namespace MyApp.Api.Models
             }
         }
 
-        // RK0000 is the always-on codegen anchor, so it legitimately remains after the fix;
-        // declare it in the fixed state. Negative iteration counts are upper bounds: inserting the
-        // attribute shifts the diagnostic's span, which the framework counts as a second pass.
         private static async Task RunCodeFixAsync(string testCode, DiagnosticResult expectedDiagnostic, string fixedCode) {
             var test = new VerifyFix.Test {
                 TestCode = testCode,

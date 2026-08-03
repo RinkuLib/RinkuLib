@@ -42,6 +42,11 @@
       }
     ],
     "output": "_site",
+    "markdownEngineProperties": {
+      "markdigExtensions": [
+        "attributes"
+      ]
+    },
     "template": [
       "default",
       "modern"

@@ -1,0 +1,298 @@
+using RinkuLib.Commands;
+using RinkuLib.Exceptions;
+using RinkuLib.Queries;
+using RinkuLib.Tests.Infrastructure;
+using Xunit;
+
+namespace RinkuLib.Tests.Templating;
+
+/// <summary>
+/// Malformed templates the parser must reject, and quoting/nesting constructs it must scan past without
+/// treating their contents as markers.
+/// </summary>
+public class ParsingEdgeCaseTests {
+    [Fact]
+    public void Query_shorter_than_two_characters_is_rejected()
+        => Refusals.Raises(ErrorCodes.QueryTooShort, () => new QueryCommand("a"));
+
+    [Theory]
+    [InlineData("SELECT Name FROM Users WHERE ID >= @Min /*Old*/AND ID > 0 ORDER BY ID")]
+    [InlineData("SELECT Name FROM Users WHERE ID >= @Min/*Old*/ AND ID > 0 ORDER BY ID")]
+    public void A_marker_before_a_connector_binds_the_condition_on_its_left(string sql) {
+        var query = new QueryCommand(sql);
+
+        var off = query.StartBuilder();
+        off.Use("@Min", 2);
+        Assert.Equal("SELECT Name FROM Users WHERE ID > 0 ORDER BY ID", Render.From(off).CommandText);
+
+        var on = query.StartBuilder();
+        on.Use("@Min", 2);
+        on.Use("Old");
+        Render.Expect(on, "SELECT Name FROM Users WHERE ID >= @Min AND ID > 0 ORDER BY ID", ("@Min", 2));
+    }
+
+    [Fact]
+    public void A_marker_before_a_connector_prunes_the_left_condition_from_the_doc_example() {
+        var query = new QueryCommand("SELECT * FROM tracks WHERE Composer = @composer /*Extra*/AND Milliseconds > @ms");
+
+        var off = query.StartBuilder();
+        off.Use("@composer", "x");
+        off.Use("@ms", 1);
+        Assert.Equal("SELECT * FROM tracks WHERE Milliseconds > @ms", Render.From(off).CommandText);
+
+        var on = query.StartBuilder();
+        on.Use("@composer", "x");
+        on.Use("@ms", 1);
+        on.Use("Extra");
+        Render.Expect(on, "SELECT * FROM tracks WHERE Composer = @composer AND Milliseconds > @ms",
+            ("@composer", "x"), ("@ms", 1));
+    }
+
+    [Fact]
+    public void A_variable_the_sql_no_longer_names_is_still_sent_as_a_parameter() {
+        var query = new QueryCommand("SELECT * FROM tracks WHERE Composer = @composer /*Extra*/AND Milliseconds > @ms");
+        var off = query.StartBuilder();
+        off.Use("@composer", "x");
+        off.Use("@ms", 1);
+        Render.Expect(off, "SELECT * FROM tracks WHERE Milliseconds > @ms", ("@composer", "x"), ("@ms", 1));
+    }
+
+    [Fact]
+    public void Unclosed_condition_comment_is_rejected()
+        => Refusals.Raises(ErrorCodes.UnclosedComment, () => new QueryCommand("SELECT /*Cond FROM Users"));
+
+    [Fact]
+    public void Whitespace_only_condition_is_rejected()
+        => Refusals.Raises(ErrorCodes.EmptyConditionKey, () => new QueryCommand("SELECT /*A&*/Col FROM Users"));
+
+    [Fact]
+    public void Unclosed_literal_comment_is_rejected()
+        => Refusals.Raises(ErrorCodes.UnclosedComment, () => new QueryCommand("SELECT /*~ still going FROM Users"));
+
+    [Fact]
+    public void Unbalanced_closing_paren_is_rejected()
+        => Refusals.Raises(ErrorCodes.UnbalancedScope, () => new QueryCommand("SELECT a) FROM Users"));
+
+    [Fact]
+    public void Nesting_deeper_than_the_limit_is_rejected() {
+        var query = "SELECT " + new string('(', 65) + "1" + new string(')', 65) + " x";
+        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => new QueryCommand(query));
+    }
+
+    [Fact]
+    public void Always_used_marker_outside_a_projection_is_rejected()
+        => Refusals.Raises(ErrorCodes.ProjectionOnlyConstruct, () => new QueryCommand("SELECT A!, B FROM Users"));
+
+    [Fact]
+    public void A_literal_comment_is_preserved() {
+        var query = new QueryCommand("SELECT /*~ keep me ~*/ Col FROM Users");
+        Render.Expect(query.StartBuilder(), "SELECT /* keep me ~*/ Col FROM Users");
+    }
+
+    [Fact]
+    public void A_section_welded_to_a_condition_footprint_gets_a_separating_space() {
+        var query = new QueryCommand("SELECT a, /*Show*/COUNT(b)FROM t");
+        var on = query.StartBuilder();
+        on.Use("Show");
+        Render.Expect(on, "SELECT a, COUNT(b) FROM t");
+        Render.Expect(query.StartBuilder(), "SELECT a FROM t");
+    }
+
+    [Theory]
+    [InlineData("SELECT a, /*Show*/COUNT(b)\tFROM t", "SELECT a, COUNT(b)\tFROM t", "SELECT a\tFROM t")]
+    [InlineData("SELECT a, /*Show*/COUNT(b)\r\nFROM t", "SELECT a, COUNT(b)\r\nFROM t", "SELECT a\r\nFROM t")]
+    [InlineData("SELECT a, /*Show*/COUNT(b)  FROM t", "SELECT a, COUNT(b)  FROM t", "SELECT a  FROM t")]
+    [InlineData("SELECT a, /*Show*/COUNT(b) \t FROM t", "SELECT a, COUNT(b) \t FROM t", "SELECT a \t FROM t")]
+    public void Whitespace_kinds_separate_a_section_without_protection(string sql, string kept, string pruned) {
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("Show");
+        Render.Expect(on, kept);
+        Render.Expect(new QueryCommand(sql).StartBuilder(), pruned);
+    }
+
+    [Theory]
+    [InlineData("SELECT DISTINCT ??? /*ShowId*/TrackId, Name FROM tracks", "SELECT DISTINCT  Name FROM tracks")]
+    [InlineData("SELECT DISTINCT ???/*ShowId*/TrackId, Name FROM tracks", "SELECT DISTINCT  Name FROM tracks")]
+    [InlineData("SELECT DISTINCT??? /*ShowId*/TrackId, Name FROM tracks", "SELECT DISTINCT Name FROM tracks")]
+    [InlineData("SELECT DISTINCT???/*ShowId*/TrackId, Name FROM tracks", "SELECT DISTINCT Name FROM tracks")]
+    public void The_wall_spacing_combinations_when_pruned(string sql, string expected)
+        => Render.Expect(new QueryCommand(sql).StartBuilder(), expected);
+
+    /// <summary>Every section keyword the scanner knows, longest first at sixteen characters.</summary>
+    private static readonly string[] Sections = [
+        "with", "delete from", "delete", "insert into", "insert", "values", "update", "set", "select",
+        "from", "join", "inner join", "left join", "left outer join", "right join", "right outer join",
+        "full join", "full outer join", "cross join", "where", "group by", "having", "union", "union all",
+        "intersect", "except", "order by", "limit", "offset", "when", "else", "then", ";",
+    ];
+
+    /// <summary>
+    /// A keyword is told from a word that merely starts like one by the character after it, so a template
+    /// ending on a keyword is asking about the character after its last one. Ending on every keyword, and on
+    /// every truncation of one, leaves the scanner a different amount of text to work with, down to a single
+    /// character before the end.
+    /// </summary>
+    public static TheoryData<string> TemplatesEndingInSectionText() {
+        var data = new TheoryData<string>();
+        foreach (var word in Sections)
+            for (int take = 1; take <= word.Length; take++)
+                data.Add("SELECT a FROM t " + word[..take]);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(TemplatesEndingInSectionText))]
+    public void A_template_ending_on_a_keyword_or_part_of_one_is_returned_as_written(string sql)
+        => Render.Expect(new QueryCommand(sql).StartBuilder(), sql);
+
+    /// <summary>
+    /// The same question with almost nothing in front of it, so the scanner meets the end of the template
+    /// while it still has keywords longer than the whole thing left to consider.
+    /// </summary>
+    [Theory]
+    [InlineData("ab")]
+    [InlineData("a b")]
+    [InlineData("SELECT a")]
+    [InlineData("SELECT a FROM t")]
+    [InlineData("SELECT a, b FROM t WHERE c = 1")]
+    public void A_short_template_is_returned_as_written(string sql)
+        => Render.Expect(new QueryCommand(sql).StartBuilder(), sql);
+
+    /// <summary>
+    /// The template the scanner used to read past, a handler followed by a short tail. It is ordinary in
+    /// every way that shows, which is why the reading beyond it went unnoticed.
+    /// </summary>
+    [Fact]
+    public void A_handler_with_a_short_tail_renders() {
+        var b = new QueryCommand("SELECT @name_S AS V").StartBuilder();
+        b.Use("@name", "Rinku");
+        Render.Expect(b, "SELECT 'Rinku' AS V");
+    }
+
+    /// <summary>
+    /// A keyword closing the template is still a keyword, so a marker on it takes the clause it introduces
+    /// the way it would anywhere else. The character the scanner reads to decide that is the one past the
+    /// last, and the longest keyword is the furthest it ever has to look.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT a FROM t /*K*/WHERE", "SELECT a FROM t WHERE")]
+    [InlineData("SELECT a FROM t /*K*/RIGHT OUTER JOIN", "SELECT a FROM t RIGHT OUTER JOIN")]
+    [InlineData("SELECT a FROM t /*K*/ORDER BY", "SELECT a FROM t ORDER BY")]
+    public void A_keyword_closing_the_template_is_still_a_clause(string sql, string kept) {
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT a FROM t");
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("K");
+        Render.Expect(on, kept);
+    }
+
+    /// <summary>
+    /// One character short of a keyword is a word, and the scanner reaches that answer without looking for
+    /// the rest of a keyword that cannot be there.
+    /// </summary>
+    [Fact]
+    public void A_word_that_falls_one_character_short_of_a_keyword_is_not_a_clause() {
+        const string sql = "SELECT a FROM t /*K*/RIGHT OUTER JOI";
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT a");
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("K");
+        Render.Expect(on, sql.Replace("/*K*/", ""));
+    }
+
+    [Fact]
+    public void Bracket_quoted_identifiers_pass_through() {
+        var query = new QueryCommand("SELECT [My Col] FROM [My Table]");
+        Render.Expect(query.StartBuilder(), "SELECT [My Col] FROM [My Table]");
+    }
+
+    [Fact]
+    public void String_and_backtick_literals_pass_through() {
+        var query = new QueryCommand("SELECT 'a value', `col`, \"dq\" FROM Users");
+        Render.Expect(query.StartBuilder(), "SELECT 'a value', `col`, \"dq\" FROM Users");
+    }
+
+    /// <summary>
+    /// A <c>--</c> comment is copied through as written, and what it holds is read as nothing. A variable
+    /// named in one is not a key, so it never reaches the mapper and never binds a parameter.
+    /// </summary>
+    [Fact]
+    public void A_variable_in_a_line_comment_is_text() {
+        var query = new QueryCommand("SELECT ID -- note @x\r\nFROM Users");
+        Assert.Empty(query.Mapper.Keys.ToArray());
+        Render.Expect(query.StartBuilder(), "SELECT ID -- note @x\r\nFROM Users");
+    }
+
+    /// <summary>A marker in a line comment is text too, so it keys nothing and prunes nothing.</summary>
+    [Fact]
+    public void A_marker_in_a_line_comment_is_text() {
+        const string sql = "SELECT ID, Name -- /*K*/ note\r\nFROM Users";
+        var query = new QueryCommand(sql);
+        Assert.Empty(query.Mapper.Keys.ToArray());
+        Render.Expect(query.StartBuilder(), sql);
+    }
+
+    /// <summary>
+    /// The worked example of <c>docs/articles/conditional-sql/conditional-markers.md</c>, where the only
+    /// key is the one written outside the comment.
+    /// </summary>
+    [Fact]
+    public void The_line_comment_doc_example() {
+        const string sql = "SELECT TrackId, Name -- @Name and /*Long*/ are notes here\r\nFROM tracks WHERE Name = ?@Name";
+        var query = new QueryCommand(sql);
+        Assert.Equal(["@Name"], query.Mapper.Keys.ToArray());
+        Render.Expect(query.StartBuilder(),
+            "SELECT TrackId, Name -- @Name and /*Long*/ are notes here\r\nFROM tracks");
+    }
+
+    /// <summary>
+    /// The line ends the comment, so the markers after it are read as usual. The comment stays when the
+    /// clause behind it prunes, keeping the one whitespace a section leaves in front of it.
+    /// </summary>
+    [Fact]
+    public void A_line_comment_ends_at_its_line() {
+        const string sql = "SELECT ID FROM Users -- pick a row\r\nWHERE Name = ?@Name";
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT ID FROM Users -- pick a row\r");
+        var on = new QueryCommand(sql).StartBuilder();
+        on.Use("@Name", "John");
+        Render.Expect(on, sql.Replace("?@Name", "@Name"), ("@Name", "John"));
+    }
+
+    /// <summary>A comment closing the template needs no line to end it.</summary>
+    [Fact]
+    public void A_line_comment_may_end_the_template() {
+        const string sql = "SELECT ID FROM Users -- trailing @note";
+        var query = new QueryCommand(sql);
+        Assert.Empty(query.Mapper.Keys.ToArray());
+        Render.Expect(query.StartBuilder(), sql);
+    }
+
+    /// <summary>A comment written against a variable ends its name rather than joining it.</summary>
+    [Fact]
+    public void A_line_comment_welded_to_a_variable_ends_the_name() {
+        const string sql = "SELECT ID FROM Users WHERE Name = @Name-- pick one\r\nORDER BY ID";
+        var query = new QueryCommand(sql);
+        Assert.Equal(["@Name"], query.Mapper.Keys.ToArray());
+        var b = query.StartBuilder();
+        b.Use("@Name", "John");
+        Render.Expect(b, sql, ("@Name", "John"));
+    }
+
+    /// <summary>Two dashes inside a literal are part of it, not the start of a comment.</summary>
+    [Fact]
+    public void Dashes_inside_a_literal_do_not_open_a_comment() {
+        const string sql = "SELECT 'a--b' AS Lit, Name FROM Users WHERE ID = ?@ID";
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT 'a--b' AS Lit, Name FROM Users");
+    }
+
+    /// <summary>
+    /// The comment is ordinary text of the condition it sits in, so a pruned footprint takes it along. The
+    /// line break behind it is the section's own whitespace and stays, exactly as it does with no comment
+    /// written there at all.
+    /// </summary>
+    [Fact]
+    public void A_line_comment_inside_a_footprint_goes_with_it() {
+        const string sql = "SELECT ID FROM Users WHERE Name = ?@Name -- by name\r\nORDER BY ID";
+        Render.Expect(new QueryCommand(sql).StartBuilder(), "SELECT ID FROM Users\r\nORDER BY ID");
+        Render.Expect(new QueryCommand("SELECT ID FROM Users WHERE Name = ?@Name\r\nORDER BY ID").StartBuilder(),
+            "SELECT ID FROM Users\r\nORDER BY ID");
+    }
+}

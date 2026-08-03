@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -36,6 +36,12 @@ public interface ITypeConverter {
             return false;
         }
         outputType = t ?? outputType;
+        if (TypeConverterRegistry.TryGet(sourceType, outputType, out converter))
+            return true;
+        if (sourceType == typeof(string) && outputType.IsEnum) {
+            converter = new StringToEnumConverter(outputType);
+            return true;
+        }
         if (sourceType.IsEnum)
             sourceType = Enum.GetUnderlyingType(sourceType);
         if (outputType.IsEnum)
@@ -81,10 +87,11 @@ public interface ITypeConverter {
         }
 
         if (sourceType == typeof(string)) {
-            Type parsable = typeof(IParsable<>).MakeGenericType(outputType);
-            if (parsable.IsAssignableFrom(outputType)) {
-                converter = new ParsableConverter(outputType);
-                return true;
+            foreach (var itf in outputType.GetInterfaces()) {
+                if (itf.IsGenericType && itf.GetGenericTypeDefinition() == typeof(IParsable<>) && itf.GetGenericArguments()[0] == outputType) {
+                    converter = new ParsableConverter(outputType);
+                    return true;
+                }
             }
             var parse = outputType.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, null, [typeof(string)], null);
             if (parse != null) {
@@ -116,6 +123,24 @@ public interface ITypeConverter {
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Finds an identity converter only when the source and target types are exactly equal. Nullable targets
+    /// compare their underlying type because the reader column carries nullability separately.
+    /// </summary>
+    public static bool TryGetExactConverter(Type sourceType, Type outputType, [MaybeNullWhen(false)] out ITypeConverter converter) {
+        converter = null;
+        var underlying = Nullable.GetUnderlyingType(outputType);
+        var target = underlying ?? outputType;
+        if (sourceType != target)
+            return false;
+        if (TypeConverterRegistry.TryGet(sourceType, target, out converter))
+            return true;
+        converter = underlying is null
+            ? new IdentityConverter(target)
+            : new NullableWrapperConverter(new IdentityConverter(target));
+        return true;
     }
 }
 /// <summary>No-op: Source and Target are already compatible.</summary>
@@ -181,7 +206,27 @@ public class ParsableConverter(Type targetType) : ITypeConverter {
             generator.Emit(OpCodes.Call, method);
             return;
         }
-        throw new NotImplementedException();
+        throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch,
+            $"no conversion is emitted from the column to {OutputType}");
+    }
+}
+
+/// <summary>
+/// String to an enum, by name or by the number written out, matching the name whatever its casing. This
+/// sits ahead of the enum being read as its underlying type, which would send the name to a number parse.
+/// </summary>
+public class StringToEnumConverter(Type enumType) : ITypeConverter {
+    private static readonly MethodInfo ParseDefinition = typeof(Enum)
+        .GetMethods(BindingFlags.Public | BindingFlags.Static)
+        .Single(m => m.Name == nameof(Enum.Parse) && m.IsGenericMethodDefinition
+            && m.GetParameters() is [var value, var ignoreCase]
+            && value.ParameterType == typeof(string) && ignoreCase.ParameterType == typeof(bool));
+    /// <inheritdoc/>
+    public Type OutputType { get; } = enumType;
+    /// <inheritdoc/>
+    public void EmitConversion(Generator generator, Type sourceType) {
+        generator.Emit(OpCodes.Ldc_I4_1);
+        generator.Emit(OpCodes.Call, ParseDefinition.MakeGenericMethod(OutputType));
     }
 }
 
@@ -191,24 +236,21 @@ public class ToStringConverter : ITypeConverter {
     public Type OutputType => typeof(string);
     /// <inheritdoc/>
     public void EmitConversion(Generator generator, Type sourceType) {
+        if (!sourceType.IsValueType) {
+            generator.Emit(OpCodes.Callvirt, typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes)!);
+            return;
+        }
+        var local = generator.DeclareLocal(sourceType);
+        generator.Emit(OpCodes.Stloc, local);
+        generator.Emit(OpCodes.Ldloca, local);
         var method = sourceType.GetMethod(nameof(ToString), [typeof(IFormatProvider)]);
         if (method is not null && method.ReturnType == typeof(string)) {
             generator.Emit(OpCodes.Ldsfld, ITypeConverter._providerField);
             generator.Emit(OpCodes.Call, method);
             return;
         }
-        method = sourceType.GetMethod(nameof(ToString), Type.EmptyTypes);
-        if (method is not null && method.ReturnType == typeof(string)) {
-            generator.Emit(OpCodes.Call, method);
-            return;
-        }
-        method = typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes);
-        if (method is not null && method.ReturnType == typeof(string)) {
-            generator.Emit(OpCodes.Box);
-            generator.Emit(OpCodes.Callvirt, method);
-            return;
-        }
-        throw new NotImplementedException();
+        generator.Emit(OpCodes.Constrained, sourceType);
+        generator.Emit(OpCodes.Callvirt, typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes)!);
     }
 }
 /// <summary>Calls a constructor that accepts the source type as its single argument.</summary>
