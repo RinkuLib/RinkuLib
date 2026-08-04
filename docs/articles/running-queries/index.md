@@ -245,7 +245,7 @@ UpdateTrack.Execute(cnn, new { trackId = 10, name = "Remastered" });
 // UPDATE tracks SET Name = @name WHERE TrackId = @trackId
 ```
 
-The `?@` toggle is a structural rule the engine applies to every keyword section alike, the `WHERE` and the `SET` list above, and just as well a projected column, a join, a group-by, or an order-by. When several queries are really one with parts switched on and off, one command replaces them all. The template syntax is its own section, [conditional SQL](../conditional-sql/index.md).
+The `?@` toggle is a structural rule the engine applies to every keyword section. The template syntax has its own section, [conditional SQL](../conditional-sql/index.md).
 
 ## Cheatsheet
 
