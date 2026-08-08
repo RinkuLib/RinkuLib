@@ -2,6 +2,8 @@
 
 A micro-ORM for .NET, built directly on ADO.NET. You write the SQL, name a type, and get your objects back.
 
+Get **Rinku** from [NuGet](https://www.nuget.org/packages/Rinku/) or browse the [source repository](https://github.com/RinkuLib/RinkuLib).
+
 ```csharp
 public record Album(int Id, string Title);
 

@@ -185,20 +185,20 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     public void UseWith(object parameterObj) {
         ClearForUseWith();
         Type type = parameterObj.GetType();
-        var cache = QueryCommand.GetUseWithAccessorCache(type.TypeHandle.Value, type);
-        cache.Bind(parameterObj, Variables);
+        var accessor = QueryCommand.GetUseWithAccessor(type.TypeHandle.Value, type);
+        accessor.Invoke(parameterObj, Variables);
         QueryCommand.SetCommand(Command, Variables);
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(T parameterObj) where T : notnull {
         ClearForUseWith();
-        var cache = QueryCommand.GetUseWithAccessorCache(typeof(T).TypeHandle.Value, typeof(T));
+        var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            cache.Bind(parameterObj!, Variables);
+            accessor.Invoke(parameterObj!, Variables);
         else {
-            var typed = Unsafe.As<UseWithAccessorCache, StructUseWithAccessorCache<T>>(ref cache);
-            typed.GenericBind(ref parameterObj, Variables);
+            var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
+            typed.InvokeTyped(ref parameterObj, Variables);
         }
         QueryCommand.SetCommand(Command, Variables);
     }
@@ -206,12 +206,12 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {
         ClearForUseWith();
-        var cache = QueryCommand.GetUseWithAccessorCache(typeof(T).TypeHandle.Value, typeof(T));
+        var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            cache.Bind(parameterObj!, Variables);
+            accessor.Invoke(parameterObj!, Variables);
         else {
-            var typed = Unsafe.As<UseWithAccessorCache, StructUseWithAccessorCache<T>>(ref cache);
-            typed.GenericBind(ref parameterObj, Variables);
+            var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
+            typed.InvokeTyped(ref parameterObj, Variables);
         }
         QueryCommand.SetCommand(Command, Variables);
     }

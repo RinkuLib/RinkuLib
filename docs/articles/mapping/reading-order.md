@@ -11,7 +11,7 @@ public record Person(int Id, string Name, string? Email = null);
 Person one = cmd.Query<Person>(cnn);
 ```
 
-`CtorTypeInfo`, the info behind [tuples](../running-queries/result-shapes.md#tuples), reads sequential and hands that down to its elements. Each `Person` takes a consecutive run of columns.
+[Tuples](../running-queries/result-shapes.md#tuples) use sequential reading and hand that rule down to their elements. Each `Person` takes a consecutive run of columns.
 
 ```csharp
 // Columns: Id | Name | Id | Name | Email

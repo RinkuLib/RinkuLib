@@ -1,10 +1,8 @@
 # Supplying values
 
-A run needs the values for this call. There are two ways to hand them over, an object whose members carry them, or a builder you set in C#. Both end in the same execution methods.
-
 ## An object
 
-Members map to variables by name, case-insensitive. A member with no matching variable is ignored.
+Members map to variables by name. A member with no matching variable is ignored.
 
 ```csharp
 static readonly QueryCommand ByAlbum = new(
@@ -13,7 +11,23 @@ static readonly QueryCommand ByAlbum = new(
 ByAlbum.Query<List<Track>>(cnn, new { AlbumID = 1 }); // matches @albumId case-insensitively
 ```
 
-The object can be an anonymous type, an ordinary class, a record, or a struct. A record is simply one possible C# type declaration; it can also serve as a DTO when the application uses it to carry data.
+The parameter object can also be a class, record, or struct.
+
+```csharp
+public sealed class AlbumFilter {
+    public int AlbumId { get; init; }
+}
+
+public record AlbumFilterRecord(int AlbumId);
+
+public struct AlbumFilterStruct {
+    public int AlbumId { get; init; }
+}
+
+ByAlbum.Query<List<Track>>(cnn, new AlbumFilter { AlbumId = 1 });
+ByAlbum.Query<List<Track>>(cnn, new AlbumFilterRecord(1));
+ByAlbum.Query<List<Track>>(cnn, new AlbumFilterStruct { AlbumId = 1 });
+```
 
 ## Driving optional markers
 
@@ -27,12 +41,15 @@ Search.Query<List<Track>>(cnn, new { albumId = 1 });
 // WHERE AlbumId = @albumId
 ```
 
-With a typed object, a `null` member counts as not supplied. A filter type is often just nullable fields.
+With a typed object, a `null` member counts as not supplied.
 
 ```csharp
-public record TrackFilter(int? AlbumId, string? Composer);
+public sealed class TrackFilter {
+    public int? AlbumId { get; init; }
+    public string? Composer { get; init; }
+}
 
-Search.Query<List<Track>>(cnn, new TrackFilter(AlbumId: 1, Composer: null));
+Search.Query<List<Track>>(cnn, new TrackFilter { AlbumId = 1 });
 // WHERE AlbumId = @albumId
 ```
 
@@ -44,64 +61,6 @@ Search.Query<List<Track>>(cnn, new TrackFilter(AlbumId: 1, Composer: null));
 ClearComposer.Execute(cnn, new { id = 10, composer = DBNull.Value });
 // UPDATE tracks SET Composer = @composer ... with @composer = NULL
 ```
-
-## When null is not the signal
-
-Attributes adjust when a member counts as supplied, or what it drives.
-
-```csharp
-public record TrackSearch(
-    int? AlbumId,                                        // used when not null
-    [property: NotNullOrWhitespace] string? Composer,    // used when not null and not blank
-    [property: NotDefault] int MinPrice)                 // used when not 0
-{
-    [ForBoolCond] public bool IncludeArtist;             // drives a /*IncludeArtist*/ condition
-}
-
-var tracks = SearchCmd.Query<List<Track>>(cnn, new TrackSearch(1, "  ", 0) { IncludeArtist = true });
-// Composer is blank and MinPrice is default, so only @AlbumId and the IncludeArtist condition are active.
-```
-
-- `[NotNullOrWhitespace]` on a string member, used only when it has content.
-- `[NotDefault]` on any member, used only when it is not the type's default.
-- `[ForBoolCond]` on a `bool` member drives a comment condition key (see [conditional markers](../conditional-sql/conditional-markers.md)) instead of a parameter.
-- `[UsesBoolConds("Key1", "Key2")]` on the type activates the named condition keys whenever this object is used.
-
-```csharp
-[UsesBoolConds("Year")]
-public record ReportFilter([property: NotDefault] int DeptId);
-// every call with a ReportFilter also turns on the "Year" condition
-```
-
-These attributes are implementations of one base, `AccessorEmiterHandler`. Deriving from it gives your own attribute the same two controls, when a member counts as supplied, and what value is read from it. `[NotNullOrWhitespace]` is the smallest one to read as a reference.
-
-When the parameter type is external, register the same handler at setup time:
-
-```csharp
-sealed class BoolConditionHandler : AccessorEmiterHandler
-{
-    public override void HandleEmit(char varChar, IAccessorEmiter?[] usage, IAccessorEmiter?[] values,
-        Type type, MemberInfo? member, Mapper mapper)
-    {
-        int index = mapper.GetIndex(member!.Name);
-        if (index < 0) return;
-        usage[index] = new MemberCondUsageEmitter(type, member);
-        values[index] = BoxedBasicValueEmitter.TrueValue;
-    }
-}
-
-sealed class ExternalFilter
-{
-    public bool Include { get; set; }
-}
-
-var command = new QueryCommand("SELECT * FROM users WHERE /*Include*/active = 1");
-command.RegisterAccessorHandlers<ExternalFilter>(new(
-    typeof(ExternalFilter).GetProperty(nameof(ExternalFilter.Include))!,
-    new BoolConditionHandler()));
-```
-
-The registration has the same scope as an attribute on the member. Register it before the command is used.
 
 ## A builder
 
@@ -115,11 +74,12 @@ if (alsoByComposer)
 List<Track> tracks = b.Query<List<Track>>(cnn);
 ```
 
-`Use(name, value)` stores the value and keeps the key's footprint in the SQL. `Use(name)` with no value activates a comment condition. Both return `bool`, whether the command has that key and the bind landed.
-
-That return matters when code receives a builder without knowing which template is behind it. A shared method that runs updates can refuse to run one it cannot key to a row.
+`Use(name, value)` supplies a parameter. `Use(name)` activates a comment condition. Both return `true` when the builder contains that key.
 
 ```csharp
+if (!b.Use("IncludeArtist"))
+    throw new InvalidOperationException("This query has no IncludeArtist condition");
+
 static int UpdateRow(QueryBuilder b, DbConnection cnn, int id) {
     if (!b.Use("@id", id))
         throw new InvalidOperationException("This command has no @id, refusing an unkeyed update");
@@ -127,15 +87,23 @@ static int UpdateRow(QueryBuilder b, DbConnection cnn, int id) {
 }
 ```
 
+The variable character can be supplied separately, which pairs with `nameof`.
+
+```csharp
+b.Use('@', nameof(TrackFilter.AlbumId), 1);   // same key as "@AlbumId"
+```
+
 UseWith copies a parameter object's usable members into the builder. It uses the same member rules as a
 direct parameter-object run, but leaves the values in the builder for later execution.
 
 ```csharp
-public record TrackFilter(int? AlbumId, string? Composer) {
+public sealed class TrackFilter {
+    public int? AlbumId { get; init; }
+    public string? Composer { get; init; }
     [ForBoolCond] public bool IncludeArtist;
 }
 
-var filter = new TrackFilter(1, null) { IncludeArtist = true };
+var filter = new TrackFilter { AlbumId = 1, IncludeArtist = true };
 var b = SearchCmd.StartBuilder();
 b.UseWith(filter);
 
@@ -146,21 +114,205 @@ List<Track> tracks = b.Query<List<Track>>(cnn);
 Calling UseWith again replaces the builder values. A member that is not usable clears its previous value.
 
 ```csharp
-b.UseWith(new TrackFilter(2, "AC/DC") { IncludeArtist = false });
-b.UseWith(new TrackFilter(null, null));
+b.UseWith(new TrackFilter { AlbumId = 2, Composer = "AC/DC" });
+b.UseWith(new TrackFilter());
 // all three mapped pieces are now off
 ```
 
-UseWith accepts object, generic, and ref forms. The ref form avoids copying a large struct.
+The rest of the builder surface:
 
 ```csharp
-b.UseWith(new { albumId = 1 });
+var b = SearchCmd.StartBuilder([("@albumId", 1), ("@composer", "AC/DC")]); // start with values
 
-TrackFilter filter = new(2, "AC/DC");
-b.UseWith(ref filter);
+b.Use("@status", "active");
+b.Use("IncludeArtist");      // activate a condition
+b.UnUse("IncludeArtist");    // deactivate a condition, the counterpart of Use(name)
+b.Remove("@composer");       // clear any key, variable or condition
+b.Reset();                    // clear everything
+
+string sql = b.GetQueryText();   // the SQL this state would produce, handy for debugging
 ```
 
-Throwing is one reaction. Binding an alternative key or skipping dependent work fit the same way.
+## A builder bound to one DbCommand
+
+`StartBuilder(cmd)` binds the builder to the `DbCommand` you provide and updates only what changes between runs. Because the command already has its connection and transaction, the execution methods need neither, and you remain responsible for disposing the command after the batch.
+
+```csharp
+using var sqlCmd = cnn.CreateCommand();
+var batch = InsertPlaylist.StartBuilder(sqlCmd);
+
+foreach (var name in names) {
+    batch.Use("@name", name);
+    batch.Execute();
+}
+```
+
+The builder can be reused by setting each value before execution:
+
+```csharp
+using var sqlCmd = cnn.CreateCommand();
+var batch = InsertRow.StartBuilder(sqlCmd);
+batch.Use("id", 1);
+batch.Use("foo", 2);
+await batch.ExecuteAsync(token);
+batch.Use("id", 3);
+batch.Use("foo", 4);
+await batch.ExecuteAsync(token);
+```
+
+UseWith also works on the bound builder. It clears the live command, copies the new object, and processes its
+parameters immediately.
+
+```csharp
+using var sqlCmd = cnn.CreateCommand();
+var batch = InsertRow.StartBuilder(sqlCmd);
+batch.UseWith(new { id = 1, foo = 2 });
+batch.Execute();
+
+batch.UseWith(new { id = 3, foo = 4 });
+batch.Execute();
+```
+
+## Struct parameter objects
+
+```csharp
+AlbumFilterStruct filter = new() { AlbumId = 2 };
+
+cmd.Query<List<Track>>(cnn, (object)filter);                // works with any parameter object
+cmd.Query<List<Track>, AlbumFilterStruct>(cnn, filter);     // use this form for a struct
+cmd.Query<List<Track>, AlbumFilterStruct>(cnn, ref filter); // use this form for a large struct
+```
+
+The same forms work with `Execute`, `ExecuteScalar`, and `StreamQueryAsync`.
+
+```csharp
+AlbumFilterStruct filter = new() { AlbumId = 2 };
+
+b.UseWith((object)filter);         // any parameter object
+b.UseWith<AlbumFilterStruct>(filter); // use this form for a struct
+b.UseWith(ref filter);                // use this form for a large struct
+```
+
+## Member rules
+
+Start with the normal rule. A member is used when its value is not `null`.
+
+```csharp
+public sealed class TrackSearch {
+    public int? AlbumId { get; init; }
+}
+
+SearchCmd.Query<List<Track>>(cnn, new TrackSearch { AlbumId = 1 });
+// @albumId is supplied
+
+SearchCmd.Query<List<Track>>(cnn, new TrackSearch());
+// @albumId is not supplied
+```
+
+Use `NotNullOrWhitespace` when an empty string should also stay out.
+
+```csharp
+public sealed class ArtistSearch {
+    [NotNullOrWhitespace] public string? Composer { get; init; }
+}
+
+SearchCmd.Query<List<Track>>(cnn, new ArtistSearch { Composer = "  " });
+// @composer is not supplied
+
+SearchCmd.Query<List<Track>>(cnn, new ArtistSearch { Composer = "AC/DC" });
+// @composer is supplied
+```
+
+Use `UseDbNull` when a null member must be sent as a SQL `NULL`.
+
+```csharp
+public sealed class UpdateTrack {
+    public int Id { get; init; }
+    [UseDbNull] public string? Composer { get; init; }
+}
+
+var update = new QueryCommand("UPDATE tracks SET Composer = @Composer WHERE TrackId = @Id");
+update.Execute(cnn, new UpdateTrack { Id = 10, Composer = null });
+// @Composer is sent as SQL NULL
+```
+
+Put `UseDbNull` on the type when that is the default for every member. A member attribute still wins.
+
+```csharp
+[UseDbNull]
+public sealed class UpdateTrack {
+    public int Id { get; init; }
+    public string? Composer { get; init; }
+    [NotNullOrWhitespace] public string? Name { get; init; }
+}
+
+update.Execute(cnn, new UpdateTrack { Id = 10, Composer = null, Name = null });
+// @Composer is sent as SQL NULL
+// @Name is not supplied because its member rule wins
+```
+
+Use `NotDefault` when the default value should stay out.
+
+```csharp
+public sealed class PriceSearch {
+    [NotDefault] public decimal MinPrice { get; init; }
+}
+
+SearchCmd.Query<List<Track>>(cnn, new PriceSearch { MinPrice = 0 });
+// @minPrice is not supplied
+
+SearchCmd.Query<List<Track>>(cnn, new PriceSearch { MinPrice = 9.99m });
+// @minPrice is supplied
+```
+
+Use `ForBoolCond` for a boolean [condition key](../conditional-sql/conditional-markers.md#custom-keys), not a parameter.
+
+```csharp
+static readonly QueryCommand SearchCmd = new("""
+    SELECT TrackId, Name, /*IncludeArtist*/ArtistId
+    FROM tracks
+    """);
+
+public sealed class TrackSearch {
+    [ForBoolCond] public bool IncludeArtist { get; init; }
+}
+
+SearchCmd.Query<List<Track>>(cnn, new TrackSearch { IncludeArtist = false });
+// SELECT TrackId, Name FROM tracks
+
+SearchCmd.Query<List<Track>>(cnn, new TrackSearch { IncludeArtist = true });
+// SELECT TrackId, Name, ArtistId FROM tracks
+```
+
+Use `UsesBoolConds` when every use of a type turns on the same condition keys.
+
+```csharp
+static readonly QueryCommand SearchCmd = new("""
+    SELECT TrackId, Name, /*WithYear*/Milliseconds
+    FROM tracks
+    """);
+
+[UsesBoolConds("WithYear")]
+public sealed class ReportSearch {
+    public int? AlbumId { get; init; }
+}
+
+SearchCmd.Query<List<Track>>(cnn, new ReportSearch { AlbumId = 1 });
+// SELECT TrackId, Name, Milliseconds FROM tracks
+// @albumId is supplied too
+```
+
+The same rules work with `UseWith`.
+
+```csharp
+var b = SearchCmd.StartBuilder();
+b.UseWith(new TrackSearch { IncludeArtist = true });
+
+string sql = b.GetQueryText();
+// SELECT TrackId, Name, ArtistId FROM tracks
+```
+
+For a rule of your own, see [custom member rules](custom-member-rules.md).
 
 ## Positional SQL
 
@@ -185,78 +337,3 @@ b.Use("@1", "active");
 var users = b.Query<List<User>>(cnn);
 // The provider receives the parameters in the order: 7, "active".
 ```
-
-`PositionalParamInfo` is responsible for creating the parameter form required by the provider. This keeps
-provider-specific behavior outside Rinku while leaving the SQL and registration under application control.
-
-An overload takes the variable character separately from the name, which pairs with `nameof` to remove the magic string entirely.
-
-```csharp
-b.Use('@', nameof(TrackFilter.AlbumId), 1);   // same key as "@AlbumId"
-```
-
-The rest of the surface:
-
-```csharp
-var b = SearchCmd.StartBuilder([("@albumId", 1), ("@composer", "AC/DC")]); // start with values
-
-b.Use("@status", "active");
-b.Use("IncludeArtist");      // activate a condition
-b.UnUse("IncludeArtist");    // deactivate a condition, the counterpart of Use(name)
-b.Remove("@composer");       // clear any key, variable or condition
-b.Reset();                   // clear everything
-
-string sql = b.GetQueryText();   // the SQL this state would produce, handy for debugging
-```
-
-## A builder bound to one DbCommand
-
-`StartBuilder(cmd)` returns a builder that owns a `DbCommand` and reconfigures only what changes between runs. Its execution methods take no connection or transaction, the command already has them.
-
-```csharp
-using var sqlCmd = cnn.CreateCommand();
-var batch = InsertPlaylist.StartBuilder(sqlCmd);
-
-foreach (var name in names) {
-    batch.Use("@name", name);
-    batch.Execute();
-}
-```
-
-The builder can be reused by setting each value before execution:
-
-```csharp
-var batch = InsertRow.StartBuilder(cnn.CreateCommand());
-batch.Use("id", 1);
-batch.Use("foo", 2);
-await batch.ExecuteAsync(token);
-batch.Use("id", 3);
-batch.Use("foo", 4);
-await batch.ExecuteAsync(token);
-```
-
-UseWith also works on the bound builder. It clears the live command, copies the new object, and processes its
-parameters immediately.
-
-```csharp
-var batch = InsertRow.StartBuilder(cnn.CreateCommand());
-batch.UseWith(new { id = 1, foo = 2 });
-batch.Execute();
-
-batch.UseWith(new { id = 3, foo = 4 });
-batch.Execute();
-```
-
-## Avoiding boxing
-
-The parameter-object overloads come in three forms.
-
-```csharp
-cmd.Query<T>(cnn, object? parametersObj);          // reflective, any object or struct with readable members
-cmd.Query<T, TObj>(cnn, TObj parametersObj);       // generic, no boxing for struct holders
-cmd.Query<T, TObj>(cnn, ref TObj parametersObj);   // ref, for large structs
-```
-
-The same parameter forms exist on `Execute`, `ExecuteScalar`, and `StreamQueryAsync`.
-
-`UseWith` has the same object, generic, and ref forms on both builder types.

@@ -10,18 +10,18 @@ namespace RinkuLib.TypeAccessing;
 /// empty string. Valid only on <see cref="string"/> fields or properties.
 /// </summary>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public sealed class NotNullOrWhitespaceAttribute : AccessorEmiterHandler {
+public sealed class NotNullOrWhitespaceAttribute : AccessorEmitterHandler {
+    private static readonly MethodConditionEmitter Emitter = new(
+        typeof(string).GetMethod(nameof(string.IsNullOrWhiteSpace), [typeof(string)])!, invert: true);
+
     /// <inheritdoc/>
-    public override void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo? member, Mapper mapper) {
-        ArgumentNullException.ThrowIfNull(member);
+    public override IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper) {
         if (!(member is PropertyInfo p && p.PropertyType == typeof(string)
             || member is FieldInfo f && f.FieldType == typeof(string)))
             throw new RinkuConfigurationException(ErrorCodes.AttributeOnWrongMemberType, $"When using {typeof(NotNullOrWhitespaceAttribute)}, the type must be of type {typeof(string)}");
-        var index = mapper.GetIndex(varChar, member.Name);
         if (index < 0)
-            return;
-        usagePlans[index] = new StringUsageEmitter(type, member);
-        valuePlans[index] = new MemberValueEmitter(type, member);
+            return null;
+        return Emitter;
     }
 }
 /// <summary>
@@ -29,46 +29,32 @@ public sealed class NotNullOrWhitespaceAttribute : AccessorEmiterHandler {
 /// <see langword="null"/>). A default value then counts as absent and its optional clause drops.
 /// </summary>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public sealed class NotDefaultAttribute : AccessorEmiterHandler {
+public sealed class NotDefaultAttribute : AccessorEmitterHandler {
     /// <inheritdoc/>
-    public override void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo? member, Mapper mapper) {
-        ArgumentNullException.ThrowIfNull(member);
-
-        var index = mapper.GetIndex(varChar, member.Name);
+    public override IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper) {
         if (index < 0)
-            return;
-
-        usagePlans[index] = new NotDefaultUsageEmitter(type, member);
-        valuePlans[index] = new MemberValueEmitter(type, member);
+            return null;
+        return NotDefaultEmitter.Instance;
     }
 }
-/// <summary>Generate the IL emit to check if the value is not null of whitespace</summary>
-public class StringUsageEmitter(Type targetType, MemberInfo member) : IAccessorEmiter {
-    private readonly Type TargetType = targetType;
-    private readonly MemberInfo _member = member;
-
+/// <summary>Generates the not-null-or-whitespace condition for a string member.</summary>
+public sealed class StringUsageEmitter : MethodConditionEmitter {
     private static readonly MethodInfo IsNullOrWhiteSpaceMethod =
-        typeof(string).GetMethod(nameof(string.IsNullOrWhiteSpace), [typeof(string)])!; 
+        typeof(string).GetMethod(nameof(string.IsNullOrWhiteSpace), [typeof(string)])!;
 
-    /// <inheritdoc/>
-    public void Emit(ILGenerator il) {
-        IAccessorEmiter.EmitMemberLoad(il, TargetType, _member);
-        il.Emit(OpCodes.Call, IsNullOrWhiteSpaceMethod);
-        il.Emit(OpCodes.Ldc_I4_0);
-        il.Emit(OpCodes.Ceq);
-    }
+    /// <summary>Creates the emitter for a string member.</summary>
+    public StringUsageEmitter(Type targetType, MemberInfo member)
+        : base(IsNullOrWhiteSpaceMethod, invert: true) { }
 }
-/// <summary>Generate the IL emit to check if the value is not default</summary>
-public class NotDefaultUsageEmitter(Type targetType, MemberInfo member) : IAccessorEmiter {
-    private readonly Type TargetType = targetType;
-    private readonly MemberInfo _member = member;
+internal sealed class NotDefaultEmitter : AccessorEmitterBase {
+    internal static readonly NotDefaultEmitter Instance = new();
 
-    /// <inheritdoc/>
-    public void Emit(ILGenerator il) {
-        Type mType = _member is FieldInfo f ? f.FieldType : ((PropertyInfo)_member).PropertyType;
-        IAccessorEmiter.EmitMemberLoad(il, TargetType, _member);
-        if (!mType.IsValueType || (mType.IsPrimitive && mType != typeof(double) && mType != typeof(float))) {
-            if (mType.IsValueType)
+    protected override void EmitCondition(ILGenerator il, Type type, MemberInfo member) {
+        var targetMember = member;
+        Type memberType = targetMember is FieldInfo f ? f.FieldType : ((PropertyInfo)targetMember).PropertyType;
+        AccessorEmitter.EmitMemberLoad(il, type, targetMember);
+        if (!memberType.IsValueType || (memberType.IsPrimitive && memberType != typeof(double) && memberType != typeof(float))) {
+            if (memberType.IsValueType)
                 il.Emit(OpCodes.Ldc_I4_0);
             else
                 il.Emit(OpCodes.Ldnull);
@@ -78,21 +64,24 @@ public class NotDefaultUsageEmitter(Type targetType, MemberInfo member) : IAcces
             il.Emit(OpCodes.Ceq);
             return;
         }
-        var eqType = typeof(EqualityComparer<>).MakeGenericType(mType);
+        var eqType = typeof(EqualityComparer<>).MakeGenericType(memberType);
         var defaultProp = eqType.GetProperty(nameof(EqualityComparer<>.Default))!;
-        var equalsMethod = eqType.GetMethod(nameof(EqualityComparer<>.Equals), [mType, mType])!;
+        var equalsMethod = eqType.GetMethod(nameof(EqualityComparer<>.Equals), [memberType, memberType])!;
 
-        LocalBuilder value = il.DeclareLocal(mType);
+        LocalBuilder value = il.DeclareLocal(memberType);
         il.Emit(OpCodes.Stloc, value);
         il.Emit(OpCodes.Call, defaultProp.GetGetMethod()!);
         il.Emit(OpCodes.Ldloc, value);
-        LocalBuilder tempDefault = il.DeclareLocal(mType);
+        LocalBuilder tempDefault = il.DeclareLocal(memberType);
         il.Emit(OpCodes.Ldloca_S, tempDefault);
-        il.Emit(OpCodes.Initobj, mType);
+        il.Emit(OpCodes.Initobj, memberType);
         il.Emit(OpCodes.Ldloc, tempDefault);
         il.Emit(OpCodes.Callvirt, equalsMethod);
 
         il.Emit(OpCodes.Ldc_I4_0);
         il.Emit(OpCodes.Ceq);
     }
+
+    protected override void EmitValue(ILGenerator il, Type type, MemberInfo member)
+        => AccessorEmitter.EmitMemberValue(il, type, member);
 }

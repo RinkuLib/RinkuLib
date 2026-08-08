@@ -226,26 +226,68 @@ See [any DbCommand](direct-dbcommand.md).
 
 ## One command that adapts to its input
 
-The template can mark parts optional, so the values you pass decide the SQL. `?@` marks a variable optional, `_X` spreads a collection.
+### Conditional markers
+
+An optional variable removes its footprint when its value is absent.
 
 ```csharp
-static readonly QueryCommand Search = new(
-    "SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE AlbumId = ?@albumId AND GenreId IN (?@genreIds_X)");
+static readonly QueryCommand Tracks = new(
+    "SELECT TrackId, Name FROM tracks WHERE AlbumId = ?@albumId");
 
-Search.Query<List<Track>>(cnn, new { albumId = 1 });
-// SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE AlbumId = @albumId
+var albumTracks = Tracks.Query<List<Track>>(cnn, new { albumId = 1 });
+// SELECT TrackId, Name FROM tracks WHERE AlbumId = @albumId
 
-Search.Query<List<Track>>(cnn, new { genreIds = new[] { 1, 2, 3 } });
-// SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE GenreId IN (@genreIds_1, @genreIds_2, @genreIds_3)
-
-static readonly QueryCommand UpdateTrack = new(
-    "UPDATE tracks SET Name = ?@name, UnitPrice = ?@price WHERE TrackId = @trackId");
-
-UpdateTrack.Execute(cnn, new { trackId = 10, name = "Remastered" });
-// UPDATE tracks SET Name = @name WHERE TrackId = @trackId
+var allTracks = Tracks.Query<List<Track>>(cnn);
+// SELECT TrackId, Name FROM tracks
 ```
 
-The `?@` toggle is a structural rule the engine applies to every keyword section alike, the `WHERE` and the `SET` list above, and just as well a projected column, a join, a group-by, or an order-by. When several queries are really one with parts switched on and off, one command replaces them all. The template syntax is its own section, [conditional SQL](../conditional-sql/index.md).
+Comment conditions can remove a join when its optional filter is absent.
+
+```csharp
+static readonly QueryCommand Invoices = new(
+    "SELECT i.InvoiceId FROM invoices i /*@country*/INNER JOIN customers c ON i.CustomerId = c.CustomerId WHERE c.Country = ?@country");
+
+var canadian = Invoices.Query<List<int>>(cnn, new { country = "CA" });
+// SELECT i.InvoiceId FROM invoices i INNER JOIN customers c ON i.CustomerId = c.CustomerId WHERE c.Country = @country
+
+var allInvoices = Invoices.Query<List<int>>(cnn);
+// SELECT i.InvoiceId FROM invoices i
+```
+
+### Handlers
+
+`_X` expands a collection into individual parameters.
+
+```csharp
+static readonly QueryCommand TracksByGenre = new(
+    "SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE GenreId IN (?@genreIds_X)");
+
+var tracks = TracksByGenre.Query<List<Track>>(cnn, new { genreIds = new[] { 1, 2, 3 } });
+// SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE GenreId IN (@genreIds_1, @genreIds_2, @genreIds_3)
+```
+
+### Dynamic projection
+
+`?SELECT` makes projected columns respond to keys.
+
+```csharp
+static readonly QueryCommand TrackColumns = new(
+    "?SELECT TrackId AS Id!, Name, UnitPrice FROM tracks WHERE AlbumId = @albumId");
+
+var names = TrackColumns.StartBuilder();
+names.Use("@albumId", 1);
+names.Use("Name");
+var tracksByName = names.Query<List<Track>>(cnn);
+// SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = @albumId
+
+var prices = TrackColumns.StartBuilder();
+prices.Use("@albumId", 1);
+prices.Use("UnitPrice");
+var tracksByPrice = prices.Query<List<Track>>(cnn);
+// SELECT TrackId AS Id, UnitPrice FROM tracks WHERE AlbumId = @albumId
+```
+
+See [conditional SQL](../conditional-sql/index.md) for the full syntax and the other combinations.
 
 ## Cheatsheet
 

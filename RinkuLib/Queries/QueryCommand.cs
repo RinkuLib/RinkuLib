@@ -3,9 +3,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
@@ -35,14 +33,9 @@ public class QueryCommand : IQueryCommand, ICache {
     public readonly QueryText QueryText;
     /// <summary> The row parsers learned so far, one per result shape seen, reused across runs. </summary>
     public ParsingCacheItem[] ParsingCache = [];
-    /// <summary>
-    /// The accessor learned for each parameter-object type, kept as one array so a lookup that runs without
-    /// the lock cannot pair a handle with the plan of another type.
-    /// </summary>
-    private (IntPtr Handle, TypeAccessorCache Cache)[] _accessors = [];
-    /// <summary>The independent <c>UseWith</c> accessor learned for each parameter-object type.</summary>
-    private (IntPtr Handle, UseWithAccessorCache Cache)[] _useWithAccessors = [];
-    private readonly Dictionary<Type, IReadOnlyList<AccessorHandlerRegistration>> _accessorRegistrations = [];
+    // One entry exists for each source type. It starts as the one accessor the command actually used and is
+    // promoted to an AccessorPair only when that exact type later needs the other path too.
+    private (IntPtr Handle, object Accessor)[] _accessors = [];
     /// <summary>
     /// Guards the shared accessor cache while it learns how to read a new parameter object type.
     /// </summary>
@@ -114,22 +107,6 @@ public class QueryCommand : IQueryCommand, ICache {
     public QueryCommand(string commandText, IEnumerable<string> variableNames, CommandType commandType = CommandType.StoredProcedure)
         : this(new QueryFactory(commandText, variableNames), commandType) { }
 
-    /// <summary>
-    /// Registers runtime accessor handlers for a parameter type. This is the runtime form of placing
-    /// <see cref="AccessorEmiterHandler"/> attributes on that type or its members.
-    /// </summary>
-    /// <typeparam name="T">The parameter type the registrations apply to.</typeparam>
-    /// <param name="registrations">The type or member handlers to use when reading <typeparamref name="T"/>.</param>
-    /// <remarks>Register handlers during setup, before using the command concurrently.</remarks>
-    public void RegisterAccessorHandlers<T>(params AccessorHandlerRegistration[] registrations) {
-        ArgumentNullException.ThrowIfNull(registrations);
-        lock (TypeAccessorSharedLock) {
-            _accessorRegistrations[typeof(T)] = [.. registrations];
-            var handle = typeof(T).TypeHandle.Value;
-            _accessors = [.. _accessors.Where(x => x.Handle != handle)];
-            _useWithAccessors = [.. _useWithAccessors.Where(x => x.Handle != handle)];
-        }
-    }
     /// <summary>Defines a command from an already-parsed template, the extension point a subclass builds on.</summary>
     protected QueryCommand(QueryFactory factory) : this(factory, CommandType.Text) { }
     /// <summary>
@@ -374,8 +351,8 @@ public class QueryCommand : IQueryCommand, ICache {
         }
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
-        var cache = GetAccessorCache(handle, type);
-        return FinishSetCommand(cmd, cache.Bind(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+        var accessor = GetDirectAccessor(handle, type);
+        return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
 
     /// <inheritdoc/>
@@ -388,50 +365,50 @@ public class QueryCommand : IQueryCommand, ICache {
         }
         var type = parameterObj.GetType();
         IntPtr handle = type.TypeHandle.Value;
-        var cache = GetAccessorCache(handle, type);
-        return FinishSetCommand(cmd, cache.Bind(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+        var accessor = GetDirectAccessor(handle, type);
+        return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(IDbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        var cache = GetAccessorCache(handle, typeof(T));
+        var accessor = GetDirectAccessor(handle, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, cache.Bind(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
-        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        return FinishSetCommand(cmd, c.GenericBind(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+        var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
+        return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(DbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        var cache = GetAccessorCache(handle, typeof(T));
+        var accessor = GetDirectAccessor(handle, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, cache.Bind(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
-        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        return FinishSetCommand(cmd, c.GenericBind(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+        var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
+        return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(IDbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        var cache = GetAccessorCache(handle, typeof(T));
+        var accessor = GetDirectAccessor(handle, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, cache.Bind(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
-        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        return FinishSetCommand(cmd, c.GenericBind(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+        var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
+        return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(DbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
         IntPtr handle = typeof(T).TypeHandle.Value;
-        var cache = GetAccessorCache(handle, typeof(T));
+        var accessor = GetDirectAccessor(handle, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, cache.Bind(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
-        var c = Unsafe.As<TypeAccessorCache, StructTypeAccessorCache<T>>(ref cache);
-        return FinishSetCommand(cmd, c.GenericBind(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+        var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
+        return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
     /// <summary>
     /// A run that supplies nothing still has to answer for the handler spots the template keeps, so the slots
@@ -444,64 +421,79 @@ public class QueryCommand : IQueryCommand, ICache {
     /// keys. Built on first sight of the type and reused after, so binding a familiar object type is cheap.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public TypeAccessorCache GetAccessorCache(IntPtr handle, Type type) {
-        var accessors = _accessors;
+    public DirectAccessor GetDirectAccessor(IntPtr handle, Type type) {
+        var accessors = Volatile.Read(ref _accessors);
         for (int i = 0; i < accessors.Length; i++)
-            if (accessors[i].Handle == handle)
-                return accessors[i].Cache;
+            if (accessors[i].Handle == handle) {
+                if (accessors[i].Accessor is DirectAccessor direct)
+                    return direct;
+                if (accessors[i].Accessor is AccessorPair pair)
+                    return pair.Direct;
+                break;
+            }
         lock (TypeAccessorSharedLock) {
             accessors = _accessors;
             for (int i = 0; i < accessors.Length; i++)
-                if (accessors[i].Handle == handle)
-                    return accessors[i].Cache;
-            var method = typeof(TypeAccessorCacher<>).MakeGenericType(type)
-                .GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .Single(x => x.Name == nameof(TypeAccessorCacher<>.GetOrGenerate) && x.GetParameters().Length == 5);
-            TypeAccessorCache res;
-            _accessorRegistrations.TryGetValue(type, out var registrations);
-            try {
-                res = (TypeAccessorCache)method.Invoke(null, [Mapper, registrations ?? [], Parameters._specialHandlers,
-                    StartSpecialHandlers, StartBoolCond])!;
-            }
-            catch (TargetInvocationException e) when (e.InnerException is not null) {
-                ExceptionDispatchInfo.Capture(e.InnerException).Throw();
-                throw;
-            }
-            _accessors = [.. accessors, (handle, res)];
-            return res;
+                if (accessors[i].Handle == handle) {
+                    if (accessors[i].Accessor is DirectAccessor direct)
+                        return direct;
+                    if (accessors[i].Accessor is AccessorPair pair)
+                        return pair.Direct;
+
+                    var createdDirect = ParameterAccessorGenerator.CreateDirect(type, Mapper, Parameters._specialHandlers,
+                        StartSpecialHandlers, StartBoolCond);
+                    var updated = new (IntPtr Handle, object Accessor)[accessors.Length];
+                    Array.Copy(accessors, updated, accessors.Length);
+                    updated[i] = (handle, new AccessorPair(createdDirect, (UseWithAccessor)accessors[i].Accessor));
+                    Volatile.Write(ref _accessors, updated);
+                    return createdDirect;
+                }
+            var accessor = ParameterAccessorGenerator.CreateDirect(type, Mapper, Parameters._specialHandlers,
+                StartSpecialHandlers, StartBoolCond);
+            Volatile.Write(ref _accessors, [.. accessors, (handle, accessor)]);
+            return accessor;
         }
     }
 
     /// <summary>Gets the independent accessor cache used by <c>UseWith</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public UseWithAccessorCache GetUseWithAccessorCache(IntPtr handle, Type type) {
-        var accessors = _useWithAccessors;
+    public UseWithAccessor GetUseWithAccessor(IntPtr handle, Type type) {
+        var accessors = Volatile.Read(ref _accessors);
         for (int i = 0; i < accessors.Length; i++)
-            if (accessors[i].Handle == handle)
-                return accessors[i].Cache;
+            if (accessors[i].Handle == handle) {
+                if (accessors[i].Accessor is UseWithAccessor useWith)
+                    return useWith;
+                if (accessors[i].Accessor is AccessorPair pair)
+                    return pair.UseWith;
+                break;
+            }
         lock (TypeAccessorSharedLock) {
-            accessors = _useWithAccessors;
+            accessors = _accessors;
             for (int i = 0; i < accessors.Length; i++)
-                if (accessors[i].Handle == handle)
-                    return accessors[i].Cache;
-            _accessorRegistrations.TryGetValue(type, out var registrations);
-            var method = typeof(TypeAccessorCacher<>).MakeGenericType(type)
-                .GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .Single(x => x.Name == nameof(TypeAccessorCacher<>.GetOrGenerateUseWith)
-                    && x.GetParameters().Length == (registrations is null ? 4 : 5));
-            try {
-                object?[] args = registrations is null
-                    ? [Mapper, Parameters._specialHandlers, StartSpecialHandlers, StartBoolCond]
-                    : [Mapper, registrations, Parameters._specialHandlers, StartSpecialHandlers, StartBoolCond];
-                var cache = (UseWithAccessorCache)method.Invoke(null, args)!;
-                _useWithAccessors = [.. accessors, (handle, cache)];
-                return cache;
-            }
-            catch (TargetInvocationException e) when (e.InnerException is not null) {
-                ExceptionDispatchInfo.Capture(e.InnerException).Throw();
-                throw;
-            }
+                if (accessors[i].Handle == handle) {
+                    if (accessors[i].Accessor is UseWithAccessor useWith)
+                        return useWith;
+                    if (accessors[i].Accessor is AccessorPair pair)
+                        return pair.UseWith;
+
+                    var createdUseWith = ParameterAccessorGenerator.CreateUseWith(type, Mapper, Parameters._specialHandlers,
+                        StartSpecialHandlers, StartBoolCond);
+                    var updated = new (IntPtr Handle, object Accessor)[accessors.Length];
+                    Array.Copy(accessors, updated, accessors.Length);
+                    updated[i] = (handle, new AccessorPair((DirectAccessor)accessors[i].Accessor, createdUseWith));
+                    Volatile.Write(ref _accessors, updated);
+                    return createdUseWith;
+                }
+            var accessor = ParameterAccessorGenerator.CreateUseWith(type, Mapper, Parameters._specialHandlers,
+                StartSpecialHandlers, StartBoolCond);
+            Volatile.Write(ref _accessors, [.. accessors, (handle, accessor)]);
+            return accessor;
         }
+    }
+
+    private sealed class AccessorPair(DirectAccessor direct, UseWithAccessor useWith) {
+        internal readonly DirectAccessor Direct = direct;
+        internal readonly UseWithAccessor UseWith = useWith;
     }
     private bool FinishSetCommand(IDbCommand cmd, object?[] handlerValues, Span<bool> usageMap) {
         var handlers = Parameters._specialHandlers;

@@ -4,6 +4,8 @@
   href: result-shapes.md
 - name: Supplying Values
   href: parameters.md
+- name: Custom Member Rules
+  href: custom-member-rules.md
 - name: Multiple Result Sets
   href: multiple-results.md
 - name: Collections

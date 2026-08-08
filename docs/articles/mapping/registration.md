@@ -88,13 +88,16 @@ Registering a generic *method* as a construction path for such a type is on [con
 
 ## Registering with another info
 
-Registration also decides *which info* parses the type, the deepest lever there is. A different info negotiates by different rules. The built-in `CtorTypeInfo` maps by position and type alone, names ignored, [reading order](reading-order.md) sequential.
+Registration also decides which parsing implementation handles the type. A constructor-position implementation
+can map by position and type alone, ignoring names and using [sequential reading](reading-order.md).
+
+For example, a custom implementation can make this shape read two consecutive `double` columns:
 
 ```csharp
 public record struct Coordinates(double Lat, double Long);
 
-TypeParsingInfo.GetOrAdd<Coordinates>(CtorTypeInfo.Instance);
-// Columns: Longitude | Latitude  ->  Lat takes the first double, Long the second, names disregarded
+// Columns: Longitude | Latitude
+// The registered implementation maps the first value to Lat and the second to Long.
 ```
 
 With several constructors, `[DbConstructor]` marks the one to use. Without it, the first constructor that takes parameters wins.
@@ -102,22 +105,19 @@ With several constructors, `[DbConstructor]` marks the one to use. Without it, t
 ```csharp
 public class Segment {
     public Segment(int start) { }
-    [DbConstructor] public Segment(int start, int end) { }   // CtorTypeInfo builds through this one
+    [DbConstructor] public Segment(int start, int end) { }   // the marked constructor is used
 }
 ```
 
-The name-ignoring built-ins are wired the same way: the `ValueTuple` definitions ship registered with `CtorTypeInfo`, the source of [tuple mapping](../running-queries/result-shapes.md#tuples), and [`DynaObject`](dynaobject.md) runs on an info of its own. These are built-ins, but an info is just a `TypeParsingInfo`. You can write your own and register it, and it parses the type however you code it to.
+Some built-in shapes use specialized parsing implementations. `ValueTuple` is the name-ignoring,
+constructor-position example described in [tuple mapping](../running-queries/result-shapes.md#tuples), while
+[`DynaObject`](dynaobject.md) has its own dynamic shape. You can write and register your own implementation
+when the built-in rules do not fit.
 
 ### What an info supports
 
-Every customization goes through a capability interface, and an info implements the ones it chooses to support. The default info implements all of them. `CtorTypeInfo` implements none, so every helper declines on it:
-
-```csharp
-var info = TypeParsingInfo.GetOrAdd<Coordinates>(CtorTypeInfo.Instance);
-
-bool a = info.UpdateNullColHandler("Lat", NotNullHandle.Instance);               // false: CtorTypeInfo does not implement it
-bool b = info.AddPossibleConstruction(typeof(Coordinates).GetConstructors()[0]); // false: same
-```
+Every customization goes through a capability interface. An implementation exposes only the capabilities it
+supports; a helper returns `false` when the registered implementation does not expose that capability.
 
 When an info does not implement a helper's interface, the helper returns `false` instead of throwing. So you match on the interface, never on a concrete type. Your own info can implement any of these interfaces, and the same helpers work on it just as they do on the default.
 

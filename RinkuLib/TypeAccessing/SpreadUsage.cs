@@ -71,7 +71,7 @@ public static class SpreadUsage {
 /// Reads a member as supplied only when it does not hold a collection that is plainly empty, the cheap half
 /// of the spread's rule compiled into the presence check.
 /// </summary>
-public class SpreadUsageEmitter(Type targetType, MemberInfo member) : IAccessorEmiter {
+public class SpreadUsageEmitter(Type targetType, MemberInfo member) {
     private readonly Type TargetType = targetType;
     private readonly MemberInfo _member = member;
 
@@ -80,7 +80,7 @@ public class SpreadUsageEmitter(Type targetType, MemberInfo member) : IAccessorE
 
     /// <inheritdoc/>
     public void Emit(ILGenerator il) {
-        IAccessorEmiter.EmitMemberLoad(il, TargetType, _member);
+        AccessorEmitter.EmitMemberLoad(il, TargetType, _member);
         Type mType = _member is FieldInfo f ? f.FieldType : ((PropertyInfo)_member).PropertyType;
         if (mType.IsValueType)
             il.Emit(OpCodes.Box, mType);

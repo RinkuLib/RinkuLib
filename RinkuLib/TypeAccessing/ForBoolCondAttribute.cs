@@ -11,55 +11,27 @@ namespace RinkuLib.TypeAccessing;
 /// <see cref="bool"/> fields or properties.
 /// </summary>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public sealed class ForBoolCondAttribute : AccessorEmiterHandler {
+public sealed class ForBoolCondAttribute : AccessorEmitterHandler {
     /// <inheritdoc/>
-    public override void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo? member, Mapper mapper) {
-        ArgumentNullException.ThrowIfNull(member);
+    public override IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper) {
         if (!(member is PropertyInfo p && p.PropertyType == typeof(bool)
             || member is FieldInfo f && f.FieldType == typeof(bool)))
             throw new RinkuConfigurationException(ErrorCodes.AttributeOnWrongMemberType, $"When using {typeof(ForBoolCondAttribute)}, the type must be of type {typeof(bool)}");
-        var index = mapper.GetIndex(member.Name);
         if (index < 0)
-            return;
-        usagePlans[index] = new MemberCondUsageEmitter(type, member);
-        valuePlans[index] = BoxedBasicValueEmitter.TrueValue;
+            return null;
+        return BoolConditionEmitter.Instance;
     }
 }
 
 /// <summary>Generate the IL emit to get the usage of a condition at a specific index (field / prop)</summary>
-public class MemberCondUsageEmitter(Type targetType, MemberInfo member) : IAccessorEmiter {
-    private readonly Type TargetType = targetType;
-    private readonly MemberInfo _member = member;
+internal sealed class BoolConditionEmitter : AccessorEmitterBase {
+    internal static readonly BoolConditionEmitter Instance = new();
 
-    /// <inheritdoc/>
-    public void Emit(ILGenerator il)
-        => IAccessorEmiter.EmitMemberLoad(il, TargetType, _member);
-}
-/// <summary>Generate the IL emit to return a simple true</summary>
-public class BasicValueEmitter : IAccessorEmiter {
-    private readonly OpCode opCode;
-    /// <inheritdoc/>
-    public static readonly BasicValueEmitter TrueValue = new(OpCodes.Ldc_I4_1);
-    private BasicValueEmitter(OpCode opCode) {
-        this.opCode = opCode;
-    }
-    /// <inheritdoc/>
-    public void Emit(ILGenerator il)
-        => il.Emit(opCode);
-}
-/// <summary>Generate the IL emit to return a simple true</summary>
-public class BoxedBasicValueEmitter : IAccessorEmiter {
-    private readonly OpCode opCode;
-    private readonly Type type;
-    /// <inheritdoc/>
-    public static readonly BoxedBasicValueEmitter TrueValue = new(OpCodes.Ldc_I4_1, typeof(bool));
-    private BoxedBasicValueEmitter(OpCode opCode, Type type) {
-        this.opCode = opCode;
-        this.type = type;
-    }
-    /// <inheritdoc/>
-    public void Emit(ILGenerator il) {
-        il.Emit(opCode);
-        il.Emit(OpCodes.Box, type);
+    protected override void EmitCondition(ILGenerator il, Type type, MemberInfo member)
+        => AccessorEmitter.EmitMemberLoad(il, type, member);
+
+    protected override void EmitValue(ILGenerator il, Type type, MemberInfo member) {
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Box, typeof(bool));
     }
 }

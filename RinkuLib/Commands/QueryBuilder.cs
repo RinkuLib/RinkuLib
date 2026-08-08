@@ -121,29 +121,29 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <summary>Copies the usable values from an object into this builder.</summary>
     public void UseWith(object parameterObj) {
         Type type = parameterObj.GetType();
-        var cache = QueryCommand.GetUseWithAccessorCache(type.TypeHandle.Value, type);
-        cache.Bind(parameterObj, Variables);
+        var accessor = QueryCommand.GetUseWithAccessor(type.TypeHandle.Value, type);
+        accessor.Invoke(parameterObj, Variables);
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(T parameterObj) where T : notnull {
-        var cache = QueryCommand.GetUseWithAccessorCache(typeof(T).TypeHandle.Value, typeof(T));
+        var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType) {
-            cache.Bind(parameterObj!, Variables);
+            accessor.Invoke(parameterObj!, Variables);
             return;
         }
-        var typed = Unsafe.As<UseWithAccessorCache, StructUseWithAccessorCache<T>>(ref cache);
-        typed.GenericBind(ref parameterObj, Variables);
+        var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
+        typed.InvokeTyped(ref parameterObj, Variables);
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {
-        var cache = QueryCommand.GetUseWithAccessorCache(typeof(T).TypeHandle.Value, typeof(T));
+        var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType) {
-            cache.Bind(parameterObj!, Variables);
+            accessor.Invoke(parameterObj!, Variables);
             return;
         }
-        var typed = Unsafe.As<UseWithAccessorCache, StructUseWithAccessorCache<T>>(ref cache);
-        typed.GenericBind(ref parameterObj, Variables);
+        var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
+        typed.InvokeTyped(ref parameterObj, Variables);
     }
 }

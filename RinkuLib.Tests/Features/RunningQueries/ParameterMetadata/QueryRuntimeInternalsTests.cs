@@ -928,12 +928,11 @@ public class QueryRuntimeInternalsTests {
     public struct Mark4; public struct Mark5; public struct Mark6; public struct Mark7;
 
     /// <summary>
-    /// The accessor lookup runs without the lock while another thread is registering, so what it reads has
-    /// to be one array holding a handle and its plan together. Reading a handle list and a plan list
-    /// separately lets a reader pair the two from either side of a registration.
+    /// The direct-accessor lookup runs without the lock, so each cache entry keeps its type handle and
+    /// delegate together in the same immutable array element.
     /// </summary>
     [Fact]
-    public void Accessor_cache_lookup_holds_up_while_registrations_land() {
+    public void Direct_accessor_cache_lookup_is_safe_under_contention() {
         Type[] types = [
             typeof(RacedArgs<Mark0>), typeof(RacedArgs<Mark1>), typeof(RacedArgs<Mark2>), typeof(RacedArgs<Mark3>),
             typeof(RacedArgs<Mark4>), typeof(RacedArgs<Mark5>), typeof(RacedArgs<Mark6>), typeof(RacedArgs<Mark7>)];
@@ -946,22 +945,22 @@ public class QueryRuntimeInternalsTests {
                 var handle = type.TypeHandle.Value;
                 barrier.SignalAndWait();
                 for (int k = 0; k < 200; k++)
-                    Assert.NotNull(query.GetAccessorCache(handle, type));
+                    Assert.NotNull(query.GetDirectAccessor(handle, type));
             });
         }
     }
 
     [Fact]
-    public async Task Accessor_cache_registration_is_safe_under_contention() {
+    public async Task Direct_accessor_cache_generation_is_safe_under_contention() {
         var query = new QueryCommand("SELECT * FROM t WHERE a > ?@Min");
         var handle = typeof(ClassArgs).TypeHandle.Value;
-        TypeAccessorCache? fromBlocked = null;
+        DirectAccessor? fromBlocked = null;
         Task blocked;
-        TypeAccessorCache winner;
+        DirectAccessor winner;
         lock (QueryCommand.TypeAccessorSharedLock) {
-            blocked = Task.Run(() => { fromBlocked = query.GetAccessorCache(handle, typeof(ClassArgs)); }, TestContext.Current.CancellationToken);
+            blocked = Task.Run(() => { fromBlocked = query.GetDirectAccessor(handle, typeof(ClassArgs)); }, TestContext.Current.CancellationToken);
             Thread.Sleep(200);
-            winner = query.GetAccessorCache(handle, typeof(ClassArgs));
+            winner = query.GetDirectAccessor(handle, typeof(ClassArgs));
         }
         await blocked;
         Assert.Same(winner, fromBlocked);

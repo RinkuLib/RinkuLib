@@ -410,10 +410,9 @@ The message names the column, by whichever of index or name it was addressed wit
 
 ## RINKU5001, type not usable by this info {#rinku5001}
 
-The parsing info was asked to handle a type it cannot, and every info decides that for itself. Among the
-built-in ones, `BaseTypeInfo` takes base types and enums, `CtorTypeInfo` needs a constructor with
-parameters, `DynaObjectTypeInfo` takes `DynaObject`, and a `DefaultTypeParsingInfo` takes the one type it
-was built for. An info you write raises this from its own `ValidateCanUseType`. See
+The parsing info was asked to handle a type it cannot, and every info decides that for itself. Built-in
+parsing implementations cover base values, constructor-shaped values, `DynaObject`, and ordinary mapped
+types. An info you write raises this from its own `ValidateCanUseType`. See
 [registration](../mapping/registration.md).
 
 ## RINKU5002, construction shape not usable {#rinku5002}

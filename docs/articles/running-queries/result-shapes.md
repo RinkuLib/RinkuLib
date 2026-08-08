@@ -53,33 +53,26 @@ Two things follow from the waiting. A command handed back by the `out DbCommand`
 
 These, and a few more, are the shapes Rinku ships for common cases. Each is a small type that wraps the element parser with one rule of its own, and you can add your own the same way (see [below](#adding-your-own-shape)). The set is open.
 
-They answer two separate questions.
-
-**How many rows.**
-
-| Ask for | No row | One row | Extra rows |
-| --- | --- | --- | --- |
-| `T` | throws | the object | takes the first |
-| `Optional<T>` | `HasValue == false` | the object | takes the first |
-| `OptionalStruct<T>` | `HasValue == false` | the value | takes the first |
-| `List<T>` / `IEnumerable<T>` | empty collection | one element | all rows |
-| `Single<T>` | a default `Single<T>` | the object | **throws** |
-
-**Whether the value may be null.** A row can carry a `NULL`, or a nested object can [collapse](../mapping/nullability.md#abortonnull-collapse-the-object) to nothing. By default that throws. A null-accepting shape takes it instead.
-
-| Ask for | Null value |
-| --- | --- |
-| `MaybeNull<T>` | `HasValue == false` (reference types) |
-| `T?` | `null` (value types) |
-
-The two questions are independent. `Optional<T>` accepts a missing row but throws on a `NULL` value. `MaybeNull<T>` accepts a `NULL` value but throws on a missing row. `OptionalNullable<T>` is the two stacked, `Optional`'s missing-row rule around `MaybeNull`'s null rule, flattened to a single `HasValue == false` for both cases.
-
 ```csharp
-int? n                = GetNumber.Query<int?>(cnn);               // no row -> throws; NULL value -> null; 
-OptionalStruct<int> o = GetNumber.Query<OptionalStruct<int>>(cnn); // no row -> HasValue == false; NULL value -> throws;
+int count = GetNumber.Query<int>(cnn);                         // Throws if there are no rows. Otherwise returns the first row.
+Optional<int> maybe = GetNumber.Query<Optional<int>>(cnn);     // Returns an empty value if there are no rows. Otherwise returns the first row.
+List<int> all = GetNumber.Query<List<int>>(cnn);                // Returns an empty list if there are no rows. Otherwise returns all rows.
+Single<int> one = GetNumber.Query<Single<int>>(cnn);            // Returns a default value if there are no rows. Returns the row if there is one. Throws if there are multiple rows.
+int? n = GetNumber.Query<int?>(cnn);                            // Throws if there are no rows. Returns null if the value is NULL.
+OptionalStruct<int> o = GetNumber.Query<OptionalStruct<int>>(cnn); // HasValue == false if there are no rows. Throws if the value is NULL.
+MaybeNull<Person> person = GetPerson.Query<MaybeNull<Person>>(cnn); // Throws if there are no rows. HasValue == false if the value is NULL.
+OptionalNullable<Person> either = GetPerson.Query<OptionalNullable<Person>>(cnn); // HasValue == false if there are no rows or the value is NULL.
 ```
 
-Every wrapper converts implicitly to its inner `T`, so you can pass it wherever the `T` is expected. Column-level `NULL` rules are on [nullability](../mapping/nullability.md).
+When `T` uses multiple rows, more than one row can be part of the result. An `Artist` with a `List<Album>` can use several joined rows to make one `Artist`.
+
+```csharp
+Single<Artist> artist = GetArtists.Query<Single<Artist>>(cnn);  // throws if another Artist follows
+```
+
+This throws if a second `Artist` follows. It does not throw when one `Artist` uses several rows for its albums. See [collections](collections.md) for multirow types.
+
+The row rule and the `NULL` rule are independent. `Optional<T>` accepts no rows but throws for a `NULL` value. `MaybeNull<T>` accepts a `NULL` value but throws when there are no rows. `OptionalNullable<T>` accepts both. A row can also [collapse](../mapping/nullability.md#abortonnull-collapse-the-object) to nothing, which follows the same `NULL` rules. Every wrapper converts implicitly to its inner `T`, so you can pass it wherever the `T` is expected. Column-level `NULL` rules are on [nullability](../mapping/nullability.md).
 
 ## Scalars
 
@@ -94,26 +87,42 @@ int alt   = CountTracks.ExecuteScalar<int>(cnn);      // also works
 
 ## Tuples
 
-Ask for a `ValueTuple` and its elements are taken in order, the tuple names (`Item1`, `Item2`, ...) ignored. Each element then negotiates as usual. A basic type has no name left to match, so it takes the next column. A complex element still matches its own members by name.
-
-Every tuple element must negotiate successfully. A row with fewer columns than the tuple has no tuple parser; use a
-type with a construction path whose final parameter has a default, or provide separate construction paths, when two
-row shapes are both valid.
+`ValueTuple` is read by constructor position. Its elements are read sequentially and the tuple names (`Item1`, `Item2`, ...) are ignored. Each element then uses its normal parser. Basic elements match by type. Complex elements match their members by name. See [names](../mapping/names.md) and [reading order](../mapping/reading-order.md).
 
 ```csharp
-// Basic: strictly by column order
+var pair = cmd.Query<(int Id, string Name)>(cnn);
+
+// SELECT 7, 'Intro' -- works.
+// SELECT 7          -- does not.
+```
+
+Every tuple element must be readable.
+
+When the same type must accept more than one row shape, use a normal mapped type and make the fallback explicit:
+
+```csharp
+public record Track(int Id, string? Name = null);
+
+// Id                         -> Track(7, null)
+// Id | Name                  -> Track(7, "Intro")
+```
+
+Use separate construction paths instead when the two shapes need different construction logic.
+
+```csharp
+// Tuple elements are read sequentially. Tuple names are ignored.
 var (id, name) = cmd.Query<(int, string)>(cnn);
 
-// Mixed: the basic element takes the next column, the complex one negotiates its own
+// Tuple elements are read sequentially and Location maps its members by name.
 var (id, location) = cmd.Query<(int, Location)>(cnn);
 
-// Complex: each element matches its member names, in order
+// Each Person maps its members by name.
 public record struct Person(int Id, string Name);
 var (p1, p2) = cmd.Query<(Person, Person)>(cnn);
 // Columns: Id | Name | Id | Name  -> p1 takes the first pair, p2 the second
 ```
 
-Positional parsing comes from the type's registration, and any type can opt into it. See [registering with another info](../mapping/registration.md#registering-with-another-info).
+This behavior is built in for `ValueTuple`. Other types can use their own registered parsing implementation when they need a different mapping rule. See [registering with another info](../mapping/registration.md#registering-with-another-info).
 
 ## Adding your own shape
 

@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Reflection.Emit;
 using RinkuLib.Tools;
 
 namespace RinkuLib.TypeAccessing;
@@ -7,16 +8,27 @@ namespace RinkuLib.TypeAccessing;
 /// member for each. Handy for a type that should always switch on the same parts of a query.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface)]
-public class UsesBoolConds(params string[] CondsToUse) : AccessorEmiterHandler {
+public class UsesBoolConds(params string[] CondsToUse) : AccessorEmitterHandler {
     private readonly string[] CondsToUse = CondsToUse;
     /// <inheritdoc/>
-    public override void HandleEmit(char varChar, IAccessorEmiter?[] usagePlans, IAccessorEmiter?[] valuePlans, Type type, MemberInfo? member, Mapper mapper) {
+    public override ITypeAccessorEmitter? GetTypeEmitter(char varChar, int index, Type type, Mapper mapper) {
         foreach (var cond in CondsToUse) {
-            var index = mapper.GetIndex(cond);
-            if (index < 0)
+            if (mapper.GetIndex(cond) != index)
                 continue;
-            usagePlans[index] = BasicValueEmitter.TrueValue;
-            valuePlans[index] = BoxedBasicValueEmitter.TrueValue;
+            return AlwaysOnConditionEmitter.Instance;
         }
+        return null;
+    }
+}
+
+internal sealed class AlwaysOnConditionEmitter : TypeAccessorEmitterBase {
+    internal static readonly AlwaysOnConditionEmitter Instance = new();
+
+    protected override void EmitCondition(ILGenerator il, Type type)
+        => il.Emit(OpCodes.Ldc_I4_1);
+
+    protected override void EmitValue(ILGenerator il, Type type) {
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Box, typeof(bool));
     }
 }

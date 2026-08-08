@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Data;
 using RinkuLib.Commands;
 using RinkuLib.Queries;
 using RinkuLib.Tests.Infrastructure;
@@ -31,6 +32,47 @@ public sealed class UseWithTests {
         builder.UseWith(new Filter(null, null, false));
 
         Assert.All(builder.Variables, Assert.Null);
+    }
+
+    [Fact]
+    public void UseDbNull_keeps_a_null_member_in_the_builder_as_a_database_null() {
+        var builder = new QueryCommand("SELECT ID FROM Users WHERE Name = ?@Name").StartBuilder();
+
+        builder.UseWith(new DbNullFilter(null));
+
+        Assert.Equal(DBNull.Value, builder["@Name"]);
+        Render.Expect(builder, "SELECT ID FROM Users WHERE Name = @Name", ("@Name", DBNull.Value));
+    }
+
+    [Fact]
+    public void UseDbNull_keeps_a_null_member_in_a_direct_parameter_object_run() {
+        var query = new QueryCommand("SELECT ID FROM Users WHERE Name = ?@Name");
+        var usage = new bool[query.Mapper.Count];
+        var command = new FakeCommand();
+
+        query.SetCommand((DbCommand)command, new DbNullFilter(null), usage);
+
+        Assert.Equal("SELECT ID FROM Users WHERE Name = @Name", command.CommandText);
+        Assert.Equal(DBNull.Value, Assert.Single(command.BoundParameters).Value);
+    }
+
+    [Fact]
+    public void A_type_UseDbNull_rule_is_the_member_default_and_a_member_rule_overrides_it() {
+        var query = new QueryCommand("SELECT ID FROM Users WHERE Name = ?@Name AND Status = ?@Status");
+        var builder = query.StartBuilder();
+
+        builder.UseWith(new TypeDbNullFilter(null, null));
+
+        Assert.Equal(DBNull.Value, builder["@Name"]);
+        Assert.Null(builder["@Status"]);
+        Render.Expect(builder, "SELECT ID FROM Users WHERE Name = @Name", ("@Name", DBNull.Value));
+
+        var usage = new bool[query.Mapper.Count];
+        var command = new FakeCommand();
+        query.SetCommand((DbCommand)command, new TypeDbNullFilter(null, null), usage);
+
+        Assert.Equal("SELECT ID FROM Users WHERE Name = @Name", command.CommandText);
+        Assert.Equal(DBNull.Value, Assert.Single(command.BoundParameters).Value);
     }
 
     [Fact]
@@ -97,4 +139,7 @@ public sealed class UseWithTests {
     private sealed record SpreadFilter(int[] Ids);
     private sealed record BoundFilter(int[] Ids, string? Name);
     private sealed record BatchItem(int Id, string Name);
+    private sealed record DbNullFilter([property: UseDbNull] string? Name);
+    [UseDbNull]
+    private sealed record TypeDbNullFilter(string? Name, [property: NotNullOrWhitespace] string? Status);
 }

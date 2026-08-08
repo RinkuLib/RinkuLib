@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using RinkuLib.Tools;
 using RinkuLib.TypeAccessing;
@@ -79,7 +80,7 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// </summary>
     /// <param name="targetType">The parameter object's type.</param>
     /// <param name="member">The member holding this handler's variable.</param>
-    public virtual IAccessorEmiter? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member) => null;
+    public virtual Action<ILGenerator>? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member) => null;
     /// <summary>
     /// Re-binds for a new run from the rewritten value a previous <see cref="SaveUse"/> left, adding, changing,
     /// or dropping parameters to match, and keeping the bound-command road warm.
@@ -142,8 +143,8 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
     /// </summary>
     public override bool CanHandle(ref object? value) => SpreadUsage.HasElement(ref value);
     /// <inheritdoc/>
-    public override IAccessorEmiter? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member)
-        => new SpreadUsageEmitter(targetType, member);
+    public override Action<ILGenerator>? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member)
+        => new SpreadUsageEmitter(targetType, member).Emit;
     /// <summary>
     /// Performs a differential update on the command. Adds, updates, or prunes 
     /// parameters based on the change in collection size since the last <see cref="SaveUse"/>.
