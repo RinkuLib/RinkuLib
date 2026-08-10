@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Reflection.Emit;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 /// <summary>
 /// Marks a field to be cloned by invoking an instance method on the container.
 /// </summary>

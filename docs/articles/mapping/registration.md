@@ -2,6 +2,51 @@
 
 Every type parses through its parsing info, the entry a registry keeps per type. This page covers how a type gets its entry and what registering can decide. What the entry holds is on [construction paths](construction-paths.md), and the slot-level rules live with their concepts, [nullability](nullability.md), [names](names.md), [reading order](reading-order.md).
 
+## Application-wide registration defaults
+
+Registration is lazy, so there is no point at which every application's type has already been discovered. Install
+registration initializers during application startup instead. Each initializer receives the mutable metadata Rinku has
+just created and can leave it alone or change it before registration publishes it.
+
+`ParamInfo.RegistrationInitializer` runs after the attributes, name comparer, null handler, usage flags, and any custom
+`IParamInfoMaker` have produced the final slot metadata:
+
+```csharp
+ParamInfo.RegistrationInitializer = static slot => {
+    if (string.Equals(slot.NameComparer.GetDefaultName(), "Id", StringComparison.OrdinalIgnoreCase))
+        slot.SetAbortOnNull(true);
+};
+```
+
+There is no precedence policy hidden in the initializer. The callback sees the final result and decides whether to
+preserve or replace any choice, including one produced by an attribute or custom maker.
+
+`MethodCtorInfo.RegistrationInitializer` does the same for automatically built construction paths, and
+`TypeParsingInfo.RegistrationInitializer` receives both the requested type and the default-factory-created metadata
+before the registry publishes it:
+
+```csharp
+MethodCtorInfo.RegistrationInitializer = static path => path.Flags |= MethodCtorInfo.AdditionalFlags.CanCompleteWithMembers;
+
+TypeParsingInfo.RegistrationInitializer = static (type, info) => {
+    if (info is ICanUpdateGroupKey grouping && type.GetProperty("Id") is { } id)
+        grouping.GroupKey = new EqualityGroupingRule(id);
+};
+```
+
+The callbacks run only while registration metadata is being created, never while a row is read or a command is run.
+Configure them before concurrent query use. Metadata already created is deliberately not revisited; every type lazily
+created afterward observes the current initializer. Changes made to the metadata supplied to an initializer are part
+of that object's construction and do not invalidate parsers built from previously published metadata. An initializer
+should therefore configure the object it receives rather than use its registration scope to mutate unrelated existing
+metadata.
+
+Direct construction remains the lower-level escape hatch. `new ParamInfo(...)` and `new MethodCtorInfo(...)` bypass
+their initializers. A `TypeParsingInfo` explicitly supplied to `GetOrAdd` or `AddOrSet` likewise bypasses the type
+initializer. `MethodCtorInfo.TryNew`, which automatic discovery uses, does invoke the construction initializer. The
+one-argument `MethodCtorInfo` constructor still creates its parameters through `ParamInfo.Create`; pass an explicitly
+built `ParamInfo[]` as well when the entire path must bypass both conventions.
+
 ## How a type gets its info
 
 Querying a type registers it, whatever the `T`:
@@ -43,35 +88,68 @@ And manually:
 var info = TypeParsingInfo.GetOrAdd<Address>();
 ```
 
-If the database exposes a custom scalar type, register its conversion once. The target can then be used as a
-scalar result, constructor parameter, or nested member:
+If a target needs custom scalar behavior, give it a parsing-info implementation just like any other custom
+shape. `ScalarTypeParsingInfo<T>` supplies the ordinary name, ordinal, sequential-read, reuse, and fallback
+negotiation. The implementation only selects compatible source columns and returns the plan that emits the
+read:
 
 ```csharp
 public readonly record struct RegisteredDate(DateTime Value) : IDbReadable;
 
-TypeConverterRegistry.Register<DateTime, RegisteredDate>(
-    value => new RegisteredDate(value.AddDays(1)));
+sealed class RegisteredDateInfo : ScalarTypeParsingInfo<RegisteredDate>
+{
+    static readonly MethodInfo ConvertMethod = typeof(RegisteredDateInfo).GetMethod(nameof(Convert), BindingFlags.Static | BindingFlags.NonPublic)!;
 
-// A DateTime column now maps to RegisteredDate.
+    protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal)
+    {
+        if (column.Type != typeof(DateTime))
+            return null;
+        ITypeConverter converter = new MethodCallConverter(ConvertMethod);
+        if (Nullable.GetUnderlyingType(targetType) is not null)
+            converter = new NullableWrapperConverter(converter);
+        return new ConvertedScalarPlan(parentType, converter, parameter.NameComparer.GetDefaultName(), parameter.NullColHandler, ordinal);
+    }
+
+    static RegisteredDate Convert(DateTime value) => new(value.AddDays(1));
+}
+
+TypeParsingInfo.AddOrSet(typeof(RegisteredDate), new RegisteredDateInfo());
 ```
 
-The registry is the convenience path. Implement `ITypeConverter` or register another `TypeParsingInfo` when
-the conversion needs complete control.
+The same entry handles a top-level result, a constructor parameter, a nested member, and nullable
+`RegisteredDate?`. `ConvertedScalarPlan` uses the standard typed `DbDataReader` call and emits the selected
+`ITypeConverter` directly into the generated parser. There is no converter lookup during row parsing.
 
-If a provider reports a type that its reader cannot fetch through the CLR type it reports, register the reader
-callback from the provider adapter. Rinku does not reference the provider:
+When a provider needs its own reader API, the parsing implementation returns its own plan instead. The plan
+inherits the same null and ordinal behavior but emits the provider read directly:
 
 ```csharp
-// PostgreSQL reports an array column as System.Array.
-// Npgsql knows that the value is really an int[] and can read it that way.
-DbColumnReaderRegistry.Register<Array, int[]>(
-    (reader, ordinal) => reader.GetFieldValue<int[]>(ordinal));
+sealed class PostgresIntArrayInfo : ScalarTypeParsingInfo<int[]>
+{
+    protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal)
+        => column.Type == typeof(Array) ? new PostgresIntArrayPlan(parentType, parameter.NameComparer.GetDefaultName(), parameter.NullColHandler, ordinal) : null;
+}
 
-int[] values = GetValues.Query<int[]>(cnn);
+sealed class PostgresIntArrayPlan(Type parentType, string parameterName, INullColHandler nullHandler, int ordinal)
+    : ScalarDbItemPlan<int[]>(parentType, parameterName, nullHandler, ordinal)
+{
+    static readonly MethodInfo ReadMethod = typeof(DbDataReader).GetMethod(nameof(DbDataReader.GetFieldValue))!.MakeGenericMethod(typeof(int[]));
+
+    protected override void EmitValue(ColumnInfo column, Generator generator, out object? targetObject)
+    {
+        targetObject = null;
+        generator.Emit(OpCodes.Ldarg_1);
+        generator.Emit(OpCodes.Ldc_I4, ColumnOrdinal);
+        generator.Emit(OpCodes.Callvirt, ReadMethod);
+    }
+}
+
+TypeParsingInfo.AddOrSet(typeof(int[]), new PostgresIntArrayInfo());
 ```
 
-The callback chooses the provider value type. The normal mapping and null handling continue after the callback.
-This is also the complete takeover point for provider result values.
+The generated parser calls `GetFieldValue<int[]>` directly: there is no runtime registry or interface dispatch.
+Remove the ordinary type registration with `TypeParsingInfo.TryRemove(typeof(int[]), out _)`. Generated parsers
+are managed independently through the parser invalidation API, as with every other parsing-info change.
 
 Separate from the rules, each type parsing implementation decides what its own generic arguments mean. `List<TInner>` registers `TInner` when its caller passes `[AreReadable]`; it does not walk generic arguments inside `TInner`. A custom `TypeParsingInfo` can make the same decision in its own implementation.
 
@@ -111,15 +189,41 @@ public class Segment {
 
 Some built-in shapes use specialized parsing implementations. `ValueTuple` is the name-ignoring,
 constructor-position example described in [tuple mapping](../running-queries/result-shapes.md#tuples), while
-[`DynaObject`](dynaobject.md) has its own dynamic shape. You can write and register your own implementation
-when the built-in rules do not fit.
+[`DynaObject`](dynaobject.md) has a generated dynamic shape and `Dictionary<string, object>` has a
+schema-adaptive runtime shape. Both are ordinary `TypeParsingInfo` registrations. You can write and register
+your own implementation when the built-in rules do not fit.
 
 ### What an info supports
 
-Every customization goes through a capability interface. An implementation exposes only the capabilities it
-supports; a helper returns `false` when the registered implementation does not expose that capability.
+Registry helpers and refinements operate through capability interfaces. An implementation exposes only the
+capabilities it supports; a helper returns `false` when the registered implementation does not expose that
+capability. Configuration deliberately belonging to one implementation can still use that implementation's
+API directly.
 
 When an info does not implement a helper's interface, the helper returns `false` instead of throwing. So you match on the interface, never on a concrete type. Your own info can implement any of these interfaces, and the same helpers work on it just as they do on the default.
 
-Register and configure before concurrent query use. A mapping change advances the parser configuration
-generation, so a later parser request rebuilds the affected schema instead of reusing an old plan.
+Register and configure before query use. Registration APIs change registration state only: they do not inspect,
+remove, notify, or dispose generated parser caches. An existing parser object and every cache reference
+to it remain alive. If an application deliberately changes registration after querying has begun and wants to
+discard old cache entries, it must explicitly use the [parser cache API](parsers.md#invalidation).
+
+Remove one exact metadata registry entry independently with `TypeParsingInfo.TryRemove(type, out var removed)`. The key is used exactly as supplied: removing a closed generic does not remove its open definition, and nullable normalization is not applied. Removal affects later metadata negotiation only. It neither changes the returned `TypeParsingInfo` object nor invalidates parsers already generated from it; invalidate those parsers separately when that is also intended.
+
+## Replacing the shipped metadata implementation
+
+The registry does not construct `DefaultTypeParsingInfo`, `BaseTypeInfo`, or the array implementation. It asks
+the interface-typed `TypeParsingInfo.DefaultFactory` slot. Rinku installs its shipped factory during module
+initialization, and an application can replace it during startup:
+
+```csharp
+TypeParsingInfo.DefaultFactory = new MyTypeParsingInfoFactory();
+```
+
+Implement `ITypeParsingInfoFactory` to provide scalar and array entries and to create an entry for an ordinary
+type. The registry still owns lookup, exact-versus-open-generic precedence, and thread-safe publication; the
+factory owns only the implementation being registered. The factory is consulted
+for missing entries. Existing entries and explicit `TypeParsingInfo.AddOrSet` registrations stay in the
+registry, so replacing the default is not all-or-nothing.
+
+`DefaultTypeParsingInfoFactory` is public when only one part needs changing: wrap it and delegate the members
+you want to keep. Configure the slot before concurrent query use.

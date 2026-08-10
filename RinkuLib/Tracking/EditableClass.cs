@@ -1,6 +1,6 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 
 /// <summary>
 /// A reference-type editable item that tracks an original value and supports

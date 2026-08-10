@@ -1,7 +1,7 @@
 using System.Reflection;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -48,7 +48,7 @@ public class ConstructionSelectionTests {
         using var reader = Rows.Reader(cols,
             [99, "DE123456789", "GENEDEBK"],
             [100, "1234 5678 9012 3456", DBNull.Value]);
-        var parser = TypeParser.GetTypeParser<Purchase>(ref cols);
+        var parser = TypeParser.GetTypeParser<Purchase>(cols);
         reader.Read();
 
         var withBic = parser.Parse(reader).Result;

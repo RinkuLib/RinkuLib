@@ -1,6 +1,6 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 /// <summary>Exposes an item count, the common base of the tracking-list interfaces.</summary>
 public interface ICount {
     /// <summary>The number of items in the list.</summary>

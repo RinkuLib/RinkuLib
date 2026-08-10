@@ -1,6 +1,6 @@
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -70,7 +70,7 @@ public class AltNamesAndScopeTests {
         ];
         Refusals.NoParserFor<TierOne>(() => {
             var localCols = cols;
-            TypeParser.GetTypeParser<TierOne>(ref localCols);
+            TypeParser.GetTypeParser<TierOne>(localCols);
         });
     }
 

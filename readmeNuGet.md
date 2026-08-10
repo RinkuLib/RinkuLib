@@ -3,11 +3,12 @@
 A micro-ORM for .NET, built directly on **ADO.NET**. You write the SQL, name a type, and get your objects back.
 
 ```csharp
+using Rinku;
+
 public record Album(int Id, string Title);
 
-// Create the command once (a static readonly field is ideal). Parsing happens here.
-static readonly QueryCommand GetAlbums =
-    new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+// Create the command once (a static readonly field is ideal). The SQL template is parsed here.
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 1 });
 // GetAlbums.Query<Album>(cnn, ...)               -> a single album
@@ -30,8 +31,7 @@ Full documentation: <https://rinkulib.github.io/RinkuLib/>.
 When a query must change shape at runtime, mark the optional parts (`?@var`, `/*...*/`) and the values you supply decide what stays.
 
 ```csharp
-static readonly QueryCommand Search =
-    new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND Title LIKE ?@title");
+static readonly QueryCommand Search = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND Title LIKE ?@title");
 
 // @title omitted, so its clause is pruned.
 List<Album> albums = Search.Query<List<Album>>(cnn, new { artistId = 1 });
@@ -45,4 +45,5 @@ You define the template first, so your code only decides what's used and never c
 ## Links
 
 - Documentation: <https://rinkulib.github.io/RinkuLib/>
+- Coming from Dapper: <https://rinkulib.github.io/RinkuLib/articles/reference/dapper.html>
 - Source: <https://github.com/RinkuLib/RinkuLib>

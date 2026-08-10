@@ -12,18 +12,21 @@ public record ArtistA(int Id, Album[] Albums);
 Anything else is registered with `MultiRowTypeParsingInfo`, which folds multiple rows into a single value using a **3-step pipeline**:
 
 1. **Seed (Accumulator Constructor):** Creates an intermediate object that persists while folding rows.
-2. **Add Method:** Called for each row to feed data into the accumulator. Pass `null` to automatically find a method named `Add`.
+2. **Add Method:** Called for each row to feed data into the accumulator. It is required because its parameter declares the element type read from each row.
 3. **Finish Method:** Converts the intermediate accumulator into the final target type. Pass `null` if the intermediate type *is* the final result.
 
 ---
 
 ### Accumulator matches the final type (`HashSet`)
 
-A `HashSet` serves as its own accumulator. The seed is its constructor, `Add` is `null` (since it finds `Add` by name), and `Finish` is `null` because the set is already the final result.
+A `HashSet` serves as its own accumulator. The seed is its constructor, `Add` is its one-element method, and `Finish` is `null` because the set is already the final result.
 
 ```csharp
 TypeParsingInfo.AddOrSet(typeof(HashSet<>),
-    new MultiRowTypeParsingInfo(typeof(HashSet<>).GetConstructor(Type.EmptyTypes)!, null, null));
+    new MultiRowTypeParsingInfo(
+        typeof(HashSet<>).GetConstructor(Type.EmptyTypes)!,
+        typeof(HashSet<>).GetMethod(nameof(HashSet<int>.Add))!,
+        null));
 
 public record Article(int Id, string Title, HashSet<string> Tags) : IDbReadable;
 

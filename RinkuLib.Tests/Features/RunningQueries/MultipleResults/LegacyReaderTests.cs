@@ -1,7 +1,8 @@
 using System.Data;
+using Rinku.Mapping.Parsers.Defaults;
 using System.Data.Common;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.TypeAccessing;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 #pragma warning disable SYSLIB0010 // These tests intentionally cover the legacy reader surface.

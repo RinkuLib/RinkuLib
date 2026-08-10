@@ -1,8 +1,9 @@
 using System.Data;
+using Rinku.Querying.Defaults;
 using System.Data.Common;
 using Microsoft.Data.SqlClient;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using Xunit;
 
 namespace RinkuLib.Tests.TestContainers;
@@ -15,6 +16,16 @@ public sealed class ProviderParameterEdgeFixture : DBFixture<SqlConnection>;
 /// </summary>
 public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixture)
     : IClassFixture<ProviderParameterEdgeFixture> {
+    [Fact]
+    public async Task A_sql_server_bigint_result_implicitly_converts_to_an_int_target() {
+        var ct = TestContext.Current.CancellationToken;
+        using var cnn = fixture.GetConnection();
+        await cnn.OpenAsync(ct);
+
+        var query = new QueryCommand("SELECT LEN(CAST(REPLICATE('x', 42) AS VARCHAR(MAX)))");
+        Assert.Equal(42, await query.QueryAsync<int>(cnn, ct: ct));
+    }
+
     [Fact]
     public async Task A_pinned_ansi_string_uses_the_provider_ansi_representation() {
         var ct = TestContext.Current.CancellationToken;

@@ -1,9 +1,9 @@
 using Microsoft.Data.SqlClient;
 using Npgsql;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
-using RinkuLib.TypeAccessing;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.TestContainers;

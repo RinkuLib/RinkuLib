@@ -1,8 +1,8 @@
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.TypeAccessing;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -80,7 +80,7 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     static readonly QueryCommand FirstName = new("SELECT Name FROM Users WHERE ID = @id");
 
     /// <summary>
-    /// The RINKU3001 example. A scalar is converted at run time from whatever the query returned, so
+    /// The RINKU4004 example. A scalar is converted at run time from whatever the query returned, so
     /// asking for a type the value does not convert to is refused there rather than at parser build.
     /// </summary>
     [Fact]
@@ -109,6 +109,12 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         using var cnn = Db.GetConnection();
         string name = OneName.Query<Single<string>>(cnn);
         Assert.Equal("John", name);
+    }
+
+    [Fact]
+    public void Single_with_no_rows_throws() {
+        using var cnn = Db.GetConnection();
+        Refusals.Raises(ErrorCodes.NoRows, () => NoRows.Query<Single<string>>(cnn));
     }
 
     [Fact]

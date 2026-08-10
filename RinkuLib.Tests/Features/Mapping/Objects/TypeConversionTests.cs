@@ -1,6 +1,6 @@
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -111,7 +111,7 @@ public class TypeConversionTests {
     [Fact]
     public void A_name_the_enum_does_not_have_is_refused() {
         ColumnInfo[] cols = [new("V", typeof(string), false)];
-        Assert.ThrowsAny<Exception>(() => Rows.ParseOne<SampleColor>(cols, "Puce"));
+        Assert.Throws<ArgumentException>(() => Rows.ParseOne<SampleColor>(cols, "Puce"));
     }
 
     [Fact]

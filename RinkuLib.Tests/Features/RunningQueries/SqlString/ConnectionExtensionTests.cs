@@ -1,6 +1,8 @@
 using System.Data;
 using System.Data.Common;
-using RinkuLib.Commands;
+using Rinku;
+using Rinku.Internal;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
@@ -8,7 +10,7 @@ namespace RinkuLib.Tests.Execution;
 
 /// <summary>
 /// The string-based connection extensions parse the SQL once into a shared cached
-/// <see cref="RinkuLib.Queries.QueryCommand"/> and then behave like the command-based API.
+/// <see cref="Rinku.QueryCommand"/> and then behave like the command-based API.
 /// </summary>
 public class ConnectionExtensionTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private const string AllUsersSql = "SELECT ID, Name, Email FROM Users ORDER BY ID";
@@ -21,6 +23,31 @@ public class ConnectionExtensionTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         var first = ConnectionQueryExtensions.GetOrCreateCommand("SELECT 'cache-probe'");
         var second = ConnectionQueryExtensions.GetOrCreateCommand("SELECT 'cache-probe'");
         Assert.Same(first, second);
+    }
+
+    [Fact]
+    public void Dictionary_removal_does_not_dispose_or_mutate_the_removed_command() {
+        string sql = $"SELECT 'remove-{Guid.NewGuid()}'";
+        var first = ConnectionQueryExtensions.GetOrCreateCommand(sql);
+
+        Assert.True(ConnectionQueryExtensions.CommandCache.TryRemove(sql, out var removed));
+        Assert.Same(first, removed);
+        Assert.NotSame(first, ConnectionQueryExtensions.GetOrCreateCommand(sql));
+        Assert.Equal(sql, first.QueryText.QueryString);
+        ConnectionQueryExtensions.CommandCache.TryRemove(sql, out _);
+    }
+
+    [Fact]
+    public void Dictionary_can_bind_an_arbitrary_key_to_a_preconfigured_command() {
+        string key = $"logical-query-{Guid.NewGuid():N}";
+        using var configured = new QueryCommand("SELECT 'configured-command'");
+        Assert.True(ConnectionQueryExtensions.CommandCache.TryAdd(key, configured));
+
+        Assert.Same(configured, ConnectionQueryExtensions.GetOrCreateCommand(key));
+        Assert.Equal("SELECT 'configured-command'", configured.QueryText.QueryString);
+
+        Assert.True(ConnectionQueryExtensions.CommandCache.TryRemove(key, out var removed));
+        Assert.Same(configured, removed);
     }
 
     [Fact]

@@ -138,6 +138,28 @@ path.GroupKey = customRule;
 
 The same path object is used for grouping, flags, parameters, names, null handling, and any future path setting. Type-level helpers configure only type-level behavior.
 
+### Defaults for every discovered path
+
+Set `MethodCtorInfo.RegistrationInitializer` during application startup to adjust each automatically created path
+before it is registered. The callback receives the finished path, including its attribute-derived flags and parameter
+metadata, and owns the decision to preserve or replace them.
+
+This convention uses an `Id` parameter as the only grouping key. It replaces the ordinary inferred key, which would
+otherwise compare every scalar before the first collection:
+
+```csharp
+MethodCtorInfo.RegistrationInitializer = static path => {
+    var id = path.MethodBase.GetParameters().FirstOrDefault(p => string.Equals(p.Name, "Id", StringComparison.OrdinalIgnoreCase));
+    if (id is not null)
+        path.GroupKey = new EqualityGroupingRule(id);
+};
+```
+
+The initializer is a registration-time convention, not an event over existing paths. Paths discovered later receive
+it as they are created. A directly constructed `new MethodCtorInfo(...)` bypasses it; use that form when assembling a
+path completely by hand. Its one-argument convenience constructor still builds the parameters through
+`ParamInfo.Create`, so pass your own directly constructed `ParamInfo[]` when those must bypass their initializer too.
+
 ## Post-construction members
 
 `AvailableMembers` is the same story for the members filled after construction, the public fields (not `readonly` or `const`) and properties with a public setter (`init` excluded). `AddMember` appends one by hand, the counterpart to `AddPossibleConstruction`. It takes a field, a property, or a setter method, an external `static` one taking `(instance, value)` on a non-generic class or an instance one taking `(value)`, and derives the column's type the same way discovery does.

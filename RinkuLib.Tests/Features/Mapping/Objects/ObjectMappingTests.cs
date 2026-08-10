@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -117,7 +117,7 @@ public class ObjectMappingTests {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
         Refusals.NoParserFor<UserWithCustomDefault>(() => {
             var localCols = cols;
-            TypeParser.GetTypeParser<UserWithCustomDefault>(ref localCols);
+            TypeParser.GetTypeParser<UserWithCustomDefault>(localCols);
         });
     }
 
@@ -126,7 +126,7 @@ public class ObjectMappingTests {
         ColumnInfo[] cols = [new("Id", typeof(int), false)];
         Refusals.NoParserFor<PropUserRequired>(() => {
             var localCols = cols;
-            TypeParser.GetTypeParser<PropUserRequired>(ref localCols);
+            TypeParser.GetTypeParser<PropUserRequired>(localCols);
         });
     }
 

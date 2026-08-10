@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Reflection;
 using DotNet.Testcontainers.Containers;
 using Microsoft.Data.SqlClient;

@@ -1,7 +1,7 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Reflection.Emit;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 /// <summary>
 /// Base class for attributes that perform field-level cloning via method injection.
 /// </summary>

@@ -1,4 +1,4 @@
-﻿namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 
 /// <summary>
 /// A processor that validates and commits edit operations.

@@ -73,6 +73,9 @@ SELECT @Cols_R FROM users
 
 Run that with `@Cols = "Id, Name"`, then with `@Cols = "Email, City"`, and the second run maps its rows with the first run's parser. Nothing throws, the values land in the wrong places.
 
+This is different from a `?SELECT`. Dynamic projection makes each selected column a key, so the command can
+cache one parser for each key combination. A raw handler changes text without changing that combination.
+
 Use one command per shape.
 
 ```csharp
@@ -80,7 +83,7 @@ static readonly QueryCommand Names = new("SELECT Id, Name FROM users");
 static readonly QueryCommand Contacts = new("SELECT Email, City FROM users");
 ```
 
-Or make the columns keys, with [markers](conditional-markers.md) or a [`?SELECT`](dynamic-projection.md). Each combination is its own key set, so it gets its own parser and one command covers them all.
+Or make the columns keys, with [markers](conditional-markers.md) or a [`?SELECT`](dynamic-projection.md). Each combination is its own key set, so it gets its own parser and one command covers them all. This keeps generated typed mapping and is the faster solution.
 
 ```sql
 ?SELECT Id&, Name, Email&, City FROM users
@@ -91,6 +94,31 @@ SELECT Id, Name FROM users
 -- City on
 SELECT Email, City FROM users
 ```
+
+When the projection is deliberately open-ended, query a `Dictionary<string, object>` instead.
+
+```csharp
+static readonly QueryCommand RawColumns = new("SELECT @Cols_R FROM users WHERE Id = @Id");
+
+var row = RawColumns.Query<Dictionary<string, object>>(cnn, new { Cols = "Email, City", Id = 1 });
+object email = row["Email"];
+```
+
+The dictionary parser asks the current reader for `FieldCount`, column names, and values on every row. Its
+root parser therefore accepts any schema, so the cached parser remains correct when the controlled raw value
+changes the projection. This costs more per row than `DynaObject`, whose generated parser bakes in a schema.
+
+A dictionary also composes with typed mapping and takes every column the surrounding plan did not claim:
+
+```csharp
+var (id, remaining) = RawColumns.Query<(int, Dictionary<string, object>)>(cnn, values);
+```
+
+Here the typed value must continue to occupy the column negotiated for it; the dictionary adapts the
+remainder. A dictionary cannot make arbitrary schema changes safe for other generated typed members.
+
+This only solves parser compatibility. `_R` remains unescaped textual injection, so the column expression
+must still come from trusted application-controlled input. See [schema-adaptive dictionaries](../mapping/dynaobject.md#schema-adaptive-dictionaries).
 
 ## Errors happen at generation
 

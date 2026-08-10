@@ -23,7 +23,7 @@ List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
 
 There is one rule to know up front. A type you query directly is known automatically. A type reached only through another one must be registered. The `IDbReadable` marker on `Artist` above is the simplest way. Details on [registration](registration.md).
 
-The engine is one negotiation composed of small parts, each a default implementation that can be swapped. The behaviors in this section, from nesting to tuples, are arrangements of those parts.
+Mapping is a pipeline of local stages, not one library-wide core-versus-implementation split. Each stage consumes the smallest contract produced by the stage below it. A shipped implementation can itself have a small negotiation or emission core with several implementations around it. You can replace one stage, add an implementation at that stage, or drop one level lower for more control without replacing the rest of the pipeline.
 
 ## In this section
 

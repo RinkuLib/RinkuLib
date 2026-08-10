@@ -2,7 +2,7 @@ using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 
 /// <summary>
 /// A collection that track removal and revival and uses <typeparamref name="TEditItem"/> to manage editing state

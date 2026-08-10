@@ -1,6 +1,6 @@
 using System.Data;
-using RinkuLib.DbParsing;
-using RinkuLib.Tools;
+using Rinku.Mapping;
+using Rinku.Internal;
 
 namespace RinkuLib.Tests.Infrastructure;
 
@@ -20,7 +20,7 @@ public static class Rows {
     /// <summary>Parses the first row of the given data as <typeparamref name="T"/>.</summary>
     public static T ParseOne<T>(ColumnInfo[] columns, params object[] row) {
         using var reader = Reader(columns, row);
-        var parser = TypeParser.GetTypeParser<T>(ref columns);
+        var parser = TypeParser.GetTypeParser<T>(columns);
         reader.Read();
         return parser.Parse(reader).Result;
     }
@@ -28,7 +28,7 @@ public static class Rows {
     /// <summary>Parses every row of the given data as <typeparamref name="T"/>.</summary>
     public static List<T> ParseAll<T>(ColumnInfo[] columns, params object?[][] rows) {
         using var reader = Reader(columns, rows);
-        var parser = TypeParser.GetTypeParser<T>(ref columns);
+        var parser = TypeParser.GetTypeParser<T>(columns);
         var results = new List<T>();
         reader.Read();
         for (int i = 0; i < rows.Length; i++)

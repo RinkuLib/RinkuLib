@@ -1,7 +1,9 @@
 using System.Data;
 using System.Data.Common;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using System.Reflection;
+using Rinku.Mapping;
+using Rinku.Mapping.Defaults;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
@@ -49,9 +51,8 @@ public class CustomDatabaseTypeTests {
 
     [Fact]
     public void Registered_conversions_work_for_scalars_members_and_nullable_targets() {
-        TypeConverterRegistry.Register<DateTime, RegisteredDate>(value => new RegisteredDate(value.AddDays(1)));
-        TypeConverterRegistry.Register<ProviderDate, RegisteredDate>(value => new RegisteredDate(value.Value));
-        TypeConverterRegistry.Register<string, RegisteredNames>(value => new RegisteredNames(value.Split(',')));
+        TypeParsingInfo.AddOrSet(typeof(RegisteredDate), RegisteredDateTypeInfo.Instance);
+        TypeParsingInfo.AddOrSet(typeof(RegisteredNames), RegisteredNamesTypeInfo.Instance);
 
         Assert.Equal(new DateTime(2024, 5, 2), Rows.ParseOne<RegisteredDate>([new("Value", typeof(DateTime), false)], new DateTime(2024, 5, 1)).Value);
         Assert.Equal(new DateTime(2024, 5, 2), Rows.ParseOne<RegisteredDateContainer>([new("Date", typeof(DateTime), false)], new DateTime(2024, 5, 1)).Date.Value);
@@ -69,6 +70,37 @@ public record RegisteredDateContainer(RegisteredDate Date) : IDbReadable;
 public readonly record struct ProviderDate(DateTime Value);
 public readonly record struct RegisteredNames(IReadOnlyList<string> Values);
 public record RegisteredNamesContainer(RegisteredNames Names) : IDbReadable;
+
+sealed class RegisteredDateTypeInfo : ScalarTypeParsingInfo<RegisteredDate> {
+    internal static readonly RegisteredDateTypeInfo Instance = new();
+    private static readonly MethodInfo FromDateTimeMethod = typeof(RegisteredDateTypeInfo).GetMethod(nameof(FromDateTime), BindingFlags.Static | BindingFlags.NonPublic)!;
+    private static readonly MethodInfo FromProviderDateMethod = typeof(RegisteredDateTypeInfo).GetMethod(nameof(FromProviderDate), BindingFlags.Static | BindingFlags.NonPublic)!;
+
+    protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal) {
+        MethodInfo? method = column.Type == typeof(DateTime) ? FromDateTimeMethod : column.Type == typeof(ProviderDate) ? FromProviderDateMethod : null;
+        if (method is null)
+            return null;
+        ITypeConverter converter = new MethodCallConverter(method);
+        if (Nullable.GetUnderlyingType(targetType) is not null)
+            converter = new NullableWrapperConverter(converter);
+        return new ConvertedScalarPlan(parentType, converter, parameter.NameComparer.GetDefaultName(), parameter.NullColHandler, ordinal);
+    }
+
+    private static RegisteredDate FromDateTime(DateTime value) => new(value.AddDays(1));
+    private static RegisteredDate FromProviderDate(ProviderDate value) => new(value.Value);
+}
+
+sealed class RegisteredNamesTypeInfo : ScalarTypeParsingInfo<RegisteredNames> {
+    internal static readonly RegisteredNamesTypeInfo Instance = new();
+    private static readonly MethodInfo FromStringMethod = typeof(RegisteredNamesTypeInfo).GetMethod(nameof(FromString), BindingFlags.Static | BindingFlags.NonPublic)!;
+
+    protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal)
+        => column.Type == typeof(string)
+            ? new ConvertedScalarPlan(parentType, new MethodCallConverter(FromStringMethod), parameter.NameComparer.GetDefaultName(), parameter.NullColHandler, ordinal)
+            : null;
+
+    private static RegisteredNames FromString(string value) => new(value.Split(','));
+}
 
 sealed class LocalDateParam : DbParamInfo {
     public LocalDateParam() : base(true) { }

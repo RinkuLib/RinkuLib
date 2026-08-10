@@ -1,10 +1,11 @@
 using System.Collections;
+using Rinku.Mapping.Defaults;
 using System.Data.Common;
 using System.Reflection;
 using System.Reflection.Emit;
-using RinkuLib.DbParsing;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Mapping;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.DbParsing;
@@ -100,7 +101,7 @@ public class MultiRowEmitInternalsTests {
     [Fact]
     public void A_scalar_multi_row_parse_allocates_nothing_for_the_machinery() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
-        var parser = TypeParser.DefaultTypeParserMaker.ForceMultiRow<int>(TypeParser.GetDefaultNullColHandler<int>(), cols);
+        var parser = Assert.IsType<DefaultTypeParserMaker>(TypeParser.DefaultTypeParserMaker).ForceMultiRow<int>(TypeParser.GetDefaultNullColHandler<int>(), cols);
         var reader = new EndlessIntReader();
 
         for (int i = 0; i < 1000; i++)

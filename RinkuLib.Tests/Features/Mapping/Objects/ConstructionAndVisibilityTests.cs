@@ -1,8 +1,9 @@
 using System.Data;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using Rinku.Mapping.Defaults;
+using Rinku.Mapping;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -104,7 +105,7 @@ public class ConstructionAndVisibilityTests {
     public void Private_member_configuration_cannot_change_after_parser_creation() {
         var info = (DefaultTypeParsingInfo)TypeParsingInfo.GetOrAdd<LatePrivateOption>();
         ColumnInfo[] columns = [new("Name", typeof(string), false)];
-        _ = TypeParser.GetTypeParser<LatePrivateOption>(ref columns);
+        _ = TypeParser.GetTypeParser<LatePrivateOption>(columns);
 
         var error = Assert.Throws<RinkuConfigurationException>(() => info.UsePrivateMembers = true);
         Assert.Equal(ErrorCodes.ConfigurationAfterUse, error.Code);

@@ -1,5 +1,7 @@
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tracking;
+using Rinku.Tracking;
+using System.Reflection;
+using System.Reflection.Emit;
 using Xunit;
 
 namespace RinkuLib.Tests.Tracking;
@@ -9,6 +11,17 @@ namespace RinkuLib.Tests.Tracking;
 /// cover the refusals raised while building that copy strategy.
 /// </summary>
 public class CopyStrategyTests {
+    sealed class InterfacePlanAttribute : Attribute, ICopyFieldPlan {
+        public void Emit(FieldInfo field, ILGenerator il, LocalBuilder clone) {
+            il.Emit(OpCodes.Ldloc, clone);
+            il.Emit(OpCodes.Ldstr, "from-interface");
+            il.Emit(OpCodes.Stfld, field);
+        }
+    }
+
+    class UsesInterfacePlan {
+        [InterfacePlan] public string Value = "original";
+    }
     class MissingMethod {
         [CopyUsingMethod("NoSuchMethod")] public string? Value = null;
     }
@@ -61,5 +74,11 @@ public class CopyStrategyTests {
     public void A_copy_method_of_the_right_shape_is_used() {
         var copy = Copier<CopiesItself>.Copy(new CopiesItself { Value = "x" });
         Assert.Equal("x", copy!.Value);
+    }
+
+    [Fact]
+    public void A_field_plan_is_discovered_by_its_contract_not_its_base_class() {
+        var copy = Copier<UsesInterfacePlan>.Copy(new UsesInterfacePlan());
+        Assert.Equal("from-interface", copy!.Value);
     }
 }

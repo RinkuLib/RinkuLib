@@ -1,6 +1,6 @@
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -66,6 +66,14 @@ public class ConstructionDiscoveryTests {
 
     public record ReuseWithoutAlt(int Shared, [MayReuseCol] int Again) : IDbReadable;
 
+    public record ReuseBeforeOwner([Alt("Shared")][MayReuseCol] int Copy, int Shared) : IDbReadable;
+
+    public record NestedReuseBeforeTail(
+        [MayReuseCol] NestedReuseValues Child,
+        Dictionary<string, object> Tail) : IDbReadable;
+
+    public record NestedReuseValues(int A, int B) : IDbReadable;
+
     public record SequentialReuse(
         int Shared,
         [Alt("Shared")][CanNotLookAnywhere][MayReuseCol] int Again) : IDbReadable;
@@ -77,6 +85,22 @@ public class ConstructionDiscoveryTests {
         var parsed = Rows.ParseOne<Reuse>(SharedOnly, 7);
         Assert.Equal(7, parsed.Shared);
         Assert.Equal(7, parsed.Again);
+    }
+
+    [Fact]
+    public void A_reusable_slot_does_not_consume_the_column_for_a_later_owner() {
+        var parsed = Rows.ParseOne<ReuseBeforeOwner>(SharedOnly, 7);
+        Assert.Equal(7, parsed.Copy);
+        Assert.Equal(7, parsed.Shared);
+    }
+
+    [Fact]
+    public void Slot_scoped_reuse_leaves_only_the_nested_slots_first_column_unconsumed() {
+        ColumnInfo[] columns = [new("ChildA", typeof(int), false), new("ChildB", typeof(int), false)];
+        var parsed = Rows.ParseOne<NestedReuseBeforeTail>(columns, 7, 8);
+        Assert.Equal(7, parsed.Child.A);
+        Assert.Equal(8, parsed.Child.B);
+        Assert.Equal(new Dictionary<string, object> { ["ChildA"] = 7 }, parsed.Tail);
     }
 
     [Fact]

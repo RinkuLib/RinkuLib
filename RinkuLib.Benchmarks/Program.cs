@@ -4,11 +4,11 @@ using RinkuLib.Benchmarks;
 internal static class Program {
     public static async Task Main(string[] args) {
         if (args.Contains("--validate")) {
-            await using var benchmark = new BaseBenchmark();
+            await using var benchmark = new EndToEndBenchmark();
             await benchmark.Setup();
             return;
         }
 
-        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+        BenchmarkRunner.Run<EndToEndBenchmark>(args: args);
     }
 }

@@ -5,8 +5,8 @@ Use an attribute when a parameter member needs a rule that Rinku does not provid
 ```csharp
 using System.Reflection;
 using System.Reflection.Emit;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Querying;
+using Rinku.Querying.Parameters;
 ```
 
 ## A method decides when a member is used

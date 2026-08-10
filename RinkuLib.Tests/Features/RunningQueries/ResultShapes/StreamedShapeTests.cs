@@ -1,9 +1,9 @@
 using System.Data;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.TypeAccessing;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -185,12 +185,12 @@ public class StreamedShapeTests {
         var query = new QueryCommand("SELECT ID, Salary FROM Users ORDER BY ID");
         if (warm) {
             using var warmUp = db.GetConnection();
-            Assert.ThrowsAny<Exception>(() => query.Query<IEnumerable<Paid>>(warmUp).Count());
+            Assert.Throws<NullValueAssignmentException>(() => query.Query<IEnumerable<Paid>>(warmUp).Count());
         }
         using var cnn = db.GetConnection();
 
         var seen = 0;
-        Assert.ThrowsAny<Exception>(() => {
+        Assert.Throws<NullValueAssignmentException>(() => {
             foreach (var row in query.Query<IEnumerable<Paid>>(cnn))
                 seen++;
         });

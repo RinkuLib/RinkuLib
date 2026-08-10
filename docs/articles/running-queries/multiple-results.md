@@ -3,8 +3,7 @@
 A command with several selects returns several result sets. `ExecuteMultiReader` reads them in order, each mapped to its own type.
 
 ```csharp
-static readonly QueryCommand Dashboard = new(
-    "SELECT * FROM artists WHERE ArtistId = @id; SELECT * FROM albums WHERE ArtistId = @id");
+static readonly QueryCommand Dashboard = new("SELECT * FROM artists WHERE ArtistId = @id; SELECT * FROM albums WHERE ArtistId = @id");
 
 using var multi = Dashboard.ExecuteMultiReader(cnn, new { id = 1 });
 Artist artist      = multi.Query<Artist>();       // first set

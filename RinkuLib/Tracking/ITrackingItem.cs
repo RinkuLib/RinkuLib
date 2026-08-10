@@ -1,6 +1,6 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 /// <summary>
 /// An item that tracks an original value
 /// </summary>

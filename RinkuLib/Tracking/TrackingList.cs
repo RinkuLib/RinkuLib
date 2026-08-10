@@ -1,7 +1,7 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 /// <summary>
 /// A collection that track removals and revivals 
 /// </summary>

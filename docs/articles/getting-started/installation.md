@@ -10,15 +10,14 @@ dotnet add package Rinku
 Install-Package Rinku
 ```
 
-It targets **.NET 8** and **.NET 10**. The package contains, a mapping engine, SQL templating and tracking. A set of Roslyn analyzers ships inside the package too, no separate install (see [analyzers](../codegen/analyzers.md)).
+It targets **.NET 8** and **.NET 10**. The package contains a mapping engine, SQL templating, and tracking. A set of Roslyn analyzers ships inside the package too, with no separate install (see [analyzers](../codegen/analyzers.md)).
 
 **RinkuPowerTools** is a separate, optional Visual Studio extension that generates `DbCommand` factory methods from your database schema. SQL Server and Visual Studio only for now. See [code generation](../codegen/index.md).
 
 ## Verifying the install
 
 ```csharp
-using RinkuLib.Queries;
-using RinkuLib.Commands;
+using Rinku;
 
 var cmd = new QueryCommand("SELECT 1");
 using DbConnection cnn = GetConnection();

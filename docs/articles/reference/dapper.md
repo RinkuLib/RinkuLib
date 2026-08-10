@@ -30,7 +30,9 @@ Where Dapper picks the result shape with the method name, Rinku picks it with th
 | Dapper | RinkuLib |
 | --- | --- |
 | `QueryFirst<T>` | `Query<T>` |
-| `QueryFirstOrDefault<T>` | `Query<Optional<T>>` |
+| `QueryFirst<T?>` for a nullable value type | `Query<T?>` |
+| `QueryFirst<T?>` for a nullable reference type | `Query<MaybeNull<T>>` |
+| `QueryFirstOrDefault<T?>` for a nullable reference type | `Query<OptionalNullable<T>>` |
 | `QuerySingle<T>` | `Query<Single<T>>` |
 | `Query<T>` (buffered) | `Query<List<T>>` |
 | `Query<T>` (`buffered: false`) | `Query<IEnumerable<T>>` |
@@ -40,6 +42,8 @@ Where Dapper picks the result shape with the method name, Rinku picks it with th
 | `Query<dynamic>` | `Query<DynaObject>` |
 
 Each reads either way, `cnn.Query<List<T>>(sql, p)` or `cmd.Query<List<T>>(cnn, p)`. The result wrappers are on [result shapes](../running-queries/result-shapes.md).
+
+Dapper's nullable `QueryFirstOrDefault` result collapses a missing row and a present database `NULL` into the same value. `OptionalNullable<T>` matches that behavior for a reference type. Rinku can keep the rules separate instead: `Optional<T>` and `OptionalStruct<T>` accept a missing row but still reject a present `NULL`, while `MaybeNull<T>` accepts `NULL` but still requires a row.
 
 ## Parameters
 
@@ -74,15 +78,15 @@ or a composable handler.
 | `Execute(sql, parameters)` | `QueryCommand.Execute` or `QueryBuilder.Execute` |
 | `Execute(sql, IEnumerable<T>)` | one `QueryBuilderCommand` and `UseWith` for each item |
 | `ExecuteReader` for a `DataTable` or `DataSet` | `ExecuteReader`, then use the returned reader directly |
-| stored procedure execution | `CommandType.StoredProcedure` or `StoredProcedure` registration |
-| output and return-value parameters | directional `DbParamInfo`, then read the handed-back command |
+| stored procedure execution | `CommandType.StoredProcedure` or `QueryCommand.FromProc` |
+| output and return-value parameters | `FromProc` metadata or directional `DbParamInfo`, then `GetOutputValue<T>` / `GetReturnValue<T>` on the handed-back command |
 | `DynamicParameters` | `QueryBuilder`, a registered parameter object, or `DbParamInfo` |
 | `SqlBuilder` | conditional SQL and handlers |
 | `QueryMultiple` | `ExecuteMultiReader` and `MultiReader` |
 | `GetRowParser<T>` | `TypeParser.GetTypeParser<T>` and type registration |
 | per-row type switching | `GetCurrentSetParser<T>` or a custom parser selected by the caller |
 | multi-map with `splitOn` | registered nested types, tuples, or a custom construction path |
-| custom result type handler | `TypeConverterRegistry`, `ITypeConverter`, or a custom parser |
+| custom result type handler | a registered `TypeParsingInfo`, commonly based on `ScalarTypeParsingInfo<T>` |
 | custom parameter type handler | `ConvertedDbParamInfo<T>` or a custom `DbParamInfo` |
 | `DbString` | a `DbParamInfo` that sets provider type, size, and encoding |
 | table-valued parameter | a provider-specific `DbParamInfo` |
@@ -100,8 +104,7 @@ reusable command, and the explicit loop leaves the caller in control of each
 item:
 
 ```csharp
-var update = new QueryCommand(
-    "UPDATE tracks SET Name = @name WHERE Id = @id");
+var update = new QueryCommand("UPDATE tracks SET Name = @name WHERE Id = @id");
 using var command = cnn.CreateCommand();
 var batch = update.StartBuilder(command);
 
@@ -115,9 +118,7 @@ The equivalent Dapper call chooses the parameter object and performs the loop
 inside Dapper:
 
 ```csharp
-cnn.Execute(
-    "UPDATE tracks SET Name = @name WHERE Id = @id",
-    items);
+cnn.Execute("UPDATE tracks SET Name = @name WHERE Id = @id", items);
 ```
 
 The difference is the location of the loop, not the database operation or the
@@ -144,9 +145,9 @@ to be a provider implementation. The provider adapter supplies the provider-spec
 keeps the command and mapping pipeline generic:
 
 ```csharp
-// The adapter knows how to read the provider's native array value.
-DbColumnReaderRegistry.Register<Array, int[]>(
-    (reader, ordinal) => reader.GetFieldValue<int[]>(ordinal));
+// The adapter registers an ordinary TypeParsingInfo for int[]. Its DbItemPlan emits
+// reader.GetFieldValue<int[]>(ordinal) directly into the generated parser.
+TypeParsingInfo.AddOrSet(typeof(int[]), new PostgresIntArrayInfo());
 ```
 
 The adapter can also take complete control of a provider parameter through `DbParamInfo`. Other provider
@@ -156,21 +157,20 @@ behavior uses the same SQL and result shape, then installs the provider behavior
 The provider is external to Rinku, but the capability remains available to the application.
 
 Positional parameters follow the same rule. Rinku does not rewrite named SQL into `?` placeholders, but a
-caller can provide positional SQL and an external `DbParamInfo` that creates the provider parameters in order:
+caller can provide positional SQL and use the built-in `PositionalDbParamInfo` to create the provider parameters
+in order. The slot names are only internal identifiers and are not sent to the provider:
 
 ```csharp
 using System.Data;
+using Rinku.Querying.Defaults;
 
-var query = new QueryCommand(
-    "UPDATE tracks SET Name = ? WHERE Id = ?",
-    ["0", "1"],
-    CommandType.Text);
+var query = new QueryCommand("UPDATE tracks SET Name = ? WHERE Id = ?", ["param0", "param1"], CommandType.Text);
 
-query.UpdateParamCache("@0", new PositionalParamInfo());
-query.UpdateParamCache("@1", new PositionalParamInfo());
+query.UpdateParamCache(0, new PositionalDbParamInfo());
+query.UpdateParamCache(1, new PositionalDbParamInfo());
 var positional = query.StartBuilder();
-positional.Use("@0", "Live");
-positional.Use("@1", 7);
+positional.Use(0, "Live");
+positional.Use(1, 7);
 positional.Execute(cnn);
 ```
 
@@ -209,9 +209,8 @@ public readonly record struct LocalDate(DateTime Value) : IDbReadable;
 
 public sealed record Invoice(LocalDate Date) : IDbReadable;
 
-// Read: a DateTime Value column can use LocalDate(DateTime).
-// The convenience registries cover the common custom scalar case.
-TypeConverterRegistry.Register<DateTime, RegisteredDate>(value => new RegisteredDate(value.AddDays(1)));
+// Read: the normal construction path can already use LocalDate(DateTime).
+// When reading needs different behavior, register a ScalarTypeParsingInfo<LocalDate>.
 
 // For a provider-specific or multi-step binding rule, implement DbParamInfo directly.
 sealed class LocalDateParam : DbParamInfo
@@ -258,8 +257,9 @@ sealed class LocalDateParam : DbParamInfo
 }
 ```
 
-The convenience registries are optional default implementations. `ITypeConverter` and `DbParamInfo` remain
-the complete-takeover interfaces when their options are not enough.
+Result-side customization remains an ordinary `TypeParsingInfo` registration. `ScalarTypeParsingInfo<T>` and
+`ScalarDbItemPlan<T>` remove the single-column boilerplate without introducing another registration system.
+`DbParamInfo` remains the corresponding parameter-side takeover.
 
 ## IN clauses
 
@@ -279,8 +279,7 @@ cnn.Query<List<Track>>("SELECT * FROM tracks WHERE GenreId IN (@genreIds_X)", ne
 Where a Dapper codebase concatenates SQL or leans on `WHERE 1=1`, one [conditional template](../conditional-sql/index.md) covers the variations. Mark the optional parts and the values you pass decide the SQL.
 
 ```csharp
-static readonly QueryCommand Search = new(
-    "SELECT * FROM tracks WHERE AlbumId = ?@albumId AND GenreId IN (?@genreIds_X)");
+static readonly QueryCommand Search = new("SELECT * FROM tracks WHERE AlbumId = ?@albumId AND GenreId IN (?@genreIds_X)");
 
 Search.Query<List<Track>>(cnn, new { albumId = 1 });
 // SELECT * FROM tracks WHERE AlbumId = @albumId

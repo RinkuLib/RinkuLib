@@ -1,6 +1,6 @@
 # Collections
 
-A value can hold a collection. There is two main ways to handle it, reading separate result sets or folding a join.
+A value can hold a collection. There are two main ways to handle it: read separate result sets or fold a join.
 
 ## Multiple result sets
 

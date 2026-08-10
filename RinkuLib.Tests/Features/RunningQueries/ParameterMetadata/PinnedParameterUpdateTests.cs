@@ -1,7 +1,8 @@
 using System.Data;
+using Rinku.Querying.Defaults;
 using System.Data.Common;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
@@ -118,10 +119,10 @@ public class PinnedParameterUpdateTests {
         Assert.True(ps.UpdateCache(2, TypedDbParamCache.Get(DbType.Int32)));
         Assert.Empty(ps._nonCachedIndexes);
 
-        Assert.True(ps.UpdateCache(1, InferedDbParamCache.Instance));
+        Assert.True(ps.UpdateCache(1, InferredDbParamCache.Instance));
         Assert.Equal([1], ps._nonCachedIndexes);
 
-        Assert.True(ps.UpdateCache(0, InferedDbParamCache.Instance));
+        Assert.True(ps.UpdateCache(0, InferredDbParamCache.Instance));
         Assert.Equal([0, 1], ps._nonCachedIndexes);
     }
 
@@ -132,7 +133,7 @@ public class PinnedParameterUpdateTests {
         var ps = query.Parameters;
 
         var before = ps._nonCachedIndexes;
-        Assert.True(ps.UpdateCache(0, InferedDbParamCache.Instance));
+        Assert.True(ps.UpdateCache(0, InferredDbParamCache.Instance));
         Assert.Same(before, ps._nonCachedIndexes);
 
         Assert.True(ps.UpdateCache(0, TypedDbParamCache.Get(DbType.Int32)));

@@ -1,9 +1,9 @@
 using System.Data.Common;
 using System.Data;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.TypeAccessing;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Building;
@@ -127,11 +127,16 @@ public sealed class UseWithTests {
         var builder = new QueryCommand("UPDATE Users SET Name = @Name WHERE Id = @Id")
             .StartBuilder((DbCommand)cmd);
 
-        foreach (var item in new[] { new BatchItem(1, "first"), new BatchItem(2, "second"), new BatchItem(3, "third") })
+        builder.UseWith(new BatchItem(1, "first"));
+        var nameParameter = cmd.BoundParameters[0];
+        var idParameter = cmd.BoundParameters[1];
+        foreach (var item in new[] { new BatchItem(2, "second"), new BatchItem(3, "third") })
             builder.UseWith(item);
 
         Assert.Equal(["@Name", "@Id"], cmd.BoundParameters.Select(x => x.ParameterName));
         Assert.Equal(["third", 3], cmd.BoundParameters.Select(x => x.Value));
+        Assert.Same(nameParameter, cmd.BoundParameters[0]);
+        Assert.Same(idParameter, cmd.BoundParameters[1]);
     }
 
     private sealed record Filter(int? Active, string? Status, [property: ForBoolCond] bool ShowEmail);

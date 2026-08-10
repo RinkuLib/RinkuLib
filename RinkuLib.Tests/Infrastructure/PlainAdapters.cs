@@ -1,4 +1,5 @@
 using System.Data;
+using Rinku.Mapping.Parsers.Defaults;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 

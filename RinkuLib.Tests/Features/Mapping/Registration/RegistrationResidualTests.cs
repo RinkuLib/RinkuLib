@@ -1,8 +1,9 @@
 using System.Reflection;
+using Rinku.Mapping.Defaults;
 using System.Reflection.Emit;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -280,14 +281,14 @@ public class RegistrationResidualTests {
     public void The_refusal_carries_the_schema_it_was_offered() {
         var refused = Refusals.NoParserFor<StrictTrack>(() => {
             var cols = IdName;
-            TypeParser.GetTypeParser<StrictTrack>(ref cols);
+            TypeParser.GetTypeParser<StrictTrack>(cols);
         });
         Assert.Equal("Int32 Id, String Name", refused.Schema);
 
         ColumnInfo[] unrelated = [new("Total", typeof(decimal), false), new("At", typeof(DateTime), false)];
         var wrongColumns = Refusals.NoParserFor<StrictTrack>(() => {
             var cols = unrelated;
-            TypeParser.GetTypeParser<StrictTrack>(ref cols);
+            TypeParser.GetTypeParser<StrictTrack>(cols);
         });
         Assert.Equal("Decimal Total, DateTime At", wrongColumns.Schema);
     }
@@ -314,7 +315,7 @@ public class RegistrationResidualTests {
 
         var refused = Refusals.NoParserFor<NamedTrack>(() => {
             var cols = prefixed;
-            TypeParser.GetTypeParser<NamedTrack>(ref cols);
+            TypeParser.GetTypeParser<NamedTrack>(cols);
         });
         Assert.Equal("Int32 TrackId, String TrackName", refused.Schema);
 
@@ -331,7 +332,7 @@ public class RegistrationResidualTests {
         ColumnInfo[] asInt = [new("Id", typeof(int), false), new("Token", typeof(int), false)];
         Refusals.NoParserFor<TokenHolder>(() => {
             var cols = asInt;
-            TypeParser.GetTypeParser<TokenHolder>(ref cols);
+            TypeParser.GetTypeParser<TokenHolder>(cols);
         });
 
         ColumnInfo[] asGuid = [new("Id", typeof(int), false), new("Token", typeof(Guid), false)];
@@ -357,7 +358,7 @@ public class RegistrationResidualTests {
     public void A_nested_type_that_was_never_registered_cannot_be_linked() {
         var refused = Refusals.NoParserFor<AlbumOverUnregistered>(() => {
             var cols = AlbumCols;
-            TypeParser.GetTypeParser<AlbumOverUnregistered>(ref cols);
+            TypeParser.GetTypeParser<AlbumOverUnregistered>(cols);
         });
         Assert.Equal(typeof(AlbumOverUnregistered), refused.TargetType);
 

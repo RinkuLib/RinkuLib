@@ -12,7 +12,7 @@ Even when querying a single item rather than a list, the engine knows it must re
 
 ```csharp
 public record Artist(int Id, string Name, List<string> Albums) : IDbReadable;
-Artist first = db.Query<Artist>();
+Artist first = GetArtists.Query<Artist>(cnn);
 
 // Id | Name   | Albums
 // 1  | AC/DC  | For Those About To Rock
@@ -26,7 +26,7 @@ A value after the first multi-row type is not part of the rule. It is read once,
 
 ```csharp
 public record Invoice(int Id, List<int> LineIds, decimal Total) : IDbReadable;
-var invoice = db.Query<List<Invoice>>();
+var invoice = GetInvoices.Query<List<Invoice>>(cnn);
 
 // Id  | LineIds | Total
 // 100 | 15      | 14.00
@@ -40,7 +40,7 @@ With only multi-row types, every row folds into one value.
 
 ```csharp
 public record TrackList(List<string> TrackNames, List<decimal> Prices) : IDbReadable;
-var trackList = db.Query<TrackList>();
+var trackList = GetTrackList.Query<TrackList>(cnn);
 
 // TrackNames       | Prices
 // Breaking The Law | 0.99
@@ -84,7 +84,7 @@ public record Customer([GroupKey] int Id, string Name, string Email, string Phon
 // Shape mismatch: The default rule rejects keys placed after a multi-row type. 
 // An explicit key allows it.
 public record Invoice(List<int> LineIds, [GroupKey] int InvoiceId) : IDbReadable;
-var invoices = db.Query<List<Invoice>>();
+var invoices = GetInvoices.Query<List<Invoice>>(cnn);
 
 // LineIds | InvoiceId
 // 15      | 100
@@ -105,7 +105,7 @@ public class Playlist : IDbReadable {
     public string Name { get; set; }
     public List<string> Tracks { get; set; }
 }
-var playlists = db.Query<List<Playlist>>();
+var playlists = GetPlaylists.Query<List<Playlist>>(cnn);
 
 // PlaylistId | Name  | Tracks
 // 1          | Heavy | Track A
@@ -116,6 +116,33 @@ var playlists = db.Query<List<Playlist>>();
 
 ```
 
+### Application-wide key conventions
+
+Grouping rules belong either to a construction path or to the type-wide fallback. Their registration initializers can
+therefore establish global conventions without a separate grouping registry.
+
+Use the construction initializer when the key depends on the chosen constructor or factory:
+
+```csharp
+MethodCtorInfo.RegistrationInitializer = static path => {
+    var id = path.MethodBase.GetParameters().FirstOrDefault(p => string.Equals(p.Name, "Id", StringComparison.OrdinalIgnoreCase));
+    if (id is not null)
+        path.GroupKey = new EqualityGroupingRule(id);
+};
+```
+
+Use the type initializer for a member-based fallback, including parameterless construction completed through members:
+
+```csharp
+TypeParsingInfo.RegistrationInitializer = static (type, info) => {
+    if (info is ICanUpdateGroupKey grouping && type.GetProperty("Id") is { } id)
+        grouping.GroupKey = new EqualityGroupingRule(id);
+};
+```
+
+A construction key still overrides the type key. Both callbacks run only as lazy registration creates their owners;
+they add no grouping comparison or row-reading dispatch of their own.
+
 `[GroupKeyColumns]` identifies the grouping rule by using the columns directly (by using the name).
 
 ```csharp
@@ -123,7 +150,7 @@ var playlists = db.Query<List<Playlist>>();
 // as a parameter on the record. It is used strictly to drive the grouping rule.
 [GroupKeyColumns("CustomerId")]
 public record Customer(string FirstName, string LastName, List<int> InvoiceIds) : IDbReadable;
-var customers = db.Query<List<Customer>>();
+var customers = GetCustomers.Query<List<Customer>>(cnn);
 
 // CustomerId | FirstName | LastName | InvoiceIds
 // 1          | Ada       | Lovelace | 100
@@ -146,7 +173,7 @@ public class OrderItem : IDbReadable {
     public int ProductId { get; set; }
     public List<string> SerialNumbers { get; set; }
 }
-var items = db.Query<List<OrderItem>>();
+var items = GetOrderItems.Query<List<OrderItem>>(cnn);
 
 // OrderId | ProductId | SerialNumbers
 // 50      | 101       | SN-001
@@ -170,7 +197,7 @@ public class Employee : IDbReadable {
     public int Id { get; set; }
     public List<string> Territories { get; set; }
 }
-var employees = db.Query<List<Employee>>();
+var employees = GetEmployees.Query<List<Employee>>(cnn);
 
 // EmployeeId | Territories
 // 7          | North
@@ -213,7 +240,7 @@ public class MonthlySalesReport : IDbReadable {
         return (rowMonth == stored, rowMonth);
     }
 }
-var reports = db.Query<MonthlySalesReport>();
+var reports = GetReports.Query<List<MonthlySalesReport>>(cnn);
 
 // InvoiceDate | InvoiceTotals
 // 2026-01-15  | 10.99
@@ -317,7 +344,7 @@ TypeParsingInfo.GetOrAdd<Invoice>().GetConstruction(factory).GroupKey = null;
 
 ```
 
-Complete takeover uses the public interfaces. The library does not need to know the rule or the type metadata implementation.
+Complete takeover uses the public interfaces. The library does not need to know the rule or the type metadata implementation. This example deliberately wraps the shipped `DefaultTypeParsingInfo` to retain its object-mapping behavior; an independent implementation does not need to do so.
 
 ```csharp
 public sealed class MyTypeInfo : TypeParsingInfo, ICanUpdateGroupKey {

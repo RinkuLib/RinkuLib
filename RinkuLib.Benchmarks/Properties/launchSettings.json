@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "RinkuLib.Benchmarks": {
+      "commandName": "Project",
+      "debugEngines": "managed-dotnet"
+    }
+  }
+}

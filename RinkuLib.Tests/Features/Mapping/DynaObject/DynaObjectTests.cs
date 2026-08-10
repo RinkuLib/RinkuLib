@@ -1,6 +1,6 @@
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -186,6 +186,15 @@ public class DynaObjectTests {
         Assert.Equal(1, id);
         Assert.Equal(badge, rest.Get<Guid>("BadgeId"));
         Assert.Equal("Engineering", rest.Get<string>("Department"));
+    }
+
+    [Fact]
+    public void A_nested_DynaObject_refuses_a_schema_with_no_columns_left_instead_of_throwing() {
+        ColumnInfo[] original = [new("ID", typeof(int), false), new("Name", typeof(string), false)];
+        ColumnInfo[] noTail = [new("ID", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<(int, DynaObject)>(original);
+
+        Assert.False(parser.CanParse(noTail));
     }
 
     [Fact]

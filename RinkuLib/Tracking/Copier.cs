@@ -4,7 +4,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Reflection.Emit;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 /// <summary>
 /// Defines the signature for custom cloning logic.
 /// </summary>
@@ -198,6 +198,6 @@ public static class Copier<T> {
             foreach (FieldInfo field in current.GetFields(Flags))
                 (fieldPlans is not null && fieldPlans.TryGetValue(field, out var runtimePlan)
                     ? runtimePlan
-                    : field.GetCustomAttribute<CopyFieldAttribute>(false))?.Emit(field, il, clone);
+                    : field.GetCustomAttributes(false).OfType<ICopyFieldPlan>().FirstOrDefault())?.Emit(field, il, clone);
     }
 }

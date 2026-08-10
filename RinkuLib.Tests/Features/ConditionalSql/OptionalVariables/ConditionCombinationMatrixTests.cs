@@ -1,5 +1,5 @@
-using RinkuLib.Queries;
-using RinkuLib.TypeAccessing;
+using Rinku.Querying;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Templating;

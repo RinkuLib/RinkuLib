@@ -1,6 +1,7 @@
 using System.Collections;
+using Rinku.Querying.Defaults;
 using System.Collections.ObjectModel;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Utilities;

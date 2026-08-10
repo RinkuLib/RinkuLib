@@ -1,12 +1,12 @@
-﻿using System.Data;
+using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Data.SqlClient;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
-using RinkuLib.TypeAccessing;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.TestContainers;
@@ -129,13 +129,21 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Single_Fail() {
         using var cnn = Fixture.GetConnection();
-        await Assert.ThrowsAnyAsync<Exception>(async () => await Fixture.BasicStringUsage.QueryAsync<Single<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken));
+        var ex = await Assert.ThrowsAsync<RinkuShapeException>(async () => await Fixture.BasicStringUsage.QueryAsync<Single<string>>(cnn, new { txt = "def" }, ct: TestContext.Current.CancellationToken));
+        Assert.Equal(ErrorCodes.ShapeRefusedResult, ex.Code);
     }
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Single() {
         using var cnn = Fixture.GetConnection();
         var v = await Fixture.BasicStringUsageSingle.QueryAsync<Single<string>>(cnn, ct: TestContext.Current.CancellationToken);
         Assert.Equal("abc", v);
+    }
+
+    [Fact]
+    public async Task TestBasicStringUsageQueryOneAsync_Single_NoRows() {
+        using var cnn = Fixture.GetConnection();
+        var ex = await Assert.ThrowsAsync<RinkuNoRowsException>(async () => await Fixture.Select_Nothing_Str.QueryAsync<Single<string>>(cnn, ct: TestContext.Current.CancellationToken));
+        Assert.Equal(ErrorCodes.NoRows, ex.Code);
     }
 
     [Fact]
@@ -148,8 +156,10 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Optional_Fail() {
         using var cnn = Fixture.GetConnection();
-        await Assert.ThrowsAnyAsync<Exception>(async () => await Fixture.Select_Nothing_Str.QueryAsync<string>(cnn, ct: TestContext.Current.CancellationToken));
-        await Assert.ThrowsAnyAsync<Exception>(async () => await Fixture.Select_Nothing_Int.QueryAsync<int?>(cnn, ct: TestContext.Current.CancellationToken));
+        var reference = await Assert.ThrowsAsync<RinkuNoRowsException>(async () => await Fixture.Select_Nothing_Str.QueryAsync<string>(cnn, ct: TestContext.Current.CancellationToken));
+        var nullable = await Assert.ThrowsAsync<RinkuNoRowsException>(async () => await Fixture.Select_Nothing_Int.QueryAsync<int?>(cnn, ct: TestContext.Current.CancellationToken));
+        Assert.Equal(ErrorCodes.NoRows, reference.Code);
+        Assert.Equal(ErrorCodes.NoRows, nullable.Code);
     }
     [Fact]
     public async Task TestBasicStringUsageQueryOneAsync_Optional() {

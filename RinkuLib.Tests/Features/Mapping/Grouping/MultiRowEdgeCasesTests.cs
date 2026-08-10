@@ -1,10 +1,11 @@
 using System.Data.Common;
 using System.Reflection;
 using System.Reflection.Emit;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Defaults;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.DbParsing;
@@ -45,6 +46,14 @@ public class MultiRowEdgeCasesTests {
     public readonly record struct Average(double Mean, int Count);
 
     public sealed class ExternalBucket<T> : List<T> { }
+
+    [Fact]
+    public void A_fold_requires_an_add_method_to_declare_its_element_type() {
+        var error = Assert.Throws<RinkuConfigurationException>(() => new MultiRowTypeParsingInfo(
+            typeof(List<>).GetConstructor(Type.EmptyTypes)!, null, null));
+
+        Assert.Equal(ErrorCodes.TypeNotUsableByInfo, error.Code);
+    }
 
     private sealed class ExternalMultiRowInfo(MultiRowTypeParsingInfo inner) : TypeParsingInfo, IMultiRowTypeParsingInfo {
         public override void ValidateCanUseType(Type targetType) => inner.ValidateCanUseType(targetType);
@@ -87,7 +96,7 @@ public class MultiRowEdgeCasesTests {
     public void An_external_simple_plan_can_be_nested_in_the_default_composite_plan() {
         TypeParsingInfo.AddOrSet(typeof(ExternalCompositeValue), new ExternalCompositeInfo(typeof(ExternalCompositeValue)));
         ColumnInfo[] cols = [new("Value", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<ExternalCompositeValue>(ref cols);
+        var parser = TypeParser.GetTypeParser<ExternalCompositeValue>(cols);
         using var reader = Rows.Reader(cols, [42]);
         reader.Read();
 
@@ -102,7 +111,7 @@ public class MultiRowEdgeCasesTests {
             new("Id", typeof(int), false),
             new("Values", typeof(int), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<ExternalPlanParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<ExternalPlanParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, 10],
             [1, 11],
@@ -122,7 +131,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void An_aggregate_folds_every_row_into_one_value() {
         ColumnInfo[] cols = [new("Amount", typeof(double), false)];
-        var parser = TypeParser.GetTypeParser<Average>(ref cols);
+        var parser = TypeParser.GetTypeParser<Average>(cols);
         using var reader = Rows.Reader(cols, [10.0], [20.0], [30.0]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -133,7 +142,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void An_aggregate_of_no_rows_is_its_empty_fold() {
         ColumnInfo[] cols = [new("Amount", typeof(double), false)];
-        var parser = TypeParser.GetTypeParser<Average>(ref cols);
+        var parser = TypeParser.GetTypeParser<Average>(cols);
         Assert.Equal(new Average(0, 0), parser.Default());
     }
 
@@ -142,7 +151,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void An_aggregate_folds_per_inferred_group() {
         ColumnInfo[] cols = [new("GroupId", typeof(int), false), new("Amount", typeof(double), false)];
-        var parser = TypeParser.GetTypeParser<List<Stats>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Stats>>(cols);
         using var reader = Rows.Reader(cols, [1, 10.0], [1, 20.0], [2, 30.0], [2, 50.0]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -190,7 +199,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_boundary_defined_outside_the_library_groups_by_reading_the_reader() {
         ColumnInfo[] cols = [new("Value", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<StepHolder>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<StepHolder>>(cols);
         using var reader = Rows.Reader(cols, [3], [7], [12], [25], [28]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -237,7 +246,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_boundary_defined_outside_the_library_negotiates_its_own_reader() {
         ColumnInfo[] cols = [new("Seed", typeof(int), false), new("Items", typeof(string), false)];
-        var parser = TypeParser.GetTypeParser<List<ParityHolder>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<ParityHolder>>(cols);
         using var reader = Rows.Reader(cols, [2, "a"], [4, "b"], [5, "c"], [7, "d"], [8, "e"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -275,7 +284,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_rule_and_attribute_defined_outside_the_library_drive_grouping() {
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<RegionGroup>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<RegionGroup>>(cols);
         using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [3, "East", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -295,7 +304,7 @@ public class MultiRowEdgeCasesTests {
     public void SetGroupKey_sets_a_type_level_rule_at_runtime() {
         TypeParsingInfoHelper.SetGroupKey<RuntimeTypeKeyed>(new LooseColumnRule("Region"));
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<RuntimeTypeKeyed>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<RuntimeTypeKeyed>>(cols);
         using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [3, "East", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -314,7 +323,7 @@ public class MultiRowEdgeCasesTests {
         TypeParsingInfo.GetOrAdd<RuntimePathKeyed>()
             .GetConstruction(typeof(int), typeof(string), typeof(List<int>)).GroupKey = new LooseColumnRule("Region");
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<RuntimePathKeyed>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<RuntimePathKeyed>>(cols);
         using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [3, "East", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -333,7 +342,7 @@ public class MultiRowEdgeCasesTests {
     public void ClearGroupKey_removes_a_type_attribute_and_restores_inference() {
         TypeParsingInfoHelper.ClearGroupKey<RuntimeClearTypeKey>();
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<RuntimeClearTypeKey>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<RuntimeClearTypeKey>>(cols);
         using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [1, "East", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -355,7 +364,7 @@ public class MultiRowEdgeCasesTests {
         var ctor = typeof(RuntimeClearPathKey).GetConstructors().Single();
         TypeParsingInfo.GetOrAdd<RuntimeClearPathKey>().GetConstruction(ctor).GroupKey = null;
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<RuntimeClearPathKey>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<RuntimeClearPathKey>>(cols);
         using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [1, "East", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -418,7 +427,7 @@ public class MultiRowEdgeCasesTests {
         Assert.True(info.SetGroupKey(new LooseColumnRule("Region")));
 
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<RuntimeTakeover>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<RuntimeTakeover>>(cols);
         using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [3, "East", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -460,7 +469,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_null_element_rule_defined_outside_the_library_keeps_a_default() {
         ColumnInfo[] cols = [new("Player", typeof(int), false), new("Scores", typeof(int), true)];
-        var parser = TypeParser.GetTypeParser<List<ScoreCard>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<ScoreCard>>(cols);
         using var reader = Rows.Reader(cols, [1, 10], [1, DBNull.Value], [1, 30]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -486,7 +495,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<ManhattanBucket>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<ManhattanBucket>>(cols);
         using var reader = Rows.Reader(cols,
             [1, 1, 10, "a"],
             [1, 1, 11, "b"],
@@ -513,7 +522,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<AltMethodBucket>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<AltMethodBucket>>(cols);
         using var reader = Rows.Reader(cols, [1, 10, "a"], [1, 11, "b"], [2, 12, "c"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -539,7 +548,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenGrandsId", typeof(int), true),
             new("ChildrenGrandsData", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<MethodNestParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MethodNestParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, 100, "g100"],
             [1, "P1", 10, 101, "g101"],
@@ -567,7 +576,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenGrandsId", typeof(int), true),
             new("ChildrenGrandsData", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<MethodNestParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MethodNestParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, 100, "g100"],
             [2, "P2", DBNull.Value, DBNull.Value, DBNull.Value],
@@ -594,7 +603,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_single_row_yields_one_group_of_one_child() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<MultiRowTests.Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MultiRowTests.Parent>>(cols);
         using var reader = Rows.Reader(cols, [1, "P1", 10, "c10"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -607,7 +616,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_key_that_changes_every_row_yields_a_singleton_group_each() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<MultiRowTests.Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MultiRowTests.Parent>>(cols);
         using var reader = Rows.Reader(cols, [1, "P1", 10, "c10"], [2, "P2", 20, "c20"], [3, "P3", 30, "c30"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -624,7 +633,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_key_that_never_changes_folds_every_row_into_one_group() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<MultiRowTests.Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MultiRowTests.Parent>>(cols);
         using var reader = Rows.Reader(cols, [1, "P1", 10, "c10"], [1, "P1", 11, "c11"], [1, "P1", 12, "c12"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -637,7 +646,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_childless_parent_from_a_left_join_keeps_an_empty_collection() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<MultiRowTests.Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MultiRowTests.Parent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, "c10"],
             [2, "P2", DBNull.Value, DBNull.Value],
@@ -663,7 +672,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<MultiRowTests.RegionParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MultiRowTests.RegionParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, 1, "A", 10, "c10"],
             [1, 1, "A", 11, "c11"],
@@ -688,7 +697,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_parameter_key_after_the_collection_resolves_the_throw_and_groups() {
         ColumnInfo[] cols = [new("Lines", typeof(int), false), new("AccountId", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<Ledger>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Ledger>>(cols);
         using var reader = Rows.Reader(cols, [10, 1], [11, 1], [20, 2]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -710,7 +719,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_null_in_a_required_element_column_throws() {
         var cols = ArtistAlbumCols();
-        var parser = TypeParser.GetTypeParser<List<PlainArtist>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<PlainArtist>>(cols);
         using var reader = Rows.Reader(cols, [3, "Bjork", DBNull.Value, DBNull.Value]);
         reader.Read();
         Refusals.Raises(ErrorCodes.NullNotAllowed, () => parser.Parse(reader));
@@ -722,7 +731,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void An_element_that_collapses_on_null_is_skipped() {
         var cols = ArtistAlbumCols();
-        var parser = TypeParser.GetTypeParser<List<CollapsingArtist>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<CollapsingArtist>>(cols);
         using var reader = Rows.Reader(cols, [3, "Bjork", DBNull.Value, DBNull.Value]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -737,7 +746,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void An_all_null_element_that_still_builds_is_kept() {
         var cols = ArtistAlbumCols();
-        var parser = TypeParser.GetTypeParser<List<NullableArtist>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<NullableArtist>>(cols);
         using var reader = Rows.Reader(cols, [3, "Bjork", DBNull.Value, DBNull.Value]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -751,7 +760,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void An_all_null_object_element_is_kept_without_the_attribute() {
         var cols = ArtistAlbumCols();
-        var parser = TypeParser.GetTypeParser<List<KeptArtist>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<KeptArtist>>(cols);
         using var reader = Rows.Reader(cols, [3, "Bjork", DBNull.Value, DBNull.Value]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -768,7 +777,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_custom_element_rule_can_throw_on_a_null_element() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Tags", typeof(string), true)];
-        var parser = TypeParser.GetTypeParser<List<StrictTags>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<StrictTags>>(cols);
         using var reader = Rows.Reader(cols, [1, "a"], [1, DBNull.Value], [1, "b"]);
         reader.Read();
         Refusals.Raises(ErrorCodes.NullNotAllowed, () => parser.Parse(reader));
@@ -783,7 +792,7 @@ public class MultiRowEdgeCasesTests {
     public void A_key_that_maps_no_column_throws_its_own_code() {
         ColumnInfo[] cols = [new("Values", typeof(int), false)];
         Refusals.Raises(ErrorCodes.GroupKeyUnmapped,
-            () => TypeParser.GetTypeParser<List<KeyedWidget>>(ref cols));
+            () => TypeParser.GetTypeParser<List<KeyedWidget>>(cols));
     }
 
     [Fact]
@@ -799,7 +808,7 @@ public class MultiRowEdgeCasesTests {
     public void Setting_a_group_key_at_runtime_narrows_the_boundary() {
         TypeParsingInfoHelper.SetGroupKey<RuntimeKeyed>(nameof(RuntimeKeyed.Id));
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false), new("Values", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<RuntimeKeyed>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<RuntimeKeyed>>(cols);
         using var reader = Rows.Reader(cols, [1, "a", 10], [1, "b", 11], [2, "c", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -818,7 +827,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_named_type_with_only_collections_folds_the_whole_result() {
         ColumnInfo[] cols = [new("Numbers", typeof(int), false), new("Words", typeof(string), false)];
-        var parser = TypeParser.GetTypeParser<Pair>(ref cols);
+        var parser = TypeParser.GetTypeParser<Pair>(cols);
         using var reader = Rows.Reader(cols, [1, "a"], [2, "b"], [3, "c"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -832,7 +841,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void Querying_a_single_spanning_value_stops_at_the_boundary_change() {
         ColumnInfo[] cols = [new("Region", typeof(int), false), new("Amounts", typeof(decimal), false)];
-        var parser = TypeParser.GetTypeParser<Regional>(ref cols);
+        var parser = TypeParser.GetTypeParser<Regional>(cols);
         using var reader = Rows.Reader(cols, [1, 9.99m], [1, 4.00m], [2, 5.00m]);
         reader.Read();
         var (canContinue, first) = parser.Parse(reader);
@@ -845,7 +854,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_named_type_with_a_leading_value_keys_on_it() {
         ColumnInfo[] cols = [new("Region", typeof(int), false), new("Amounts", typeof(decimal), false)];
-        var parser = TypeParser.GetTypeParser<List<Regional>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Regional>>(cols);
         using var reader = Rows.Reader(cols, [1, 9.99m], [1, 4.00m], [2, 5.00m]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -864,7 +873,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void Several_values_before_the_collection_all_key() {
         ColumnInfo[] cols = [new("A", typeof(int), false), new("B", typeof(int), false), new("Items", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<TwoBefore>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<TwoBefore>>(cols);
         using var reader = Rows.Reader(cols, [1, 1, 10], [1, 1, 11], [1, 2, 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -881,7 +890,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void Several_values_after_the_collection_are_captured_once() {
         ColumnInfo[] cols = [new("A", typeof(int), false), new("Items", typeof(int), false), new("X", typeof(int), false), new("Y", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<TwoAfter>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<TwoAfter>>(cols);
         using var reader = Rows.Reader(cols, [1, 10, 7, 8], [1, 11, 7, 8], [2, 20, 5, 6]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -898,7 +907,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void Values_between_two_collections_are_captured_once() {
         ColumnInfo[] cols = [new("A", typeof(int), false), new("Items", typeof(int), false), new("Mid", typeof(int), false), new("Others", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<Between>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Between>>(cols);
         using var reader = Rows.Reader(cols, [1, 10, 99, 20], [1, 11, 99, 21], [2, 12, 88, 22]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -918,7 +927,7 @@ public class MultiRowEdgeCasesTests {
     public void A_value_after_a_collection_with_none_before_throws() {
         ColumnInfo[] cols = [new("Rows", typeof(int), false), new("Total", typeof(int), false)];
         Refusals.Raises(ErrorCodes.MissingGroupBoundary,
-            () => TypeParser.GetTypeParser<Report>(ref cols));
+            () => TypeParser.GetTypeParser<Report>(cols));
     }
 
     // --- an alt on the collection changes the element prefix ---------------------------------------------
@@ -934,7 +943,7 @@ public class MultiRowEdgeCasesTests {
             new("AlbumId", typeof(int), true),
             new("AlbumTitle", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<AltArtist>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<AltArtist>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "AC/DC", 10, "High Voltage"],
             [1, "AC/DC", 11, "Let There Be Rock"],
@@ -954,7 +963,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_construction_parameter_marked_as_key_groups_by_its_column() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<ParamKeyParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<ParamKeyParent>>(cols);
         using var reader = Rows.Reader(cols, [1, "P1", 10, "c10"], [1, "P1", 11, "c11"], [2, "P2", 20, "c20"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -975,7 +984,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<OverrideParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<OverrideParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, 100, 10, "c10"],
             [1, 200, 11, "c11"],
@@ -1000,7 +1009,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<CompositeParamParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<CompositeParamParent>>(cols);
         using var reader = Rows.Reader(cols, [1, 1, 10, "c10"], [1, 1, 11, "c11"], [1, 2, 20, "c20"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1024,7 +1033,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<MemberKeyShape>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MemberKeyShape>>(cols);
         using var reader = Rows.Reader(cols, [100, 1, 10, "c10"], [200, 1, 11, "c11"], [300, 2, 20, "c20"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1056,7 +1065,7 @@ public class MultiRowEdgeCasesTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<CtorMethodKeyed>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<CtorMethodKeyed>>(cols);
         using var reader = Rows.Reader(cols, [1, 10, "c10"], [3, 11, "c11"], [25, 20, "c20"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1080,7 +1089,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_construction_with_both_a_method_reference_and_a_key_parameter_throws() {
         ColumnInfo[] cols = [new("A", typeof(int), false), new("ChildrenId", typeof(int), true), new("ChildrenValue", typeof(string), true)];
-        Refusals.Raises(ErrorCodes.ConflictingGroupKey, () => TypeParser.GetTypeParser<List<CtorKeyConflict>>(ref cols));
+        Refusals.Raises(ErrorCodes.ConflictingGroupKey, () => TypeParser.GetTypeParser<List<CtorKeyConflict>>(cols));
     }
 
     public sealed class TypeKeyConflict : IDbReadable {
@@ -1092,7 +1101,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_member_key_and_a_method_key_on_one_type_throw() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("ChildrenId", typeof(int), true), new("ChildrenValue", typeof(string), true)];
-        Refusals.Raises(ErrorCodes.ConflictingGroupKey, () => TypeParser.GetTypeParser<List<TypeKeyConflict>>(ref cols));
+        Refusals.Raises(ErrorCodes.ConflictingGroupKey, () => TypeParser.GetTypeParser<List<TypeKeyConflict>>(cols));
     }
 
     // --- a group key on a member that is not a constructor parameter --------------------------------------
@@ -1111,7 +1120,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_group_key_on_a_member_outside_the_constructor_drives_grouping() {
         ColumnInfo[] cols = [new("Track", typeof(int), false), new("Label", typeof(string), false), new("Marks", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<Timeline>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Timeline>>(cols);
         using var reader = Rows.Reader(cols, [1, "morning", 10], [1, "evening", 11], [2, "morning", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1136,7 +1145,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_get_only_member_key_never_set_still_groups() {
         ColumnInfo[] cols = [new("Number", typeof(int), false), new("Holder", typeof(string), false), new("Entries", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<MemberKeyAccount>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MemberKeyAccount>>(cols);
         using var reader = Rows.Reader(cols, [1, "Ada", 10], [1, "Ada", 11], [2, "Bo", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1155,7 +1164,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_column_name_key_on_the_type_groups_with_no_member() {
         ColumnInfo[] cols = [new("Number", typeof(int), false), new("Holder", typeof(string), false), new("Entries", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<ColumnKeyAccount>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<ColumnKeyAccount>>(cols);
         using var reader = Rows.Reader(cols, [1, "Ada", 10], [1, "Ada", 11], [2, "Bo", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1185,7 +1194,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void The_chosen_construction_path_decides_the_grouping() {
         ColumnInfo[] byLine = [new("Line", typeof(int), false), new("Stops", typeof(int), false)];
-        var a = TypeParser.GetTypeParser<List<Route>>(ref byLine);
+        var a = TypeParser.GetTypeParser<List<Route>>(byLine);
         using var ra = Rows.Reader(byLine, [1, 10], [1, 11], [2, 20]);
         ra.Read();
         var resA = a.Parse(ra).Result;
@@ -1194,7 +1203,7 @@ public class MultiRowEdgeCasesTests {
         Assert.Equal([20], resA[1].Stops);
 
         ColumnInfo[] byPair = [new("From", typeof(int), false), new("To", typeof(int), false), new("Stops", typeof(int), false)];
-        var b = TypeParser.GetTypeParser<List<Route>>(ref byPair);
+        var b = TypeParser.GetTypeParser<List<Route>>(byPair);
         using var rb = Rows.Reader(byPair, [1, 5, 10], [1, 5, 11], [1, 6, 20]);
         rb.Read();
         var resB = b.Parse(rb).Result;
@@ -1212,7 +1221,7 @@ public class MultiRowEdgeCasesTests {
         TypeParsingInfoHelper.SetGroupKeyColumns<Ticker>("Symbol");
 
         ColumnInfo[] ints = [new("Symbol", typeof(int), false), new("Prices", typeof(int), false)];
-        var pInt = TypeParser.GetTypeParser<List<Ticker>>(ref ints);
+        var pInt = TypeParser.GetTypeParser<List<Ticker>>(ints);
         using var rInt = Rows.Reader(ints, [1, 100], [1, 101], [2, 200]);
         rInt.Read();
         var byInt = pInt.Parse(rInt).Result;
@@ -1221,7 +1230,7 @@ public class MultiRowEdgeCasesTests {
         Assert.Equal([200], byInt[1].Prices);
 
         ColumnInfo[] strs = [new("Symbol", typeof(string), false), new("Prices", typeof(int), false)];
-        var pStr = TypeParser.GetTypeParser<List<Ticker>>(ref strs);
+        var pStr = TypeParser.GetTypeParser<List<Ticker>>(strs);
         using var rStr = Rows.Reader(strs, ["AAA", 100], ["AAA", 101], ["BBB", 200]);
         rStr.Read();
         var byStr = pStr.Parse(rStr).Result;
@@ -1235,7 +1244,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_generic_member_key_resolves_at_negotiation() {
         ColumnInfo[] cols = [new("Key", typeof(int), false), new("Values", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<Box<int>>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Box<int>>>(cols);
         using var reader = Rows.Reader(cols, [1, 100], [1, 101], [2, 200]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1252,7 +1261,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_generic_construction_parameter_key_resolves_at_negotiation() {
         ColumnInfo[] cols = [new("Tag", typeof(int), false), new("Values", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<Crate<int>>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Crate<int>>>(cols);
         using var reader = Rows.Reader(cols, [1, 100], [1, 101], [2, 200]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1279,7 +1288,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_type_level_static_method_boundary_groups_by_the_method_logic() {
         ColumnInfo[] cols = [new("SessionDate", typeof(DateTime), false), new("Values", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<TypeMethodBoundary>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<TypeMethodBoundary>>(cols);
         var d1 = new DateTime(2026, 7, 30);
         var d2 = new DateTime(2026, 7, 31);
         using var reader = Rows.Reader(cols, [d1, 10], [d1, 11], [d2, 20]);
@@ -1315,7 +1324,7 @@ public class MultiRowEdgeCasesTests {
         var d1 = new DateTime(2026, 7, 30);
         var d2 = new DateTime(2026, 7, 31);
         ColumnInfo[] cols = [new("Date", typeof(DateTime), false), new("Amounts", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<TypeAndPathRulePriority>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<TypeAndPathRulePriority>>(cols);
         using var reader = Rows.Reader(cols, [d1, 100], [d1, 200], [d2, 300]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1330,7 +1339,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void A_construction_with_no_path_key_uses_the_type_level_key() {
         ColumnInfo[] cols = [new("Region", typeof(string), false), new("Amounts", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<TypeAndPathRulePriority>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<TypeAndPathRulePriority>>(cols);
         using var reader = Rows.Reader(cols, ["West", 100], ["West", 200], ["East", 300]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1349,7 +1358,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void An_all_simple_type_collapses_and_its_key_does_not_span() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
-        var parser = TypeParser.DefaultTypeParserMaker.ForceMultiRow<KeyedPoint>(TypeParser.GetDefaultNullColHandler<KeyedPoint>(), cols);
+        var parser = Assert.IsType<DefaultTypeParserMaker>(TypeParser.DefaultTypeParserMaker).ForceMultiRow<KeyedPoint>(TypeParser.GetDefaultNullColHandler<KeyedPoint>(), cols);
         using var reader = Rows.Reader(cols, [1, "one"], [1, "two"]);
         reader.Read();
 
@@ -1376,7 +1385,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void Grouping_rule_on_a_member_is_independent_from_storage() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Data", typeof(string), false), new("Values", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<MemberKeyNotKept>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MemberKeyNotKept>>(cols);
         using var reader = Rows.Reader(cols, [1, "x", 10], [1, "x", 11], [2, "y", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1423,7 +1432,7 @@ public class MultiRowEdgeCasesTests {
             new("C", typeof(DateTime), false),
             new("Values", typeof(int), false)
         ];
-        var parser = TypeParser.GetTypeParser<List<MultiParamBoundary>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MultiParamBoundary>>(cols);
         using var reader = Rows.Reader(cols, [1, "x", d1, 10], [1, "x", d1, 11], [1, "y", d1, 12], [2, "x", d2, 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1448,7 +1457,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void Grouping_rule_on_a_generic_member_resolves_to_the_spanning_type() {
         ColumnInfo[] cols = [new("Key", typeof(int), false), new("Data", typeof(string), false), new("Values", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<GenericMemberKey<int>>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<GenericMemberKey<int>>>(cols);
         using var reader = Rows.Reader(cols, [1, "x", 10], [1, "x", 11], [2, "y", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1475,7 +1484,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void Grouping_method_parameters_support_alt_attribute() {
         ColumnInfo[] cols = [new("GroupId", typeof(int), false), new("Value", typeof(int), false), new("Items", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<MethodWithAltParameter>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MethodWithAltParameter>>(cols);
         using var reader = Rows.Reader(cols, [1, 100, 10], [1, 200, 11], [2, 300, 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -1498,7 +1507,7 @@ public class MultiRowEdgeCasesTests {
     [Fact]
     public void Grouping_rule_on_a_static_readonly_field_groups_by_that_column() {
         ColumnInfo[] cols = [new("GroupId", typeof(int), false), new("Data", typeof(string), false), new("Values", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<StaticReadOnlyKeyField>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<StaticReadOnlyKeyField>>(cols);
         using var reader = Rows.Reader(cols, [1, "x", 10], [1, "x", 11], [2, "y", 20]);
         reader.Read();
         var result = parser.Parse(reader).Result;

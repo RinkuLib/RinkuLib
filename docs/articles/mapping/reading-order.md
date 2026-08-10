@@ -1,6 +1,6 @@
 # Reading order
 
-A slot finds its column under one of two regimes. Under free, it takes any unconsumed column that matches by name and type, wherever it sits. Under sequential, it takes only the column right after the last one consumed. Either way it consumes that column so nothing else can.
+A slot finds its column under one of two regimes. Under free, it takes any unconsumed column that matches by name and type, wherever it sits. Under sequential, it takes only the column right after the last one consumed. Either way an ordinary slot consumes that column so nothing else can. A reusable slot is the exception: it reads without consuming.
 
 The regime comes from the info parsing the type. A normal registration reads free, so order and gaps do not matter.
 
@@ -49,9 +49,11 @@ var (person, address) = cmd.Query<(Person, Address)>(cnn);
 // Freed, Zip skips Note and anchors at Zip(3); City then reads in sequence at City(4).
 ```
 
-## `[MayReuseCol]`, a column already taken
+## `[MayReuseCol]`, a non-consuming read
 
-A slot normally skips a column another slot has consumed. `[MayReuseCol]` lets it take that column anyway.
+A slot normally skips a column another slot has consumed and reserves the column it selects. `[MayReuseCol]`
+changes both sides of that rule: the slot may select an already-consumed column, and its own selection does not
+consume the column. A normal slot declared later can therefore still take it.
 
 The usual reason is a [member filled after a constructor](objects.md#post-construction-members): the constructor takes a value to act on it, and a member then needs the same column to store it.
 
@@ -73,9 +75,16 @@ public record Money(int Amount, [Alt("Amount")][MayReuseCol] int Copy);
 // Columns: Amount   ->  Amount takes the column, Copy reads the same one
 ```
 
+The reusable parameter may also come first:
+
+```csharp
+public record Money([Alt("Amount")][MayReuseCol] int Copy, int Amount);
+// Columns: Amount   ->  Copy reads without consuming, then Amount takes the column normally
+```
+
 ## Scope on a nested slot
 
-The regime carries down into nested objects, so a reading-order attribute on a complex-typed slot reaches its subtree. The plain attribute reaches only the subtree's first consumed column. A `...Subtree` variant reaches the whole subtree.
+The regime carries down into nested objects, so a reading-order attribute on a complex-typed slot reaches its subtree. The plain attribute reaches only the subtree's first claimed column. A `...Subtree` variant reaches the whole subtree. For reuse, a claim still counts as the first claim even though it does not consume its column.
 
 `[CanLookAnywhere]` on a complex slot frees that first column, then the subtree reads on in sequence:
 

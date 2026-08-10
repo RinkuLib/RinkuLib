@@ -3,10 +3,9 @@
 Create a `QueryCommand` from a SQL string, then call an execution method on it.
 
 ```csharp
-using RinkuLib.Queries;
-using RinkuLib.Commands;
+using Rinku;
 
-// Your own type.
+// Any type.
 public record Artist(int Id, string Name);
 
 // No per-call state, so create it once and reuse it from any thread.
@@ -34,13 +33,12 @@ Artist one             = GetArtistById.Query<Artist>(cnn, new { id = 1 }); // on
 Pass an object whose members match the parameter names.
 
 ```csharp
-static readonly QueryCommand GetArtistById =
-    new("SELECT ArtistId AS Id, Name FROM artists WHERE ArtistId = @id");
+static readonly QueryCommand GetArtistById = new("SELECT ArtistId AS Id, Name FROM artists WHERE ArtistId = @id");
 
 Artist artist = GetArtistById.Query<Artist>(cnn, new { id = 1 });
 ```
 
-Anonymous objects or any type works. A member with no matching parameter is simply ignored.
+Anonymous objects, classes, records, and structs work. Public readable fields and properties supply values, a member with no matching parameter is ignored.
 
 ## Scalars and non-queries
 
@@ -59,8 +57,7 @@ int artistId  = AddArtist.ExecuteScalar<int>(cnn, new { name = "New Artist" });
 Mark a variable optional with `?` and the values you pass decide what stays in the SQL.
 
 ```csharp
-static readonly QueryCommand Search =
-    new("SELECT ArtistId AS Id, Name FROM artists WHERE Name LIKE ?@name AND ArtistId > ?@afterId");
+static readonly QueryCommand Search = new("SELECT ArtistId AS Id, Name FROM artists WHERE Name LIKE ?@name AND ArtistId > ?@afterId");
 
 List<Artist> results = Search.Query<List<Artist>>(cnn, new { name = "%Black%" });
 // SELECT ArtistId AS Id, Name FROM artists WHERE Name LIKE @name

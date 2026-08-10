@@ -1,6 +1,5 @@
-using RinkuLib.Commands;
-using RinkuLib.Exceptions;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 

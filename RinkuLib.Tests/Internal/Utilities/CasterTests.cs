@@ -1,4 +1,4 @@
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Utilities;
@@ -302,7 +302,8 @@ public class CasterTests {
     [Fact]
     public void Parse_throws_when_no_conversion_exists() {
         object value = 5;
-        Assert.ThrowsAny<Exception>(value.Parse<CastUnconvertible>);
+        var ex = Assert.Throws<RinkuReadException>(value.Parse<CastUnconvertible>);
+        Assert.Equal(ErrorCodes.CannotConvert, ex.Code);
     }
     [Fact]
     public void Parse_guid_from_every_shape() {
@@ -315,7 +316,7 @@ public class CasterTests {
     [Fact]
     public void Parse_guid_throws_exception_for_invalid_input() {
         object value = 123;
-        Assert.ThrowsAny<Exception>(() => value.Parse<Guid>());
+        Assert.Throws<FormatException>(() => value.Parse<Guid>());
     }
 
     [Fact]

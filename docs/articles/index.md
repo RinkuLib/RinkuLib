@@ -32,4 +32,5 @@ One template that adapts to the values you pass.
 
 - [Code generation](codegen/index.md). RinkuPowerTools generates ready-to-run `DbCommand`s at design time.
 - [Tracking](tracking/index.md). Edit, commit, and revert over an `IEnumerable`.
-- [Coming from Dapper](reference/dapper.md), [performance](reference/performance.md), [FAQ](reference/faq.md).
+- [Coming from Dapper](reference/dapper.md). Common operations, equivalents, and differences.
+- [Performance](reference/performance.md) and [FAQ](reference/faq.md).

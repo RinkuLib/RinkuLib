@@ -71,6 +71,21 @@ TypeParsingInfo.GetOrAdd<Package>().SetAbortOnNull(slot =>
     slot.Type == typeof(int) ? true : null);
 ```
 
+When the same rule applies throughout an application, install it before lazy registration begins instead of finding
+types after they have registered. This convention makes every slot whose effective name is `Id` collapse its containing
+object on `NULL`:
+
+```csharp
+ParamInfo.RegistrationInitializer = static slot => {
+    if (string.Equals(slot.NameComparer.GetDefaultName(), "Id", StringComparison.OrdinalIgnoreCase))
+        slot.SetAbortOnNull(true);
+};
+```
+
+The initializer receives the completed `ParamInfo`, after attributes and a custom `IParamInfoMaker` have run. Rinku
+does not impose a precedence rule: the callback can inspect the result and preserve it, or deliberately replace it.
+It runs only when slot metadata is created and adds nothing to the generated row parser.
+
 A collapse abandons the current object and lands on the slot that holds it. What happens there depends on that slot:
 
 - A nullable slot (a reference type or `Nullable<T>`) receives `null`.

@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Data.Common;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Utilities;

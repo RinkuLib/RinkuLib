@@ -5,8 +5,7 @@
 Members map to variables by name. A member with no matching variable is ignored.
 
 ```csharp
-static readonly QueryCommand ByAlbum = new(
-    "SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = @albumId");
+static readonly QueryCommand ByAlbum = new("SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = @albumId");
 
 ByAlbum.Query<List<Track>>(cnn, new { AlbumID = 1 }); // matches @albumId case-insensitively
 ```
@@ -34,14 +33,13 @@ ByAlbum.Query<List<Track>>(cnn, new AlbumFilterStruct { AlbumId = 1 });
 On a [conditional template](../conditional-sql/index.md), supplying a member activates its marker, leaving it out prunes it.
 
 ```csharp
-static readonly QueryCommand Search = new(
-    "SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = ?@albumId AND Composer = ?@composer");
+static readonly QueryCommand Search = new("SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = ?@albumId AND Composer = ?@composer");
 
 Search.Query<List<Track>>(cnn, new { albumId = 1 });
 // WHERE AlbumId = @albumId
 ```
 
-With a typed object, a `null` member counts as not supplied.
+A `null` member also counts as not supplied.
 
 ```csharp
 public sealed class TrackFilter {
@@ -193,6 +191,18 @@ b.UseWith<AlbumFilterStruct>(filter); // use this form for a struct
 b.UseWith(ref filter);                // use this form for a large struct
 ```
 
+`QueryCommand` caches the generated accessor for each parameter type. You can clear the direct accessor, the
+`UseWith` accessor, or both.
+
+```csharp
+ByAlbum.InvalidateParameterAccessor(typeof(AlbumFilter), ParameterAccessorKinds.Direct);
+ByAlbum.InvalidateParameterAccessor(typeof(AlbumFilter), ParameterAccessorKinds.Both);
+```
+
+Call `GetCachedParameterAccessors()` when you need the parameter types currently cached by the command. Parameter
+accessors are separate from row-parser caching. See [parser invalidation](../mapping/parsers.md#invalidation) for the
+row-parser APIs.
+
 ## Member rules
 
 Start with the normal rule. A member is used when its value is not `null`.
@@ -317,23 +327,27 @@ For a rule of your own, see [custom member rules](custom-member-rules.md).
 ## Positional SQL
 
 The manual-variable constructor can drive SQL whose provider binds parameters by position. The SQL is kept
-unchanged, and the variables are created in the order supplied to the constructor.
+unchanged, and the variables are created in the order supplied to the constructor. Use the built-in
+`PositionalDbParamInfo` for the parameter slots. The names `"param0"` and `"param1"` only identify those slots inside
+`QueryCommand`, they can be anything.
 
 ```csharp
 using System.Data;
+using System.Data.Common;
+using Rinku.Querying;
+using Rinku.Querying.Defaults;
 
 var positional = new QueryCommand(
     "SELECT * FROM Users WHERE Id = ? AND Status = ?",
-    ["0", "1"],
+    ["param0", "param1"],
     CommandType.Text);
 
-// Provider-specific implementation supplied by the application.
-positional.UpdateParamCache("@0", new PositionalParamInfo());
-positional.UpdateParamCache("@1", new PositionalParamInfo());
+positional.UpdateParamCache(0, new PositionalDbParamInfo());
+positional.UpdateParamCache(1, new PositionalDbParamInfo());
 
 var b = positional.StartBuilder();
-b.Use("@0", 7);
-b.Use("@1", "active");
+b.Use(0, 7);
+b.Use(1, "active");
 var users = b.Query<List<User>>(cnn);
 // The provider receives the parameters in the order: 7, "active".
 ```

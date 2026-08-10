@@ -322,6 +322,52 @@ type you cannot annotate, see [registration](../mapping/registration.md).
 When the columns are right and a slot has none, [objects](../mapping/objects.md#default-values) covers
 defaults and [construction paths](../mapping/construction-paths.md) covers adding a path.
 
+## RINKU3002, missing group boundary {#rinku3002}
+
+A type folds several rows into one value but gives the parser no value that distinguishes one result from
+the next.
+
+```csharp
+public record Report(List<int> Rows, int Total);
+
+Report report = command.Query<Report>(cnn);   // RINKU3002
+```
+
+`Rows` needs several database rows, while `Total` comes after it and cannot become the inferred boundary.
+Put stable scalar values before the first multi-row value, or declare an explicit group key. See
+[grouping](../mapping/grouping.md).
+
+## RINKU3003, group key matched no column {#rinku3003}
+
+An explicit grouping rule named a member or column the result schema does not carry.
+
+```csharp
+[GroupKeyColumns("AccountId")]
+public record AccountRows(List<int> Values);
+
+// The query returns Values but no AccountId -> RINKU3003
+```
+
+Return the named column, correct the name or its `[Alt]`, or change the grouping rule. The boundary must be
+readable even when it is not stored in the final object.
+
+## RINKU3004, conflicting grouping rules {#rinku3004}
+
+One type or construction path declares incompatible rule families at the same level.
+
+```csharp
+public class Batch {
+    [GroupKeyMethod(nameof(ByWindow))]
+    public Batch([GroupKey] int id, List<string> items) { }
+
+    public static (bool Same, int Next) ByWindow(int stored, int current) => default;
+}
+```
+
+The parameter asks for an equality key while the constructor asks for a method rule. Keep one rule family
+at that level. A construction-path rule may still override a type-level rule; that precedence is documented
+under [grouping](../mapping/grouping.md#which-rule-wins).
+
 ## RINKU4001, no rows {#rinku4001}
 
 ```csharp
@@ -333,6 +379,7 @@ A plain type has no way to say the row was missing. The shapes that hold absence
 ```csharp
 Optional<string> name = cmd.Query<Optional<string>>(cnn);   // null
 List<string> names = cmd.Query<List<string>>(cnn);          // empty
+Single<string> only = cmd.Query<Single<string>>(cnn);       // RINKU4001: exactly one is required
 ```
 
 See [result shapes](../running-queries/result-shapes.md).
@@ -344,7 +391,7 @@ var only = cmd.Query<Single<User>>(cnn);   // RINKU4002 when the query returns t
 ```
 
 A result shape's own parser turned down the rows it was handed, and the message says which rule was
-broken. `Single<T>` asserts exactly one row.
+broken. `Single<T>` asserts exactly one result: no result raises RINKU4001, while a second raises RINKU4002.
 
 ```csharp
 var first = cmd.Query<User>(cnn);       // takes the first, ignores the rest
@@ -397,6 +444,12 @@ string name = FirstName.ExecuteScalar<string>(cnn, new { id = 1 });
 
 A column read into a mapped type takes the other road, where a slot the columns cannot feed is RINKU3001
 instead.
+
+`RINKU4004` is raised when the runtime converter reports that it cannot convert the value. A conversion
+that has already accepted the type pair is called directly. If that conversion rejects a particular value,
+its own exception remains visible; for example, invalid `Guid` text raises `FormatException` and an unknown
+enum name mapped from a string raises `ArgumentException`. Rinku does not add an exception-normalization
+branch to the successful conversion path.
 
 ## RINKU4005, cannot read a column {#rinku4005}
 
@@ -513,7 +566,7 @@ JsonSerializer.Deserialize<DynaObject>("{}", options);   // RINKU5007
 
 ```csharp
 var info = (DefaultTypeParsingInfo)TypeParsingInfo.GetOrAdd<ExternalRow>();
-_ = TypeParser.GetTypeParser<ExternalRow>(ref columns);
+_ = TypeParser.GetTypeParser<ExternalRow>(columns);
 info.UsePrivateMembers = true;   // RINKU5008
 ```
 

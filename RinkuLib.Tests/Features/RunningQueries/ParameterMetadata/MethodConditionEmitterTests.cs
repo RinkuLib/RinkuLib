@@ -1,9 +1,8 @@
 using System.Reflection;
-using RinkuLib.Commands;
-using RinkuLib.Exceptions;
-using RinkuLib.Queries;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku;
+using Rinku.Querying;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Queries;

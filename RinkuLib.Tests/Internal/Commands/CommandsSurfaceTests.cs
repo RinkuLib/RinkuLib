@@ -1,15 +1,16 @@
 using System.Data;
+using Rinku.Querying.Defaults;
 using System.Diagnostics.CodeAnalysis;
 
 #pragma warning disable CS8767 // This test command models a legacy ADO.NET nullability contract.
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -79,23 +80,23 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal("Victor", (await query.QueryAsync<UserPair>((IDbConnection)cnn, new { ID = 2 }, ct: ct)).Name);
 
         int id = query.Mapper.GetIndex("@ID");
-        Assert.True(query.Parameters.UpdateCache(id, InferedDbParamCache.Instance));
+        Assert.True(query.Parameters.UpdateCache(id, InferredDbParamCache.Instance));
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("John", query.Query<UserPair>(cnn, new { ID = 1 }).Name);
 
-        Assert.True(query.Parameters.UpdateCache(id, InferedDbParamCache.Instance));
+        Assert.True(query.Parameters.UpdateCache(id, InferredDbParamCache.Instance));
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("Victor", (await query.QueryAsync<UserPair>(cnn, new { ID = 2 }, ct: ct)).Name);
 
-        Assert.True(query.Parameters.UpdateCache(id, InferedDbParamCache.Instance));
+        Assert.True(query.Parameters.UpdateCache(id, InferredDbParamCache.Instance));
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("Alice", query.Query<UserPair>((IDbConnection)cnn, new { ID = 3 }).Name);
 
-        Assert.True(query.Parameters.UpdateCache(id, InferedDbParamCache.Instance));
+        Assert.True(query.Parameters.UpdateCache(id, InferredDbParamCache.Instance));
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("John", (await query.QueryAsync<UserPair>((IDbConnection)cnn, new { ID = 1 }, ct: ct)).Name);
 
-        Assert.True(query.Parameters.UpdateCache(id, InferedDbParamCache.Instance));
+        Assert.True(query.Parameters.UpdateCache(id, InferredDbParamCache.Instance));
         query.Parameters.UpdateCachedIndexes();
         var streamed = new List<string>();
         await foreach (var row in query.StreamQueryAsync<UserPair>(cnn, new { ID = 1 }, ct: ct))
@@ -393,11 +394,11 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal("Alice", (await query.QueryAsync<UserPair>(plain, new { Min = 3 }, ct: ct)).Name);
 
         int min = query.Mapper.GetIndex("@Min");
-        Assert.True(query.Parameters.UpdateCache(min, InferedDbParamCache.Instance));
+        Assert.True(query.Parameters.UpdateCache(min, InferredDbParamCache.Instance));
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("John", query.Query<UserPair>(plain, new { Min = 1 }).Name); 
 
-        Assert.True(query.Parameters.UpdateCache(min, InferedDbParamCache.Instance));
+        Assert.True(query.Parameters.UpdateCache(min, InferredDbParamCache.Instance));
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("Victor", (await query.QueryAsync<UserPair>(plain, new { Min = 2 }, ct: ct)).Name);
 
@@ -842,10 +843,10 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         await foreach (var n in b.StreamQueryAsync<string>(cnn, ct: ct))
             s1.Add(n);
         Assert.Equal(["Victor", "Alice"], s1);
-        q2.Parameters.UpdateCache(min, InferedDbParamCache.Instance);
+        q2.Parameters.UpdateCache(min, InferredDbParamCache.Instance);
         q2.Parameters.UpdateCachedIndexes();
         Assert.Equal("Victor", b.Query<string>(cnn));
-        q2.Parameters.UpdateCache(min, InferedDbParamCache.Instance);
+        q2.Parameters.UpdateCache(min, InferredDbParamCache.Instance);
         q2.Parameters.UpdateCachedIndexes();
         Assert.Equal("Victor", await b.QueryAsync<string>(cnn, ct: ct));
 
@@ -868,7 +869,7 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         var query = new QueryCommand(MinSql);
         warmUp(query);
         int min = query.Mapper.GetIndex("@Min");
-        Assert.True(query.Parameters.UpdateCache(min, InferedDbParamCache.Instance));
+        Assert.True(query.Parameters.UpdateCache(min, InferredDbParamCache.Instance));
         query.Parameters.UpdateCachedIndexes();
         var probe = new object?[query.Mapper.Count];
         probe[min] = 1;
@@ -1143,6 +1144,37 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         public void Prepare() { }
     }
 
+    sealed class CompletionTrackingCommand : FakeCommand {
+        public int CancelCount;
+        public int DisposeCount;
+        public override void Cancel() => CancelCount++;
+        protected override void Dispose(bool disposing) {
+            if (disposing)
+                DisposeCount++;
+            base.Dispose(disposing);
+        }
+    }
+
+    [Fact]
+    public async Task Completing_the_last_result_closes_without_cancelling_and_defers_command_disposal() {
+        var query = new QueryCommand("SELECT V FROM t");
+        var command = new CompletionTrackingCommand();
+        var output = new FakeParameter { ParameterName = "@output", Direction = ParameterDirection.Output };
+        command.Parameters.Add(output);
+        var multi = new MultiReader(new bool[query.Mapper.Count], query,
+            Rows.Reader([new("V", typeof(int), false)], [7]), command, disposeCmd: true, wasClosed: false);
+
+        Assert.Equal(7, await multi.QueryAsync<int>(TestContext.Current.CancellationToken));
+        Assert.Equal(0, command.CancelCount);
+        Assert.Equal(0, command.DisposeCount);
+        Assert.Same(output, Assert.Single(command.BoundParameters));
+
+        await multi.DisposeAsync();
+        Assert.Equal(0, command.CancelCount);
+        Assert.Equal(1, command.DisposeCount);
+        Assert.Empty(command.BoundParameters);
+    }
+
     [Fact]
     public async Task A_refusing_cancel_does_not_break_disposal() {
         var query = new QueryCommand("SELECT ID FROM Users");
@@ -1169,10 +1201,10 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         query.UpdateCache(dbCmd);                                       
         Assert.Equal("John", db.Query<string>());                       
         Assert.Equal("John", await db.QueryAsync<string>(ct));          
-        query.Parameters.UpdateCache(min, InferedDbParamCache.Instance);
+        query.Parameters.UpdateCache(min, InferredDbParamCache.Instance);
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("John", db.Query<string>());                       
-        query.Parameters.UpdateCache(min, InferedDbParamCache.Instance);
+        query.Parameters.UpdateCache(min, InferredDbParamCache.Instance);
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("John", await db.QueryAsync<string>(ct));          
         var streamed = new List<string>();
@@ -1188,7 +1220,7 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         await foreach (var name in coldBuilder.StreamQueryAsync<string>(ct))  
             coldStream.Add(name);
         Assert.Equal(["Alice", "John", "Victor"], coldStream);
-        coldQuery.Parameters.UpdateCache(coldQuery.Mapper.GetIndex("@Min"), InferedDbParamCache.Instance);
+        coldQuery.Parameters.UpdateCache(coldQuery.Mapper.GetIndex("@Min"), InferredDbParamCache.Instance);
         coldQuery.Parameters.UpdateCachedIndexes();
         var middleStream = new List<string>();
         await foreach (var name in coldBuilder.StreamQueryAsync<string>(ct))
@@ -1202,10 +1234,10 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         query.UpdateCache(idb.Command);                               
         Assert.Equal("Victor", idb.Query<string>());                 
         Assert.Equal("Victor", await idb.QueryAsync<string>(ct));   
-        query.Parameters.UpdateCache(min, InferedDbParamCache.Instance);
+        query.Parameters.UpdateCache(min, InferredDbParamCache.Instance);
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("Victor", idb.Query<string>());                 
-        query.Parameters.UpdateCache(min, InferedDbParamCache.Instance);
+        query.Parameters.UpdateCache(min, InferredDbParamCache.Instance);
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("Victor", await idb.QueryAsync<string>(ct));  
     }
@@ -1223,10 +1255,10 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal("Alice", b.Query<string>(icnn));                
         Assert.Equal("Alice", b.Query<string>(icnn));            
         Assert.Equal("Alice", await b.QueryAsync<string>(icnn, ct: ct));
-        query.Parameters.UpdateCache(min, InferedDbParamCache.Instance);
+        query.Parameters.UpdateCache(min, InferredDbParamCache.Instance);
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("Alice", b.Query<string>(icnn));              
-        query.Parameters.UpdateCache(min, InferedDbParamCache.Instance);
+        query.Parameters.UpdateCache(min, InferredDbParamCache.Instance);
         query.Parameters.UpdateCachedIndexes();
         Assert.Equal("Alice", await b.QueryAsync<string>(icnn, ct: ct));
     }

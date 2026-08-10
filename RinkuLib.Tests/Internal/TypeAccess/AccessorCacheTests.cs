@@ -1,10 +1,11 @@
 using System.Data;
+using Rinku.Mapping.Parsers.Defaults;
+using Rinku.Querying.Defaults;
 using System.Data.Common;
-using System.Reflection;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
-using RinkuLib.Queries;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
+using Rinku.Querying;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -42,7 +43,7 @@ public class AccessorCacheTests {
         Span<bool> usage = stackalloc bool[1];
         var value = new StructArgs { Id = 7 };
 
-        accessor.InvokeTyped(ref value, command, [InferedDbParamCache.Instance], ref usage);
+        accessor.InvokeTyped(ref value, command, [InferredDbParamCache.Instance], ref usage);
 
         Assert.True(usage[0]);
         Assert.Equal(7, command.Parameters[0]!.Value);
@@ -91,7 +92,7 @@ public class AccessorCacheTests {
 
         Assert.Same(direct, query.GetDirectAccessor(handle, typeof(Args)));
         Assert.Same(useWith, query.GetUseWithAccessor(handle, typeof(Args)));
-        Assert.Single(GetCacheEntries(query));
+        Assert.Equal([(typeof(Args), ParameterAccessorKinds.Both)], query.GetCachedParameterAccessors());
     }
 
     [Fact]
@@ -104,7 +105,35 @@ public class AccessorCacheTests {
 
         Assert.Same(useWith, query.GetUseWithAccessor(handle, typeof(Args)));
         Assert.Same(direct, query.GetDirectAccessor(handle, typeof(Args)));
-        Assert.Single(GetCacheEntries(query));
+        Assert.Equal([(typeof(Args), ParameterAccessorKinds.Both)], query.GetCachedParameterAccessors());
+    }
+
+    [Fact]
+    public void A_command_can_invalidate_one_road_for_one_parameter_source_without_touching_the_others() {
+        var query = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id");
+        var args = query.GetDirectAccessor(typeof(Args).TypeHandle.Value, typeof(Args));
+        var argsUseWith = query.GetUseWithAccessor(typeof(Args).TypeHandle.Value, typeof(Args));
+        var structArgs = query.GetDirectAccessor(typeof(StructArgs).TypeHandle.Value, typeof(StructArgs));
+
+        Assert.Equal(ParameterAccessorKinds.Direct,
+            query.InvalidateParameterAccessor(typeof(Args), ParameterAccessorKinds.Direct));
+
+        Assert.NotSame(args, query.GetDirectAccessor(typeof(Args).TypeHandle.Value, typeof(Args)));
+        Assert.Same(argsUseWith, query.GetUseWithAccessor(typeof(Args).TypeHandle.Value, typeof(Args)));
+        Assert.Same(structArgs, query.GetDirectAccessor(typeof(StructArgs).TypeHandle.Value, typeof(StructArgs)));
+        Assert.Equal(2, query.GetCachedParameterAccessors().Length);
+    }
+
+    [Fact]
+    public void Invalidation_reports_only_roads_that_were_cached() {
+        var query = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id");
+        query.GetUseWithAccessor(typeof(Args).TypeHandle.Value, typeof(Args));
+
+        Assert.Equal(ParameterAccessorKinds.None,
+            query.InvalidateParameterAccessor(typeof(Args), ParameterAccessorKinds.Direct));
+        Assert.Equal(ParameterAccessorKinds.UseWith,
+            query.InvalidateParameterAccessor(typeof(Args), ParameterAccessorKinds.Both));
+        Assert.Empty(query.GetCachedParameterAccessors());
     }
 
     [Fact]
@@ -127,7 +156,7 @@ public class AccessorCacheTests {
 
         Assert.Same(direct, query.GetDirectAccessor(handle, typeof(Args)));
         Assert.Same(useWith, query.GetUseWithAccessor(handle, typeof(Args)));
-        Assert.Single(GetCacheEntries(query));
+        Assert.Equal([(typeof(Args), ParameterAccessorKinds.Both)], query.GetCachedParameterAccessors());
     }
 
     [Fact]
@@ -143,7 +172,7 @@ public class AccessorCacheTests {
         using var command = new FakeCommand();
         Span<bool> usage = stackalloc bool[2];
         var values = cache.Invoke(new Args { Id = 3 }, command,
-            [InferedDbParamCache.Instance, InferedDbParamCache.Instance], ref usage);
+            [InferredDbParamCache.Instance, InferredDbParamCache.Instance], ref usage);
 
         Assert.True(usage[0]);
         Assert.False(usage[1]);
@@ -159,18 +188,13 @@ public class AccessorCacheTests {
         Span<bool> usage = stackalloc bool[2];
 
         cache.Invoke(new Args { Id = 3, Name = "first" }, command,
-            [InferedDbParamCache.Instance, InferedDbParamCache.Instance], ref usage);
+            [InferredDbParamCache.Instance, InferredDbParamCache.Instance], ref usage);
         cache.Invoke(new Args { Id = 4 }, command,
-            [InferedDbParamCache.Instance, InferedDbParamCache.Instance], ref usage);
+            [InferredDbParamCache.Instance, InferredDbParamCache.Instance], ref usage);
 
         Assert.True(usage[0]);
         Assert.False(usage[1]);
     }
-
-    private static (IntPtr Handle, object Accessor)[] GetCacheEntries(QueryCommand query)
-        => ((ValueTuple<IntPtr, object>[])typeof(QueryCommand)
-            .GetField("_accessors", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(query)!)!;
 
     class NoNestedType;
 

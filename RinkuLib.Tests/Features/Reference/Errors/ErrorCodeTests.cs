@@ -43,7 +43,7 @@ public class ErrorCodeTests {
     [Fact]
     public void A_raised_condition_carries_its_code_and_a_help_link() {
         var refused = Refusals.Raises(ErrorCodes.QueryTooShort,
-            () => new RinkuLib.Queries.QueryCommand("a"));
+            () => new Rinku.QueryCommand("a"));
         Assert.StartsWith(ErrorCodes.QueryTooShort, refused.Message);
         Refusals.HasHelpLink(refused);
         Assert.Contains("errors", refused.HelpLink);

@@ -1,6 +1,6 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 internal static class DefaultFactoryCache<T> where T : class {
     public static readonly Func<T>? Factory;
 
