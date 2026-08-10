@@ -248,8 +248,7 @@ prices.Use("UnitPrice");
 var tracksByPrice = prices.Query<List<Track>>(cnn);
 // SELECT TrackId AS Id, UnitPrice FROM tracks WHERE AlbumId = @albumId
 ```
-
-See [conditional SQL](../conditional-sql/index.md) for the full syntax and the other combinations.
+The `?@` toggle is a structural rule the engine applies to every keyword section. The template syntax has its own section, [conditional SQL](../conditional-sql/index.md).
 
 ## Quick reference
 
