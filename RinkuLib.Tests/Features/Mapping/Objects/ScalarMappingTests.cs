@@ -1,6 +1,6 @@
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -20,7 +20,7 @@ public class ScalarMappingTests {
     public void Parser_reports_whether_another_row_awaits() {
         ColumnInfo[] cols = [new("Id", typeof(int), false)];
         using var reader = Rows.Reader(cols, [1], [2]);
-        var parser = TypeParser.GetTypeParser<int>(ref cols);
+        var parser = TypeParser.GetTypeParser<int>(cols);
         reader.Read();
         var (canContinue, first) = parser.Parse(reader);
         Assert.Equal(1, first);
@@ -95,7 +95,7 @@ public class ScalarMappingTests {
     public void Implicit_operator_converts_the_column_type() {
         ColumnInfo[] cols = [new("Nb1", typeof(int), false), new("Nb2", typeof(long), true)];
         using var reader = Rows.Reader(cols, [1, 1L]);
-        var parser = TypeParser.GetTypeParser<(WrappedAmount, WrappedAmount)>(ref cols);
+        var parser = TypeParser.GetTypeParser<(WrappedAmount, WrappedAmount)>(cols);
         reader.Read();
         var (nb1, nb2) = parser.Parse(reader).Result;
         Assert.Equal(new WrappedAmount(1), nb1);

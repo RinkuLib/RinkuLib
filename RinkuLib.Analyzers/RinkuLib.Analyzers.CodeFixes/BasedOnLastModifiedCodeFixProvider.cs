@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Immutable;
 using System.Composition;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 namespace RinkuLib.Analyzers;
 
@@ -16,90 +18,87 @@ namespace RinkuLib.Analyzers;
 public sealed class BasedOnLastModifiedCodeFixProvider : CodeFixProvider {
     public override ImmutableArray<string> FixableDiagnosticIds => [BasedOnAnalyzer.DiagnosticId];
     public override FixAllProvider GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
-    public override async Task RegisterCodeFixesAsync(CodeFixContext context) {
-        var document = context.Document;
-        var cancellationToken = context.CancellationToken;
 
-        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-        if (root is null)
+    public override async Task RegisterCodeFixesAsync(CodeFixContext context) {
+        var diagnostic = context.Diagnostics.First();
+        if (!diagnostic.Properties.TryGetValue(BasedOnAnalyzer.SchemaTimestampProperty, out var rawTimestamp)
+            || !DateTimeOffset.TryParse(rawTimestamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
             return;
 
-        var diagnostic = context.Diagnostics.First();
-
-        var declaration = root
-            .FindToken(diagnostic.Location.SourceSpan.Start)
-            .Parent?
-            .AncestorsAndSelf()
-            .OfType<TypeDeclarationSyntax>()
-            .FirstOrDefault();
-
-        if (declaration is null)
+        var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);
+        var tag = root is null
+            ? null
+            : DocumentationTags.FindTag(root, diagnostic.Location.SourceSpan, DocumentationTags.BasedOn);
+        if (tag is null
+            || DocumentationTags.GetTimestamp(tag) is { } current && current >= timestamp)
             return;
 
         context.RegisterCodeFix(
             CodeAction.Create(
-                title: "Update BasedOn timestamp to now",
-                createChangedDocument: c => ApplyTimestampAsync(document, declaration, c),
-                equivalenceKey: "SyncBasedOnTimestamp"),
+                "Acknowledge current schema",
+                cancellationToken => ApplyAsync(
+                    context.Document,
+                    diagnostic.Location.SourceSpan,
+                    timestamp,
+                    cancellationToken),
+                "AcknowledgeBasedOnSchema"),
             diagnostic);
     }
-    public static async Task<Document> ApplyTimestampAsync(Document document, TypeDeclarationSyntax declaration, CancellationToken ct) {
-        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
+
+    internal static async Task<Document> ApplyAsync(
+        Document document,
+        Microsoft.CodeAnalysis.Text.TextSpan diagnosticSpan,
+        DateTimeOffset timestamp,
+        CancellationToken cancellationToken) {
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
         if (root is null)
             return document;
-        var updatedDeclaration = WithUpdatedTimestamp(declaration);
-        return document.WithSyntaxRoot(root.ReplaceNode(declaration, updatedDeclaration));
-    }
-    public static TypeDeclarationSyntax WithUpdatedTimestamp(TypeDeclarationSyntax declaration) {
-        var tag = BasedOnHelper.GetTags(declaration, "BasedOn").FirstOrDefault();
+
+        var tag = DocumentationTags.FindTag(root, diagnosticSpan, DocumentationTags.BasedOn);
         if (tag is null)
-            return declaration;
+            return document;
 
-        var updatedTag = UpdateTag(tag);
-        return declaration.ReplaceNode(tag, updatedTag);
+        var updatedRoot = root.ReplaceNode(tag, WithTimestamp(tag, timestamp));
+        var source = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
+        var newLine = source.Lines.Count > 1
+            ? source.ToString(TextSpan.FromBounds(source.Lines[0].End, source.Lines[1].Start))
+            : Environment.NewLine;
+        var updatedText = NormalizeLineEndings(updatedRoot.ToFullString(), newLine);
+        return document.WithText(SourceText.From(updatedText, source.Encoding, source.ChecksumAlgorithm));
     }
-    public static XmlNodeSyntax UpdateTag(XmlNodeSyntax tag) {
-        var now = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mmZ");
-        var newAttribute = CreateLastUpdatedAttribute(now);
 
+    internal static XmlNodeSyntax WithTimestamp(XmlNodeSyntax tag, DateTimeOffset timestamp) {
+        var attribute = CreateTimestampAttribute(timestamp);
         return tag switch {
-            XmlEmptyElementSyntax empty => UpdateEmptyElement(empty, newAttribute),
-            XmlElementSyntax element => UpdateElement(element, newAttribute),
+            XmlEmptyElementSyntax empty => empty.WithAttributes(ReplaceOrAdd(empty.Attributes, attribute)),
+            XmlElementSyntax element => element.WithStartTag(
+                element.StartTag.WithAttributes(ReplaceOrAdd(element.StartTag.Attributes, attribute))),
             _ => tag
         };
     }
-    private static XmlEmptyElementSyntax UpdateEmptyElement(XmlEmptyElementSyntax tag, XmlTextAttributeSyntax newAttribute) {
-        var existing = tag.Attributes
-            .OfType<XmlTextAttributeSyntax>()
-            .FirstOrDefault(a => a.Name.LocalName.Text == "LastUpdated");
 
-        return existing is null
-            ? tag.AddAttributes(newAttribute)
-            : tag.ReplaceNode(existing, newAttribute);
-    }
-    private static XmlElementSyntax UpdateElement(XmlElementSyntax tag, XmlTextAttributeSyntax newAttribute) {
-        var startTag = tag.StartTag;
-        var existing = startTag.Attributes
-            .OfType<XmlTextAttributeSyntax>()
-            .FirstOrDefault(a => a.Name.LocalName.Text == "LastUpdated");
-        var newStartTag = existing is null
-            ? startTag.AddAttributes(newAttribute)
-            : startTag.ReplaceNode(existing, newAttribute);
-        return tag.WithStartTag(newStartTag);
-    }
-
-    public static XmlTextAttributeSyntax CreateLastUpdatedAttribute(string value) {
+    internal static XmlTextAttributeSyntax CreateTimestampAttribute(DateTimeOffset timestamp) {
+        var value = timestamp.UtcDateTime.ToString("yyyy-MM-ddTHH:mmZ", CultureInfo.InvariantCulture);
         return SyntaxFactory.XmlTextAttribute(
-                SyntaxFactory.XmlName("LastUpdated"),
+                SyntaxFactory.XmlName(DocumentationTags.LastUpdated),
                 SyntaxFactory.Token(SyntaxKind.EqualsToken),
                 SyntaxFactory.Token(SyntaxKind.DoubleQuoteToken),
-                SyntaxFactory.TokenList(
-                    SyntaxFactory.XmlTextLiteral(
-                        SyntaxFactory.TriviaList(),
-                        value,
-                        value,
-                        SyntaxFactory.TriviaList())),
+                SyntaxFactory.TokenList(SyntaxFactory.XmlTextLiteral(value)),
                 SyntaxFactory.Token(SyntaxKind.DoubleQuoteToken))
             .WithLeadingTrivia(SyntaxFactory.Whitespace(" "));
     }
+
+    private static SyntaxList<XmlAttributeSyntax> ReplaceOrAdd(
+        SyntaxList<XmlAttributeSyntax> attributes,
+        XmlTextAttributeSyntax replacement) {
+        var existing = attributes
+            .OfType<XmlTextAttributeSyntax>()
+            .FirstOrDefault(attribute => attribute.Name.LocalName.ValueText == DocumentationTags.LastUpdated);
+        return existing is null
+            ? attributes.Add(replacement)
+            : attributes.Replace(existing, replacement);
+    }
+
+    private static string NormalizeLineEndings(string value, string newLine)
+        => value.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", newLine);
 }

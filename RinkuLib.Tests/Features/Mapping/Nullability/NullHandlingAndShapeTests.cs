@@ -1,9 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
+using Rinku.Mapping.Defaults;
+using Rinku.Mapping.Parsers.Defaults;
+using Rinku;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -173,7 +175,7 @@ public class NullHandlingAndShapeTests {
     public void The_root_needs_a_null_taking_shape() {
         ColumnInfo[] one = [new("Name", typeof(string), true)];
         Refusals.Raises(ErrorCodes.NullNotAllowed, () => Rows.ParseOne<string>(one, DBNull.Value));
-        Assert.Null(Rows.ParseOne<RinkuLib.TypeAccessing.MaybeNull<string>>(one, DBNull.Value).Value);
+        Assert.Null(Rows.ParseOne<Rinku.MaybeNull<string>>(one, DBNull.Value).Value);
     }
 
     public class Node : IDbReadable {
@@ -184,7 +186,7 @@ public class NullHandlingAndShapeTests {
     public void A_self_referential_ctor_registration_stops_instead_of_recursing() {
         TypeParsingInfo.AddOrSet<Node>(CtorTypeInfo.Instance);
         ColumnInfo[] cols = [new("X", typeof(int), false)];
-        Refusals.NoParserFor<Node>(() => TypeParser.GetTypeParser<Node>(ref cols));
+        Refusals.NoParserFor<Node>(() => TypeParser.GetTypeParser<Node>(cols));
     }
 
     public class Picky : IDbReadable {
@@ -195,7 +197,7 @@ public class NullHandlingAndShapeTests {
     public void A_ctor_registration_missing_a_column_rolls_back_and_fails() {
         TypeParsingInfo.AddOrSet<Picky>(CtorTypeInfo.Instance);
         ColumnInfo[] cols = [new("A", typeof(int), false)];
-        Refusals.NoParserFor<Picky>(() => TypeParser.GetTypeParser<Picky>(ref cols));
+        Refusals.NoParserFor<Picky>(() => TypeParser.GetTypeParser<Picky>(cols));
     }
 
     public class TwoDoors : IDbReadable {
@@ -218,23 +220,25 @@ public class NullHandlingAndShapeTests {
     public void Wrappers_hold_a_whole_list_result() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
         using var optReader = Rows.Reader(cols, [1], [2]);
-        var optParser = TypeParser.GetTypeParser<Optional<List<int>>>(ref cols);
+        var optParser = TypeParser.GetTypeParser<Optional<List<int>>>(cols);
         optReader.Read();
         Assert.Equal([1, 2], optParser.Parse(optReader).Result.Value);
 
         using var singleReader = Rows.Reader(cols, [3], [4]);
-        var singleParser = TypeParser.GetTypeParser<Single<List<int>>>(ref cols);
+        var singleParser = TypeParser.GetTypeParser<Single<List<int>>>(cols);
         singleReader.Read();
         Assert.Equal([3, 4], singleParser.Parse(singleReader).Result.Value);
     }
 
     [Fact]
-    public void A_custom_root_null_rule_reaches_the_wrapped_element() {
+    public void A_custom_root_null_rule_keeps_nullable_elements() {
         ColumnInfo[] cols = [new("V", typeof(int), true)];
-        var parser = TypeParser.GetTypeParser<List<int?>>(ref cols, NullableTypeHandle.Instance);
-        Assert.NotNull(parser);
+        using var reader = Rows.Reader(cols, [1], [DBNull.Value], [2]);
+        var parser = TypeParser.GetTypeParser<List<int?>>(cols, NullableTypeHandle.Instance);
+        reader.Read();
+        Assert.Equal([1, null, 2], parser.Parse(reader).Result);
         var maker = new ReusingBaseTypeParserMaker([typeof(List<>)],
-            (Type def, Type item, ref object?[] _) => typeof(ListTypeParser<>).MakeGenericType(item));
+            (Type def, Type item, ref object?[] _) => typeof(object));
         Assert.False(maker.TryMakeParser<int>(NotNullHandle.Instance, cols, out _));  
     }
 
@@ -242,7 +246,7 @@ public class NullHandlingAndShapeTests {
     public void A_list_of_lists_wraps_the_whole_result_once() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
         using var reader = Rows.Reader(cols, [1], [2], [3]);
-        var parser = TypeParser.GetTypeParser<List<List<int>>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<List<int>>>(cols);
         reader.Read();
         var nested = parser.Parse(reader).Result;
         Assert.Single(nested);
@@ -256,7 +260,7 @@ public class NullHandlingAndShapeTests {
     [Fact]
     public void A_type_with_no_matching_construction_and_no_fallback_fails() {
         ColumnInfo[] cols = [new("A", typeof(int), false)];
-        Refusals.NoParserFor<NoFit>(() => TypeParser.GetTypeParser<NoFit>(ref cols));
+        Refusals.NoParserFor<NoFit>(() => TypeParser.GetTypeParser<NoFit>(cols));
     }
 
     public class OpenPocket<T> : IDbReadable {

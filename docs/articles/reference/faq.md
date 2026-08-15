@@ -1,53 +1,172 @@
 # FAQ
 
-### Do I create a `QueryCommand` per call?
+## Should a QueryCommand be created for every call?
 
-No. Create it once, in a `static readonly` field, and reuse it. Parsing happens at construction. Per-call state travels in the parameter object or a builder.
+Keep reusable commands in `static readonly` fields.
 
 ```csharp
-static readonly QueryCommand GetTrackById = new("SELECT TrackId AS Id, Name FROM tracks WHERE TrackId = @id");
+static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
 
-Track t = GetTrackById.Query<Track>(cnn, new { id = 10 });
+Album album = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
 ```
 
-### Is it thread-safe to share a `QueryCommand`?
+The template is parsed once. Per-call values remain outside the command.
 
-Yes, that is the intended usage. The command holds no per-call state, and its internal caches are guarded. One shared command, fresh per-call values.
+## Can one command be shared across threads?
 
-### Can one `QueryCommand` run on two providers?
+Yes. Sharing is the intended use. Per-call execution state comes from the parameter object or builder operation, while the command's reusable caches are guarded.
 
-It is not guaranteed to work. The command reuses the row parser it learned from the first result it saw, and nothing accounts for a provider typing the same query differently, `COUNT(*)` as an `int` on one and a `bigint` on another. Declare one command per provider.
+```csharp
+using DbConnection firstConnection = GetConnection();
+using DbConnection secondConnection = GetConnection();
 
-### Does Rinku rewrite named parameters for positional providers?
+Album[] albums = await Task.WhenAll(
+    GetAlbum.QueryAsync<Album>(firstConnection, new { albumId = 12 }),
+    GetAlbum.QueryAsync<Album>(secondConnection, new { albumId = 46 }));
+```
 
-No automatic rewrite is performed. Rinku can still reproduce positional SQL: keep the provider's `?` placeholders, declare the variables in positional order, and supply a custom parameter-info implementation when the provider needs special parameter creation.
+Each execution uses its own connection and values while sharing `GetAlbum`.
 
-See [positional SQL](../running-queries/parameters.md#positional-sql).
+## Can one command run across different providers?
 
-### The clause is in the SQL but the provider throws about a missing parameter.
+That usage is unsupported. A command may retain mapping and parameter metadata learned from earlier executions. Declare a separate command for each provider.
 
-A plain `@Id` is static text, the engine does not manage its presence. If its clause stays and you never supplied a value, the provider throws at execution. Mark it `?@Id` when its presence should follow the value. See [conditional SQL](../conditional-sql/index.md#markers-are-opt-in).
+```csharp
+static readonly QueryCommand SqlServerAlbums = new("SELECT AlbumId AS Id, Title FROM albums");
+static readonly QueryCommand PostgreSqlAlbums = new("SELECT AlbumId AS Id, Title FROM albums");
+```
 
-### How do I avoid `WHERE 1=1`?
+## Does Rinku rewrite named parameters for positional providers?
 
-You do not need it. Write the SQL as if every parameter is used, add `?` to the optional ones, and the engine prunes dangling operators, commas, and emptied clauses. See [optional variables](../conditional-sql/optional-variables.md).
+No. Keep the provider's positional placeholders and declare the variables in provider order.
 
-### `Query<T>` threw "No values were returned from the query".
+```csharp
+var command = new QueryCommand("SELECT UserId, Name FROM users WHERE UserId = ? AND Status = ?", ["userId", "status"], CommandType.Text);
+```
 
-The query returned zero rows and a plain `T` treats that as an error. Ask for `Optional<T>` (or `OptionalStruct<T>`) when no row is a normal outcome. See [result shapes](../running-queries/result-shapes.md).
+See [positional parameters](../running-queries/values.md#positional-parameters).
 
-### My `IN (@ids_X)` clause disappeared.
+## Why did the provider report a missing parameter?
 
-An empty collection counts as not supplied, so an optional `?@ids_X` clause is pruned rather than generating `IN ()`. Pass a non-empty collection to keep the clause.
+A plain parameter is required whenever its SQL remains.
 
-### A nested object is null even though some of its columns had values.
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId
+```
 
-A slot marked `[AbortOnNull]` collapses the whole nested object when its column is NULL. That is its purpose, typically for outer joins. See [nullability](../mapping/nullability.md).
+Use a conditional variable when the condition should disappear with an absent value.
 
-### A nested type is not being mapped at all.
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = ?@albumId
+```
 
-Types reached only through another type must be registered. Add the `IDbReadable` marker to it, or register it explicitly. See [registration](../mapping/registration.md).
+Without `albumId`, the complete optional condition disappears.
 
-### How do I read multiple result sets?
+```sql
+SELECT AlbumId AS Id, Title FROM albums
+```
 
-`ExecuteMultiReader`, then `Query<T>` once per set. See [multiple result sets](../running-queries/multiple-results.md).
+## How can optional filters avoid WHERE 1=1?
+
+Mark each optional value where its condition appears.
+
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND ReleaseYear >= ?@minimumYear
+```
+
+Supplying only `artistId` keeps only its matching condition.
+
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+```
+
+## Why did Query<T> report no values?
+
+With Rinku's default parser, an unwrapped `T` requires a first complete result.
+
+```csharp
+Optional<Album> album = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
+```
+
+Use one of the included wrappers or add another [result parser](../running-queries/result-shapes.md#custom-result-shapes) when no result is valid.
+
+## Why did IN (?@ids_X) disappear?
+
+An empty collection counts as absent. The optional condition is removed instead of generating `IN ()`.
+
+```csharp
+List<Album> albums = FindAlbums.Query<List<Album>>(cnn, new { albumIds = Array.Empty<int>() });
+```
+
+```sql
+SELECT AlbumId AS Id, Title FROM albums
+```
+
+Without `?`, the same empty required handler raises `RINKU2002`.
+
+## Why is a nested type unavailable?
+
+Under the default mapping system, a root result is an explicit request. A type reached only through another mapped value needs a registration before its construction paths can participate.
+
+```csharp
+public record Artist(int Id, string Name) : IDbReadable;
+public record Album(int Id, string Title, Artist Artist);
+```
+
+The [registration guide](../mapping/registration.md) shows the available ways to make that nested type readable.
+
+## Why did joined rows produce several parent objects?
+
+Rows for one grouped result must be consecutive.
+
+```sql
+SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumsId, al.Title AS AlbumsTitle FROM artists ar JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId
+```
+
+See [grouping](../mapping/grouping.md) when the inferred boundary is not the intended one.
+
+## When are streamed output parameters available?
+
+After the stream's enumerator is disposed, including when enumeration stops early.
+
+```csharp
+IEnumerable<Album> albums = ReadAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command, new { moved = 0 });
+
+using (command) {
+    using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
+        if (iterator.MoveNext())
+            Show(iterator.Current);
+    }
+
+    int moved = command.GetOutputValue<int>("@moved");
+}
+```
+
+## Which connection should be used with a transaction?
+
+Pass the same open connection that created it.
+
+```csharp
+using DbConnection cnn = db.Open();
+using DbTransaction transaction = cnn.BeginTransaction();
+
+UpdateAlbum.Execute(cnn, new { albumId = 12, title = "Updated" }, transaction: transaction);
+```
+
+Rinku does not switch to `transaction.Connection` or validate that relationship. Provider errors report mismatched or completed transactions.
+
+## How are several result sets read?
+
+```csharp
+public record Album(int Id, string Title) : IDbReadable;
+public record class ArtistWithAlbums(int Id, string Name) {
+    public List<Album> Albums { get; set; } = [];
+}
+
+using MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 });
+
+ArtistWithAlbums artist = results.Query<ArtistWithAlbums>();
+artist.Albums = results.Query<List<Album>>();
+```
+
+See [multiple result sets](../running-queries/multiple-results.md).

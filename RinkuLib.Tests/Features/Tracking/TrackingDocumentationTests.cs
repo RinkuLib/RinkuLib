@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using RinkuLib.Tracking;
+using Rinku.Tracking;
 using Xunit;
 
 namespace RinkuLib.Tests.Tracking;

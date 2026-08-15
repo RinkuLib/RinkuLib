@@ -1,4 +1,4 @@
-using RinkuLib.Exceptions;
+using Rinku;
 using Xunit;
 
 namespace RinkuLib.Tests.Infrastructure;

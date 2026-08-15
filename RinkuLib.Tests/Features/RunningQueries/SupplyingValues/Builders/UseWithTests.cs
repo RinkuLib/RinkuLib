@@ -1,8 +1,9 @@
 using System.Data.Common;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using System.Data;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.TypeAccessing;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Building;
@@ -31,6 +32,47 @@ public sealed class UseWithTests {
         builder.UseWith(new Filter(null, null, false));
 
         Assert.All(builder.Variables, Assert.Null);
+    }
+
+    [Fact]
+    public void UseDbNull_keeps_a_null_member_in_the_builder_as_a_database_null() {
+        var builder = new QueryCommand("SELECT ID FROM Users WHERE Name = ?@Name").StartBuilder();
+
+        builder.UseWith(new DbNullFilter(null));
+
+        Assert.Equal(DBNull.Value, builder["@Name"]);
+        Render.Expect(builder, "SELECT ID FROM Users WHERE Name = @Name", ("@Name", DBNull.Value));
+    }
+
+    [Fact]
+    public void UseDbNull_keeps_a_null_member_in_a_direct_parameter_object_run() {
+        var query = new QueryCommand("SELECT ID FROM Users WHERE Name = ?@Name");
+        var usage = new bool[query.Mapper.Count];
+        var command = new FakeCommand();
+
+        query.SetCommand((DbCommand)command, new DbNullFilter(null), usage);
+
+        Assert.Equal("SELECT ID FROM Users WHERE Name = @Name", command.CommandText);
+        Assert.Equal(DBNull.Value, Assert.Single(command.BoundParameters).Value);
+    }
+
+    [Fact]
+    public void A_type_UseDbNull_rule_is_the_member_default_and_a_member_rule_overrides_it() {
+        var query = new QueryCommand("SELECT ID FROM Users WHERE Name = ?@Name AND Status = ?@Status");
+        var builder = query.StartBuilder();
+
+        builder.UseWith(new TypeDbNullFilter(null, null));
+
+        Assert.Equal(DBNull.Value, builder["@Name"]);
+        Assert.Null(builder["@Status"]);
+        Render.Expect(builder, "SELECT ID FROM Users WHERE Name = @Name", ("@Name", DBNull.Value));
+
+        var usage = new bool[query.Mapper.Count];
+        var command = new FakeCommand();
+        query.SetCommand((DbCommand)command, new TypeDbNullFilter(null, null), usage);
+
+        Assert.Equal("SELECT ID FROM Users WHERE Name = @Name", command.CommandText);
+        Assert.Equal(DBNull.Value, Assert.Single(command.BoundParameters).Value);
     }
 
     [Fact]
@@ -85,11 +127,46 @@ public sealed class UseWithTests {
         var builder = new QueryCommand("UPDATE Users SET Name = @Name WHERE Id = @Id")
             .StartBuilder((DbCommand)cmd);
 
-        foreach (var item in new[] { new BatchItem(1, "first"), new BatchItem(2, "second"), new BatchItem(3, "third") })
+        builder.UseWith(new BatchItem(1, "first"));
+        var nameParameter = cmd.BoundParameters[0];
+        var idParameter = cmd.BoundParameters[1];
+        foreach (var item in new[] { new BatchItem(2, "second"), new BatchItem(3, "third") })
             builder.UseWith(item);
 
         Assert.Equal(["@Name", "@Id"], cmd.BoundParameters.Select(x => x.ParameterName));
         Assert.Equal(["third", 3], cmd.BoundParameters.Select(x => x.Value));
+        Assert.Same(nameParameter, cmd.BoundParameters[0]);
+        Assert.Same(idParameter, cmd.BoundParameters[1]);
+    }
+
+    [Fact]
+    public void Bound_UseWith_does_not_reset_unchanged_command_text() {
+        var cmd = new CountingCommand { Connection = new FakeConnection() };
+        var builder = new QueryCommand("UPDATE Users SET Name = @Name WHERE Id = @Id")
+            .StartBuilder((DbCommand)cmd);
+
+        builder.UseWith(new BatchItem(1, "first"));
+        builder.Execute();
+        builder.UseWith(new BatchItem(2, "second"));
+        builder.Execute();
+
+        Assert.Equal(1, cmd.CommandTextSetCount);
+    }
+
+    [Fact]
+    public void Bound_UseWith_resets_command_text_when_the_query_shape_changes() {
+        var cmd = new CountingCommand { Connection = new FakeConnection() };
+        var builder = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id")
+            .StartBuilder((DbCommand)cmd);
+
+        builder.UseWith(new ConditionalBatchItem(1));
+        builder.UseWith(new ConditionalBatchItem(2));
+        Assert.Equal(1, cmd.CommandTextSetCount);
+
+        builder.UseWith(new ConditionalBatchItem(null));
+
+        Assert.Equal(2, cmd.CommandTextSetCount);
+        Assert.Equal("SELECT * FROM Users", cmd.CommandText);
     }
 
     private sealed record Filter(int? Active, string? Status, [property: ForBoolCond] bool ShowEmail);
@@ -97,4 +174,20 @@ public sealed class UseWithTests {
     private sealed record SpreadFilter(int[] Ids);
     private sealed record BoundFilter(int[] Ids, string? Name);
     private sealed record BatchItem(int Id, string Name);
+    private sealed record ConditionalBatchItem(int? Id);
+    private sealed record DbNullFilter([property: UseDbNull] string? Name);
+    [UseDbNull]
+    private sealed record TypeDbNullFilter(string? Name, [property: NotNullOrWhitespace] string? Status);
+
+    private sealed class CountingCommand : FakeCommand {
+        private string? _commandText;
+        public int CommandTextSetCount { get; private set; }
+        public override string? CommandText {
+            get => _commandText;
+            set {
+                CommandTextSetCount++;
+                _commandText = value;
+            }
+        }
+    }
 }

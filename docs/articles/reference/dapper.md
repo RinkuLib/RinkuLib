@@ -1,287 +1,202 @@
 # Coming from Dapper
 
-This page compares the core `Dapper` package and its `Dapper.SqlBuilder`
-companion with Rinku. It is based on Dapper's public API and the upstream
-[`tests/Dapper.Tests`](https://github.com/DapperLib/Dapper/tree/main/tests/Dapper.Tests)
-cases. `Dapper.Rainbow` and the Entity Framework packages are separate
-libraries and are outside this comparison.
+The SQL and parameter objects remain familiar. Rinku uses the full `T` passed to `Query<T>` to choose a result parser. This also works with parsers added by the application.
 
-RinkuLib began as a Dapper extension, so the patterns carry over. There are two calling styles, and both mirror a Dapper call.
+## Run the first query
 
-- Hand the SQL to the connection. This reads almost like Dapper, and the command is built once and cached by the string.
-- Declare a reusable `QueryCommand` and call methods on it. This is the primary Rinku form. The SQL is parsed once up front and each call skips the by-string lookup.
+The same query in Dapper uses the element type as its generic argument.
 
 ```csharp
-// Dapper
-IEnumerable<Album> albums = cnn.Query<Album>("SELECT * FROM albums WHERE ArtistId = @id", new { id = 1 });
-
-// RinkuLib, SQL on the connection
-List<Album> albums = cnn.Query<List<Album>>("SELECT * FROM albums WHERE ArtistId = @id", new { id = 1 });
-
-// RinkuLib, reusable command
-static readonly QueryCommand ByArtist = new("SELECT * FROM albums WHERE ArtistId = @id");
-List<Album> albums = ByArtist.Query<List<Album>>(cnn, new { id = 1 });
+IEnumerable<Album> albums = Dapper.SqlMapper.Query<Album>(cnn, "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
 ```
 
-## The shape is a type argument
+The SQL-string shortcut puts the full requested result type in that position.
 
-Where Dapper picks the result shape with the method name, Rinku picks it with the `T` in `Query<T>`.
+```csharp
+List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
+```
 
-| Dapper | RinkuLib |
+A reusable command keeps the SQL outside the execution call.
+
+```csharp
+static readonly QueryCommand GetAlbumsByArtist = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+
+List<Album> albums = GetAlbumsByArtist.Query<List<Album>>(cnn, new { artistId = 7 });
+```
+
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+```
+
+The SQL-string call retrieves a globally cached `QueryCommand`. A declared command has an application-controlled identity and lifetime.
+
+## Choose a result shape
+
+This table shows common equivalents using the parsers included with Rinku.
+
+```csharp
+Album first = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
+Optional<Album> maybe = GetAlbum.Query<Optional<Album>>(cnn, new { albumId = 12 });
+Single<Album> single = GetAlbum.Query<Single<Album>>(cnn, new { albumId = 12 });
+List<Album> buffered = GetAlbums.Query<List<Album>>(cnn);
+IEnumerable<Album> streamed = GetAlbums.Query<IEnumerable<Album>>(cnn);
+```
+
+| Dapper | Rinku |
 | --- | --- |
 | `QueryFirst<T>` | `Query<T>` |
-| `QueryFirstOrDefault<T>` | `Query<Optional<T>>` |
+| `QueryFirst<T?>` for a value type | `Query<T?>` |
+| `QueryFirst<T?>` for a reference type | `Query<MaybeNull<T>>` |
+| `QueryFirstOrDefault<T>` for a reference type | `Query<Optional<T>>` |
+| `QueryFirstOrDefault<T>` for a value type | `Query<OptionalStruct<T>>` |
+| `QueryFirstOrDefault<T?>` for a reference type | `Query<OptionalNullable<T>>` |
+| `QueryFirstOrDefault<T?>` for a value type | `Query<OptionalNullableStruct<T>>` |
 | `QuerySingle<T>` | `Query<Single<T>>` |
-| `Query<T>` (buffered) | `Query<List<T>>` |
-| `Query<T>` (`buffered: false`) | `Query<IEnumerable<T>>` |
-| `Execute` | `Execute` |
-| `ExecuteScalar<T>` | `ExecuteScalar<T>` |
-| `QueryMultiple` | `ExecuteMultiReader` |
-| `Query<dynamic>` | `Query<DynaObject>` |
+| `QuerySingleOrDefault<T>` for a reference type | `Query<SingleOrDefault<T>>` |
+| `QuerySingleOrDefault<T>` for a value type | `Query<SingleOrDefaultStruct<T>>` |
+| buffered `Query<T>` | `Query<List<T>>` |
+| `Query<T>(buffered: false)` | `Query<IEnumerable<T>>` |
+| async row enumeration | `StreamQueryAsync<T>` |
 
-Each reads either way, `cnn.Query<List<T>>(sql, p)` or `cmd.Query<List<T>>(cnn, p)`. The result wrappers are on [result shapes](../running-queries/result-shapes.md).
+Database `NULL` and no result are separate choices. The [result-shape guide](../running-queries/result-shapes.md) covers the included wrappers and shows where to add custom parsers.
 
-## Parameters
+## Supply parameters
 
-The anonymous-object habit carries over unchanged. Any object or struct with public readable fields or properties can supply values. Member names match variables case-insensitively, and unmatched members are ignored.
-
-```csharp
-// Dapper
-cnn.Query<Album>("... WHERE ArtistId = @artistId", new { ArtistID = 1 });
-
-// RinkuLib
-cnn.Query<List<Album>>("... WHERE ArtistId = @artistId", new { ArtistID = 1 });
-```
-
-When C# logic should set the values instead of an object, a builder is the other road.
+The same anonymous parameter object works.
 
 ```csharp
-var b = ByArtist.StartBuilder();
-b.Use("@id", 1);
-List<Album> albums = b.Query<List<Album>>(cnn);
+List<Album> albums = GetAlbumsByArtist.Query<List<Album>>(cnn, new { ArtistID = 7 });
 ```
 
-The extra abilities (usage attributes, builders) are on [supplying values](../running-queries/parameters.md).
+Build the values incrementally when program logic decides which ones are present.
 
-## Dapper capabilities in Rinku
+```csharp
+static readonly QueryCommand ConditionalAlbumSearch = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title AND /*CurrentOnly*/IsArchived = 0");
 
-This is a capability comparison, not a list of matching method names. Rinku moves
-some choices from the call to the cached command, the result type, registration,
-or a composable handler.
+var values = ConditionalAlbumSearch.StartBuilder();
+if (artistId is int id)
+    values.Use("@artistId", id);
+if (!string.IsNullOrWhiteSpace(title))
+    values.Use("@title", title);
+if (!canSeeArchived)
+    values.Use("CurrentOnly");
+List<Album> albums = values.Query<List<Album>>(cnn);
+```
 
-| Dapper operation | Rinku expression |
+The [supplying-values guide](../running-queries/values.md) covers parameter objects, builders, included value attributes, positional parameters, and custom member rules.
+
+## Execute a batch
+
+Dapper can execute once for every item in a sequence.
+
+```csharp
+cnn.Execute("UPDATE albums SET Title = @title WHERE AlbumId = @albumId", albums);
+```
+
+Rinku binds one caller-owned command and replaces its values for each execution.
+
+```csharp
+static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+
+using DbCommand command = cnn.CreateCommand();
+var batch = UpdateAlbum.StartBuilder(command);
+
+foreach (Album album in albums) {
+    batch.UseWith(album);
+    batch.Execute();
+}
+```
+
+```sql
+UPDATE albums SET Title = @title WHERE AlbumId = @albumId
+```
+
+## Read several result sets
+
+```csharp
+public record Album(int Id, string Title) : IDbReadable;
+public record class ArtistWithAlbums(int Id, string Name) {
+    public List<Album> Albums { get; set; } = [];
+}
+
+using MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 });
+
+ArtistWithAlbums artist = results.Query<ArtistWithAlbums>();
+artist.Albums = results.Query<List<Album>>();
+```
+
+`ExecuteMultiReader` corresponds to Dapper's `QueryMultiple`. Each read selects a Rinku result parser in the same way as `Query<T>`.
+
+## Expand an IN value
+
+In Dapper, a sequence expands directly inside the parameter placeholder.
+
+```csharp
+IEnumerable<Album> albums = Dapper.SqlMapper.Query<Album>(cnn, "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN @albumIds", new { albumIds = new[] { 2, 5 } });
+```
+
+In Rinku, the `_X` handler expands the sequence into numbered parameters.
+
+```csharp
+List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@albumIds_X)", new { albumIds = new[] { 2, 5 } });
+```
+
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@albumIds_1, @albumIds_2)
+```
+
+## Build conditional SQL
+
+```csharp
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND AlbumId IN (?@albumIds_X)");
+
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+```
+
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+```
+
+Conditional markers replace the common `SqlBuilder` role. The included value handlers add collection spreading, numeric text, quoted text, and trusted raw fragments. You can add other suffixes.
+
+## Map nested values
+
+Dapper commonly uses multi-mapping with `splitOn`. Rinku maps nested objects from registrations, constructors, factories, naming rules, and the returned columns.
+
+```csharp
+public record Artist(int Id, string Name) : IDbReadable;
+public record Album(int Id, string Title, Artist Artist);
+
+static readonly QueryCommand GetAlbum = new(
+    "SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId WHERE al.AlbumId = @albumId");
+
+Album album = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
+```
+
+```sql
+SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId WHERE al.AlbumId = @albumId
+```
+
+## Find the matching entry point
+
+| Dapper capability | Rinku entry point |
 | --- | --- |
-| `Execute(sql, parameters)` | `QueryCommand.Execute` or `QueryBuilder.Execute` |
-| `Execute(sql, IEnumerable<T>)` | one `QueryBuilderCommand` and `UseWith` for each item |
-| `ExecuteReader` for a `DataTable` or `DataSet` | `ExecuteReader`, then use the returned reader directly |
-| stored procedure execution | `CommandType.StoredProcedure` or `StoredProcedure` registration |
-| output and return-value parameters | directional `DbParamInfo`, then read the handed-back command |
-| `DynamicParameters` | `QueryBuilder`, a registered parameter object, or `DbParamInfo` |
-| `SqlBuilder` | conditional SQL and handlers |
+| `Execute` | `QueryCommand.Execute` or builder `Execute` |
+| `ExecuteScalar<T>` | `QueryCommand.ExecuteScalar<T>` |
+| `ExecuteReader` | `QueryCommand.ExecuteReader` |
+| stored procedure | `CommandType.StoredProcedure` or `QueryCommand.FromProc` |
+| output and return values | directional `DbParamInfo` and `DbCommand` value helpers |
+| `DynamicParameters` | builder, parameter type, or `DbParamInfo` |
+| `SqlBuilder` | conditional SQL and value handlers |
 | `QueryMultiple` | `ExecuteMultiReader` and `MultiReader` |
-| `GetRowParser<T>` | `TypeParser.GetTypeParser<T>` and type registration |
-| per-row type switching | `GetCurrentSetParser<T>` or a custom parser selected by the caller |
-| multi-map with `splitOn` | registered nested types, tuples, or a custom construction path |
-| custom result type handler | `TypeConverterRegistry`, `ITypeConverter`, or a custom parser |
-| custom parameter type handler | `ConvertedDbParamInfo<T>` or a custom `DbParamInfo` |
-| `DbString` | a `DbParamInfo` that sets provider type, size, and encoding |
-| table-valued parameter | a provider-specific `DbParamInfo` |
-| literal replacement (`{=value}`) | query handlers such as `_N`, `_S`, and `_R` |
-| `dynamic` result | `DynaObject` |
-| buffered and unbuffered queries | `List<T>`, `IEnumerable<T>`, and `StreamQueryAsync<T>` |
-| async, cancellation, transactions, and timeout | the async, cancellation, transaction, and timeout overloads |
-
-For the upstream core operations and test cases, Rinku has an expression of
-the same underlying capability. The APIs are not identical, and Rinku's null
-and registration rules remain its own rules.
-
-The batch form is not a missing capability. It is a small wrapper around a
-reusable command, and the explicit loop leaves the caller in control of each
-item:
-
-```csharp
-var update = new QueryCommand(
-    "UPDATE tracks SET Name = @name WHERE Id = @id");
-using var command = cnn.CreateCommand();
-var batch = update.StartBuilder(command);
-
-foreach (var item in items) {
-    batch.UseWith(item);       // conditions, handlers, and custom DbParamInfo still apply
-    batch.Execute();           // the same DbCommand is reused
-}
-```
-
-The equivalent Dapper call chooses the parameter object and performs the loop
-inside Dapper:
-
-```csharp
-cnn.Execute(
-    "UPDATE tracks SET Name = @name WHERE Id = @id",
-    items);
-```
-
-The difference is the location of the loop, not the database operation or the
-mapping capability.
-
-For example, a multiple-result query and a dynamic result use the same cached
-command and reader infrastructure:
-
-```csharp
-var builder = Search.StartBuilder();
-builder.Use("@artistId", 1);
-builder.Use("WithTracks");
-
-using var multi = builder.ExecuteMultiReader(cnn);
-List<Album> albums = multi.Query<List<Album>>();
-List<Track> tracks = multi.Query<List<Track>>();
-
-// A Dapper dynamic row is read as Rinku's dynamic shape.
-List<DynaObject> rows = Search.Query<List<DynaObject>>(cnn, new { artistId = 1 });
-```
-
-Dapper provider cases can be reproduced through Rinku's provider-neutral entrypoints. Rinku does not pretend
-to be a provider implementation. The provider adapter supplies the provider-specific operation, while Rinku
-keeps the command and mapping pipeline generic:
-
-```csharp
-// The adapter knows how to read the provider's native array value.
-DbColumnReaderRegistry.Register<Array, int[]>(
-    (reader, ordinal) => reader.GetFieldValue<int[]>(ordinal));
-```
-
-The adapter can also take complete control of a provider parameter through `DbParamInfo`. Other provider
-seams include `IDbParamInfoGetter.ParamGetterMakers` for reading provider-resolved parameter metadata and
-`StoredProcedure.ParameterDeriver` for provider procedure metadata. A Dapper test that exercises provider
-behavior uses the same SQL and result shape, then installs the provider behavior through one of these seams.
-The provider is external to Rinku, but the capability remains available to the application.
-
-Positional parameters follow the same rule. Rinku does not rewrite named SQL into `?` placeholders, but a
-caller can provide positional SQL and an external `DbParamInfo` that creates the provider parameters in order:
-
-```csharp
-using System.Data;
-
-var query = new QueryCommand(
-    "UPDATE tracks SET Name = ? WHERE Id = ?",
-    ["0", "1"],
-    CommandType.Text);
-
-query.UpdateParamCache("@0", new PositionalParamInfo());
-query.UpdateParamCache("@1", new PositionalParamInfo());
-var positional = query.StartBuilder();
-positional.Use("@0", "Live");
-positional.Use("@1", 7);
-positional.Execute(cnn);
-```
-
-The SQL remains provider-specific, but the registration and execution path remain under the caller's control.
-
-Dapper multi-map uses `splitOn` because its mapping is chosen for one run. Rinku registers the nested types
-once, then negotiation finds their columns from the type and name rules:
-
-```csharp
-public class RegisteredChild {
-    public int Id { get; set; }
-    public string Name { get; set; } = null!;
-}
-public record RegisteredParent(int Id, RegisteredChild Child) : IDbReadable;
-
-_ = TypeParsingInfo.GetOrAdd<RegisteredChild>();
-static readonly QueryCommand Query = new("SELECT Id, ChildId, ChildName FROM rows");
-RegisteredParent row = Query.Query<RegisteredParent>(cnn);
-// Id | ChildId | ChildName -> RegisteredParent(Id, RegisteredChild(Id, Name))
-```
-
-There is no per-run split string. A user-controlled `TypeParsingInfo` or construction path can replace the
-default negotiation when the normal names are not enough.
-
-## Differences to keep in mind
-
-Rinku keeps its own null rule. A null column is accepted by a nullable slot, and a non-nullable slot
-raises `NullValueAssignmentException`. Dapper can leave a constructor or member default in this case when
-`ApplyNullValues` is off. The Rinku tests assert the Rinku rule instead of copying that setting.
-
-The same rule applies to a custom value type. Give the type a construction path or register one, then use
-the normal parameter path when writing it:
-
-```csharp
-public readonly record struct LocalDate(DateTime Value) : IDbReadable;
-
-public sealed record Invoice(LocalDate Date) : IDbReadable;
-
-// Read: a DateTime Value column can use LocalDate(DateTime).
-// The convenience registries cover the common custom scalar case.
-TypeConverterRegistry.Register<DateTime, RegisteredDate>(value => new RegisteredDate(value.AddDays(1)));
-
-// For a provider-specific or multi-step binding rule, implement DbParamInfo directly.
-sealed class LocalDateParam : DbParamInfo
-{
-    public LocalDateParam() : base(true) { }
-
-    public override bool SaveUse(string name, IDbCommand cmd, ref object value)
-    {
-        var p = Add(name, cmd, (LocalDate)value);
-        value = p;
-        return true;
-    }
-
-    public override bool Use(string name, IDbCommand cmd, object value)
-    {
-        Add(name, cmd, (LocalDate)value);
-        return true;
-    }
-
-    public override bool Use(string name, DbCommand cmd, object value)
-    {
-        Add(name, cmd, (LocalDate)value);
-        return true;
-    }
-
-    private static IDbDataParameter Add(string name, IDbCommand cmd, LocalDate value)
-    {
-        var p = (IDbDataParameter)cmd.CreateParameter();
-        p.ParameterName = name;
-        p.DbType = DbType.DateTime;
-        p.Value = value.Value;
-        cmd.Parameters.Add(p);
-        return p;
-    }
-
-    public override bool Update(IDbCommand cmd, ref object current, object newValue)
-    {
-        ((IDbDataParameter)current).Value = ((LocalDate)newValue).Value;
-        return true;
-    }
-
-    public override void Remove(IDbCommand cmd, object current)
-        => DbParamInfo.RemoveSingle(((IDbDataParameter)current).ParameterName, cmd);
-}
-```
-
-The convenience registries are optional default implementations. `ITypeConverter` and `DbParamInfo` remain
-the complete-takeover interfaces when their options are not enough.
-
-## IN clauses
-
-Dapper expands a collection parameter automatically. Rinku does it with the explicit `_X` suffix on the variable.
-
-```csharp
-// Dapper
-cnn.Query<Track>("SELECT * FROM tracks WHERE GenreId IN @genreIds", new { genreIds = new[] { 1, 2, 3 } });
-
-// RinkuLib
-cnn.Query<List<Track>>("SELECT * FROM tracks WHERE GenreId IN (@genreIds_X)", new { genreIds = new[] { 1, 2, 3 } });
-// GenreId IN (@genreIds_1, @genreIds_2, @genreIds_3)
-```
-
-## What replaces string-built SQL
-
-Where a Dapper codebase concatenates SQL or leans on `WHERE 1=1`, one [conditional template](../conditional-sql/index.md) covers the variations. Mark the optional parts and the values you pass decide the SQL.
-
-```csharp
-static readonly QueryCommand Search = new(
-    "SELECT * FROM tracks WHERE AlbumId = ?@albumId AND GenreId IN (?@genreIds_X)");
-
-Search.Query<List<Track>>(cnn, new { albumId = 1 });
-// SELECT * FROM tracks WHERE AlbumId = @albumId
-```
+| `GetRowParser<T>` | `TypeParser.GetTypeParser<T>` |
+| per-row type switching | `GetCurrentSetParser<T>` or a caller-selected parser |
+| multi-mapping | nested types, tuples, grouping, or a construction path |
+| custom mapped value | `TypeParsingInfo` |
+| custom complete-result behavior | `ITypeParserMaker` |
+| custom parameter handler | `ConvertedDbParamInfo<T>` or another `DbParamInfo` |
+| `DbString` | pinned `DbParamInfo` type and size |
+| literal replacement | `_N`, `_S`, `_R`, or a custom SQL handler |
+| dynamic row | `DynaObject` or `Dictionary<string, object>` |
+| buffered and streamed results | `List<T>`, arrays, `IEnumerable<T>`, `StreamQueryAsync<T>` |
+| transaction, timeout, cancellation | matching execution arguments |

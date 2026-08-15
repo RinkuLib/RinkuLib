@@ -1,7 +1,7 @@
 using System.Data;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -53,7 +53,7 @@ public class NegotiatedNestedMappingTests {
     [Fact]
     public void Grouped_nested_collections_associate_children_from_repeated_rows() {
         ColumnInfo[] columns = [new("Id", typeof(int), false), new("Name", typeof(string), false), new("ChildrenId", typeof(int), true), new("ChildrenName", typeof(string), true)];
-        var parser = TypeParser.GetTypeParser<List<AssociatedParent>>(ref columns);
+        var parser = TypeParser.GetTypeParser<List<AssociatedParent>>(columns);
         using var reader = Rows.Reader(columns, [1, "P1", 10, "c10"], [1, "P1", 11, "c11"], [2, "P2", 20, "c20"]);
         reader.Read();
         var grouped = parser.Parse(reader).Result;

@@ -1,59 +1,139 @@
-# Copying
+# Copying tracked values
 
-Tracking needs independent snapshots, an original to compare against, a state to revert to. `Copy<T>` makes one, with an IL-generated clone cached per type.
+`Copy<T>` creates the snapshots used by editable items. The generated clone is cached per type.
 
 ```csharp
 var snapshot = original.Copy();
 ```
 
-The default is a member-wise (shallow) clone. Attributes opt individual fields into deeper behavior.
+The default is a shallow member-wise clone. Attributes select deeper behavior for individual fields.
 
-## Field attributes
+## Copy one field deeply
 
-- `[Copy]` clones the field with `Copy<T>` (deep for that field).
-- `[ShallowCollection]` clones the collection container, shares the elements.
-- `[DeepCollection]` clones the container and clones each element.
-- `[CopyUsingMethod("Name")]` calls a zero-argument instance method on the container and assigns its return value to the field.
-
-Attributes are honored up the inheritance chain.
-
-## A mixed snapshot
-
-An invoice whose snapshot must own its line items but may share the immutable customer:
+`[Copy]` clones the field through its own `Copy<T>` behavior.
 
 ```csharp
 public sealed class Invoice {
-    public string Number = "";              // member-wise copy
-    public Customer Customer = null!;       // shared reference, intentionally
-
-    [DeepCollection]
-    public List<InvoiceLine> Lines = [];    // new list, fresh line clones
+    public string Number = "";
 
     [Copy]
-    public Address BillTo = null!;          // fresh Address
+    public Address BillTo = new();
 }
-
-Invoice snapshot = invoice.Copy();
 ```
 
-## Custom clone logic
+```csharp
+Invoice snapshot = invoice.Copy() ?? throw new InvalidOperationException("Copy failed.");
 
-Implement `ICopyable<T>` to take over the whole clone for a type. For direct collection clones without a containing object, `CollectionCopyExtensions` offers shallow (shared elements) and deep (cloned elements) copies.
+snapshot.BillTo.Street = "Changed";
+// invoice.BillTo remains unchanged.
+```
 
-When the type is external, register a field plan during setup:
+## Copy a collection container
+
+`[ShallowCollection]` creates another collection and shares its elements.
+
+```csharp
+public sealed class Playlist {
+    [ShallowCollection]
+    public List<Track> Tracks = [];
+}
+```
+
+```text
+snapshot.Tracks                 -> different list
+snapshot.Tracks[0]              -> same Track reference
+```
+
+## Copy a collection and its elements
+
+`[DeepCollection]` clones both the collection and every element.
+
+```csharp
+public sealed class Invoice {
+    [DeepCollection]
+    public List<InvoiceLine> Lines = [];
+}
+```
+
+```text
+snapshot.Lines                  -> different list
+snapshot.Lines[0]               -> cloned InvoiceLine
+```
+
+## Call a copy method
+
+`[CopyUsingMethod]` calls a zero-argument instance method and assigns its return value.
+
+```csharp
+public sealed class Report {
+    [CopyUsingMethod(nameof(CloneSettings))]
+    public ReportSettings Settings = new();
+
+    ReportSettings CloneSettings() => new(Settings);
+}
+```
+
+Copy attributes are honored through the inheritance chain.
+
+## Mix shallow and deep fields
+
+```csharp
+public sealed class Invoice {
+    public string Number = "";
+    public Customer Customer = new();
+
+    [DeepCollection]
+    public List<InvoiceLine> Lines = [];
+
+    [Copy]
+    public Address BillTo = new();
+}
+```
+
+```text
+Number    -> copied value
+Customer  -> shared reference
+Lines     -> new list with cloned elements
+BillTo    -> cloned object
+```
+
+## Replace copying for one type
+
+Implement `ICopyable<T>` when the type should own its complete clone operation.
+
+```csharp
+public sealed class Report : ICopyable<Report> {
+    public string Title { get; init; } = "";
+
+    public Report Copy() => new() { Title = Title };
+}
+
+Report snapshot = report.Copy();
+```
+
+For collections copied outside a containing object, `CollectionCopyExtensions` exposes shallow and deep operations directly.
+
+```csharp
+List<Report> shallow = reports.ShallowCopy();
+List<Report> deep = reports.DeepCopy();
+```
+
+## Configure an external type
+
+Register a field plan during application setup when attributes cannot be added to the type.
 
 ```csharp
 public sealed class ExternalInvoice {
-    public Address Address = null!;
+    public Address Address = new();
 }
 
-Copier<ExternalInvoice>.RegisterFieldPlan(
-    typeof(ExternalInvoice).GetField(nameof(ExternalInvoice.Address))!,
-    new CopyAttribute());
+FieldInfo address = typeof(ExternalInvoice).GetField(nameof(ExternalInvoice.Address)) ?? throw new InvalidOperationException("Address was not found.");
 
-ExternalInvoice snapshot = source.Copy()!;
-// Address is cloned even though ExternalInvoice has no attributes.
+Copier<ExternalInvoice>.RegisterFieldPlan(address, new CopyAttribute());
 ```
 
-`ICopyFieldPlan` is the core contract. `CopyAttribute`, `ShallowCollectionAttribute`,
-`DeepCollectionAttribute`, and `CopyUsingMethodAttribute` are built-in implementations.
+```csharp
+ExternalInvoice snapshot = source.Copy() ?? throw new InvalidOperationException("Copy failed.");
+```
+
+`ICopyFieldPlan` is the registration contract. `CopyAttribute`, `ShallowCollectionAttribute`, `DeepCollectionAttribute`, and `CopyUsingMethodAttribute` are its built-in implementations.

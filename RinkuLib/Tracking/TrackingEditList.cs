@@ -1,4 +1,4 @@
-﻿namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 
 /// <summary>
 /// A processor that validates and commits edit operations.
@@ -30,8 +30,7 @@ public interface IEditProcessor<TEdit, TMetadata> {
     /// </summary>
     /// <param name="value">The value to validate.</param>
     /// <param name="context">
-    /// Optional contextual data used during validation.
-    /// The meaning of this parameter is implementation-specific.
+    /// Optional data supplied to the validation rule.
     /// </param>
     /// <returns>
     /// Metadata describing the validation result

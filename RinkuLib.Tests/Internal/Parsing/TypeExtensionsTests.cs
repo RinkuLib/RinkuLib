@@ -1,10 +1,10 @@
 using System.Reflection;
 using System.Reflection.Emit;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
+using Rinku;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
 using RinkuLib.Tests.Mapping;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.DbParsing;
@@ -204,33 +204,43 @@ public class TypeExtensionsTests {
         usage.Use(0);
         Assert.True(usage.IsUsed(0));
         Assert.Equal(1, usage.NbUsed);
+        Assert.Equal(1, usage.NbClaims);
         Assert.Equal(0, usage.LastIndexUsed);
         Assert.Equal(3, usage.Length);
 
         Span<bool> checkpoint = stackalloc bool[3];
-        usage.InitCheckpoint(checkpoint, out var last);
+        usage.InitCheckpoint(checkpoint, out var last, out var claims);
         usage.Use(2);
         Assert.Equal(2, usage.NbUsed);
-        usage.Rollback(checkpoint, last);
+        usage.Rollback(checkpoint, last, claims);
         Assert.Equal(1, usage.NbUsed);
+        Assert.Equal(1, usage.NbClaims);
         Assert.False(usage.IsUsed(2));
         Assert.Equal(0, usage.LastIndexUsed);
 
-        bool threw = false;
+        usage.Reuse(1);
+        Assert.Equal(1, usage.NbUsed);
+        Assert.Equal(2, usage.NbClaims);
+        Assert.False(usage.IsUsed(1));
+        Assert.Equal(0, usage.LastIndexUsed);
+
         try {
             Span<bool> wrong = stackalloc bool[2];
-            usage.InitCheckpoint(wrong, out _);
+            usage.InitCheckpoint(wrong, out _, out _);
+            Assert.Fail("A checkpoint with the wrong length must be rejected.");
         }
-        catch (Exception) { threw = true; }
-        Assert.True(threw);
+        catch (RinkuInternalException ex) {
+            Assert.Equal(ErrorCodes.InternalInvariant, ex.Code);
+        }
 
-        threw = false;
         try {
             Span<bool> wrong = stackalloc bool[5];
-            usage.Rollback(wrong, 0);
+            usage.Rollback(wrong, 0, 0);
+            Assert.Fail("A checkpoint with the wrong length must be rejected.");
         }
-        catch (Exception) { threw = true; }
-        Assert.True(threw);
+        catch (RinkuInternalException ex) {
+            Assert.Equal(ErrorCodes.InternalInvariant, ex.Code);
+        }
     }
 
 

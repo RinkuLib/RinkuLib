@@ -1,6 +1,6 @@
 using Microsoft.Data.SqlClient;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using Xunit;
 
 namespace RinkuLib.Tests.TestContainers;
@@ -84,5 +84,33 @@ public class MultiResultSetTests(MultiResultSetFixture Fixture) : IClassFixture<
             ids.Add(id);
 
         Assert.Equal(new[] { 2 }, ids);
+    }
+
+    [Fact]
+    public async Task Dispose_releases_an_incomplete_reader_and_leaves_the_connection_usable() {
+        var ct = TestContext.Current.CancellationToken;
+        using var cnn = await OpenSeeded(Fixture, ct);
+        var multi = Fixture.TwoSets.ExecuteMultiReader(cnn, new { a = 2, b = 4 });
+
+        Assert.True(multi.Read());
+        multi.Dispose();
+
+        using var cmd = cnn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM #mrs";
+        Assert.Equal(5, Convert.ToInt32(cmd.ExecuteScalar()));
+    }
+
+    [Fact]
+    public async Task DisposeAsync_releases_an_incomplete_reader_and_leaves_the_connection_usable() {
+        var ct = TestContext.Current.CancellationToken;
+        using var cnn = await OpenSeeded(Fixture, ct);
+        var multi = await Fixture.TwoSets.ExecuteMultiReaderAsync(cnn, new { a = 2, b = 4 }, ct: ct);
+
+        Assert.True(await multi.ReadAsync(ct));
+        await multi.DisposeAsync();
+
+        await using var cmd = cnn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM #mrs";
+        Assert.Equal(5, Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)));
     }
 }

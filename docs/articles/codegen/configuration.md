@@ -1,6 +1,6 @@
-# Configuration
+# Code-generation configuration
 
-The Visual Studio managers read and write `rinkupt.json` in your project directory (`rinkupt.{name}.json` for a named config, one project can hold several). It is plain JSON, edit it by hand and commit it.
+The Visual Studio managers read and write `rinkupt.json` in the project directory. A named configuration uses `rinkupt.{name}.json`, so one project can keep several configurations.
 
 ```json
 {
@@ -11,51 +11,121 @@ The Visual Studio managers read and write `rinkupt.json` in your project directo
   "IsInternal": false,
   "Queries": [
     {
-      "MethodName": "GetTracksByAlbum",
-      "SQLQuery": "SELECT TrackId AS Id, Name, UnitPrice FROM tracks WHERE AlbumId >= @albumId"
+      "MethodName": "GetAlbumsByArtist",
+      "SQLQuery": "SELECT AlbumId AS Id, Title, ReleaseYear FROM albums WHERE ArtistId = @artistId"
     },
     {
       "MethodName": "ArchiveInvoices",
       "StoredProcName": "dbo.ArchiveInvoices",
       "ResultSetName": "ArchivedInvoice",
       "Parameters": [
-        { "Name": "@cutoff", "Type": "datetime2", "IsNullable": false }
+        {
+          "Name": "@cutoff",
+          "Type": "datetime2",
+          "IsNullable": false
+        }
       ]
     }
   ]
 }
 ```
 
-Two conventions in the shape:
+The connection-source property carries both the source type and its value.
 
-- **The connection source is the property name.** `"JsonFile": "appsettings.json"` both selects the JSON-file source and points at the file. `ConnectionExtractionPath` locates the string inside it.
-- **Each query's source is its key.** One of `SQLQuery` (inline SQL), `StoredProcName`, or `SQLFile` (a `.sql` file path).
+```json
+{
+  "JsonFile": "appsettings.json",
+  "ConnectionExtractionPath": "ConnectionStrings:Default"
+}
+```
 
-## Query settings
+`ConnectionExtractionPath` locates the value inside the selected source.
 
-| Field | Meaning |
+## Query sources
+
+Each query uses one source property.
+
+Use `SQLQuery` when the statement is stored directly in the configuration.
+
+```json
+{
+  "MethodName": "GetAlbums",
+  "SQLQuery": "SELECT AlbumId AS Id, Title FROM albums"
+}
+```
+
+Use `StoredProcName` when generation should inspect a stored procedure.
+
+```json
+{
+  "MethodName": "ArchiveInvoices",
+  "StoredProcName": "dbo.ArchiveInvoices"
+}
+```
+
+Use `SQLFile` when the statement belongs in a separate file.
+
+```json
+{
+  "MethodName": "GetAlbumReport",
+  "SQLFile": "Sql/GetAlbumReport.sql"
+}
+```
+
+The remaining query fields control the generated code.
+
+| Field | Effect |
 | --- | --- |
-| `MethodName` | The generated method's name. |
-| `SQLQuery` / `StoredProcName` / `SQLFile` | The query's source, one of these. |
-| `ResultSetName` | Optional name for the generated result record. |
-| `Parameters` | Optional `[ { Name, Type, IsNullable } ]` overrides for parameters the database cannot fully infer. |
+| `MethodName` | Names the generated command method. |
+| `ResultSetName` | Replaces the generated result-record name. |
+| `Parameters` | Overrides parameter name, database type, or nullability when inspection cannot determine them. |
 
-## Output settings
+## Generated output
 
-| Field | Meaning |
+```json
+{
+  "OutputPath": "Data/Generated",
+  "Namespace": "MyApp.Data",
+  "IsInternal": false
+}
+```
+
+| Field | Effect |
 | --- | --- |
-| `OutputPath` | Where generated files go, relative to the project. |
-| `Namespace` | Base namespace for the generated code. |
-| `IsInternal` | Generate `internal` types instead of `public`. |
+| `OutputPath` | Selects the generated directory relative to the project. |
+| `Namespace` | Sets the generated namespace. |
+| `IsInternal` | Uses `internal` instead of `public` generated types. |
 
 ## Connection sources
 
-| Source key | Value | Extraction path |
-| --- | --- | --- |
-| `RawConnectionString` | the connection string itself | n/a |
-| `EnvironmentVariable` | the variable name | n/a |
-| `JsonFile` | path to a `.json` file | `:`-separated property path |
-| `NetUserSecrets` | path to the `.csproj` | `:`-separated path into `secrets.json` |
-| `LaunchSettings` | uses `Properties/launchSettings.json` | `ProfileName:VariableName` |
+`RawConnectionString` stores the connection string directly.
 
-`XmlFile`, `IniFile`, `DotEnvFile`, and `MsBuildProject` also exist. `VsDataConnection` and `CloudSecret` remain unavailable because they require host-specific integrations that are outside the PowerTools assembly.
+```json
+{ "RawConnectionString": "..." }
+```
+
+`EnvironmentVariable` reads the connection string from the named variable.
+
+```json
+{ "EnvironmentVariable": "APP_DATABASE" }
+```
+
+`NetUserSecrets` reads a value from the selected project’s user secrets.
+
+```json
+{
+  "NetUserSecrets": "MyApp.csproj",
+  "ConnectionExtractionPath": "ConnectionStrings:Default"
+}
+```
+
+`LaunchSettings` reads a value from the selected launch profile.
+
+```json
+{
+  "LaunchSettings": "Properties/launchSettings.json",
+  "ConnectionExtractionPath": "Development:APP_DATABASE"
+}
+```
+
+`XmlFile`, `IniFile`, `DotEnvFile`, and `MsBuildProject` are also available. `VsDataConnection` and `CloudSecret` are not currently implemented.

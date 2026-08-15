@@ -1,0 +1,231 @@
+using System.Data;
+using System.Data.Common;
+using System.Runtime.CompilerServices;
+
+namespace Rinku.Mapping.Parsers;
+
+/// <summary>
+/// Base class for a custom result shape. Implement <see cref="Parse"/> and <see cref="Default"/> then use
+/// the inherited query methods to run commands with that shape.
+/// </summary>
+public abstract class BaseTypeParser<T> : ITypeParser<T> {
+    /// <inheritdoc/>
+    public virtual void Dispose() { }
+    bool ITypeParser<T>.InternalProtect => true;
+    /// <inheritdoc/>
+    public abstract bool CanParse(ColumnInfo[] schema);
+    /// <inheritdoc/>
+    public abstract CommandBehavior Behavior { get; }
+
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public abstract T Default();
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public abstract (bool CanContinue, T Result) Parse(DbDataReader reader);
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public abstract ValueTask<(bool CanContinue, T Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default);
+
+    /// <inheritdoc/>
+    public T Query(DbCommand command, bool disposeCommand = false) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            using var reader = command.ExecuteReader(behavior);
+            wasClosed = false;
+            T result;
+            if (!reader.Read())
+                result = Default();
+            else if (this is ISimpleParser<T> simple)
+                result = simple.RowParser(reader);
+            else
+                result = Parse(reader).Result;
+            ResultSetDrainer.Drain(reader);
+            return result;
+        }
+        finally {
+            if (wasClosed)
+                cnn.Close();
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+        }
+    }
+    /// <inheritdoc/>
+    public T Query(IDbCommand command, bool disposeCommand = false) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            var r = command.ExecuteReader(behavior);
+            using var reader = WrappedBasicReader.Wrap(r);
+            wasClosed = false;
+            if (!reader.Read())
+                return Default();
+            if (this is ISimpleParser<T> simple)
+                return simple.RowParser(reader);
+            return Parse(reader).Result;
+        }
+        finally {
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+            if (wasClosed)
+                cnn.Close();
+        }
+    }
+    /// <inheritdoc/>
+    public async Task<T> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            using var reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            wasClosed = false;
+            T result;
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                result = Default();
+            else if (this is ISimpleParser<T> simple)
+                result = simple.RowParser(reader);
+            else
+                result = (await ParseAsync(reader, ct).ConfigureAwait(false)).Result;
+            await ResultSetDrainer.DrainAsync(reader, ct).ConfigureAwait(false);
+            return result;
+        }
+        finally {
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+            if (wasClosed)
+                await cnn.CloseAsync().ConfigureAwait(false);
+        }
+    }
+    /// <inheritdoc/>
+    public Task<T> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+        if (command is DbCommand c)
+            return QueryAsync(c, disposeCommand, ct);
+        return Task.FromResult(Query(command, disposeCommand));
+    }
+
+
+    /// <inheritdoc/>
+    public T Query(DbCommand command, ICache cache, bool disposeCommand = false) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            using var reader = command.ExecuteReader(behavior);
+            wasClosed = false;
+            cache.UpdateCache(command);
+            T result;
+            if (!reader.Read())
+                result = Default();
+            else if (this is ISimpleParser<T> simple)
+                result = simple.RowParser(reader);
+            else
+                result = Parse(reader).Result;
+            ResultSetDrainer.Drain(reader);
+            return result;
+        }
+        finally {
+            if (wasClosed)
+                cnn.Close();
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+        }
+    }
+    /// <inheritdoc/>
+    public T Query(IDbCommand command, ICache cache, bool disposeCommand = false) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            var r = command.ExecuteReader(behavior);
+            using var reader = WrappedBasicReader.Wrap(r);
+            wasClosed = false;
+            cache.UpdateCache(command);
+            T result;
+            if (!reader.Read())
+                result = Default();
+            else if (this is ISimpleParser<T> simple)
+                result = simple.RowParser(reader);
+            else
+                result = Parse(reader).Result;
+            ResultSetDrainer.Drain(reader);
+            return result;
+        }
+        finally {
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+            if (wasClosed)
+                cnn.Close();
+        }
+    }
+    /// <inheritdoc/>
+    public async Task<T> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            using var reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            wasClosed = false;
+            cache.UpdateCache(command);
+            T result;
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                result = Default();
+            else if (this is ISimpleParser<T> simple)
+                result = simple.RowParser(reader);
+            else
+                result = (await ParseAsync(reader, ct).ConfigureAwait(false)).Result;
+            await ResultSetDrainer.DrainAsync(reader, ct).ConfigureAwait(false);
+            return result;
+        }
+        finally {
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+            if (wasClosed)
+                await cnn.CloseAsync().ConfigureAwait(false);
+        }
+    }
+    /// <inheritdoc/>
+    public Task<T> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+        if (command is DbCommand c)
+            return QueryAsync(c, cache, disposeCommand, ct);
+        return Task.FromResult(Query(command, cache, disposeCommand));
+    }
+}

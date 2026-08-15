@@ -1,6 +1,6 @@
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -189,6 +189,133 @@ public class DynaObjectTests {
     }
 
     [Fact]
+    public void A_named_DynaObject_owns_only_columns_with_its_prefix() {
+        ColumnInfo[] cols = [
+            new("Id", typeof(int), false),
+            new("Name", typeof(string), false),
+            new("AlbumId", typeof(int), false),
+            new("AlbumTitle", typeof(string), false),
+            new("Ignored", typeof(string), false),
+        ];
+
+        var artist = Rows.ParseOne<ArtistWithDynamicAlbum>(cols, 7, "Muse", 12, "Absolution", "outside");
+
+        Assert.Equal(7, artist.Id);
+        Assert.Equal("Muse", artist.Name);
+        Assert.Equal(["AlbumId", "AlbumTitle"], artist.Album.Keys);
+        Assert.Equal(12, artist.Album.Get<int>("AlbumId"));
+        Assert.Equal("Absolution", artist.Album.Get<string>("AlbumTitle"));
+    }
+
+    [Fact]
+    public void Two_named_DynaObjects_own_separate_column_groups() {
+        ColumnInfo[] cols = [
+            new("AlbumId", typeof(int), false),
+            new("ArtistId", typeof(int), false),
+            new("AlbumTitle", typeof(string), false),
+            new("ArtistName", typeof(string), false),
+        ];
+
+        var row = Rows.ParseOne<TwoDynamicGroups>(cols, 12, 7, "Absolution", "Muse");
+
+        Assert.Equal(["AlbumId", "AlbumTitle"], row.Album.Keys);
+        Assert.Equal(["ArtistId", "ArtistName"], row.Artist.Keys);
+    }
+
+    [Fact]
+    public void Generated_parser_targets_are_always_an_array() {
+        ColumnInfo[] scalarCols = [new("Value", typeof(int), false)];
+        ColumnInfo[] dynamicCols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
+        ColumnInfo[] groupedCols = [
+            new("AlbumId", typeof(int), false),
+            new("AlbumTitle", typeof(string), false),
+            new("ArtistId", typeof(int), false),
+            new("ArtistName", typeof(string), false),
+        ];
+
+        var scalar = Assert.IsAssignableFrom<ISimpleParser<int>>(TypeParser.GetTypeParser<int>(scalarCols));
+        var dynamic = Assert.IsAssignableFrom<ISimpleParser<DynaObject>>(TypeParser.GetTypeParser<DynaObject>(dynamicCols));
+        var grouped = Assert.IsAssignableFrom<ISimpleParser<TwoDynamicGroups>>(TypeParser.GetTypeParser<TwoDynamicGroups>(groupedCols));
+
+        Assert.Empty(Assert.IsType<object[]>(scalar.RowParser.Target));
+        Assert.Single(Assert.IsType<object[]>(dynamic.RowParser.Target));
+        Assert.Equal(2, Assert.IsType<object[]>(grouped.RowParser.Target).Length);
+    }
+
+    [Fact]
+    public void Alt_adds_another_prefix_for_a_named_DynaObject() {
+        ColumnInfo[] cols = [new("RecordId", typeof(int), false), new("RecordTitle", typeof(string), false)];
+
+        var row = Rows.ParseOne<AlternateDynamicGroup>(cols, 12, "Absolution");
+
+        Assert.Equal(["RecordId", "RecordTitle"], row.Album.Keys);
+    }
+
+    [Fact]
+    public void A_custom_name_comparer_controls_a_DynaObject_group() {
+        ColumnInfo[] cols = [new("PayloadCode", typeof(int), false), new("PayloadText", typeof(string), false)];
+
+        var row = Rows.ParseOne<CustomDynamicGroup>(cols, 4, "ready");
+
+        Assert.Equal(["PayloadCode", "PayloadText"], row.Details.Keys);
+    }
+
+    [Fact]
+    public void A_named_DynaObject_uses_its_complete_parent_prefix() {
+        ColumnInfo[] cols = [
+            new("ArtistId", typeof(int), false),
+            new("ArtistName", typeof(string), false),
+            new("ArtistAlbumId", typeof(int), false),
+            new("ArtistAlbumTitle", typeof(string), false),
+        ];
+
+        var row = Rows.ParseOne<DynamicEnvelope>(cols, 7, "Muse", 12, "Absolution");
+
+        Assert.Equal(7, row.Artist.Id);
+        Assert.Equal(["ArtistAlbumId", "ArtistAlbumTitle"], row.Artist.Album.Keys);
+    }
+
+    [Fact]
+    public void A_DynaObject_uses_every_level_of_a_deep_path() {
+        ColumnInfo[] cols = [
+            new("DepartmentArtistId", typeof(int), false),
+            new("DepartmentArtistName", typeof(string), false),
+            new("DepartmentArtistAlbumId", typeof(int), false),
+            new("DepartmentArtistAlbumTitle", typeof(string), false),
+        ];
+
+        var row = Rows.ParseOne<DeepDynamicRoot>(cols, 7, "Muse", 12, "Absolution");
+
+        Assert.Equal(7, row.Department.Artist.Id);
+        Assert.Equal(["DepartmentArtistAlbumId", "DepartmentArtistAlbumTitle"], row.Department.Artist.Album.Keys);
+    }
+
+    [Fact]
+    public void DynaObjects_at_different_levels_keep_their_own_columns() {
+        ColumnInfo[] cols = [
+            new("HeaderCount", typeof(int), false),
+            new("BodyId", typeof(int), false),
+            new("BodyAlbumId", typeof(int), false),
+            new("BodyAlbumTitle", typeof(string), false),
+        ];
+
+        var row = Rows.ParseOne<MixedDynamicLevels>(cols, 3, 7, 12, "Absolution");
+
+        Assert.Equal(["HeaderCount"], row.Header.Keys);
+        Assert.Equal(7, row.Body.Id);
+        Assert.Equal(["BodyAlbumId", "BodyAlbumTitle"], row.Body.Album.Keys);
+    }
+
+    [Fact]
+    public void A_nested_DynaObject_refuses_a_schema_with_no_columns_left_instead_of_throwing() {
+        ColumnInfo[] original = [new("ID", typeof(int), false), new("Name", typeof(string), false)];
+        ColumnInfo[] noTail = [new("ID", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<(int, DynaObject)>(original);
+
+        Assert.False(parser.CanParse(noTail));
+    }
+
+    [Fact]
     public void NoName_member_takes_the_rest_of_the_row() {
         var badge = Guid.NewGuid();
         ColumnInfo[] cols = [
@@ -265,3 +392,26 @@ public class DynaObjectTests {
 
 public record struct DynaHolder<T>([CanNotLookAnywhere] T ID, [NoName] DynaObject Rest);
 public record struct DynaSplit<T>(T IdAnywhere, [NoName] DynaObject Rest);
+public record ArtistWithDynamicAlbum(int Id, string Name, DynaObject Album);
+public record TwoDynamicGroups(DynaObject Album, DynaObject Artist);
+public record AlternateDynamicGroup([Alt("Record")] DynaObject Album);
+public record CustomDynamicGroup([DynamicPrefix("Payload")] DynaObject Details);
+public record DynamicEnvelope(DynamicNestedArtist Artist);
+public record DynamicNestedArtist(int Id, string Name, DynaObject Album) : IDbReadable;
+public record DeepDynamicRoot(DynamicDepartment Department);
+public record DynamicDepartment(DynamicNestedArtist Artist) : IDbReadable;
+public record MixedDynamicLevels(DynaObject Header, DynamicBody Body);
+public record DynamicBody(int Id, DynaObject Album) : IDbReadable;
+
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class DynamicPrefixAttribute(string prefix) : Attribute, INameComparerMaker {
+    public INameComparer MakeComparer(Type type, ref INameComparer current, object[] attributes, object? param)
+        => new ExactDynamicPrefix(prefix);
+}
+
+public sealed record ExactDynamicPrefix(string Prefix) : INameComparer {
+    public string GetDefaultName() => Prefix;
+    public bool Match(ReadOnlySpan<char> colName, Span<INameComparer> nameComparers)
+        => nameComparers.Length == 0 && colName.Equals(Prefix, StringComparison.OrdinalIgnoreCase);
+    public bool Contains(string name) => string.Equals(name, Prefix, StringComparison.OrdinalIgnoreCase);
+}

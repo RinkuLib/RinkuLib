@@ -1,10 +1,11 @@
 using System.Data.Common;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using System.Reflection;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -14,6 +15,8 @@ namespace RinkuLib.Tests.Execution;
 /// SQL never poison each other's cache.
 /// </summary>
 public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
+    public record UserIdentity(long ID, string Name, string? Email = null);
+
     [Fact]
     public void Each_condition_shape_gets_its_own_parser() {
         var query = new QueryCommand("SELECT ID, /*Name*/Name FROM Users WHERE Name = ?@Name");
@@ -172,6 +175,99 @@ public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(["ID", "Name"], second.Query<DynaObject>(cnn).Keys.ToArray());
     }
 
+    [Fact]
+    public void Non_generic_CachedTypeParser_caches_each_requested_type_over_its_fixed_schema() {
+        using var cache = CachedTypeParser.From<UserRow>();
+        var userParser = cache.Get<UserRow>();
+        Assert.Same(userParser, cache.Get<UserRow>());
+
+        var identityParser = cache.Get<UserIdentity>();
+        Assert.NotSame(userParser, identityParser);
+
+        using var cnn = Db.Open();
+        using var cmd = cnn.CreateCommand();
+        cmd.CommandText = "SELECT ID, Name, Email FROM Users WHERE ID = 1";
+        Assert.Equal("John", userParser.Query(cmd).Name);
+        Assert.Equal("John", identityParser.Query(cmd).Name);
+    }
+
+    [Fact]
+    public void Non_generic_CachedTypeParser_accepts_every_schema_source() {
+        using var type = new CachedTypeParser(typeof(UserRow));
+        using var ctor = new CachedTypeParser(typeof(UserRow).GetConstructors()[0]);
+        MethodInfo methodInfo = typeof(CachingTests).GetMethod(nameof(MakeUserIdentity))
+            ?? throw new InvalidOperationException("The schema factory method was not found.");
+        using var method = new CachedTypeParser(methodInfo);
+        using var factory = new CachedTypeParser((Func<long, string, string?, UserIdentity>)MakeUserIdentity);
+        using var generic = CachedTypeParser.From<UserRow>();
+
+        Assert.NotNull(type.Get<UserIdentity>());
+        Assert.NotNull(ctor.Get<UserIdentity>());
+        Assert.NotNull(method.Get<UserIdentity>());
+        Assert.NotNull(factory.Get<UserIdentity>());
+        Assert.NotNull(generic.Get<UserIdentity>());
+    }
+
+    public static UserIdentity MakeUserIdentity(long id, string name, string? email) => new(id, name, email);
+
+    /// <summary>
+    /// A root dictionary is the schema-adaptive alternative for a controlled raw projection. Its cached row
+    /// parser asks the current reader for names and values, so changing a handler value does not reuse stale
+    /// ordinals or names.
+    /// </summary>
+    [Fact]
+    public void A_dictionary_adapts_when_a_raw_handler_changes_the_projection() {
+        var query = new QueryCommand("SELECT @Cols_R FROM Users WHERE ID = 2");
+        using var cnn = Db.Open();
+
+        var first = query.StartBuilder();
+        first.Use("@Cols", "ID, Name");
+        var identity = first.Query<Dictionary<string, object>>(cnn);
+        Assert.Equal(["ID", "Name"], identity.Keys);
+        Assert.Equal(2L, identity["ID"]);
+        Assert.Equal("Victor", identity["Name"]);
+
+        var second = query.StartBuilder();
+        second.Use("@Cols", "Salary, Email");
+        var contact = second.Query<Dictionary<string, object>>(cnn);
+        Assert.Equal(["Salary", "Email"], contact.Keys);
+        Assert.Equal(20.0, contact["Salary"]);
+        Assert.Equal("victor@corp.com", contact["Email"]);
+    }
+
+    [Fact]
+    public void A_dictionary_deduplicates_runtime_column_names() {
+        var query = new QueryCommand("SELECT ID AS Value, Name AS Value FROM Users WHERE ID = 1");
+        using var cnn = Db.Open();
+
+        var row = query.Query<Dictionary<string, object>>(cnn);
+
+        Assert.Equal(["Value", "Value#2"], row.Keys);
+        Assert.Equal(1L, row["value"]);
+        Assert.Equal("John", row["VALUE#2"]);
+    }
+
+    [Fact]
+    public void A_list_of_dictionaries_adapts_every_row_after_a_raw_projection_changes() {
+        var query = new QueryCommand("SELECT @Cols_R FROM Users ORDER BY ID");
+        using var cnn = Db.Open();
+
+        var first = query.StartBuilder();
+        first.Use("@Cols", "ID, Name");
+        var identities = first.Query<List<Dictionary<string, object>>>(cnn);
+        Assert.Equal(3, identities.Count);
+        Assert.Equal(["ID", "Name"], identities[0].Keys);
+        Assert.Equal("Alice", identities[2]["Name"]);
+
+        var second = query.StartBuilder();
+        second.Use("@Cols", "Email, Salary");
+        var contacts = second.Query<List<Dictionary<string, object>>>(cnn);
+        Assert.Equal(3, contacts.Count);
+        Assert.Equal(["Email", "Salary"], contacts[0].Keys);
+        Assert.Null(contacts[0]["Email"]);
+        Assert.Equal(20.0, contacts[1]["Salary"]);
+    }
+
     /// <summary>
     /// A command read through a <see cref="MultiReader"/> stores a parser per result set. Running it on its
     /// own afterwards has to take the first set's, so the lookup skips an entry belonging to another set
@@ -229,7 +325,7 @@ public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Parallel.For(0, threads, i => {
             var cols = (ColumnInfo[])shape.Clone();
             barrier.SignalAndWait();
-            parsers[i] = TypeParser.GetTypeParser<RacedRow>(ref cols);
+            parsers[i] = TypeParser.GetTypeParser<RacedRow>(cols);
         });
 
         Assert.All(parsers, p => Assert.Same(parsers[0], p));

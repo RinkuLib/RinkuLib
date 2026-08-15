@@ -1,9 +1,9 @@
 using System.Data;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.TypeAccessing;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -18,6 +18,8 @@ public class ReaderTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand TwoTypedSets = new("SELECT CAST(1 AS BIGINT) AS Col1; SELECT CAST(2 AS BIGINT) AS Col2");
     private static readonly QueryCommand FiveSets = new("SELECT 1; SELECT 2; SELECT 3; SELECT 4; SELECT 5");
     private static readonly QueryCommand UsersByFlag = new("SELECT ID FROM Users WHERE IsActive = @a ORDER BY ID; SELECT ID FROM Users WHERE IsActive = @b ORDER BY ID");
+    private static readonly QueryCommand ArtistWithAlbumsQuery = new("SELECT 7 AS Id, 'Queen' AS Name; SELECT 10 AS Id, 'Jazz' AS Title UNION ALL SELECT 11 AS Id, 'The Game' AS Title");
+    private static readonly QueryCommand EmployeeAndManagerQuery = new("SELECT 1 AS Id, 'Ada' AS Name, 2 AS Id, 'Grace' AS Name");
 
     [Fact]
     public void ExecuteReader_returns_the_result() {
@@ -108,6 +110,30 @@ public class ReaderTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     }
 
     [Fact]
+    public void MultiReader_can_attach_a_second_result_set_to_a_constructor_mapped_record() {
+        using var cnn = Db.Open();
+        using var results = ArtistWithAlbumsQuery.ExecuteMultiReader(cnn, out var cmd);
+
+        ArtistWithAlbums artist = results.Query<ArtistWithAlbums>();
+        artist.Albums = results.Query<List<Album>>();
+
+        Assert.Equal(7, artist.Id);
+        Assert.Equal("Queen", artist.Name);
+        Assert.Equal([new Album(10, "Jazz"), new Album(11, "The Game")], artist.Albums);
+        cmd.Dispose();
+    }
+
+    [Fact]
+    public void Query_maps_employee_and_manager_from_duplicate_column_names() {
+        using var cnn = Db.Open();
+
+        (Employee employee, Employee manager) = EmployeeAndManagerQuery.Query<(Employee, Employee)>(cnn);
+
+        Assert.Equal(new Employee(1, "Ada"), employee);
+        Assert.Equal(new Employee(2, "Grace"), manager);
+    }
+
+    [Fact]
     public async Task MultiReader_alternates_between_stream_and_single_reads() {
         using var cnn = Db.Open();
         using var multi = await FiveSets.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
@@ -127,6 +153,54 @@ public class ReaderTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal([4], fourth);
 
         Assert.Equal(5, await multi.QueryAsync<int>(TestContext.Current.CancellationToken));
+        cmd.Dispose();
+    }
+
+    [Fact]
+    public async Task Disposing_a_multi_reader_stream_advances_to_the_next_result_set() {
+        using var cnn = Db.Open();
+        using var multi = await TwoSets.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
+
+        await using (IAsyncEnumerator<int> stream = multi.StreamQueryAsync<int>(ct: TestContext.Current.CancellationToken).GetAsyncEnumerator(TestContext.Current.CancellationToken)) {
+            Assert.True(await stream.MoveNextAsync());
+            Assert.Equal(1, stream.Current);
+        }
+
+        Assert.Equal(2, await multi.QueryAsync<int>(TestContext.Current.CancellationToken));
+        cmd.Dispose();
+    }
+
+    [Fact]
+    public async Task Disposing_a_multi_reader_stream_can_leave_the_reader_on_the_current_result_set() {
+        using var cnn = Db.Open();
+        using var multi = await TwoSets.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
+
+        await using (IAsyncEnumerator<int> stream = multi.StreamQueryAsync<int>(goToNextResultSet: false, ct: TestContext.Current.CancellationToken).GetAsyncEnumerator(TestContext.Current.CancellationToken)) {
+            Assert.True(await stream.MoveNextAsync());
+            Assert.Equal(1, stream.Current);
+        }
+
+        Assert.Equal(1L, multi.GetInt64(0));
+        Assert.True(await multi.NextResultAsync(TestContext.Current.CancellationToken));
+        Assert.True(await multi.ReadAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(2L, multi.GetInt64(0));
+        cmd.Dispose();
+    }
+
+    [Fact]
+    public async Task Cancelling_a_multi_reader_stream_still_advances_during_cleanup() {
+        using var cnn = Db.Open();
+        using var multi = await TwoSets.ExecuteMultiReaderAsync(cnn, out var cmd, ct: TestContext.Current.CancellationToken);
+        using var cancelled = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+
+        await using (IAsyncEnumerator<int> stream = multi.StreamQueryAsync<int>(ct: cancelled.Token).GetAsyncEnumerator(cancelled.Token)) {
+            Assert.True(await stream.MoveNextAsync());
+            Assert.Equal(1, stream.Current);
+            cancelled.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await stream.MoveNextAsync());
+        }
+
+        Assert.Equal(2, await multi.QueryAsync<int>(TestContext.Current.CancellationToken));
         cmd.Dispose();
     }
 
@@ -228,6 +302,36 @@ public class ReaderTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     }
 
     [Fact]
+    public void MultiReader_does_not_dispose_an_out_command() {
+        using var cnn = Db.Open();
+        var multi = new QueryCommand("SELECT @id; SELECT @id").ExecuteMultiReader(cnn, out var cmd, new { id = 1 });
+
+        multi.Dispose();
+
+        Assert.True(cmd.Parameters.Count > 0);
+        cmd.Dispose();
+    }
+
+    [Fact]
+    public void MultiReader_leaves_an_intermediate_non_returning_set_for_manual_reading() {
+        var sets = new DataSet();
+        var first = sets.Tables.Add();
+        first.Columns.Add("Value", typeof(int));
+        first.Rows.Add(1);
+        sets.Tables.Add();
+        var third = sets.Tables.Add();
+        third.Columns.Add("Value", typeof(int));
+        third.Rows.Add(2);
+        using var multi = new MultiReader([], new QueryCommand("SELECT 1; UPDATE rows; SELECT 2"), sets.CreateDataReader(), new LegacyCommand(), false, false);
+
+        Assert.Equal(1, multi.Query<int>());
+        Assert.Equal(0, multi.FieldCount);
+        Assert.True(multi.NextResult());
+        Assert.True(multi.Read());
+        Assert.Equal(2, multi.GetInt32(0));
+    }
+
+    [Fact]
     public void MultiReader_can_choose_a_parser_for_each_row_from_a_discriminator() {
         var query = new QueryCommand("SELECT 'abc' AS Name, 1 AS Kind, 3.0 AS Value UNION ALL SELECT 'def', 2, 4.0");
         using var cnn = Db.Open();
@@ -253,3 +357,8 @@ public class ReaderTests(SqliteDb Db) : IClassFixture<SqliteDb> {
 
 public sealed record DiscriminatedFoo(string Name, int Kind) : IDbReadable;
 public sealed record DiscriminatedBar(string Name, double Value) : IDbReadable;
+public record Album(int Id, string Title) : IDbReadable;
+public record Employee(int Id, string Name) : IDbReadable;
+public record class ArtistWithAlbums(int Id, string Name) {
+    public List<Album> Albums { get; set; } = [];
+}

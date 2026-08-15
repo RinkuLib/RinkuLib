@@ -1,12 +1,12 @@
 using System.Reflection;
 using System.Reflection.Emit;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 /// <summary>
-/// Marks a field to be cloned by invoking an instance method on the container.
+/// Copies a field with a parameterless instance method on the containing object.
 /// </summary>
 /// <remarks>
-/// The target method should return the value to be assigned to the field. 
+/// The method must return a value assignable to the field.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Field)]
 public sealed class CopyUsingMethodAttribute(string methodName) : CopyFieldAttribute {

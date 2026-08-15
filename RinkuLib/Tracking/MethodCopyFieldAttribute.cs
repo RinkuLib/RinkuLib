@@ -1,13 +1,13 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Reflection.Emit;
 
-namespace RinkuLib.Tracking;
+namespace Rinku.Tracking;
 /// <summary>
-/// Base class for attributes that perform field-level cloning via method injection.
+/// Base attribute for copying a field with a method.
 /// </summary>
 public abstract class MethodCopyFieldAttribute : CopyFieldAttribute {
     /// <summary>
-    /// Resolves the method to be called during the cloning process for the given field type.
+    /// Returns the method that copies <paramref name="field"/>.
     /// </summary>
     protected abstract MethodInfo GetMethod(FieldInfo field);
     /// <inheritdoc/>

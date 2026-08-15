@@ -1,9 +1,11 @@
 using System.Data;
+using Rinku.Mapping.Parsers.Defaults;
+using Rinku.Querying.Defaults;
 using System.Data.Common;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
-using RinkuLib.Queries;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
+using Rinku.Querying;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -18,14 +20,14 @@ public class AccessorCacheTests {
     }
 
     [Fact]
-    public void The_same_mapper_asked_twice_reuses_its_compiled_binder() {
+    public void The_generator_returns_a_fresh_accessor_each_time() {
         var mapper = Mapper.GetMapper(["@Id", "@Name"]);
-        var first = TypeAccessorCacher<Args>.GetOrGenerate(mapper);
-        var second = TypeAccessorCacher<Args>.GetOrGenerate(mapper);
-        Assert.Same(first, second);
+        var first = ParameterAccessorGenerator.CreateDirect(typeof(Args), mapper);
+        var second = ParameterAccessorGenerator.CreateDirect(typeof(Args), mapper);
+        Assert.NotSame(first, second);
 
         var other = Mapper.GetMapper(["@Id", "@Name"]);
-        Assert.NotSame(first, TypeAccessorCacher<Args>.GetOrGenerate(other));
+        Assert.NotSame(first, ParameterAccessorGenerator.CreateDirect(typeof(Args), other));
     }
 
     public struct StructArgs {
@@ -33,11 +35,18 @@ public class AccessorCacheTests {
     }
 
     [Fact]
-    public void A_value_type_gets_a_struct_cache_and_reuses_it_too() {
+    public void A_value_type_gets_an_unboxed_direct_accessor() {
         var mapper = Mapper.GetOneKeyMapper("@Id");
-        var first = TypeAccessorCacher<StructArgs>.GetOrGenerate(mapper);
-        Assert.IsType<StructTypeAccessorCache<StructArgs>>(first);
-        Assert.Same(first, TypeAccessorCacher<StructArgs>.GetOrGenerate(mapper));
+        var accessor = Assert.IsType<DirectAccessor<StructArgs>>(
+            ParameterAccessorGenerator.CreateDirect(typeof(StructArgs), mapper));
+        using var command = new FakeCommand();
+        Span<bool> usage = stackalloc bool[1];
+        var value = new StructArgs { Id = 7 };
+
+        accessor.InvokeTyped(ref value, command, [InferredDbParamCache.Instance], ref usage);
+
+        Assert.True(usage[0]);
+        Assert.Equal(7, command.Parameters[0]!.Value);
     }
 
     public class ContendedArgs {
@@ -45,61 +54,146 @@ public class AccessorCacheTests {
     }
 
     [Fact]
-    public async Task Two_threads_racing_on_the_same_mapper_share_one_compilation() {
+    public async Task The_generator_has_no_retained_cross_call_state() {
         var mapper = Mapper.GetOneKeyMapper("@Id");
-        using var contenderStarted = new ManualResetEventSlim();
-        TypeAccessorCache? fromContender = null;
-        Task contender;
-        TypeAccessorCache winner;
-        lock (TypeAccessorCacher<ContendedArgs>.SharedLock) {
-            contender = Task.Run(() => {
-                contenderStarted.Set();
-                fromContender = TypeAccessorCacher<ContendedArgs>.GetOrGenerate(mapper);
-            }, TestContext.Current.CancellationToken);
-            contenderStarted.Wait(TestContext.Current.CancellationToken);
-            Thread.Sleep(100);
-            winner = TypeAccessorCacher<ContendedArgs>.GetOrGenerate(mapper);
-        }
+        DirectAccessor? fromContender = null;
+        var contender = Task.Run(() => {
+            fromContender = ParameterAccessorGenerator.CreateDirect(typeof(ContendedArgs), mapper);
+        }, TestContext.Current.CancellationToken);
+        var winner = ParameterAccessorGenerator.CreateDirect(typeof(ContendedArgs), mapper);
         await contender;
-        Assert.Same(winner, fromContender);
+        Assert.NotSame(winner, fromContender);
     }
 
     [Fact]
     public void A_mapper_with_no_keys_emits_without_a_variable_char() {
-        var cache = TypeAccessorCacher<Args>.GetOrGenerate(Mapper.GetEmptyMapper());
+        var cache = ParameterAccessorGenerator.CreateDirect(typeof(Args), Mapper.GetEmptyMapper());
         Assert.NotNull(cache);
     }
 
     [Fact]
-    public void The_UseWith_cache_is_independent_from_the_direct_binder_cache() {
+    public void Direct_and_UseWith_generation_are_separate_products() {
         var mapper = Mapper.GetOneKeyMapper("@Id");
-        var direct = TypeAccessorCacher<Args>.GetOrGenerate(mapper);
-        var useWith = TypeAccessorCacher<Args>.GetOrGenerateUseWith(mapper);
+        var direct = ParameterAccessorGenerator.CreateDirect(typeof(Args), mapper);
+        var useWith = ParameterAccessorGenerator.CreateUseWith(typeof(Args), mapper);
 
         Assert.NotSame(direct, useWith);
-        Assert.Same(direct, TypeAccessorCacher<Args>.GetOrGenerate(mapper));
-        Assert.Same(useWith, TypeAccessorCacher<Args>.GetOrGenerateUseWith(mapper));
+        Assert.NotSame(direct, ParameterAccessorGenerator.CreateDirect(typeof(Args), mapper));
+        Assert.NotSame(useWith, ParameterAccessorGenerator.CreateUseWith(typeof(Args), mapper));
+    }
+
+    [Fact]
+    public void Direct_then_UseWith_promotes_one_type_entry_and_keeps_both_accessors() {
+        var query = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id");
+        var handle = typeof(Args).TypeHandle.Value;
+
+        var direct = query.GetDirectAccessor(handle, typeof(Args));
+        var useWith = query.GetUseWithAccessor(handle, typeof(Args));
+
+        Assert.Same(direct, query.GetDirectAccessor(handle, typeof(Args)));
+        Assert.Same(useWith, query.GetUseWithAccessor(handle, typeof(Args)));
+        Assert.Equal([(typeof(Args), ParameterAccessorKinds.Both)], query.GetCachedParameterAccessors());
+    }
+
+    [Fact]
+    public void UseWith_then_direct_promotes_one_type_entry_and_keeps_both_accessors() {
+        var query = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id");
+        var handle = typeof(Args).TypeHandle.Value;
+
+        var useWith = query.GetUseWithAccessor(handle, typeof(Args));
+        var direct = query.GetDirectAccessor(handle, typeof(Args));
+
+        Assert.Same(useWith, query.GetUseWithAccessor(handle, typeof(Args)));
+        Assert.Same(direct, query.GetDirectAccessor(handle, typeof(Args)));
+        Assert.Equal([(typeof(Args), ParameterAccessorKinds.Both)], query.GetCachedParameterAccessors());
+    }
+
+    [Fact]
+    public void A_command_can_invalidate_one_road_for_one_parameter_source_without_touching_the_others() {
+        var query = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id");
+        var args = query.GetDirectAccessor(typeof(Args).TypeHandle.Value, typeof(Args));
+        var argsUseWith = query.GetUseWithAccessor(typeof(Args).TypeHandle.Value, typeof(Args));
+        var structArgs = query.GetDirectAccessor(typeof(StructArgs).TypeHandle.Value, typeof(StructArgs));
+
+        Assert.Equal(ParameterAccessorKinds.Direct,
+            query.InvalidateParameterAccessor(typeof(Args), ParameterAccessorKinds.Direct));
+
+        Assert.NotSame(args, query.GetDirectAccessor(typeof(Args).TypeHandle.Value, typeof(Args)));
+        Assert.Same(argsUseWith, query.GetUseWithAccessor(typeof(Args).TypeHandle.Value, typeof(Args)));
+        Assert.Same(structArgs, query.GetDirectAccessor(typeof(StructArgs).TypeHandle.Value, typeof(StructArgs)));
+        Assert.Equal(2, query.GetCachedParameterAccessors().Length);
+    }
+
+    [Fact]
+    public void Invalidation_reports_only_roads_that_were_cached() {
+        var query = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id");
+        query.GetUseWithAccessor(typeof(Args).TypeHandle.Value, typeof(Args));
+
+        Assert.Equal(ParameterAccessorKinds.None,
+            query.InvalidateParameterAccessor(typeof(Args), ParameterAccessorKinds.Direct));
+        Assert.Equal(ParameterAccessorKinds.UseWith,
+            query.InvalidateParameterAccessor(typeof(Args), ParameterAccessorKinds.Both));
+        Assert.Empty(query.GetCachedParameterAccessors());
+    }
+
+    [Fact]
+    public async Task Concurrent_cross_path_access_promotes_without_losing_either_accessor() {
+        var query = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id");
+        var handle = typeof(Args).TypeHandle.Value;
+        DirectAccessor? direct = null;
+        UseWithAccessor? useWith = null;
+        using var barrier = new Barrier(2);
+
+        var directTask = Task.Run(() => {
+            barrier.SignalAndWait();
+            direct = query.GetDirectAccessor(handle, typeof(Args));
+        }, TestContext.Current.CancellationToken);
+        var useWithTask = Task.Run(() => {
+            barrier.SignalAndWait();
+            useWith = query.GetUseWithAccessor(handle, typeof(Args));
+        }, TestContext.Current.CancellationToken);
+        await Task.WhenAll(directTask, useWithTask);
+
+        Assert.Same(direct, query.GetDirectAccessor(handle, typeof(Args)));
+        Assert.Same(useWith, query.GetUseWithAccessor(handle, typeof(Args)));
+        Assert.Equal([(typeof(Args), ParameterAccessorKinds.Both)], query.GetCachedParameterAccessors());
     }
 
     [Fact]
     public void A_mapper_whose_first_key_is_empty_emits_without_a_variable_char() {
-        var cache = TypeAccessorCacher<Args>.GetOrGenerate(Mapper.GetMapper(["", "@Name"]));
+        var cache = ParameterAccessorGenerator.CreateDirect(typeof(Args), Mapper.GetMapper(["", "@Name"]));
         Assert.NotNull(cache);
     }
 
     [Fact]
     public void A_mapper_whose_first_key_is_named_binds_through_the_linear_delegate() {
         var mapper = Mapper.GetMapper(["@Id", "@Name"]);
-        var cache = TypeAccessorCacher<Args>.GetOrGenerate(mapper, handlersStart: mapper.Count, boolCondStart: mapper.Count);
+        var cache = ParameterAccessorGenerator.CreateDirect(typeof(Args), mapper);
         using var command = new FakeCommand();
         Span<bool> usage = stackalloc bool[2];
-        var values = cache.Bind(new Args { Id = 3 }, command,
-            [InferedDbParamCache.Instance, InferedDbParamCache.Instance], ref usage);
+        var values = cache.Invoke(new Args { Id = 3 }, command,
+            [InferredDbParamCache.Instance, InferredDbParamCache.Instance], ref usage);
 
         Assert.True(usage[0]);
         Assert.False(usage[1]);
         Assert.Empty(values);
         Assert.Equal(3, command.Parameters[0]!.Value);
+    }
+
+    [Fact]
+    public void A_direct_binder_replaces_a_reused_usage_map() {
+        var mapper = Mapper.GetMapper(["@Id", "@Name"]);
+        var cache = ParameterAccessorGenerator.CreateDirect(typeof(Args), mapper);
+        using var command = new FakeCommand();
+        Span<bool> usage = stackalloc bool[2];
+
+        cache.Invoke(new Args { Id = 3, Name = "first" }, command,
+            [InferredDbParamCache.Instance, InferredDbParamCache.Instance], ref usage);
+        cache.Invoke(new Args { Id = 4 }, command,
+            [InferredDbParamCache.Instance, InferredDbParamCache.Instance], ref usage);
+
+        Assert.True(usage[0]);
+        Assert.False(usage[1]);
     }
 
     class NoNestedType;

@@ -1,5 +1,5 @@
-using RinkuLib.Queries;
-using RinkuLib.TypeAccessing;
+using Rinku.Querying;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Templating;
@@ -7,17 +7,22 @@ namespace RinkuLib.Tests.Templating;
 /// <summary>
 /// Exhaustive matrix over the marker key expressions (single, <c>!</c>, <c>&amp;</c>, <c>|</c>, and their
 /// mixes) crossed with every on/off state of the keys involved, at each footprint placement. The expected
-/// SQL comes from the marker rule (<c>&amp;</c> separates groups that must all hold, each group is an
-/// <c>|</c>-chain where one key suffices, <c>!</c> flips its key; <c>/*A|B&amp;C*/</c> is (A or B) and C),
-/// evaluated by a reference evaluator in the generator, never from the current output. Each row renders
-/// through both paths, the values array and the usage map.
+/// SQL comes from the marker rule: operators are applied from left to right without precedence and <c>!</c>
+/// flips its key. The generator uses a reference evaluator, never the current output. Each row renders through
+/// both paths, the values array and the usage map.
 /// </summary>
 public class ConditionCombinationMatrixTests {
-    /// <summary>The marker rule: <c>&amp;</c>-separated groups all hold, a group holds when one of its <c>|</c> keys does.</summary>
+    /// <summary>The marker rule: evaluate each operator from left to right.</summary>
     static bool Eval(string expr, HashSet<string> on) {
         bool KeyOn(string t) => t.StartsWith('!') ? !on.Contains(t[1..]) : on.Contains(t);
-        return expr.Split('&', StringSplitOptions.TrimEntries)
-            .All(group => group.Split('|', StringSplitOptions.TrimEntries).Any(KeyOn));
+        var keys = expr.Split(['|', '&'], StringSplitOptions.TrimEntries);
+        bool result = KeyOn(keys[0]);
+        int key = 1;
+        foreach (char op in expr.Where(c => c is '|' or '&')) {
+            bool next = KeyOn(keys[key++]);
+            result = op == '|' ? result || next : result && next;
+        }
+        return result;
     }
 
     static IEnumerable<string> Keys(string expr)

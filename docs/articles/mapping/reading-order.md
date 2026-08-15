@@ -1,119 +1,148 @@
 # Reading order
 
-A slot finds its column under one of two regimes. Under free, it takes any unconsumed column that matches by name and type, wherever it sits. Under sequential, it takes only the column right after the last one consumed. Either way it consumes that column so nothing else can.
+Normal object mapping searches unused columns by name. Sequential shapes such as tuples move through the row from left to right.
 
-The regime comes from the info parsing the type. A normal registration reads free, so order and gaps do not matter.
+## Normal objects search by name
+
+Column order and unrelated gaps do not matter for a normal object.
 
 ```csharp
 public record Person(int Id, string Name, string? Email = null);
 
-// Columns: Name | Note | Id   ->  Name and Id are each found by name, the gap and order ignored, Email stays null
-Person one = cmd.Query<Person>(cnn);
+static readonly QueryCommand GetPerson = new("SELECT Name, LastLogin AS Note, PersonId AS Id FROM people WHERE PersonId = @personId");
+
+Person person = GetPerson.Query<Person>(cnn, new { personId = 1 });
 ```
 
-`CtorTypeInfo`, the info behind [tuples](../running-queries/result-shapes.md#tuples), reads sequential and hands that down to its elements. Each `Person` takes a consecutive run of columns.
+```text
+Name | Note | Id
+```
+
+`Name` and `Id` are filled by name. `Note` is unused. `Email` keeps its default because no matching column exists.
+
+A required slot with no matching column makes the construction path unusable.
 
 ```csharp
-// Columns: Id | Name | Id | Name | Email
-var (a, b) = cmd.Query<(Person, Person)>(cnn);
-// a takes Id(0), Name(1); Email checks only the next column, Id(2), which does not match,
-//   and its = null default lets a build anyway, so a never looks as far as Email(4)
-// b resumes at Id(2), Name(3), Email(4), seeing only the columns from where a stopped
+public record Person(int Id, string Name, string Email);
+
+Person person = GetPerson.Query<Person>(cnn, new { personId = 1 });
+// RINKU3001 because Email is required.
 ```
 
-Same type, two regimes, decided by where it is read (see [registering with another info](registration.md#registering-with-another-info)). Two attributes flip the regime on a single slot. On a complex-typed slot they reach into its subtree, [below](#scope-on-a-nested-slot).
+## Tuples move left to right
 
-## `[CanNotLookAnywhere]`, sequential for one slot
+Each tuple element starts after the columns claimed by the previous element.
 
-Makes one slot sequential even in a free context. It takes only the column right after the last one consumed, and looks no further if that one does not match.
+```csharp
+public record Order(int Id, decimal Total) : IDbReadable;
+public record Customer(int Id, string Name, string? Email = null) : IDbReadable;
+
+static readonly QueryCommand GetOrderWithCustomer = new("SELECT o.OrderId AS Id, o.Total, c.CustomerId AS Id, c.Name, c.Email FROM orders o JOIN customers c ON c.CustomerId = o.CustomerId WHERE o.OrderId = @orderId");
+
+(Order order, Customer customer) = GetOrderWithCustomer.Query<(Order, Customer)>(cnn, new { orderId = 1 });
+```
+
+```text
+Id | Total | Id | Name | Email
+```
+
+`Order` claims the first `Id` and `Total`. `Customer` begins at the second `Id`.
+
+This boundary is why the same mapped type can appear twice in one tuple.
+
+## Require the next column
+
+`[CanNotLookAnywhere]` prevents a slot from searching past the next available column.
 
 ```csharp
 public record Entry(int Id, [CanNotLookAnywhere] int? Code = null);
-// Columns: Id | Code          ->  Code takes the next column
-// Columns: Id | Other | Code  ->  the next column is "Other", so Code does not match and stays at its default
 ```
 
-The `= null` is what keeps that second schema building. Drop it and `Code` is required, so the mismatch has nowhere to fall back. The negotiation fails and the parse throws, rather than silently storing a wrong value.
+```text
+Id | Other | Code
+```
 
-## `[CanLookAnywhere]`, free for one slot
+`Id` is filled. `Code` checks `Other`, sees that it does not match, and keeps its default. It does not skip ahead to the later `Code` column.
 
-Frees one slot to look anywhere instead of taking the next column in line. Its real use is the first parameter of an object in a sequential run. When a stray column sits between two objects, the second cannot build, because its first parameter lands on that column. Freeing that parameter lets the object anchor past the gap, then read on in sequence from there.
+This is useful when a slot marks a boundary between repeated shapes.
+
+## Search past a gap in a sequential shape
+
+Sequential slots normally stay within their current position. `[CanLookAnywhere]` lets one slot search later unused columns.
 
 ```csharp
-public record struct Person(int Id, string Name);
-public record struct Address([CanLookAnywhere] int Zip, string City);
+public record struct Person(int Id, string Name) : IDbReadable;
+public record struct Address([CanLookAnywhere] int Zip, string City) : IDbReadable;
 
-// Columns: Id | Name | Note | Zip | City
-var (person, address) = cmd.Query<(Person, Address)>(cnn);
-// Person reads Id(0), Name(1). Without the flag, Address.Zip would land on Note(2) and the build would fail.
-// Freed, Zip skips Note and anchors at Zip(3); City then reads in sequence at City(4).
+static readonly QueryCommand GetPersonAddress = new("SELECT PersonId AS Id, Name, AddressNote AS Note, PostalCode AS Zip, City FROM people WHERE PersonId = @personId");
+
+(Person person, Address address) = GetPersonAddress.Query<(Person, Address)>(cnn, new { personId = 1 });
 ```
 
-## `[MayReuseCol]`, a column already taken
+```text
+Id | Name | Note | Zip | City
+```
 
-A slot normally skips a column another slot has consumed. `[MayReuseCol]` lets it take that column anyway.
+`Address.Zip` skips `Note`. `Address.City` continues after `Zip`.
 
-The usual reason is a [member filled after a constructor](objects.md#post-construction-members): the constructor takes a value to act on it, and a member then needs the same column to store it.
+## Reuse a column
+
+`[MayReuseCol]` reads a column without marking it consumed. A later slot can read the same column again.
 
 ```csharp
-public class AuditedRow {
-    [CanCompleteWithMembers]
-    public AuditedRow(int id) => AccessLog.Record(id);   // the constructor takes id only to run an action
-    [MayReuseCol] public int Id { get; set; }             // re-reads the same column to store it
-}
-// Columns: Id   ->  the constructor consumes Id for its call, then the Id member reuses it
+public record Price([Alt("Amount"), MayReuseCol] decimal Original, decimal Amount);
+
+Price price = GetPrice.Query<Price>(cnn);
 ```
 
-Without `[MayReuseCol]` the `Id` member would find its column already taken and stay at its default.
+```text
+Amount
+12.50
+```
 
-Two constructor parameters can share one column the same way. There the second also needs an [`[Alt]`](names.md) to match the first one's name.
+Both `Original` and `Amount` receive `12.50`.
+
+Without `[MayReuseCol]`, the first slot consumes `Amount` and the second required slot cannot use it.
+
+## Apply a rule to a nested value
+
+A reading-order attribute on a nested member changes where that nested value begins. Its `Subtree` form applies the rule to every slot inside the nested value.
 
 ```csharp
-public record Money(int Amount, [Alt("Amount")][MayReuseCol] int Copy);
-// Columns: Amount   ->  Amount takes the column, Copy reads the same one
+public record Coordinates(int X, int? Y = null) : IDbReadable;
+public record Location(int Id, [CanLookAnywhereSubtree] Coordinates Position);
 ```
 
-## Scope on a nested slot
+```text
+Id | Note | PositionX | Gap | PositionY
+```
 
-The regime carries down into nested objects, so a reading-order attribute on a complex-typed slot reaches its subtree. The plain attribute reaches only the subtree's first consumed column. A `...Subtree` variant reaches the whole subtree.
+`Position.X` skips `Note`, and `Position.Y` skips `Gap` because the rule applies to the complete subtree.
 
-`[CanLookAnywhere]` on a complex slot frees that first column, then the subtree reads on in sequence:
+With plain `[CanLookAnywhere]` on `Position`, only the beginning of the nested value can move. Its later slots return to their own normal rules.
+
+`[CanNotLookAnywhereSubtree]` and `[MayReuseColSubtree]` apply their matching behavior to every nested slot in the same way.
+
+## Combine name and order rules
+
+Name attributes still decide which columns are acceptable. Reading-order attributes decide where those names may be searched and whether a match is consumed.
 
 ```csharp
-public record Inner(int A, int? B = null) : IDbReadable;
-public record Holder(int Key, [CanLookAnywhere] Inner Data) : IDbReadable;
-
-// Columns: X | Key | Junk | DataA | Gap | DataB
-var (x, h) = cmd.Query<(int, Holder)>(cnn);
-// the tuple makes Holder sequential; Data.A is freed and found past Junk,
-// then Data.B reads in sequence and cannot skip Gap, so it stays null
+public record Product([Alt("ProductId"), CanLookAnywhere] int Id, string Name);
 ```
 
-`[CanLookAnywhereSubtree]` frees the whole subtree, so `Data.B` skips `Gap` too:
+`Id` may search later columns for either `Id` or `ProductId`.
+
+## Configure rules at startup
+
+The same behavior can be applied to generated slots during application setup when the model cannot carry attributes.
 
 ```csharp
-public record Holder(int Key, [CanLookAnywhereSubtree] Inner Data) : IDbReadable;
-// Columns: X | Key | Junk | DataA | Gap | DataB   ->  Data.A past Junk, Data.B past Gap
+ParamInfo.RegistrationInitializer = static slot => string.Equals(slot.NameComparer.GetDefaultName(), "Id", StringComparison.OrdinalIgnoreCase)
+    ? slot.WithColModifier(FlagUpdater.RemoveSequentialRead)
+    : slot;
 ```
 
-`[CanNotLookAnywhere]` and `[MayReuseCol]` pair the same way, each with a `...Subtree` form. `[CanNotLookAnywhereSubtree]` reads a whole nested object in strict column order:
+This example lets every generated `Id` slot search later columns. Configure the initializer before parsers are created. Existing cached parsers keep the rules used when they were built.
 
-```csharp
-public record Outer(int Id, [CanNotLookAnywhereSubtree] Inner Sub);
-// Columns: Id | SubA | Gap | SubB   ->  Sub is sequential throughout, so Sub.B cannot skip Gap and stays null
-```
-
-## The runtime form
-
-For a type you cannot annotate, replace the slot through `ICanProvideConstructions` with a `ParamInfoPlus` carrying the matching `FlagUpdater`.
-
-```csharp
-if (TypeParsingInfo.GetOrAdd<Person>() is ICanProvideConstructions info) {
-    var slots = info.PossibleConstructors[0].Parameters;
-    var s = slots[1];
-    slots[1] = new ParamInfoPlus(s.Type, s.NullColHandler, s.NameComparer,
-        FlagUpdater.SequentialRead, IFallbackParserGetter.Nothing);   // [CanNotLookAnywhere] on the second slot
-    // FlagUpdater.RemoveSequentialRead is [CanLookAnywhere], FlagUpdater.CanReuse is [MayReuseCol]
-    // new FlagUpdater(UsageFlags.RemoveSequentialRead, subtree: true) is the [CanLookAnywhereSubtree] form
-}
-```
+[Tuples](tuples.md) covers sequential result shapes. [Names](names.md) covers accepted names and prefixes. [Slot rules](../customization/slot-rules.md) covers runtime updates and custom column-usage attributes.

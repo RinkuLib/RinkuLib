@@ -1,9 +1,11 @@
 using System.Data;
 using System.Data.Common;
+using System.Reflection;
+using System.Reflection.Emit;
 using Npgsql;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
 using Xunit;
 
 namespace RinkuLib.Tests.TestContainers;
@@ -93,18 +95,44 @@ public sealed class ProviderPostgresEdgeTests(ProviderPostgresEdgeFixture fixtur
     }
 
     [Fact]
-    public async Task An_external_reader_registration_can_materialize_a_native_array_result() {
+    public async Task A_custom_type_parsing_info_can_emit_a_provider_native_array_read() {
         var ct = TestContext.Current.CancellationToken;
         await using var cnn = fixture.GetConnection();
         await cnn.OpenAsync(ct);
 
-        DbColumnReaderRegistry.Register<Array, int[]>(
-            (reader, ordinal) => reader.GetFieldValue<int[]>(ordinal));
-        Assert.True(DbColumnReaderRegistry.TryGet(typeof(Array), out var registered));
-        Assert.Equal(typeof(int[]), registered.ValueType);
+        TypeParsingInfo.AddOrSet(typeof(int[]), PostgresIntArrayTypeInfo.Instance);
+        using var query = new QueryCommand("SELECT ARRAY[1,2,3]");
+        ITypeParser<int[]>? parser = null;
+        try {
+            var values = query.Query<int[]>(cnn);
+            Assert.Equal([1, 2, 3], values);
+            Assert.True(query.TryGetCachedParser<int[]>(Span<bool>.Empty, out parser));
+        }
+        finally {
+            if (parser is not null)
+                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+            TypeParsingInfo.TryRemove(typeof(int[]), out _);
+        }
+    }
+}
 
-        var values = new QueryCommand("SELECT ARRAY[1,2,3]").Query<int[]>(cnn);
-        Assert.Equal([1, 2, 3], values);
+sealed class PostgresIntArrayTypeInfo : ScalarTypeParsingInfo<int[]> {
+    internal static readonly PostgresIntArrayTypeInfo Instance = new();
+
+    protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal)
+        => column.Type == typeof(Array)
+            ? new PostgresIntArrayPlan(parentType, parameter.NameComparer.GetDefaultName(), parameter.NullColHandler, ordinal)
+            : null;
+}
+
+sealed class PostgresIntArrayPlan(Type parentType, string parameterName, INullColHandler nullHandler, int ordinal)
+    : ScalarDbItemPlan<int[]>(parentType, parameterName, nullHandler, ordinal) {
+    private static readonly MethodInfo ReadMethod = typeof(DbDataReader).GetMethod(nameof(DbDataReader.GetFieldValue))!.MakeGenericMethod(typeof(int[]));
+
+    protected override void EmitValue(ColumnInfo column, Generator generator) {
+        generator.Emit(OpCodes.Ldarg_1);
+        generator.Emit(OpCodes.Ldc_I4, ColumnOrdinal);
+        generator.Emit(OpCodes.Callvirt, ReadMethod);
     }
 }
 

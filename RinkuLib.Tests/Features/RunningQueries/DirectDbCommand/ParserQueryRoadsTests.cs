@@ -1,10 +1,11 @@
 using System.Data;
+using Rinku.Mapping.Parsers.Defaults;
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -21,7 +22,7 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
 
     static ITypeParser<T> Parser<T>() {
         ColumnInfo[] cols = [new("Name", typeof(string), false)];
-        return TypeParser.GetTypeParser<T>(ref cols);
+        return TypeParser.GetTypeParser<T>(cols);
     }
 
     SqliteCommand Cmd(SqliteConnection cnn, string sql) {
@@ -38,6 +39,18 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
             return Task.CompletedTask;
         }
     }
+
+    sealed class BehaviorCommand : FakeCommand {
+        public CommandBehavior LastBehavior { get; private set; }
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) {
+            LastBehavior = behavior;
+            return Rows.Reader(ValueCol, [1], [2]);
+        }
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken ct)
+            => Task.FromResult(ExecuteDbDataReader(behavior));
+    }
+
+    static BehaviorCommand BehaviorCmd() => new() { Connection = new FakeConnection() };
 
 
     [Fact]
@@ -57,7 +70,8 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     public void Query_with_no_row_defaults_per_shape() {
         using var cnn = Db.GetConnection();
         using var cmd = Cmd(cnn, NoRows);
-        Assert.ThrowsAny<Exception>(() => Parser<string>().Query(cmd)); 
+        var noRows = Assert.Throws<RinkuNoRowsException>(() => Parser<string>().Query(cmd));
+        Assert.Equal(ErrorCodes.NoRows, noRows.Code);
         using var cmd2 = Cmd(cnn, NoRows);
         Assert.Empty(Parser<List<string>>().Query(cmd2));
         using var cmd3 = Cmd(cnn, NoRows);
@@ -71,10 +85,10 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal("John", Parser<string>().Query(cmd, disposeCommand: true));
 
         var orphan = new SqliteCommand(Names);
-        Assert.ThrowsAny<Exception>(() => Parser<string>().Query(orphan));
-        Assert.ThrowsAny<Exception>(() => Parser<string>().Query((IDbCommand)orphan));
-        Assert.ThrowsAny<Exception>(() => Parser<IEnumerable<string>>().Query(orphan).ToList());
-        Assert.ThrowsAny<Exception>(() => Parser<IEnumerable<string>>().Query((IDbCommand)orphan).ToList());
+        Assert.Throws<RinkuNoConnectionException>(() => Parser<string>().Query(orphan));
+        Assert.Throws<RinkuNoConnectionException>(() => Parser<string>().Query((IDbCommand)orphan));
+        Assert.Throws<RinkuNoConnectionException>(() => Parser<IEnumerable<string>>().Query(orphan).ToList());
+        Assert.Throws<RinkuNoConnectionException>(() => Parser<IEnumerable<string>>().Query((IDbCommand)orphan).ToList());
     }
 
     [Fact]
@@ -119,6 +133,35 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         IDbCommand plain = new PlainCommand(inner);
         Assert.Equal("John", await Parser<string>().QueryAsync(plain, ct: ct));
         Assert.Equal(["John", "Victor", "Alice"], await Parser<IEnumerable<string>>().QueryAsync(plain, ct: ct));
+    }
+
+    [Fact]
+    public async Task Query_preserves_the_parser_reader_behavior_on_warm_and_cold_roads() {
+        var ct = TestContext.Current.CancellationToken;
+        var parser = TypeParser.GetTypeParser<List<int>>(ValueCol);
+        Assert.True(parser.Behavior.HasFlag(CommandBehavior.SingleResult));
+        Assert.True(parser.Behavior.HasFlag(CommandBehavior.SequentialAccess));
+        Assert.False(parser.Behavior.HasFlag(CommandBehavior.SingleRow));
+
+        using var direct = BehaviorCmd();
+        Assert.Equal([1, 2], parser.Query(direct));
+        Assert.Equal(parser.Behavior, direct.LastBehavior);
+
+        using var directAsync = BehaviorCmd();
+        Assert.Equal([1, 2], await parser.QueryAsync(directAsync, ct: ct));
+        Assert.Equal(parser.Behavior, directAsync.LastBehavior);
+
+        using var cold = BehaviorCmd();
+        var coldCache = new CachedTypeParser<List<int>>();
+        var coldBehavior = coldCache.Behavior;
+        Assert.Equal([1, 2], cold.Query(coldCache, disposeCommand: false));
+        Assert.Equal(coldBehavior, cold.LastBehavior);
+
+        using var coldAsync = BehaviorCmd();
+        var coldAsyncCache = new CachedTypeParser<List<int>>();
+        var coldAsyncBehavior = coldAsyncCache.Behavior;
+        Assert.Equal([1, 2], await coldAsync.QueryAsync(coldAsyncCache, disposeCommand: false, ct: ct));
+        Assert.Equal(coldAsyncBehavior, coldAsync.LastBehavior);
     }
 
     [Fact]
@@ -292,7 +335,7 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(ExpectedNames, await Parser<List<string>>().QueryAsync(cmd3, cache, ct: ct));
 
         ColumnInfo[] cols = [new("ID", typeof(long), false), new("Name", typeof(string), false)];
-        var lazyUsers = TypeParser.GetTypeParser<IEnumerable<UserRow>>(ref cols);
+        var lazyUsers = TypeParser.GetTypeParser<IEnumerable<UserRow>>(cols);
         using var cmd4 = Cmd(cnn, "SELECT ID, Name FROM Users ORDER BY ID");
         Assert.Equal([new UserRow(1, "John"), new UserRow(2, "Victor"), new UserRow(3, "Alice")], lazyUsers.Query(cmd4));
         using var cmd5 = Cmd(cnn, "SELECT ID, Name FROM Users ORDER BY ID");
@@ -382,43 +425,39 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
 
 
     [Fact]
-    public async Task Single_shapes_refuse_a_second_row() {
+    public async Task Single_shapes_require_one_result_and_refuse_a_second() {
         var ct = TestContext.Current.CancellationToken;
         var cols = ValueCol;
-        var inner = TypeParser.GetTypeParser<int>(ref cols);
+        var inner = TypeParser.GetTypeParser<int>(cols);
 
         var slow = new SingleTypeParser<Single<int>, int>(inner);
         Assert.NotEqual(default, slow.Behavior);
-        Assert.Equal(default, slow.Default());
+        Refusals.Raises(ErrorCodes.NoRows, () => slow.Default());
         using (var r = Rows.Reader(ValueCol, [1], [2])) {
             r.Read();
             Refusals.Raises(ErrorCodes.ShapeRefusedResult, () => slow.Parse(r));
         }
         using (var r = Rows.Reader(ValueCol, [1], [2])) {
             r.Read();
-            await Assert.ThrowsAnyAsync<Exception>(async () => await slow.ParseAsync(r, ct));
+            await Refusals.RaisesAsync(ErrorCodes.ShapeRefusedResult, async () => await slow.ParseAsync(r, ct));
         }
 
-        var fast = (BaseTypeParser<Single<int>>)TypeParser.GetTypeParser<Single<int>>(ref cols);
-        Assert.Equal(default, fast.Default());
+        var fast = (BaseTypeParser<Single<int>>)TypeParser.GetTypeParser<Single<int>>(cols);
+        Refusals.Raises(ErrorCodes.NoRows, () => fast.Default());
         using (var r = Rows.Reader(ValueCol, [1], [2])) {
             r.Read();
             Refusals.Raises(ErrorCodes.ShapeRefusedResult, () => fast.Parse(r));
         }
         using (var r = Rows.Reader(ValueCol, [1], [2])) {
             r.Read();
-            await Assert.ThrowsAnyAsync<Exception>(async () => await fast.ParseAsync(r, ct));
+            await Refusals.RaisesAsync(ErrorCodes.ShapeRefusedResult, async () => await fast.ParseAsync(r, ct));
         }
     }
 
     [Fact]
     public void The_slow_wrappers_expose_their_shape_members() {
         var cols = ValueCol;
-        var inner = TypeParser.GetTypeParser<int>(ref cols);
-
-        var list = new ListTypeParser<int>(inner);
-        Assert.NotEqual((System.Data.CommandBehavior)(-1), list.Behavior);
-        Assert.Empty(list.Default());
+        var inner = TypeParser.GetTypeParser<int>(cols);
 
         var optional = new OptionalTypeParser<OptionalStruct<int>, int>(inner);
         Assert.NotEqual((System.Data.CommandBehavior)(-1), optional.Behavior);
@@ -441,37 +480,34 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
 
         using var r1 = Rows.Reader(ValueCol, [1], [2]);
         await r1.ReadAsync(ct);
-        var fastList = TypeParser.GetTypeParser<List<int>>(ref cols);
+        var fastList = TypeParser.GetTypeParser<List<int>>(cols);
         Assert.Equal([1, 2], (await fastList.ParseAsync(r1, ct)).Result);
 
-        var inner = TypeParser.GetTypeParser<int>(ref cols);
-        using var r2 = Rows.Reader(ValueCol, [3], [4]);
-        await r2.ReadAsync(ct);
-        Assert.Equal([3, 4], (await new ListTypeParser<int>(inner).ParseAsync(r2, ct)).Result);
+        var inner = TypeParser.GetTypeParser<int>(cols);
 
         using var r3 = Rows.Reader(ValueCol, [5]);
         await r3.ReadAsync(ct);
         Assert.Equal(5, (await new SingleTypeParser<Single<int>, int>(inner).ParseAsync(r3, ct)).Result.Value);
 
         var strCols = new ColumnInfo[] { new("V", typeof(string), false) };
-        var innerStr = TypeParser.GetTypeParser<string>(ref strCols);
+        var innerStr = TypeParser.GetTypeParser<string>(strCols);
         using var r4 = Rows.Reader(strCols, ["a"]);
         await r4.ReadAsync(ct);
         Assert.Equal("a", (await new OptionalTypeParser<Optional<string>, string>(innerStr).ParseAsync(r4, ct)).Result.Value);
 
         using var r5 = Rows.Reader(strCols, ["b"]);
         await r5.ReadAsync(ct);
-        var fastOptional = TypeParser.GetTypeParser<Optional<string>>(ref strCols);
+        var fastOptional = TypeParser.GetTypeParser<Optional<string>>(strCols);
         Assert.Equal("b", (await fastOptional.ParseAsync(r5, ct)).Result.Value);
 
         using var r6 = Rows.Reader(ValueCol, [9]);
         await r6.ReadAsync(ct);
-        var fastSingle = TypeParser.GetTypeParser<Single<int>>(ref cols);
+        var fastSingle = TypeParser.GetTypeParser<Single<int>>(cols);
         Assert.Equal(9, (await fastSingle.ParseAsync(r6, ct)).Result.Value);
 
         using var r7 = Rows.Reader(ValueCol, [7], [8]);
         await r7.ReadAsync(ct);
-        var enumerable = TypeParser.GetTypeParser<IEnumerable<int>>(ref cols);
+        var enumerable = TypeParser.GetTypeParser<IEnumerable<int>>(cols);
         Assert.Equal([7, 8], (await enumerable.ParseAsync(r7, ct)).Result);
     }
 
@@ -479,11 +515,11 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     public async Task A_simple_parser_steps_row_by_row() {
         var ct = TestContext.Current.CancellationToken;
         var cols = ValueCol;
-        var stepper = (IStepParser<int>)TypeParser.GetTypeParser<int>(ref cols);
+        var stepper = (IStepParser<int>)TypeParser.GetTypeParser<int>(cols);
 
         using var reader = Rows.Reader(ValueCol, [1], [2]);
         reader.Read();
-        Assert.Equal(1, stepper.ParseStep(reader));  
+        Assert.Equal(1, stepper.ParseStep(reader));
         reader.Read();
         Assert.Equal(2, await stepper.ParseStepAsync(reader, ct));
     }

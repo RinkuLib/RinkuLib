@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -86,7 +86,7 @@ public class NestedMappingTests {
             new("MIddleBottomName", typeof(string), false),
         ];
         using var reader = Rows.Reader(cols, [500, 400, 300, "Name"], [500, 400, DBNull.Value, "Name"]);
-        var parser = TypeParser.GetTypeParser<ChainTop>(ref cols);
+        var parser = TypeParser.GetTypeParser<ChainTop>(cols);
         reader.Read();
         var top = parser.Parse(reader).Result;
         Assert.Equal(500, top.ID);
@@ -152,7 +152,7 @@ public class NestedMappingTests {
             [101, 99.50m, 1, 500, "Warehouse_Alpha"],
             [102, DBNull.Value, 2, 600, "Warehouse_Beta"],
             [103, 10.00m, 3, 700, DBNull.Value]);
-        var parser = TypeParser.GetTypeParser<CrateOf<decimal, int>>(ref cols);
+        var parser = TypeParser.GetTypeParser<CrateOf<decimal, int>>(cols);
         reader.Read();
 
         var full = parser.Parse(reader).Result;
@@ -182,7 +182,7 @@ public class NestedMappingTests {
             new("InfoValue", typeof(string), true),
         ];
         using var reader = Rows.Reader(cols, [201, 15.0, 2, "Trusted"], [202, 15.0, 1, DBNull.Value]);
-        var parser = TypeParser.GetTypeParser<CrateOf<double, string>>(ref cols);
+        var parser = TypeParser.GetTypeParser<CrateOf<double, string>>(cols);
         reader.Read();
         var ok = parser.Parse(reader).Result;
         Assert.Equal("Trusted", ok.Info.Value);
@@ -201,7 +201,7 @@ public class NestedMappingTests {
             new("InfoSource", typeof(string), true),
         ];
         using var reader = Rows.Reader(cols, [1, 99.99m, DBNull.Value, "Premium", "A"]);
-        var parser = TypeParser.GetTypeParser<CrateOf<decimal, string>>(ref cols);
+        var parser = TypeParser.GetTypeParser<CrateOf<decimal, string>>(cols);
         reader.Read();
         Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
     }
@@ -213,7 +213,7 @@ public class NestedMappingTests {
             new("Currency", typeof(int), true),
         ];
         using var reader = Rows.Reader(cols, [99.50m, 1], [DBNull.Value, 2], [10.00m, 3]);
-        var parser = TypeParser.GetTypeParser<Cost<decimal>?>(ref cols);
+        var parser = TypeParser.GetTypeParser<Cost<decimal>?>(cols);
         reader.Read();
 
         var first = parser.Parse(reader).Result;

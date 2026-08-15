@@ -1,133 +1,208 @@
 # Dynamic projection
 
-Prefixing a `SELECT` with `?` turns each projected column into its own condition, keyed by the column name or alias. It affects only that `SELECT`'s column list.
+`?SELECT` gives each projected column a conditional key.
 
-It puts a marker on each column for you, so these two templates behave identically.
+```csharp
+static readonly QueryCommand AlbumProjection = new("?SELECT AlbumId AS Id, Title, ReleaseYear FROM albums");
+
+var values = AlbumProjection.StartBuilder();
+values.Use("Title");
+
+List<DynaObject> albums = values.Query<List<DynaObject>>(cnn);
+```
 
 ```sql
-?SELECT AlbumId AS Id, Title FROM albums
-SELECT /*Id*/AlbumId AS Id, /*Title*/Title FROM albums
-
--- Title on, either form
 SELECT Title FROM albums
 ```
 
-Activate the keys like any condition key, with `builder.Use("Title")` or a parameter object with `[ForBoolCond]` members.
+When none of the projection keys are active, the complete `SELECT` section disappears.
 
-## Always-kept columns
-
-A `!` right after the column expression keeps it out of the conditional logic. It is always projected.
+```csharp
+List<DynaObject> albums = AlbumProjection.Query<List<DynaObject>>(cnn);
+```
 
 ```sql
-?SELECT AlbumId AS Id!, Title, ArtistId FROM albums
+FROM albums
+-- Passed to the provider as written.
+```
 
--- nothing on
+Rinku does not validate the generated SQL. This standalone result is invalid, but another condition combination can retain a [valid template alternative](template-syntax.md#conditions-may-select-incompatible-template-alternatives).
+
+The column name or alias becomes its key.
+
+```sql
+?SELECT a.AlbumId, a.Title AS Name, COUNT(*) AS Total FROM albums a
+```
+
+```text
+a.AlbumId        -> AlbumId
+a.Title AS Name  -> Name
+COUNT(*) AS Total -> Total
+```
+
+## Alias calculated columns
+
+The parser takes the final identifier or quoted identifier before the comma or next SQL section. It does not interpret the expression.
+
+```sql
+?SELECT a.Price * a.Quantity FROM album_lines a
+```
+
+```text
+Key: Quantity
+```
+
+Give calculated columns an explicit, stable key.
+
+```sql
+?SELECT a.Price * a.Quantity AS LineTotal FROM album_lines a
+```
+
+```text
+Key: LineTotal
+```
+
+Activating `LineTotal` keeps the aliased expression in the generated SQL.
+
+```sql
+SELECT a.Price * a.Quantity AS LineTotal FROM album_lines a
+```
+
+## Keep a column every time
+
+`!` after a projected expression makes that column unconditional.
+
+```sql
+?SELECT AlbumId AS Id!, Title, ReleaseYear FROM albums
+```
+
+When no keys are active, only the unconditional `Id` column remains.
+
+```sql
 SELECT AlbumId AS Id FROM albums
+```
 
--- Title on
+Activating `Title` adds that column after the unconditional `Id`.
+
+```sql
 SELECT AlbumId AS Id, Title FROM albums
 ```
 
-`!` is only valid inside a `?SELECT`. Anywhere else the template throws at construction.
+The `!` suffix is only valid inside a `?SELECT`.
 
-## Joining columns
+## Group columns under one key
 
-`&,` welds columns under one key, the last column's name.
-
-```sql
-?SELECT ArtistId AS Id&, Name FROM artists
-
--- Name on
-SELECT ArtistId AS Id, Name FROM artists
-```
-
-`Id` is not a key of its own here, it rides with `Name`.
-
-## Adding a key to a column
-
-A marker before a column adds its keys on top of the column's own, combined with "and". Here `Email` needs both its own key and `Admin`.
+`&,` joins columns to the key derived from the last column.
 
 ```sql
-?SELECT Id, Username, /*Admin*/Email FROM users
-
--- Id, Username, Email on; Admin off
-SELECT Id, Username FROM users
+?SELECT AlbumId AS Id&, Title, ReleaseYear FROM albums
 ```
 
-A marker on an always-kept column replaces "always" with the marker's keys, so `Id` is projected when `Manual` is active instead of always.
+`Title` keeps both `Id` and `Title`.
 
 ```sql
-?SELECT /*Manual*/Id!, Username FROM users
-
--- Username on, Manual off
-SELECT Username FROM users
-
--- Username and Manual on
-SELECT Id, Username FROM users
+SELECT AlbumId AS Id, Title FROM albums
 ```
 
-## Under an outer condition
+`Id` is not a separate key in this template.
 
-A `?SELECT` can itself sit inside a bigger conditional footprint. The outer key gates the whole select, the column keys refine it.
+## Add another condition
+
+An explicit marker adds its requirement to the column's derived key.
 
 ```sql
-/*Wrapping*/?SELECT Id!, Username FROM users
+?SELECT AlbumId AS Id!, Title, /*Admin*/InternalCode FROM albums
 ```
 
-With `Wrapping` off the whole select is gone, always-kept columns included.
+`InternalCode` remains unavailable until its additional `Admin` key is also active.
 
-## Across UNION
+```sql
+SELECT AlbumId AS Id FROM albums
+```
 
-Matching column names across `?SELECT`s share one key, keeping the projections in sync.
+When both keys are active, the generated projection contains both columns.
+
+```sql
+SELECT AlbumId AS Id, InternalCode FROM albums
+```
+
+On an always-kept column, a marker replaces the unconditional behavior.
+
+```sql
+?SELECT /*Manual*/AlbumId AS Id!, Title FROM albums
+```
+
+When `Manual` is inactive, `Title` can remain without the otherwise unconditional `Id`.
+
+```sql
+SELECT Title FROM albums
+```
+
+## Keep UNION projections aligned
+
+Matching aliases share the same keys across `?SELECT` statements.
 
 ```sql
 ?SELECT ArtistId AS Id, Name FROM artists UNION ALL ?SELECT GenreId AS Id, Name FROM genres
+```
 
--- Name on
+Activating `Name` keeps the matching projection on both sides of the union.
+
+```sql
 SELECT Name FROM artists UNION ALL SELECT Name FROM genres
 ```
 
-Different names get different keys, so mismatched aliases can produce an invalid side. Align the aliases.
+Use matching aliases on both sides. Different derived keys can produce incompatible projections.
 
-## In a CTE
+## Use a conditional projection in a CTE
 
 ```sql
 WITH a AS (?SELECT AlbumId AS Id, Title, ArtistId FROM albums) SELECT * FROM a
+```
 
--- Title on
+Activating `Title` changes the projection inside the CTE.
+
+```sql
 WITH a AS (SELECT Title FROM albums) SELECT * FROM a
 ```
 
-## Modifiers and `???`
+## Isolate a modifier
 
-A modifier before the first column is swept into that column's footprint. Isolate it with the [`???` boundary](conditional-markers.md#the--boundary).
-
-```sql
-?SELECT DISTINCT Title, Composer FROM tracks
-
--- only Composer on
-SELECT Composer FROM tracks
-```
+Use `???` when a modifier should remain while its first projected column disappears.
 
 ```sql
-?SELECT DISTINCT??? Title, Composer FROM tracks
-
--- only Composer on
-SELECT DISTINCT Composer FROM tracks
+?SELECT DISTINCT??? Title, Composer FROM albums
 ```
 
-The wall keys nothing of its own, so the columns stay keyed by their names and the modifier it holds out belongs to none of them. Put a marker on the modifier to make it conditional too.
+When only `Composer` is active, `DISTINCT` remains attached to the projection.
 
 ```sql
-?SELECT /*UseDistinct*/DISTINCT??? Title, Composer FROM tracks
-
--- Composer on, UseDistinct off
-SELECT Composer FROM tracks
-
--- Composer and UseDistinct on
-SELECT DISTINCT Composer FROM tracks
+SELECT DISTINCT Composer FROM albums
 ```
 
-## Mapping note
+## Parser caching follows the keys
 
-A command whose projection changes produces several result schemas. That is expected and supported. The row mapper is chosen per schema. Ask for a type whose members are all optional to fit, or a [DynaObject](../mapping/dynaobject.md) when the shape is open-ended.
+Each active key combination has its own typed row parser.
+
+```sql
+?SELECT AlbumId AS Id!, Title, ReleaseYear FROM albums
+```
+
+```text
+Keys: Title             -> parser for Id, Title
+Keys: ReleaseYear       -> parser for Id, ReleaseYear
+Keys: Title,ReleaseYear -> parser for Id, Title, ReleaseYear
+```
+
+A raw handler value is not a key. Changing a raw projection can therefore reuse a parser built for another schema.
+
+```csharp
+static readonly QueryCommand UnsafeTypedProjection = new("SELECT @columns_R FROM albums");
+
+List<Album> first = UnsafeTypedProjection.Query<List<Album>>(cnn, new { columns = "AlbumId AS Id, Title" });
+
+List<Album> second = UnsafeTypedProjection.Query<List<Album>>(cnn, new { columns = "ReleaseYear, Title" });
+// The active key set did not change, so the first typed parser may be reused.
+```
+
+Use `?SELECT` for a known set of typed projections. Use a schema-adaptive [dictionary row](../mapping/dynamic-rows.md) when the selected columns are truly open-ended.

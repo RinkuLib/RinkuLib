@@ -1,5 +1,5 @@
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
@@ -47,6 +47,19 @@ public class QuickStartDocumentationTests(SqliteDb db) : IClassFixture<SqliteDb>
     }
 
     [Fact]
+    public void A_parameter_object_can_be_a_class_record_or_struct() {
+        using var cnn = db.GetConnection();
+
+        var fromClass = GetUserById.Query<QuickStartUser>(cnn, new UserFilterClass { Id = 1 });
+        var fromRecord = GetUserById.Query<QuickStartUser>(cnn, new UserFilterRecord(2));
+        var fromStruct = GetUserById.Query<QuickStartUser>(cnn, new UserFilterStruct { Id = 3 });
+
+        Assert.Equal(new QuickStartUser(1, "John", null), fromClass);
+        Assert.Equal(new QuickStartUser(2, "Victor", "victor@corp.com"), fromRecord);
+        Assert.Equal(new QuickStartUser(3, "Alice", "alice@corp.com"), fromStruct);
+    }
+
+    [Fact]
     public void Scalars_writes_and_optional_variables_follow_the_quick_start_examples() {
         using var cnn = db.GetConnection();
         try {
@@ -71,3 +84,13 @@ public class QuickStartDocumentationTests(SqliteDb db) : IClassFixture<SqliteDb>
 }
 
 public sealed record QuickStartUser(int Id, string Name, string? Email);
+
+file sealed class UserFilterClass {
+    public int Id { get; init; }
+}
+
+file sealed record UserFilterRecord(int Id);
+
+file struct UserFilterStruct {
+    public int Id { get; init; }
+}

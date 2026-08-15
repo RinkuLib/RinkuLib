@@ -12,11 +12,12 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageReference Include="Dapper" Version="2.1.66" />
+    <PackageReference Include="Dapper" Version="2.1.79" />
+    <PackageReference Include="Dapper.SqlBuilder" Version="2.1.66" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RinkuLib.Tests\RinkuLib.Tests.csproj" />
+    <ProjectReference Include="..\RinkuLib.Testing\RinkuLib.Testing.csproj" />
     <ProjectReference Include="..\RinkuLib\RinkuLib.csproj" />
   </ItemGroup>
 

@@ -1,7 +1,7 @@
 using System.Data;
 using System.Data.Common;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
@@ -116,9 +116,13 @@ public class QueryBuilderCommandTests {
     public void Spread_update_with_same_count_replaces_values_in_place() {
         var (builder, cmd) = StartBuilder(SpreadTemplate);
         builder.Use("@Cats", new[] { 1, 2 });
+        var first = cmd.BoundParameters[0];
+        var second = cmd.BoundParameters[1];
         builder.Use("@Cats", new[] { 8, 9 });
         Assert.Equal(2, cmd.BoundParameters.Count);
         Assert.Equal([8, 9], cmd.BoundParameters.Select(p => p.Value));
+        Assert.Same(first, cmd.BoundParameters[0]);
+        Assert.Same(second, cmd.BoundParameters[1]);
     }
 
     [Fact]

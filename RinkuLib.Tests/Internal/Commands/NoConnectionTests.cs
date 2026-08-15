@@ -1,11 +1,12 @@
 using System.Data;
+using Rinku.Mapping.Parsers.Defaults;
 using System.Data.Common;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -20,7 +21,7 @@ public class NoConnectionTests {
 
     static ITypeParser<long> Parser() {
         var cols = Cols;
-        return TypeParser.GetTypeParser<long>(ref cols);
+        return TypeParser.GetTypeParser<long>(cols);
     }
 
     static CachedTypeParser<long> Cached() => new();
@@ -99,7 +100,7 @@ public class NoConnectionTests {
     [Fact]
     public void The_lazy_shape_refuses_a_command_without_a_connection_on_both_roads() {
         var cols = Cols;
-        var lazy = TypeParser.GetTypeParser<IEnumerable<long>>(ref cols);
+        var lazy = TypeParser.GetTypeParser<IEnumerable<long>>(cols);
         var dbCmd = new FakeCommand();
         AssertRefused(() => lazy.Query(dbCmd).ToList());
         AssertRefused(() => lazy.Query(dbCmd, Query).ToList());

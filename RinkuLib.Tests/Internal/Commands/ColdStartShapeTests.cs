@@ -1,10 +1,11 @@
 using System.Data;
 using System.Data.Common;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
+using Rinku;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Defaults;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -22,7 +23,7 @@ public class ColdStartShapeTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         public ITypeParser<IEnumerable<UserRow>> UpdateCache(IDbCommand cmd, DbDataReader reader) {
             Asked++;
             var cols = reader.GetColumns();
-            return TypeParser.GetTypeParser<IEnumerable<UserRow>>(ref cols);
+            return TypeParser.GetTypeParser<IEnumerable<UserRow>>(cols);
         }
         public ValueTask<ITypeParser<IEnumerable<UserRow>>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default)
             => new(UpdateCache(cmd, reader));
@@ -198,7 +199,7 @@ public class ColdStartShapeTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         public CommandBehavior Behavior => CommandBehavior.Default;
         public ITypeParser<List<UserRow>> UpdateCache(IDbCommand cmd, DbDataReader reader) {
             var cols = reader.GetColumns();
-            return TypeParser.GetTypeParser<List<UserRow>>(ref cols);
+            return TypeParser.GetTypeParser<List<UserRow>>(cols);
         }
         public ValueTask<ITypeParser<List<UserRow>>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default)
             => new(UpdateCache(cmd, reader));
@@ -208,7 +209,7 @@ public class ColdStartShapeTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         public CommandBehavior Behavior => CommandBehavior.Default;
         public ITypeParser<UserRow> UpdateCache(IDbCommand cmd, DbDataReader reader) {
             var cols = reader.GetColumns();
-            return TypeParser.GetTypeParser<UserRow>(ref cols);
+            return TypeParser.GetTypeParser<UserRow>(cols);
         }
         public ValueTask<ITypeParser<UserRow>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default)
             => new(UpdateCache(cmd, reader));

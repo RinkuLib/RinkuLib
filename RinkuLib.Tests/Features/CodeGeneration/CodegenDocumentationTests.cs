@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Rinku.Querying.Defaults;
 using System.Diagnostics.CodeAnalysis;
 
 #pragma warning disable CS8765 // This test connection models a host-provided connection contract.

@@ -1,7 +1,8 @@
 using System.Data;
+using Rinku.Querying.Defaults;
 using System.Data.Common;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
@@ -252,10 +253,10 @@ public class ParamInfoTests {
     }
 
     [Fact]
-    public void Infered_leaves_the_type_to_the_driver() {
-        var info = InferedDbParamCache.Instance;
+    public void Inferred_leaves_the_type_to_the_driver() {
+        var info = InferredDbParamCache.Instance;
         Assert.False(info.IsCached);
-        Assert.True(InferedDbParamCache.ForceInfered.IsCached);
+        Assert.True(InferredDbParamCache.ForceInferred.IsCached);
         var cmd = Cmd();
         Assert.True(info.Use("@p", (IDbCommand)cmd, 5));
         Assert.Equal(5, Single(cmd).Value);
@@ -284,9 +285,9 @@ public class ParamInfoTests {
     [Fact]
     public void RemoveSingle_on_a_legacy_command_matches_by_name() {
         var cmd = new LegacyCommand();
-        InferedDbParamCache.Instance.Use("@a", cmd, 1);
+        InferredDbParamCache.Instance.Use("@a", cmd, 1);
         cmd.Parameters.Add("not a parameter");
-        InferedDbParamCache.Instance.Use("@b", cmd, 2);
+        InferredDbParamCache.Instance.Use("@b", cmd, 2);
         Assert.True(DbParamInfo.RemoveSingle("@b", cmd));
         Assert.False(DbParamInfo.RemoveSingle("@missing", cmd));  
     }
@@ -294,8 +295,8 @@ public class ParamInfoTests {
     [Fact]
     public void TryGetParamInfo_default_road_over_a_legacy_command() {
         var cmd = new LegacyCommand();
-        InferedDbParamCache.Instance.Use("@a", cmd, 1);
-        InferedDbParamCache.Instance.Use("@b", cmd, 2);
+        InferredDbParamCache.Instance.Use("@a", cmd, 1);
+        InferredDbParamCache.Instance.Use("@b", cmd, 2);
         cmd.Parameters.Add("a plain object, not a parameter");
         Assert.True(IDbParamInfoGetter.TryGetParamInfo(cmd, "@b", out var info));
         Assert.NotNull(info);
@@ -305,9 +306,9 @@ public class ParamInfoTests {
     [Fact]
     public void A_collection_holding_a_non_parameter_is_navigated_safely() {
         var cmd = new LegacyCommand();
-        InferedDbParamCache.Instance.Use("@a", cmd, 1);
+        InferredDbParamCache.Instance.Use("@a", cmd, 1);
         cmd.Parameters.Add("plain object");
-        InferedDbParamCache.Instance.Use("@b", cmd, 2);
+        InferredDbParamCache.Instance.Use("@b", cmd, 2);
 
         var cache = new DefaultParamCache(cmd);
         Assert.Equal(["@a", "@b"], cache.EnumerateParameters().Select(kv => kv.Key));
@@ -315,7 +316,7 @@ public class ParamInfoTests {
         Assert.True(cache.TryGetInfo("@b", out _));      
         Assert.False(cache.TryGetInfo("@nope", out _));
 
-        var force = new ForceInferedParamCache(cmd);
+        var force = new ForceInferredParamCache(cmd);
         Assert.Equal(["@a", "@b"], force.EnumerateParameters().Select(kv => kv.Key));
         Assert.True(force.TryGetInfo("@b", out _));
         Assert.False(force.TryGetInfo("@nope", out _));
@@ -324,13 +325,13 @@ public class ParamInfoTests {
     [Fact]
     public void EnumerateParameters_skips_non_data_parameters() {
         var cmd = Cmd();
-        InferedDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
+        InferredDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
         Assert.Single(new DefaultParamCache(cmd).EnumerateParameters());
-        Assert.Single(new ForceInferedParamCache(cmd).EnumerateParameters());
+        Assert.Single(new ForceInferredParamCache(cmd).EnumerateParameters());
     }
 
     /// <summary>
-    /// The providers reject a non-parameter as it is added, which is why RINKU1003 is documented as coming
+    /// The providers reject a non-parameter as it is added, which is why RINKU2004 is documented as coming
     /// from an <see cref="IDbCommand"/> of your own rather than from normal use.
     /// </summary>
     [Fact]
@@ -352,11 +353,11 @@ public class ParamInfoTests {
     [Fact]
     public void RemoveSingle_removes_by_name_on_both_interfaces() {
         var cmd = Cmd();
-        InferedDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
-        InferedDbParamCache.Instance.Use("@b", (IDbCommand)cmd, 2);
+        InferredDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
+        InferredDbParamCache.Instance.Use("@b", (IDbCommand)cmd, 2);
         Assert.True(DbParamInfo.RemoveSingle("@a", (IDbCommand)cmd));  
         Assert.False(DbParamInfo.RemoveSingle("@a", (IDbCommand)cmd)); 
-        InferedDbParamCache.Instance.Use("@c", (DbCommand)cmd, 3);
+        InferredDbParamCache.Instance.Use("@c", (DbCommand)cmd, 3);
         Assert.True(DbParamInfo.RemoveSingle("@b", (DbCommand)cmd));
         Assert.False(DbParamInfo.RemoveSingle("@zzz", (DbCommand)cmd)); 
     }
@@ -387,9 +388,17 @@ public class ParamInfoTests {
     }
 
     [Theory]
+    [InlineData(-1, -1)]
+    [InlineData(0, 100)]
     [InlineData(90, 100)]
+    [InlineData(100, 100)]
+    [InlineData(101, 500)]
     [InlineData(300, 500)]
+    [InlineData(500, 500)]
+    [InlineData(501, 4000)]
     [InlineData(3000, 4000)]
+    [InlineData(4000, 4000)]
+    [InlineData(4001, -1)]
     [InlineData(9000, -1)]
     public void DefaultParamCache_size_tiers(int size, int expected) {
         var cmd = Cmd();
@@ -403,24 +412,24 @@ public class ParamInfoTests {
     }
 
     [Fact]
-    public void ForceInfered_claims_only_its_command_type() {
-        Assert.True(ForceInferedParamCache.GetInfoGetterMaker<FakeCommand>(Cmd(), out var getter));
-        Assert.False(ForceInferedParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>(Cmd(), out _));
+    public void ForceInferred_claims_only_its_command_type() {
+        Assert.True(ForceInferredParamCache.GetInfoGetterMaker<FakeCommand>(Cmd(), out var getter));
+        Assert.False(ForceInferredParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>(Cmd(), out _));
 
         var cmd = Cmd();
-        InferedDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
-        var cache = new ForceInferedParamCache(cmd);
+        InferredDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
+        var cache = new ForceInferredParamCache(cmd);
         Assert.Equal(["@a"], cache.EnumerateParameters().Select(kv => kv.Key));
-        Assert.Same(InferedDbParamCache.ForceInfered, cache.MakeInfoAt(0));
+        Assert.Same(InferredDbParamCache.ForceInferred, cache.MakeInfoAt(0));
         Assert.True(cache.TryGetInfo("@a", out var info));
-        Assert.Same(InferedDbParamCache.ForceInfered, info);
+        Assert.Same(InferredDbParamCache.ForceInferred, info);
         Assert.False(cache.TryGetInfo("@nope", out _));
     }
 
     [Fact]
     public void TryGetParamInfo_uses_the_default_road_when_no_maker_claims() {
         var cmd = Cmd();
-        InferedDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
+        InferredDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
         Assert.True(IDbParamInfoGetter.TryGetParamInfo(cmd, "@a", out var info));
         Assert.NotNull(info);
         Assert.False(IDbParamInfoGetter.TryGetParamInfo(cmd, "@nope", out _));
@@ -430,17 +439,17 @@ public class ParamInfoTests {
     [Fact]
     public void TryGetParamInfo_skips_a_passing_maker_then_takes_the_one_that_claims() {
         var cmd = new MakerProbeCommand();
-        InferedDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
-        IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferedParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>);
-        IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferedParamCache.GetInfoGetterMaker<MakerProbeCommand>);
+        InferredDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
+        IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferredParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>);
+        IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferredParamCache.GetInfoGetterMaker<MakerProbeCommand>);
         try {
             Assert.True(IDbParamInfoGetter.TryGetParamInfo(cmd, "@a", out var info));
-            Assert.Same(InferedDbParamCache.ForceInfered, info);
+            Assert.Same(InferredDbParamCache.ForceInferred, info);
             Assert.False(IDbParamInfoGetter.TryGetParamInfo(cmd, "@nope", out _));
         }
         finally {
-            IDbParamInfoGetter.ParamGetterMakers.Remove(ForceInferedParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>);
-            IDbParamInfoGetter.ParamGetterMakers.Remove(ForceInferedParamCache.GetInfoGetterMaker<MakerProbeCommand>);
+            IDbParamInfoGetter.ParamGetterMakers.Remove(ForceInferredParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>);
+            IDbParamInfoGetter.ParamGetterMakers.Remove(ForceInferredParamCache.GetInfoGetterMaker<MakerProbeCommand>);
         }
     }
 }

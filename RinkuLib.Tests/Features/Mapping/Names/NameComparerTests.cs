@@ -1,4 +1,4 @@
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;

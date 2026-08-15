@@ -1,0 +1,313 @@
+using System.Data;
+using System.Data.Common;
+using System.Runtime.CompilerServices;
+namespace Rinku.Mapping.Parsers.Defaults;
+/// <summary>
+/// The base for the streamed shape, <see cref="IEnumerable{T}"/>, it yields rows as you enumerate rather than
+/// buffering them, keeping memory flat on large results. It holds the reader open while you iterate and
+/// disposes it when enumeration ends.
+/// </summary>
+public abstract class BaseEnumerableTypeParser<T>(Func<DbDataReader, T>? rowParser = null) : ITypeParser<IEnumerable<T>>, IReaderHoldingParser<IEnumerable<T>> {
+    bool ITypeParser<IEnumerable<T>>.InternalProtect => true;
+    private readonly Func<DbDataReader, T>? RowParser = rowParser;
+    internal Func<DbDataReader, T>? DirectRowParser => RowParser;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal (bool CanContinue, T Result) ParseCurrent(DbDataReader reader) => ParseOne(reader);
+    /// <summary>
+    /// Used to parse a single item. Reports whether the reader is left on an untreated row
+    /// </summary>
+    protected abstract (bool CanContinue, T Result) ParseOne(DbDataReader reader);
+    /// <inheritdoc/>
+    public IEnumerable<T> ParseThen<TDone>(DbDataReader reader, TDone onDone) where TDone : IReaderDone {
+        try {
+            if (RowParser is { } parser) {
+                do { yield return parser(reader); } while (reader.Read());
+                yield break;
+            }
+            bool canContinue;
+            do {
+                (canContinue, var item) = ParseOne(reader);
+                yield return item;
+            } while (canContinue);
+        }
+        finally {
+            onDone.Invoke(reader);
+        }
+    }
+    /// <inheritdoc/>
+    public abstract CommandBehavior Behavior { get; }
+    /// <inheritdoc/>
+    public abstract bool CanParse(ColumnInfo[] schema);
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public IEnumerable<T> Default() => [];
+    /// <summary>
+    /// The enumerable is lazy, rows are read while it is enumerated,
+    /// so <c>CanContinue</c> cannot be known up front and is always <see langword="false"/>
+    /// </summary>
+    public (bool CanContinue, IEnumerable<T> Result) Parse(DbDataReader reader) => (false, ParseRows(reader));
+    private IEnumerable<T> ParseRows(DbDataReader reader) {
+        if (RowParser is { } parser) {
+            do { yield return parser(reader); } while (reader.Read());
+            yield break;
+        }
+        bool canContinue;
+        do {
+            (canContinue, var item) = ParseOne(reader);
+            yield return item;
+        } while (canContinue);
+    }
+    /// <inheritdoc cref="Parse"/>
+    public ValueTask<(bool CanContinue, IEnumerable<T> Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default)
+        => new(Parse(reader));
+    /// <inheritdoc/>
+    public IEnumerable<T> Query(DbCommand command, bool disposeCommand = false) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            using var reader = command.ExecuteReader(behavior);
+            wasClosed = false;
+            if (reader.Read()) {
+                if (RowParser is { } parser) {
+                    do { yield return parser(reader); } while (reader.Read());
+                    yield break;
+                }
+                bool canContinue;
+                do {
+                    (canContinue, var item) = ParseOne(reader);
+                    yield return item;
+                } while (canContinue);
+            }
+        }
+        finally {
+            if (wasClosed)
+                cnn.Close();
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+        }
+    }
+    /// <inheritdoc/>
+    public IEnumerable<T> Query(IDbCommand command, bool disposeCommand = false) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            var r = command.ExecuteReader(behavior);
+            using var reader = WrappedBasicReader.Wrap(r);
+            wasClosed = false;
+            if (reader.Read()) {
+                if (RowParser is { } parser) {
+                    do { yield return parser(reader); } while (reader.Read());
+                    yield break;
+                }
+                bool canContinue;
+                do {
+                    (canContinue, var item) = ParseOne(reader);
+                    yield return item;
+                } while (canContinue);
+            }
+        }
+        finally {
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+            if (wasClosed)
+                cnn.Close();
+        }
+    }
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Awaiting opens the reader and reads the first row asynchronously.
+    /// Enumeration reads the remaining rows synchronously and closes the reader when it ends.
+    /// Use <c>StreamQueryAsync</c> to read every row asynchronously.
+    /// </remarks>
+    public async Task<IEnumerable<T>> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        DbDataReader? reader = null;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            wasClosed = false;
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                return Default();
+            var open = reader;
+            reader = null;
+            return disposeCommand
+                ? ParseThen(open, new LetGoOfReaderAndCommand(command))
+                : ParseThen(open, new LetGoOfReader());
+        }
+        finally {
+            if (reader is not null) {
+                LetGo(reader, command, disposeCommand);
+                if (wasClosed && cnn.State != ConnectionState.Closed)
+                    cnn.Close();
+            }
+        }
+    }
+    /// <inheritdoc cref="QueryAsync(DbCommand, bool, CancellationToken)"/>
+    /// <remarks>
+    /// An <see cref="IDbCommand"/> has no asynchronous reader methods.
+    /// Its query starts when the returned sequence is enumerated.
+    /// </remarks>
+    public Task<IEnumerable<T>> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
+        if (command is DbCommand c)
+            return QueryAsync(c, disposeCommand, ct);
+        return Task.FromResult(Query(command, disposeCommand));
+    }
+    private static void LetGo(DbDataReader reader, IDbCommand command, bool disposeCommand) {
+        if (disposeCommand)
+            new LetGoOfReaderAndCommand(command).Invoke(reader);
+        else
+            new LetGoOfReader().Invoke(reader);
+    }
+    /// <inheritdoc/>
+    public IEnumerable<T> Query(DbCommand command, ICache cache, bool disposeCommand = false) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            using var reader = command.ExecuteReader(behavior);
+            wasClosed = false;
+            cache.UpdateCache(command);
+            if (reader.Read()) {
+                if (RowParser is { } parser) {
+                    do { yield return parser(reader); } while (reader.Read());
+                    yield break;
+                }
+                bool canContinue;
+                do {
+                    (canContinue, var item) = ParseOne(reader);
+                    yield return item;
+                } while (canContinue);
+            }
+        }
+        finally {
+            if (wasClosed)
+                cnn.Close();
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+        }
+    }
+    /// <inheritdoc/>
+    public IEnumerable<T> Query(IDbCommand command, ICache cache, bool disposeCommand = false) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                cnn.Open();
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            var r = command.ExecuteReader(behavior);
+            using var reader = WrappedBasicReader.Wrap(r);
+            wasClosed = false;
+            cache.UpdateCache(command);
+            if (reader.Read()) {
+                if (RowParser is { } parser) {
+                    do { yield return parser(reader); } while (reader.Read());
+                    yield break;
+                }
+                bool canContinue;
+                do {
+                    (canContinue, var item) = ParseOne(reader);
+                    yield return item;
+                } while (canContinue);
+            }
+        }
+        finally {
+            if (disposeCommand) {
+                command.Parameters.Clear();
+                command.Dispose();
+            }
+            if (wasClosed)
+                cnn.Close();
+        }
+    }
+    /// <inheritdoc cref="QueryAsync(DbCommand, bool, CancellationToken)"/>
+    public async Task<IEnumerable<T>> QueryAsync(DbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+        var cnn = command.Connection ?? throw new RinkuNoConnectionException();
+        var wasClosed = cnn.State != ConnectionState.Open;
+        DbDataReader? reader = null;
+        try {
+            var behavior = Behavior;
+            if (wasClosed) {
+                await cnn.OpenAsync(ct).ConfigureAwait(false);
+                behavior |= CommandBehavior.CloseConnection;
+            }
+            reader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+            wasClosed = false;
+            await cache.UpdateCacheAsync(command, ct).ConfigureAwait(false);
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                return Default();
+            var open = reader;
+            reader = null;
+            return disposeCommand
+                ? ParseThen(open, new LetGoOfReaderAndCommand(command))
+                : ParseThen(open, new LetGoOfReader());
+        }
+        finally {
+            if (reader is not null) {
+                LetGo(reader, command, disposeCommand);
+                if (wasClosed && cnn.State != ConnectionState.Closed)
+                    cnn.Close();
+            }
+        }
+    }
+    /// <inheritdoc cref="QueryAsync(IDbCommand, bool, CancellationToken)"/>
+    public Task<IEnumerable<T>> QueryAsync(IDbCommand command, ICache cache, bool disposeCommand = false, CancellationToken ct = default) {
+        if (command is DbCommand c)
+            return QueryAsync(c, cache, disposeCommand, ct);
+        return Task.FromResult(Query(command, cache, disposeCommand));
+    }
+}
+/// <summary>
+/// The parser behind <see cref="IEnumerable{T}"/>, streaming each row through an element parser as you enumerate.
+/// </summary>
+public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : BaseEnumerableTypeParser<T> {
+    private readonly ITypeParser<T> ElementParser = elementParser;
+    /// <inheritdoc/>
+    public override CommandBehavior Behavior => ElementParser.Behavior & ~CommandBehavior.SingleRow;
+    /// <inheritdoc/>
+    public override bool CanParse(ColumnInfo[] schema) => ElementParser.CanParse(schema);
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected override (bool CanContinue, T Result) ParseOne(DbDataReader reader) => ElementParser.Parse(reader);
+}
+/// <summary>Streams rows through a delegate that does not advance the reader.</summary>
+public sealed class FastEnumerableTypeParser<T>(CommandBehavior behavior, Func<DbDataReader, T> parser, ITypeParser schemaParser) : BaseEnumerableTypeParser<T>(parser) {
+    private readonly Func<DbDataReader, T> Parser = parser;
+    private readonly ITypeParser SchemaParser = schemaParser;
+    /// <inheritdoc/>
+    public override CommandBehavior Behavior { get; } = behavior & ~CommandBehavior.SingleRow;
+    /// <inheritdoc/>
+    public override bool CanParse(ColumnInfo[] schema) => SchemaParser.CanParse(schema);
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected override (bool CanContinue, T Result) ParseOne(DbDataReader reader) {
+        var res = Parser(reader);
+        return (reader.Read(), res);
+    }
+}

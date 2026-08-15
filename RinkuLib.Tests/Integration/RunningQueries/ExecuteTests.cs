@@ -1,13 +1,14 @@
-﻿using System;
+using System;
+using Rinku.Querying.Defaults;
 using System.Collections.Generic;
 using System.Data;
 using System.Text;
 using Microsoft.Data.SqlClient;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers; 
+namespace RinkuLib.Tests.TestContainers;
 public class ExecuteTestsFixture : DBFixture<SqlConnection> {
     public QueryCommand CreateSimpleTable = new("CREATE TABLE #Simple (ID INT IDENTITY(1,1), Val INT)");
     public QueryCommand InsertAndGetId = new("INSERT INTO #Simple (Val) VALUES (@Val); SELECT SCOPE_IDENTITY();");
@@ -123,19 +124,24 @@ public class ExecuteTests(ExecuteTestsFixture fixture) : IClassFixture<ExecuteTe
         await new QueryCommand(create).ExecuteAsync(cnn, ct: ct);
 
         try {
-            var proc = new QueryCommand("dbo.ReturnAndOutput", ["a", "moved", "result"]);
-            Assert.True(proc.UpdateParamCache("@moved", new DirectionalDbParamCache(ParameterDirection.Output, DbType.Int32)));
-            Assert.True(proc.UpdateParamCache("@result", new DirectionalDbParamCache(ParameterDirection.ReturnValue, DbType.Int32)));
+            using var proc = QueryCommand.FromProc("dbo.ReturnAndOutput", cnn);
+            Assert.Equal(["@a", "@moved"], proc.Mapper.Keys.ToArray());
 
             var total = await proc.QueryAsync<int>(
                 cnn,
                 out var cmd,
-                new { a = 41, moved = 0, result = 0 },
+                new { a = 41, moved = 0 },
                 ct: ct);
             using (cmd) {
                 Assert.Equal(42, total);
-                Assert.Equal(42, (int)cmd.Parameters["@moved"].Value!);
-                Assert.Equal(42, (int)cmd.Parameters["@result"].Value!);
+                Assert.Same(cmd.Parameters["@moved"], cmd.GetOutputParameter("@moved"));
+                Assert.Equal(42, cmd.GetOutputValue<int>("@moved"));
+                Assert.Same(cmd.Parameters["@RETURN_VALUE"], cmd.GetReturnParameter());
+                Assert.Equal(42, cmd.GetReturnValue<int>());
+                Assert.Throws<InvalidOperationException>(() => cmd.GetOutputValue<int>("@a"));
+                IDbCommand interfaceCommand = cmd;
+                Assert.Equal(42, interfaceCommand.GetOutputValue<int>("@moved"));
+                Assert.Equal(42, interfaceCommand.GetReturnValue<int>());
             }
         }
         finally {

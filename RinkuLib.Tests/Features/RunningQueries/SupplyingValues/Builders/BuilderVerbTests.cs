@@ -1,7 +1,7 @@
 using System.Data;
 using System.Data.Common;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 

@@ -1,8 +1,8 @@
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
+using Rinku;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -18,7 +18,7 @@ public class CollectionAndWrapperTests {
     public void List_of_scalars_reads_every_row() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
         using var reader = Rows.Reader(cols, [1], [2], [3]);
-        var parser = TypeParser.GetTypeParser<List<int>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<int>>(cols);
         reader.Read();
         var (canContinue, list) = parser.Parse(reader);
         Assert.False(canContinue);
@@ -29,7 +29,7 @@ public class CollectionAndWrapperTests {
     public void List_of_objects_reads_every_row() {
         var cols = IdName;
         using var reader = Rows.Reader(cols, [1, "a"], [2, "b"]);
-        var parser = TypeParser.GetTypeParser<List<PropUser>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<PropUser>>(cols);
         reader.Read();
         var list = parser.Parse(reader).Result;
         Assert.Equal(2, list.Count);
@@ -41,7 +41,7 @@ public class CollectionAndWrapperTests {
     public void Optional_returns_null_when_no_row_exists() {
         ColumnInfo[] cols = [new("V", typeof(string), false)];
         using var reader = Rows.Reader(cols);
-        var parser = TypeParser.GetTypeParser<Optional<string>>(ref cols);
+        var parser = TypeParser.GetTypeParser<Optional<string>>(cols);
         Assert.False(reader.Read());
         string? value = parser.Default();
         Assert.Null(value);
@@ -51,7 +51,7 @@ public class CollectionAndWrapperTests {
     public void Optional_wraps_the_value_when_a_row_exists() {
         ColumnInfo[] cols = [new("V", typeof(string), false)];
         using var reader = Rows.Reader(cols, ["here"]);
-        var parser = TypeParser.GetTypeParser<Optional<string>>(ref cols);
+        var parser = TypeParser.GetTypeParser<Optional<string>>(cols);
         reader.Read();
         string? value = parser.Parse(reader).Result;
         Assert.Equal("here", value);
@@ -60,7 +60,7 @@ public class CollectionAndWrapperTests {
     [Fact]
     public void OptionalStruct_defaults_to_empty() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<OptionalStruct<int>>(ref cols);
+        var parser = TypeParser.GetTypeParser<OptionalStruct<int>>(cols);
         int? value = parser.Default();
         Assert.False(value.HasValue);
     }
@@ -69,9 +69,19 @@ public class CollectionAndWrapperTests {
     public void OptionalNullable_wraps_null_values_too() {
         ColumnInfo[] cols = [new("V", typeof(string), true)];
         using var reader = Rows.Reader(cols, [DBNull.Value]);
-        var parser = TypeParser.GetTypeParser<OptionalNullable<string>>(ref cols);
+        var parser = TypeParser.GetTypeParser<OptionalNullable<string>>(cols);
         reader.Read();
         string? value = parser.Parse(reader).Result;
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void OptionalNullableStruct_wraps_null_values_too() {
+        ColumnInfo[] cols = [new("V", typeof(int), true)];
+        using var reader = Rows.Reader(cols, [DBNull.Value]);
+        var parser = TypeParser.GetTypeParser<OptionalNullableStruct<int>>(cols);
+        reader.Read();
+        int? value = parser.Parse(reader).Result;
         Assert.Null(value);
     }
 
@@ -79,7 +89,7 @@ public class CollectionAndWrapperTests {
     public void MaybeNull_reads_value_and_null() {
         ColumnInfo[] cols = [new("V", typeof(string), true)];
         using var reader = Rows.Reader(cols, ["x"], [DBNull.Value]);
-        var parser = TypeParser.GetTypeParser<MaybeNull<string>>(ref cols);
+        var parser = TypeParser.GetTypeParser<MaybeNull<string>>(cols);
         reader.Read();
         string? first = parser.Parse(reader).Result;
         Assert.Equal("x", first);
@@ -91,23 +101,23 @@ public class CollectionAndWrapperTests {
     public void Single_throws_when_a_second_row_exists() {
         ColumnInfo[] cols = [new("V", typeof(string), false)];
         using var reader = Rows.Reader(cols, ["one"], ["two"]);
-        var parser = TypeParser.GetTypeParser<Single<string>>(ref cols);
+        var parser = TypeParser.GetTypeParser<Single<string>>(cols);
         reader.Read();
         Refusals.Raises(ErrorCodes.ShapeRefusedResult, () => parser.Parse(reader));
     }
 
     [Fact]
-    public void Single_defaults_when_no_row_was_read() {
+    public void Single_throws_when_no_row_was_read() {
         ColumnInfo[] cols = [new("V", typeof(string), false)];
-        var parser = TypeParser.GetTypeParser<Single<string>>(ref cols);
-        Assert.Null(parser.Default().Value);
+        var parser = TypeParser.GetTypeParser<Single<string>>(cols);
+        Refusals.Raises(ErrorCodes.NoRows, () => parser.Default());
     }
 
     [Fact]
     public void Single_returns_the_value_when_alone() {
         ColumnInfo[] cols = [new("V", typeof(string), false)];
         using var reader = Rows.Reader(cols, ["one"]);
-        var parser = TypeParser.GetTypeParser<Single<string>>(ref cols);
+        var parser = TypeParser.GetTypeParser<Single<string>>(cols);
         reader.Read();
         string value = parser.Parse(reader).Result;
         Assert.Equal("one", value);

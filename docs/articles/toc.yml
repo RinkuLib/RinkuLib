@@ -1,12 +1,14 @@
-- name: Getting Started
-  href: getting-started/toc.yml
-- name: Running Queries
+- name: Overview
+  href: index.md
+- name: Running queries
   href: running-queries/toc.yml
 - name: Mapping
   href: mapping/toc.yml
 - name: Conditional SQL
   href: conditional-sql/toc.yml
-- name: Code Generation
+- name: Advanced customization
+  href: customization/toc.yml
+- name: Code generation
   href: codegen/toc.yml
 - name: Tracking
   href: tracking/toc.yml

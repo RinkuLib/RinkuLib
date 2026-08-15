@@ -1,8 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
+using Rinku.Mapping.Defaults;
 using System.Reflection;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using RinkuLib.Tests.Documentation;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -223,6 +225,7 @@ public class RegistrationApiTests {
 
 
     record RegistryProbe(int A) : IDbReadable;
+    record RemovedRegistryProbe(int A) : IDbReadable;
     record UnregisteredPlain(int A);
 
     [Fact]
@@ -250,6 +253,26 @@ public class RegistrationApiTests {
         Refusals.Raises(ErrorCodes.TypeNotUsableByInfo, () => TypeParsingInfo.AddOrSet(typeof(RegistryProbe), new DefaultTypeParsingInfo(typeof(Payment))));
     }
 
+    [Fact]
+    [DocumentationExample("registration.md", "remove-registration")]
+    public void Exact_metadata_removal_does_not_invalidate_an_already_generated_parser() {
+        Type type = typeof(RemovedRegistryProbe);
+        ColumnInfo[] schema = [new("A", typeof(int), false)];
+        var info = new DefaultTypeParsingInfo(type);
+        TypeParsingInfo.AddOrSet(type, info);
+        var parser = TypeParser.GetTypeParser<RemovedRegistryProbe>(schema);
+        try {
+            Assert.True(TypeParsingInfo.TryRemove(type, out var removed));
+            Assert.Same(info, removed);
+            Assert.Null(TypeParsingInfo.Get(type));
+            Assert.Same(parser, TypeParser.GetTypeParser<RemovedRegistryProbe>(schema));
+        }
+        finally {
+            TypeParsingInfo.TryRemove(type, out _);
+            TypeParser.Invalidate(schema, ParserInvalidationMode.InvalidateReferences);
+        }
+    }
+
 
     class Assembled : IDbReadable {
         public int Id { get; set; }
@@ -269,6 +292,7 @@ public class RegistrationApiTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "replace-constructions")]
     public void The_construction_and_member_sets_can_be_replaced_wholesale_after_discovery() {
         var info = new DefaultTypeParsingInfo(typeof(Payment));
         Assert.Equal(2, ((ICanProvideConstructions)info).PossibleConstructors.Length);
@@ -305,14 +329,14 @@ public class RegistrationApiTests {
         Assert.False(BaseTypeInfo.Instance.UpdateAltName(c => c));
         Assert.False(BaseTypeInfo.Instance.SetAbortOnNull("x", true));
         BaseTypeInfo.Instance.ValidateCanUseType(typeof(int));
-        Assert.Contains("base types or enums",
-            Assert.ThrowsAny<Exception>(() => BaseTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
+        Assert.Contains("base types or enums", Refusals.Raises(ErrorCodes.TypeNotUsableByInfo,
+            () => BaseTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
         CtorTypeInfo.Instance.ValidateCanUseType(typeof((int, int)));
-        Assert.Contains("at least one constructor with parameters",
-            Assert.ThrowsAny<Exception>(() => CtorTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
+        Assert.Contains("at least one constructor with parameters", Refusals.Raises(ErrorCodes.TypeNotUsableByInfo,
+            () => CtorTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
         DynaObjectTypeInfo.Instance.ValidateCanUseType(typeof(DynaObject));
-        Assert.Contains("may only be",
-            Assert.ThrowsAny<Exception>(() => DynaObjectTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
+        Assert.Contains("may only be", Refusals.Raises(ErrorCodes.TypeNotUsableByInfo,
+            () => DynaObjectTypeInfo.Instance.ValidateCanUseType(typeof(Assembled))).Message);
     }
 
     /// <summary>
@@ -371,6 +395,7 @@ public class RegistrationApiTests {
     record Renamed(int First, int Second) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "configure-construction")]
     public void Alt_names_and_null_rules_reach_every_slot_through_the_helper() {
         var info = TypeParsingInfo.GetOrAdd<Renamed>();
         Assert.True(info.UpdateAltName(c => c.Contains("First") ? c.AddAltName("Uno") : null));
@@ -506,12 +531,12 @@ public class RegistrationApiTests {
         Assert.True(MemberParser.TryNew(give, P<int>("value"), out var member));
         var info = new DefaultTypeParsingInfo(typeof(Assembled));
         Refusals.Raises(ErrorCodes.ForeignGenericSource, () => info.AddMember(member));
-        Assert.ThrowsAny<Exception>(() => ((ICanProvideMembers)info).AvailableMembers = new[] { member });
+        Refusals.Raises(ErrorCodes.ForeignGenericSource, () => ((ICanProvideMembers)info).AvailableMembers = new[] { member });
 
         var make = new MethodCtorInfo(typeof(GenericDonor<int>).GetMethod("Make")!);
         var payInfo = new DefaultTypeParsingInfo(typeof(Payment));
         Refusals.Raises(ErrorCodes.ForeignGenericSource, () => payInfo.AddPossibleConstruction(make));
-        Assert.ThrowsAny<Exception>(() => ((ICanProvideConstructions)payInfo).PossibleConstructors = new[] { make });
+        Refusals.Raises(ErrorCodes.ForeignGenericSource, () => ((ICanProvideConstructions)payInfo).PossibleConstructors = new[] { make });
     }
 
     class OpenBox<T> : IDbReadable {

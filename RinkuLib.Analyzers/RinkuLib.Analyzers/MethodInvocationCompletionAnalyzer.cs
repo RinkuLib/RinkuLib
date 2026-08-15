@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -24,111 +24,75 @@ public sealed class MethodInvocationCompletionAnalyzer : DiagnosticAnalyzer {
     public override void Initialize(AnalysisContext context) {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
-
-        context.RegisterSyntaxNodeAction(
-            AnalyzeInvocationCandidate,
-            SyntaxKind.IdentifierName,
-            SyntaxKind.SimpleMemberAccessExpression,
-            SyntaxKind.MemberBindingExpression);
+        context.RegisterSyntaxNodeAction(AnalyzeName, SyntaxKind.IdentifierName, SyntaxKind.GenericName);
     }
 
-    private static void AnalyzeInvocationCandidate(SyntaxNodeAnalysisContext context) {
-        if (context.Node is not ExpressionSyntax expression)
+    private static void AnalyzeName(SyntaxNodeAnalysisContext context) {
+        if (context.Node is not SimpleNameSyntax name
+            || !TryGetMethodExpression(name, out var expression)
+            || !IsInsideMethodBody(expression)
+            || IsAlreadyInvoked(expression)
+            || IsInsideNameof(expression)
+            || IsDelegateConversion(context, expression))
             return;
 
-        if (!IsRelevantExpression(expression)
-         || !IsInsideMethodLikeBody(expression)
-         || IsAlreadyInvoked(expression)
-         || IsInsideNameOf(expression))
-            return;
-
-        IMethodSymbol? method = ResolveMethodSymbol(context, expression);
-        if (method is null)
-            return;
-
-        if (IsDelegateConversion(context, expression))
-            return;
-
-        context.ReportDiagnostic(
-            Diagnostic.Create(Rule, expression.GetLocation(), method.Name));
+        var method = ResolveMethod(context, expression);
+        if (method is not null)
+            context.ReportDiagnostic(Diagnostic.Create(Rule, expression.GetLocation(), method.Name));
     }
 
-    private static bool IsRelevantExpression(ExpressionSyntax expression) {
-        if (expression.Ancestors(ascendOutOfTrivia: true).Any(n => n is DocumentationCommentTriviaSyntax))
-            return false;
-        if (expression.Parent is MemberAccessExpressionSyntax parentAccess && parentAccess.Name == expression)
-            return false;
-
-        if (expression.Parent is MemberBindingExpressionSyntax parentBinding && parentBinding.Name == expression)
+    private static bool TryGetMethodExpression(SimpleNameSyntax name, out ExpressionSyntax expression) {
+        expression = name;
+        if (name.Ancestors(ascendOutOfTrivia: true).Any(node => node is DocumentationCommentTriviaSyntax))
             return false;
 
-        if (expression.Parent is MemberAccessExpressionSyntax leftAccess && leftAccess.Expression == expression)
-            return false;
+        if (name.Parent is MemberAccessExpressionSyntax access) {
+            if (access.Expression == name)
+                return false;
+            if (access.Name == name)
+                expression = access;
+        }
+        else if (name.Parent is MemberBindingExpressionSyntax binding && binding.Name == name)
+            expression = binding;
 
         return true;
     }
 
-    private static bool IsInsideMethodLikeBody(ExpressionSyntax expression)
-        => expression.Ancestors().Any(static n =>
-            n is MethodDeclarationSyntax
+    private static bool IsInsideMethodBody(ExpressionSyntax expression)
+        => expression.Ancestors().Any(static node =>
+            node is MethodDeclarationSyntax
             or ConstructorDeclarationSyntax
             or LocalFunctionStatementSyntax);
 
-    private static IMethodSymbol? ResolveMethodSymbol(SyntaxNodeAnalysisContext context, ExpressionSyntax expression) {
-        SymbolInfo symbolInfo = context.SemanticModel.GetSymbolInfo(expression, context.CancellationToken);
-
-        IMethodSymbol? method = symbolInfo.Symbol as IMethodSymbol
-            ?? symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
-
-        if (method is null)
-            return null;
-
-        return method.MethodKind is MethodKind.Ordinary or MethodKind.ReducedExtension
-            ? method : null;
+    private static IMethodSymbol? ResolveMethod(SyntaxNodeAnalysisContext context, ExpressionSyntax expression) {
+        var info = context.SemanticModel.GetSymbolInfo(expression, context.CancellationToken);
+        var method = info.Symbol as IMethodSymbol
+            ?? info.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        return method?.MethodKind is MethodKind.Ordinary or MethodKind.ReducedExtension
+            ? method
+            : null;
     }
 
-    private static bool IsDelegateConversion(SyntaxNodeAnalysisContext context, ExpressionSyntax expression) {
-        var typeInfo = context.SemanticModel.GetTypeInfo(expression, context.CancellationToken);
+    private static bool IsDelegateConversion(SyntaxNodeAnalysisContext context, ExpressionSyntax expression)
+        => context.SemanticModel.GetTypeInfo(expression, context.CancellationToken).ConvertedType?.TypeKind == TypeKind.Delegate;
 
-        if (typeInfo.ConvertedType?.TypeKind != TypeKind.Delegate)
-            return false;
-        if (IsAssignedToVar(expression))
-            return false;
-
-        return true;
-    }
-
-    private static bool IsAssignedToVar(ExpressionSyntax expression) {
-        if (expression.Parent is EqualsValueClauseSyntax equalsClause &&
-            equalsClause.Parent is VariableDeclaratorSyntax declarator &&
-            declarator.Parent is VariableDeclarationSyntax varDecl) {
-            return varDecl.Type.IsVar;
-        }
-
-        return false;
-    }
-
-    private static bool IsInsideNameOf(ExpressionSyntax expression) {
-        for (SyntaxNode? current = expression.Parent; current != null; current = current.Parent) {
+    private static bool IsInsideNameof(ExpressionSyntax expression) {
+        for (SyntaxNode? current = expression.Parent; current is not null; current = current.Parent) {
             if (current is InvocationExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.ValueText: "nameof" } })
                 return true;
             if (current is StatementSyntax)
-                break;
+                return false;
         }
         return false;
     }
 
     private static bool IsAlreadyInvoked(ExpressionSyntax expression) {
-        for (SyntaxNode? current = expression; current?.Parent != null; current = current.Parent) {
-            if (current.Parent is InvocationExpressionSyntax invocation &&
-                invocation.Expression == current) {
+        for (SyntaxNode? current = expression; current?.Parent is not null; current = current.Parent) {
+            if (current.Parent is InvocationExpressionSyntax invocation && invocation.Expression == current)
                 return true;
-            }
-
             if (current is StatementSyntax)
-                break;
+                return false;
         }
-
         return false;
     }
 }

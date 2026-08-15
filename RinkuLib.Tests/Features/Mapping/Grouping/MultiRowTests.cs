@@ -1,8 +1,10 @@
 using System.Data.Common;
-using RinkuLib.DbParsing;
+using Rinku.Mapping.Defaults;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace RinkuLib.Tests.DbParsing;
@@ -81,9 +83,10 @@ public class MultiRowTests {
 
     public sealed record TagParent([property: GroupKey] int Id, [KeepNullElements] List<string?> Tags) : IDbReadable;
     public sealed record NotNullTagParent([property: GroupKey] int Id, [System.Diagnostics.CodeAnalysis.NotNull] List<string> Tags) : IDbReadable;
+    public readonly record struct NullPreservingList<T>([NoName][KeepNullElements] List<T> Values) : IDbReadable;
     public sealed record InferredParent(int Id, string Name, List<Child> Children) : IDbReadable;
     public sealed record ValueAfterCollection(List<Child> Children, int Trailing) : IDbReadable;
-    public sealed record DynaHolder(List<DynaObject> Rows) : IDbReadable {
+    public sealed record DynaHolder([NoName] List<DynaObject> Rows) : IDbReadable {
         [GroupKey]
         public static (bool Same, int Next) KeyOf(int stored, int id) => (id == stored, id);
     }
@@ -96,7 +99,7 @@ public class MultiRowTests {
     ];
 
     private static ITypeParser<T> ForceMultiRow<T>(ColumnInfo[] cols)
-        => TypeParser.DefaultTypeParserMaker.ForceMultiRow<T>(TypeParser.GetDefaultNullColHandler<T>(), cols);
+        => Assert.IsType<DefaultTypeParserMaker>(TypeParser.DefaultTypeParserMaker).ForceMultiRow<T>(TypeParser.GetDefaultNullColHandler<T>(), cols);
 
     // --- the single-row road reproduced through the multi-row machine -----------------------------------
 
@@ -154,7 +157,7 @@ public class MultiRowTests {
     [Fact]
     public void A_tuple_of_two_collections_reads_the_whole_result() {
         ColumnInfo[] cols = [new("A", typeof(int), false), new("B", typeof(string), false)];
-        var parser = TypeParser.GetTypeParser<(List<int>, List<string>)>(ref cols);
+        var parser = TypeParser.GetTypeParser<(List<int>, List<string>)>(cols);
         using var reader = Rows.Reader(cols, [1, "a"], [2, "b"], [3, "c"]);
         reader.Read();
         var (canContinue, result) = parser.Parse(reader);
@@ -167,7 +170,7 @@ public class MultiRowTests {
     [Fact]
     public void A_scalar_beside_a_collection_is_captured_once() {
         ColumnInfo[] cols = [new("A", typeof(int), false), new("B", typeof(string), false)];
-        var parser = TypeParser.GetTypeParser<(int, List<string>)>(ref cols);
+        var parser = TypeParser.GetTypeParser<(int, List<string>)>(cols);
         using var reader = Rows.Reader(cols, [5, "a"], [5, "b"]);
         reader.Read();
         var (canContinue, result) = parser.Parse(reader);
@@ -181,15 +184,16 @@ public class MultiRowTests {
     public void A_tuple_with_a_value_after_a_collection_asks_for_an_explicit_key() {
         ColumnInfo[] cols = [new("A", typeof(int), false), new("B", typeof(int), false)];
         Refusals.Raises(ErrorCodes.MissingGroupBoundary,
-            () => TypeParser.GetTypeParser<(List<int>, int)>(ref cols));
+            () => TypeParser.GetTypeParser<(List<int>, int)>(cols));
     }
 
     // --- keyed grouping ---------------------------------------------------------------------------------
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
     public void A_keyed_list_groups_children_under_each_parent() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Parent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, "c10"],
             [1, "P1", 11, "c11"],
@@ -207,7 +211,7 @@ public class MultiRowTests {
     [Fact]
     public void A_left_join_leaves_a_childless_parent_with_an_empty_collection() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Parent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, "c10"],
             [2, "P2", DBNull.Value, DBNull.Value]);
@@ -224,6 +228,7 @@ public class MultiRowTests {
     }
 
     [Fact]
+    [DocumentationExample("grouping.md", "composite-group-key")]
     public void A_composite_key_tells_apart_rows_that_share_only_one_part() {
         ColumnInfo[] cols = [
             new("RegionId", typeof(int), false),
@@ -232,7 +237,7 @@ public class MultiRowTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<RegionParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<RegionParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, 10, "A", 100, "c"],
             [1, 10, "A", 101, "d"],
@@ -259,7 +264,7 @@ public class MultiRowTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<Listing>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Listing>>(cols);
         using var reader = Rows.Reader(cols,
             [1, 100, "A", 10, "c10"],
             [1, 100, "A", 11, "c11"],
@@ -291,7 +296,7 @@ public class MultiRowTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<AltKeyParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<AltKeyParent>>(cols);
         using var reader = Rows.Reader(cols, [1, "P1", 10, "c10"], [1, "P1", 11, "c11"], [2, "P2", 20, "c20"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -310,7 +315,7 @@ public class MultiRowTests {
             new("ItemsId", typeof(int), true),
             new("ItemsName", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<Bucket>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Bucket>>(cols);
         using var reader = Rows.Reader(cols,
             ["Tech", 1, "a"],
             ["tech", 2, "b"],
@@ -328,7 +333,7 @@ public class MultiRowTests {
     [Fact]
     public void A_method_boundary_can_compare_against_a_running_value_not_equality() {
         ColumnInfo[] cols = [new("Points", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<List<Window>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Window>>(cols);
         using var reader = Rows.Reader(cols, [1], [3], [6], [20], [22]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -341,7 +346,7 @@ public class MultiRowTests {
     [Fact]
     public void A_top_level_registered_collection_groups_without_a_dedicated_parser() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<HashSet<Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<HashSet<Parent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, "c10"],
             [1, "P1", 11, "c11"],
@@ -360,7 +365,7 @@ public class MultiRowTests {
     [Fact]
     public void A_top_level_registered_collection_of_scalars_reads_every_row() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<HashSet<int>>(ref cols);
+        var parser = TypeParser.GetTypeParser<HashSet<int>>(cols);
         using var reader = Rows.Reader(cols, [5], [7], [7], [9]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -371,7 +376,7 @@ public class MultiRowTests {
     [Fact]
     public void A_top_level_registered_collection_is_empty_for_no_rows() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<HashSet<int>>(ref cols);
+        var parser = TypeParser.GetTypeParser<HashSet<int>>(cols);
         Assert.Empty(parser.Default());
     }
 
@@ -382,7 +387,7 @@ public class MultiRowTests {
             typeof(SortedSet<int>).GetMethod(nameof(SortedSet<int>.Add), [typeof(int)]),
             null));
         ColumnInfo[] cols = [new("V", typeof(int), false)];
-        var parser = TypeParser.GetTypeParser<SortedSet<int>>(ref cols);
+        var parser = TypeParser.GetTypeParser<SortedSet<int>>(cols);
         using var reader = Rows.Reader(cols, [9], [5], [7], [5]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -395,7 +400,7 @@ public class MultiRowTests {
     [Fact]
     public void A_tuple_pairs_a_grouping_id_with_a_built_object() {
         ColumnInfo[] cols = [new("ArtistId", typeof(int), false), new("Id", typeof(int), false), new("Title", typeof(string), false)];
-        var parser = TypeParser.GetTypeParser<List<(int ArtistId, PairedAlbum Album)>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<(int ArtistId, PairedAlbum Album)>>(cols);
         using var reader = Rows.Reader(cols, [1, 10, "High Voltage"], [1, 11, "Let There Be Rock"], [2, 20, "Jazz"]);
         reader.Read();
         var rows = parser.Parse(reader).Result;
@@ -413,13 +418,13 @@ public class MultiRowTests {
     [Fact]
     public void Manual_grouping_streams_children_into_parents_by_key() {
         ColumnInfo[] pcols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
-        var pparser = TypeParser.GetTypeParser<List<ArtistShell>>(ref pcols);
+        var pparser = TypeParser.GetTypeParser<List<ArtistShell>>(pcols);
         using var preader = Rows.Reader(pcols, [1, "AC/DC"], [2, "Queen"]);
         preader.Read();
         var artists = pparser.Parse(preader).Result;
 
         ColumnInfo[] ccols = [new("ArtistId", typeof(int), false), new("Id", typeof(int), false), new("Title", typeof(string), false)];
-        var cparser = TypeParser.GetTypeParser<IEnumerable<(int ArtistId, PairedAlbum Album)>>(ref ccols);
+        var cparser = TypeParser.GetTypeParser<IEnumerable<(int ArtistId, PairedAlbum Album)>>(ccols);
         using var creader = Rows.Reader(ccols, [1, 10, "High Voltage"], [1, 11, "Let There Be Rock"], [2, 20, "Jazz"]);
         creader.Read();
         using var albums = cparser.Parse(creader).Result.GetEnumerator();
@@ -438,9 +443,10 @@ public class MultiRowTests {
     }
 
     [Fact]
+    [DocumentationExample("grouping.md", "inferred-grouping")]
     public void A_keyless_type_infers_its_leading_scalars_as_the_key() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<InferredParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<InferredParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, "c10"],
             [1, "P1", 11, "c11"],
@@ -466,7 +472,7 @@ public class MultiRowTests {
             new("Trailing", typeof(int), false),
         ];
         Refusals.Raises(ErrorCodes.MissingGroupBoundary,
-            () => TypeParser.GetTypeParser<ValueAfterCollection>(ref cols));
+            () => TypeParser.GetTypeParser<ValueAfterCollection>(cols));
     }
 
     // --- sibling collections ----------------------------------------------------------------------------
@@ -481,7 +487,7 @@ public class MultiRowTests {
             new("OrdersId", typeof(int), true),
             new("OrdersAmount", typeof(decimal), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<SiblingParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<SiblingParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, "c10", DBNull.Value, DBNull.Value],
             [1, "P1", 11, "c11", DBNull.Value, DBNull.Value],
@@ -511,7 +517,7 @@ public class MultiRowTests {
     [Fact]
     public void Two_levels_group_children_and_grandchildren_with_the_cascade() {
         var cols = NestedCols();
-        var parser = TypeParser.GetTypeParser<List<NParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<NParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 100, "C100", 1000, "g1000"],
             [1, "P1", 100, "C100", 1001, "g1001"],
@@ -548,7 +554,7 @@ public class MultiRowTests {
             new("InnerInnerId", typeof(int), false),
             new("InnerValues", typeof(int), false),
         ];
-        var parser = TypeParser.GetTypeParser<List<Outer>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Outer>>(cols);
         using var reader = Rows.Reader(cols,
             [1, 10, 100],
             [1, 10, 101],
@@ -572,7 +578,7 @@ public class MultiRowTests {
             new("ChildrenId", typeof(int), true),
             new("ChildrenValue", typeof(string), true),
         ];
-        var parser = TypeParser.GetTypeParser<List<FactoryParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<FactoryParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, 10, "c10"],
             [1, 11, "c11"],
@@ -610,7 +616,7 @@ public class MultiRowTests {
             new Parent(1, "P1-again", [new Child(12, "c12")]),
         };
 
-        var parser = TypeParser.GetTypeParser<List<Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<Parent>>(cols);
         using var reader = Rows.Reader(cols, rows.Select(r => new object?[] { r.Id, r.Name, r.ChildId.HasValue ? r.ChildId.Value : DBNull.Value, r.ChildValue is null ? DBNull.Value : r.ChildValue }).ToArray());
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -625,7 +631,7 @@ public class MultiRowTests {
     [Fact]
     public void A_member_reached_collection_groups_the_same_as_a_constructor_argument() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<MemberParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MemberParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, "c10"],
             [1, "P1", 11, "c11"],
@@ -643,7 +649,7 @@ public class MultiRowTests {
     [Fact]
     public void A_mix_of_constructor_arguments_and_a_member_collection_groups_correctly() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<MixedParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<MixedParent>>(cols);
         using var reader = Rows.Reader(cols,
             [1, "P1", 10, "c10"],
             [1, "P1", 11, "c11"],
@@ -663,7 +669,7 @@ public class MultiRowTests {
     [Fact]
     public void A_null_scalar_element_is_skipped_by_default() {
         ColumnInfo[] cols = [new("A", typeof(int), false), new("B", typeof(string), true)];
-        var parser = TypeParser.GetTypeParser<(List<int>, List<string>)>(ref cols);
+        var parser = TypeParser.GetTypeParser<(List<int>, List<string>)>(cols);
         using var reader = Rows.Reader(cols, [1, "a"], [2, DBNull.Value], [3, "c"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -675,7 +681,7 @@ public class MultiRowTests {
     [Fact]
     public void KeepNullElements_adds_the_null_element_instead_of_skipping() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Tags", typeof(string), true)];
-        var parser = TypeParser.GetTypeParser<List<TagParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<TagParent>>(cols);
         using var reader = Rows.Reader(cols, [1, "a"], [1, DBNull.Value], [1, "b"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -686,9 +692,21 @@ public class MultiRowTests {
     }
 
     [Fact]
+    public void A_root_collection_can_keep_null_elements_through_a_value_wrapper() {
+        ColumnInfo[] cols = [new("Value", typeof(string), true)];
+        var parser = TypeParser.GetTypeParser<NullPreservingList<string?>>(cols);
+        using var reader = Rows.Reader(cols, ["a"], [DBNull.Value], ["b"]);
+        reader.Read();
+
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(["a", null, "b"], result.Values);
+    }
+
+    [Fact]
     public void NotNull_on_collection_throws_when_null_element_encountered() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Tags", typeof(string), true)];
-        var parser = TypeParser.GetTypeParser<List<NotNullTagParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<NotNullTagParent>>(cols);
         using var reader = Rows.Reader(cols, [1, "a"], [1, DBNull.Value], [1, "b"]);
         reader.Read();
         Assert.Throws<NullValueAssignmentException>(() => parser.Parse(reader));
@@ -705,7 +723,7 @@ public class MultiRowTests {
     [Fact]
     public void Optional_wraps_a_multi_row_parent() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<Optional<Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<Optional<Parent>>(cols);
         using var reader = Rows.Reader(cols, [1, "P1", 10, "c10"], [1, "P1", 11, "c11"]);
         reader.Read();
         Parent? value = parser.Parse(reader).Result;
@@ -718,7 +736,7 @@ public class MultiRowTests {
     [Fact]
     public void Single_returns_the_lone_parent_and_refuses_a_second() {
         var cols = ParentCols();
-        var one = TypeParser.GetTypeParser<Single<Parent>>(ref cols);
+        var one = TypeParser.GetTypeParser<Single<Parent>>(cols);
         using (var reader = Rows.Reader(cols, [1, "P1", 10, "c10"], [1, "P1", 11, "c11"])) {
             reader.Read();
             Parent value = one.Parse(reader).Result;
@@ -733,7 +751,7 @@ public class MultiRowTests {
     [Fact]
     public void IEnumerable_streams_each_parent_group() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<IEnumerable<Parent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<IEnumerable<Parent>>(cols);
         using var reader = Rows.Reader(cols, TwoParentRows);
         reader.Read();
         var result = parser.Parse(reader).Result.ToList();
@@ -748,7 +766,7 @@ public class MultiRowTests {
     [Fact]
     public async Task The_async_driver_folds_the_same_group_as_the_sync_one() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<Parent>(ref cols);
+        var parser = TypeParser.GetTypeParser<Parent>(cols);
         using var reader = Rows.Reader(cols, [1, "P1", 10, "c10"], [1, "P1", 11, "c11"]);
         reader.Read();
         var (canContinue, parent) = await parser.ParseAsync(reader, TestContext.Current.CancellationToken);
@@ -765,9 +783,10 @@ public class MultiRowTests {
     public sealed record HashParent([property: GroupKey] int Id, string Name, HashSet<Child> Children) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "hashset-multi-row")]
     public void A_user_registered_HashSet_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<HashParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<HashParent>>(cols);
         using var reader = Rows.Reader(cols, TwoParentRows);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -781,9 +800,10 @@ public class MultiRowTests {
     }
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
     public void A_built_in_array_member_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<ArrayParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<ArrayParent>>(cols);
         using var reader = Rows.Reader(cols, TwoParentRows);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -797,9 +817,10 @@ public class MultiRowTests {
     }
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
     public void A_built_in_IEnumerable_member_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
-        var parser = TypeParser.GetTypeParser<List<EnumerableParent>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<EnumerableParent>>(cols);
         using var reader = Rows.Reader(cols, TwoParentRows);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -814,7 +835,7 @@ public class MultiRowTests {
     [Fact]
     public void A_dynamic_object_collection_grouped_by_a_method_key_captures_the_whole_row() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
-        var parser = TypeParser.GetTypeParser<List<DynaHolder>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<DynaHolder>>(cols);
         using var reader = Rows.Reader(cols, [1, "a"], [1, "b"], [2, "c"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -836,7 +857,7 @@ public class MultiRowTests {
     [Fact]
     public void A_non_nullable_collection_element_behavior_when_null_is_encountered() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Items", typeof(string), true)];
-        var parser = TypeParser.GetTypeParser<List<StrictInventory>>(ref cols);
+        var parser = TypeParser.GetTypeParser<List<StrictInventory>>(cols);
         using var reader = Rows.Reader(cols, [1, "bolt"], [1, null], [1, "nail"]);
         reader.Read();
         var result = parser.Parse(reader).Result;
@@ -854,7 +875,7 @@ public class MultiRowTests {
     [Fact]
     public void An_unregistered_element_type_in_a_closed_collection_rejects_the_path() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("ItemsId", typeof(int), false), new("ItemsValue", typeof(string), true)];
-        Assert.Throws<RinkuNoParserException>(() => TypeParser.GetTypeParser<List<WithUnregisteredCollection>>(ref cols));
+        Assert.Throws<RinkuNoParserException>(() => TypeParser.GetTypeParser<List<WithUnregisteredCollection>>(cols));
     }
 
     public sealed record GenericContainer<T>(int Id, List<T> Items) : IDbReadable;
@@ -862,7 +883,7 @@ public class MultiRowTests {
     [Fact]
     public void An_unregistered_type_resolving_an_open_generic_collection_rejects_the_path() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("ItemsId", typeof(int), false), new("ItemsValue", typeof(string), true)];
-        Assert.Throws<RinkuNoParserException>(() => TypeParser.GetTypeParser<List<GenericContainer<UnregisteredElement>>>(ref cols));
+        Assert.Throws<RinkuNoParserException>(() => TypeParser.GetTypeParser<List<GenericContainer<UnregisteredElement>>>(cols));
     }
 
 }

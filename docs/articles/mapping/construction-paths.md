@@ -1,160 +1,147 @@
 # Construction paths
 
-A type's parsing info holds its construction paths, the constructors and factories the negotiation picks among, plus the members filled afterwards. This page covers how they are ordered and how to add, reorder, or extend them.
-
-## Ordering
-
-Discovery keeps the order paths are declared in, with one adjustment. A signature that is more specific than one ahead of it moves in front of that one. More specific means equal or more parameters, each the same or a more derived type. At parse time, the first path the columns fully satisfy wins, so the richer paths get their chance first and the lean ones catch what remains, per schema.
+Each constructor or static factory that can build the requested type is a construction path.
 
 ```csharp
-public class Report {
-    public Report(int id) { }                                            // A
-    public Report(int id, string title) { }                              // B, more specific than A
-    public static Report Load(int id, string title, DateTime at) => new(0); // C, more specific than B
+public interface IShape {
+    public static IShape FromCircle(double radius) => new Circle(radius);
+
+    public static IShape FromRectangle(double width, double height) => new Rectangle(width, height);
 }
-// Declared A, B, C. B moves ahead of A, C moves ahead of B.
-// Resulting order: C (int, string, DateTime), B (int, string), A (int)
 
-// Columns: Id | Title | At -> C builds with all three
-// Columns: Id | Title      -> C fails, B builds
-// Columns: Id              -> only A is satisfiable
+public record Circle(double Radius) : IShape;
+public record Rectangle(double Width, double Height) : IShape;
 ```
 
-> **Watch for broad paths.** Specificity only reorders comparable signatures. A path that is easy to satisfy and not comparable to the others keeps its spot and can shadow them.
->
-> ```csharp
-> public class UserProfile {
->     public UserProfile(string username) { }                                       // A
->     public UserProfile(int id) { }                                                // B
->     public UserProfile(int id, string username) { }                               // C, moves ahead of B
->     public static UserProfile Create(int id, string username, DateTime d) => ...; // D, moves ahead of C
-> }
-> // Resulting order: A, D, C, B
-> ```
->
-> `A` is not comparable to `D` or `C` (their first parameter is an `int`, not a `string`), so it keeps first place. Any schema with a `Username` column satisfies it, and since `D` and `C` need that column too, they can never win. Ways out:
->
-> - Declare the rich constructors first. Discovery keeps that order.
-> - Constrain the broad path so it fails when it should not apply. `[CanNotLookAnywhere]` on `username` makes `A` match only when `Username` is the next unconsumed column, leaving `Id`-first schemas to the richer paths.
-> - Reorder at runtime, [below](#adding-and-reordering).
+The returned columns select a satisfiable path.
 
-## Adding and reordering
-
-`AddPossibleConstruction` accepts any constructor or method whose result is assignable to the target, private constructors, factories on other classes, a derived type's constructor. An added path goes to the front, unless an existing entry is more specific, in which case it settles just behind it.
-
-```csharp
-var info = TypeParsingInfo.GetOrAdd<UserProfile>();
-
-// a private constructor
-info.AddPossibleConstruction(typeof(UserProfile).GetConstructor(
-    BindingFlags.NonPublic | BindingFlags.Instance, [typeof(Guid)])!);
-
-// a factory living elsewhere
-info.AddPossibleConstruction(typeof(UserFactory).GetMethod("CreateLegacyUser")!);
+```text
+Radius          -> FromCircle(double)
+Width | Height  -> FromRectangle(double, double)
 ```
 
-This composes with polymorphism. Registering a derived type's constructor against an interface adds another shape the columns can select.
+## Selection order
+
+The first satisfiable path wins. The default registration attempts to place richer compatible paths before simpler ones.
 
 ```csharp
-TypeParsingInfo.GetOrAdd<IPayment>()
-    .AddPossibleConstruction(typeof(ExternalIdPayment).GetConstructor([typeof(int)])!);
-// Columns: OrderId | PaymentExternalId -> Payment is an ExternalIdPayment
+public interface Payment {
+    public static Payment Create(string cardNumber) => new Card(cardNumber);
+
+    public static Payment Create(string cardNumber, string owner) => new NamedCard(cardNumber, owner);
+}
+
+public record Card(string CardNumber) : Payment;
+public record NamedCard(string CardNumber, string Owner) : Payment;
 ```
 
-To carry what `[CanCompleteWithMembers]` or `[AreReadable]` declare, build the path with its flags:
-
-```csharp
-var ctor = typeof(LegacyDto).GetConstructor([typeof(int), typeof(string)])!;
-if (MethodCtorInfo.TryNew(ctor, MethodCtorInfo.TryMakeParameters(ctor),
-        MethodCtorInfo.AdditionalFlags.CanCompleteWithMembers, out var mci))
-    info.AddPossibleConstruction(mci);
+```text
+CardNumber          -> Card
+CardNumber | Owner  -> NamedCard
 ```
 
-### Generic factories
+Do not depend on inferred ordering when one path must always win. Select it explicitly or replace the path order.
 
-A construction path can be a generic factory registered against the open definition. The engine closes the method to each closed form at parse time, so one registration serves every `T`.
+## Select one constructor with CtorTypeInfo
+
+`[DbConstructor]` tells `CtorTypeInfo` which constructor to use.
 
 ```csharp
-public class Box<T> { internal Box(T value) => Value = value; public T Value { get; } }
+public sealed class User {
+    public User(int id, string name) { }
+
+    [DbConstructor]
+    public User(int id) { }
+}
+
+TypeParsingInfo.AddOrSet<User>(CtorTypeInfo.Instance);
+```
+
+```text
+Id | Name -> User(int id)
+```
+
+The marked constructor remains selected even when another constructor appears first.
+
+## Add a constructor or factory
+
+`AddPossibleConstruction` accepts a constructor or static factory whose result can be assigned to the target type.
+
+```csharp
+ConstructorInfo constructor = typeof(ExternalPayment).GetConstructor([typeof(int)]) ?? throw new InvalidOperationException("Constructor was not found.");
+
+TypeParsingInfo.GetOrAdd<IPayment>().AddPossibleConstruction(constructor);
+```
+
+Private constructors and factories on another non-generic class can be added the same way.
+
+## Add an open generic factory
+
+Register a generic factory on an open target type.
+
+```csharp
 public static class BoxFactory {
-    public static Box<T> Create<T>(T value) => new(value);   // external, non-generic host
+    public static Box<T> Create<T>(T value) => new(value);
 }
 
-TypeParsingInfo.GetOrAdd(typeof(Box<>))
-    .AddPossibleConstruction(typeof(BoxFactory).GetMethod(nameof(BoxFactory.Create))!);
+MethodInfo factory = typeof(BoxFactory).GetMethod(nameof(BoxFactory.Create)) ?? throw new InvalidOperationException("Factory method was not found.");
 
-// Box<int> builds through Create<int>, Box<string> through Create<string>, from the one registration
+TypeParsingInfo.GetOrAdd(typeof(Box<>)).AddPossibleConstruction(factory);
 ```
-
-Two rules apply to the method's shape. Its type arguments must match the returned type's exactly (order and count), and its declaring type cannot itself be generic, the engine needs a fixed host to resolve the call.
-
-Where the type parameter comes from is what decides the shape. On an outside host the method supplies it, above. On the type itself the type already supplies it, so the factory carries none and is found without registering anything.
 
 ```csharp
-public class Box<T> {
-    internal Box(T value) => Value = value;
-    public T Value { get; }
-    public static Box<T> Create(T value) => new(value);   // found on its own
-}
+Box<int> number = GetNumber.Query<Box<int>>(cnn);
+Box<string> text = GetText.Query<Box<string>>(cnn);
 ```
 
-### Replacing the set
+The factory method’s type arguments must match the returned type arguments in the same order.
 
-The set itself is assignable, so the usual move is to take it, apply an ordering rule of your own, and hand it back. Sorting the paths by descending parameter count is one such rule, and the direct fix for the broad-path warning above. The richer paths come first and a broad lean one can no longer shadow them. Any info that implements `ICanProvideConstructions` exposes the set. The default info does. Another info may or may not, depending on [which info parses the type](registration.md#registering-with-another-info). So match on the interface, not on a concrete type.
+## Replace path order
+
+`ICanProvideConstructions` exposes the complete path set.
 
 ```csharp
 if (TypeParsingInfo.GetOrAdd<UserProfile>() is ICanProvideConstructions info) {
-    var paths = info.PossibleConstructors.ToArray();
-    Array.Sort(paths, (a, b) => b.Parameters.Length - a.Parameters.Length);   // most parameters first
+    MethodCtorInfo[] paths = info.PossibleConstructors.ToArray();
+    Array.Sort(paths, (left, right) => right.Parameters.Length - left.Parameters.Length);
     info.PossibleConstructors = paths;
 }
 ```
 
-Assigning validates every entry (the result must be assignable to the type) and throws otherwise.
+The example makes paths with more parameters win first.
 
-## Configuring one path
+## Configure one path
 
-Get the path from the type info. The returned object owns its path settings.
+`GetConstruction` selects a path by parameter types.
 
 ```csharp
-var info = TypeParsingInfo.GetOrAdd<UserProfile>();
-var path = info.GetConstruction(typeof(int), typeof(string));
+MethodCtorInfo path = TypeParsingInfo.GetOrAdd<UserProfile>().GetConstruction(typeof(int), typeof(string));
 
 path.GroupKey = new EqualityGroupingRule(["Id"]);
 path.Flags |= MethodCtorInfo.AdditionalFlags.CanCompleteWithMembers;
-
-// Path parameters own their matching and null rules.
 path.Parameters[0].UpdateAltName(_ => new NameComparer("UserId"));
 path.Parameters[1].SetAbortOnNull(true);
 ```
 
-Use the exact constructor or factory when parameter types are not enough.
+Use `GetConstruction(factoryMethod)` when paths share the same parameter types.
+
+## Add a member after construction
+
+`AddMember` accepts a field, property, setter, or external static setter.
 
 ```csharp
-var factory = typeof(UserProfile).GetMethod(nameof(UserProfile.FromImport))!;
-var path = info.GetConstruction(factory);
-path.GroupKey = customRule;
-```
+public sealed class SecretHolder : IDbReadable {
+    public int Id { get; set; }
+    public string? Secret { get; private set; }
 
-The same path object is used for grouping, flags, parameters, names, null handling, and any future path setting. Type-level helpers configure only type-level behavior.
-
-## Post-construction members
-
-`AvailableMembers` is the same story for the members filled after construction, the public fields (not `readonly` or `const`) and properties with a public setter (`init` excluded). `AddMember` appends one by hand, the counterpart to `AddPossibleConstruction`. It takes a field, a property, or a setter method, an external `static` one taking `(instance, value)` on a non-generic class or an instance one taking `(value)`, and derives the column's type the same way discovery does.
-
-```csharp
-// an external setter: static void SetSecretCode(UserProfile profile, string code)
-TypeParsingInfo.GetOrAdd<UserProfile>()
-    .AddMember(typeof(ExternalLogic).GetMethod("SetSecretCode")!);
-// a "SecretCode" column now fills through that setter
-```
-
-For finer control, or to add a member the derivation cannot build on its own, hand `AddMember` a `MemberParser` you assembled, or take the whole set through the `ICanProvideMembers` capability and assign it back, exactly as [replacing the set](#replacing-the-set) does for construction paths.
-
-```csharp
-if (TypeParsingInfo.GetOrAdd<UserProfile>() is ICanProvideMembers info) {
-    var setter = typeof(ExternalLogic).GetMethod("SetSecretCode")!;
-    info.AvailableMembers = [.. info.AvailableMembers,
-        new MemberParser(setter, ParamInfo.TryNew(setter.GetParameters()[1])!)];
+    public static void SetSecret(SecretHolder target, string secret) => target.Secret = secret;
 }
+
+MethodInfo setter = typeof(SecretHolder).GetMethod(nameof(SecretHolder.SetSecret)) ?? throw new InvalidOperationException("Setter was not found.");
+
+TypeParsingInfo.GetOrAdd<SecretHolder>().AddMember(setter);
 ```
+
+`ICanProvideMembers.AvailableMembers` can replace the member set or its order.
+
+[Map a nested object](nesting.md).

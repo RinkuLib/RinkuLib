@@ -1,10 +1,11 @@
 using System.Collections;
+using Rinku.Querying.Defaults;
 using System.Data;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 namespace RinkuLib.Tests.Templating;
@@ -72,6 +73,15 @@ public class HandlerRenderingTests {
         var b3 = Build("SELECT @V_N AS X");
         b3.Use("@V", DayOfWeek.Wednesday);
         Render.Expect(b3, "SELECT 3 AS X");
+    }
+
+    private enum UnsignedEnum : ulong { Max = ulong.MaxValue }
+
+    [Fact]
+    public void Number_handler_writes_the_full_unsigned_enum_range() {
+        var b = Build("SELECT @V_N AS X");
+        b.Use("@V", UnsignedEnum.Max);
+        Render.Expect(b, "SELECT 18446744073709551615 AS X");
     }
 
 
@@ -150,8 +160,7 @@ public class HandlerRenderingTests {
     /// </summary>
     [Fact]
     public void An_unregistered_suffix_letter_is_rejected_at_construction() {
-        var ex = Assert.ThrowsAny<Exception>(() => new QueryCommand("SELECT * FROM t WHERE x = @V_Q"));
-        Assert.IsNotType<KeyNotFoundException>(ex);
+        var ex = Refusals.Raises(ErrorCodes.UnknownHandlerSuffix, () => new QueryCommand("SELECT * FROM t WHERE x = @V_Q"));
         Assert.Contains("_Q", ex.Message);
         Assert.Contains("@V", ex.Message);
     }

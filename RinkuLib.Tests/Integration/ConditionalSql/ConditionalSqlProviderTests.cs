@@ -2,8 +2,8 @@ using System.Data;
 using System.Data.Common;
 using Microsoft.Data.SqlClient;
 using Npgsql;
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using Xunit;
 
 namespace RinkuLib.Tests.TestContainers;

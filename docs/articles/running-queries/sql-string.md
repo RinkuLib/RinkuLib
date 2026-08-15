@@ -1,32 +1,139 @@
-# The SQL string
+# SQL-string shortcuts
 
-Skip declaring a `QueryCommand` and hand the SQL to the connection. The command is built once and cached by the string, so repeating the exact string reuses it.
-
-```csharp
-List<Track> tracks = cnn.Query<List<Track>>(
-    "SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = @albumId",
-    new { albumId = 1 });
-```
-
-Every method has the string form, `Execute`, `ExecuteScalar<T>`, `QueryAsync`, `StreamQueryAsync`, `ExecuteReader`, `ExecuteMultiReader`.
+Connection extension methods accept SQL text without a separately declared command.
 
 ```csharp
-int total = cnn.ExecuteScalar<int>("SELECT COUNT(*) FROM tracks");
-
-await foreach (Track t in cnn.StreamQueryAsync<Track>(
-    "SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = @albumId", new { albumId = 1 }, ct: token))
-    Process(t);
+List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
 ```
 
-## Own the cached command
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+```
 
-The cached command is yours to reach. `GetOrCreateCommand` hands back the same `QueryCommand` the string calls reuse, so you can hold and configure it, its [parameter metadata](parameter-metadata.md) and the rest, exactly as a declared one.
+The first call creates a `QueryCommand`. Later calls using the exact same string reuse it.
 
 ```csharp
-QueryCommand ByAlbum = ConnectionQueryExtensions.GetOrCreateCommand(
-    "SELECT TrackId AS Id, Name FROM tracks WHERE AlbumId = @albumId");
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId";
 
-List<Track> tracks = ByAlbum.Query<List<Track>>(cnn, new { albumId = 1 });
+List<Album> first = cnn.Query<List<Album>>(sql, new { artistId = 7 });
+List<Album> second = cnn.Query<List<Album>>(sql, new { artistId = 12 });
+// Both calls use the same cached QueryCommand.
 ```
 
-Declaring a `QueryCommand` up front stays the primary form and skips the by-string lookup. The string form skips the declaration and pays that lookup.
+## One global cache
+
+SQL-string calls share one global cache.
+
+```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums";
+
+using DbConnection firstConnection = GetConnection();
+using DbConnection secondConnection = GetConnection();
+
+List<Album> first = firstConnection.Query<List<Album>>(sql);
+List<Album> second = secondConnection.Query<List<Album>>(sql);
+// Both calls use the same cached QueryCommand.
+```
+
+The cached command also retains its [learned parameter metadata](parameter-metadata.md).
+
+## The exact string is the key
+
+Whitespace and casing make different normal cache entries.
+
+```csharp
+QueryCommand first = ConnectionQueryExtensions.GetOrCreateCommand("SELECT AlbumId AS Id FROM albums");
+
+QueryCommand same = ConnectionQueryExtensions.GetOrCreateCommand("SELECT AlbumId AS Id FROM albums");
+
+QueryCommand differentCase = ConnectionQueryExtensions.GetOrCreateCommand("select AlbumId as Id from albums");
+
+QueryCommand differentSpacing = ConnectionQueryExtensions.GetOrCreateCommand("SELECT  AlbumId AS Id FROM albums");
+
+// first and same are the same command.
+// differentCase and differentSpacing are separate commands.
+```
+
+`GetOrCreateCommand` exposes the command used by the string extensions.
+
+```csharp
+static readonly QueryCommand GetAlbums =
+    ConnectionQueryExtensions.GetOrCreateCommand("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+```
+
+## Remove an entry
+
+Entries remain until the application removes them.
+
+```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums";
+
+List<Album> albums = cnn.Query<List<Album>>(sql);
+
+bool removed = ConnectionQueryExtensions.CommandCache.TryRemove(sql, out QueryCommand? cached);
+
+// Removing the entry does not dispose cached.
+```
+
+The next string call creates another command.
+
+```csharp
+List<Album> albums = cnn.Query<List<Album>>(sql);
+```
+
+## Use an application key
+
+Direct dictionary entries may use a key that is not SQL.
+
+```csharp
+ConnectionQueryExtensions.CommandCache["albums.for-artist"] =
+    new QueryCommand("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+
+List<Album> albums = cnn.Query<List<Album>>("albums.for-artist", new { artistId = 7 });
+```
+
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+```
+
+The dictionary key selects the manually stored command. Its SQL remains the text passed to the `QueryCommand` constructor.
+
+## Other execution methods
+
+The shortcuts use the same execution and result-shape rules as a declared `QueryCommand`.
+
+```csharp
+int affected = cnn.Execute("UPDATE albums SET Title = @title WHERE AlbumId = @albumId", new { albumId = 12, title = "Kind of Blue" });
+
+int count = cnn.Query<int>("SELECT COUNT(*) FROM albums");
+
+List<Album> albums = await cnn.QueryAsync<List<Album>>("SELECT AlbumId AS Id, Title FROM albums", ct: cancellationToken);
+```
+
+```sql
+UPDATE albums SET Title = @title WHERE AlbumId = @albumId
+```
+
+```sql
+SELECT COUNT(*) FROM albums
+```
+
+```sql
+SELECT AlbumId AS Id, Title FROM albums
+```
+
+`ExecuteScalar<T>`, `StreamQueryAsync<T>`, `ExecuteReader`, and `ExecuteMultiReader` have matching string forms.
+
+## Avoid unbounded cache keys
+
+Every distinct normal string becomes another cache entry.
+
+```csharp
+string sql = $"SELECT AlbumId AS Id, Title FROM albums ORDER BY {userSelectedColumn}";
+List<Album> albums = cnn.Query<List<Album>>(sql);
+// Every distinct sql value becomes a distinct global cache key.
+```
+
+When the set of possible strings is not bounded, validate the dynamic SQL and manage its commands explicitly instead of retaining every variation in the global cache.

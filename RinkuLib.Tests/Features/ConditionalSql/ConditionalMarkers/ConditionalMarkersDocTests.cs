@@ -1,5 +1,5 @@
-using RinkuLib.Commands;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
@@ -125,6 +125,14 @@ public class ConditionalMarkersDocTests {
         var b2 = Build(sql);
         b2.Use("Cheap");
         Render.Expect(b2, "SELECT * FROM tracks");
+    }
+
+    [Fact]
+    public void Or_after_and_applies_to_the_accumulated_result() {
+        var b = Build("SELECT * FROM tracks WHERE /*Cheap&Pricey|InCatalog*/UnitPrice > @minPrice");
+        b.Use("InCatalog");
+        b.Use("@minPrice", 1);
+        Render.Expect(b, "SELECT * FROM tracks WHERE UnitPrice > @minPrice", ("@minPrice", 1));
     }
 
     [Fact]

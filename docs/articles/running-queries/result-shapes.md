@@ -1,127 +1,166 @@
 # Result shapes
 
-Reads go through one method, `Query<T>`. The behavior lives in `T`. It decides what zero rows mean, how many rows are taken, and whether a `NULL` is allowed. To change the behavior, ask for a different type, not a different method.
+`Query<T>` uses `T` to choose an `ITypeParser<T>`. The parsers included with Rinku decide how many rows to read, whether to buffer them, and what to do when no result exists. You can add other parsers. This page covers the included parsers.
 
-## One object
-
-```csharp
-Track track = GetTrackById.Query<Track>(cnn, new { id = 10 });
-```
-
-Reads the first row. **Zero rows throw.** When "no row" is a normal outcome, use `Optional<T>`.
-
-## One object or nothing
+## First result
 
 ```csharp
-Optional<Track> maybe = GetTrackById.Query<Optional<Track>>(cnn, new { id = 99 });
-
-if (maybe.HasValue)
-    Track track = maybe;   // implicit conversion to the inner T
+Album album = GetAlbums.Query<Album>(cnn);
+// Returns the first complete Album. No result raises RINKU4001.
 ```
 
-`Optional<T>` is for reference types, `OptionalStruct<T>` for value types. Zero rows give an empty value instead of throwing.
-
-## Many objects
+One result may consume several rows when it contains a nested collection.
 
 ```csharp
-List<Track> all       = GetTracks.Query<List<Track>>(cnn);        // buffered
-IEnumerable<Track> it = GetTracks.Query<IEnumerable<Track>>(cnn); // streamed
-
-await foreach (var t in GetTracks.StreamQueryAsync<Track>(cnn))   // async stream
-    Process(t);
+Artist artist = GetArtistsWithAlbums.Query<Artist>(cnn);
+// Several joined rows can build the first Artist and its Albums.
 ```
 
-`List<T>` buffers every row. `IEnumerable<T>` and `IAsyncEnumerable<T>` produce rows as you enumerate, keeping memory flat on large results. Zero rows give an empty collection.
-
-When `T` is itself nested, a `List<Artist>` whose `Artist` holds a `List<Album>`, a join's repeated rows fold back into it. See [collections](collections.md).
-
-A streamed result waits. `Query<IEnumerable<T>>` runs nothing when you call it, the command goes off on the first step of walking the rows, and the reader closes when the walk ends, whether you reach the last row or leave the loop early.
+## First result or none
 
 ```csharp
-var tracks = GetTracks.Query<IEnumerable<Track>>(cnn);   // nothing has run
-foreach (var t in tracks)                                // runs it here
-    Process(t);                                          // reader closed at the end
+Optional<Album> result = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
+
+if (result.HasValue) {
+    Album album = result;
+    Show(album);
+}
 ```
 
-A result you decide not to walk holds nothing, and walking one twice runs the command twice. Ask for `List<T>` when you mean to read the rows more than once.
+`Optional<T>` takes the first result without checking for another one. Use `OptionalStruct<T>` when `T` is a value type.
 
-Two things follow from the waiting. A command handed back by the `out DbCommand` overloads has not run yet, so its output parameters fill only once you walk the rows. And what the database refuses surfaces where you walk, not where you asked for the result.
-
-`QueryAsync<IEnumerable<T>>` waits the same way, and awaiting it gives a sequence, not an async stream. The rows still come as you walk them and the walk is a synchronous one. `StreamQueryAsync<T>` is the async stream, and the one to reach for when the rows should come asynchronously.
-
-## The built-in shapes
-
-These, and a few more, are the shapes Rinku ships for common cases. Each is a small type that wraps the element parser with one rule of its own, and you can add your own the same way (see [below](#adding-your-own-shape)). The set is open.
-
-They answer two separate questions.
-
-**How many rows.**
-
-| Ask for | No row | One row | Extra rows |
-| --- | --- | --- | --- |
-| `T` | throws | the object | takes the first |
-| `Optional<T>` | `HasValue == false` | the object | takes the first |
-| `OptionalStruct<T>` | `HasValue == false` | the value | takes the first |
-| `List<T>` / `IEnumerable<T>` | empty collection | one element | all rows |
-| `Single<T>` | a default `Single<T>` | the object | **throws** |
-
-**Whether the value may be null.** A row can carry a `NULL`, or a nested object can [collapse](../mapping/nullability.md#abortonnull-collapse-the-object) to nothing. By default that throws. A null-accepting shape takes it instead.
-
-| Ask for | Null value |
-| --- | --- |
-| `MaybeNull<T>` | `HasValue == false` (reference types) |
-| `T?` | `null` (value types) |
-
-The two questions are independent. `Optional<T>` accepts a missing row but throws on a `NULL` value. `MaybeNull<T>` accepts a `NULL` value but throws on a missing row. `OptionalNullable<T>` is the two stacked, `Optional`'s missing-row rule around `MaybeNull`'s null rule, flattened to a single `HasValue == false` for both cases.
+## Exactly one result
 
 ```csharp
-int? n                = GetNumber.Query<int?>(cnn);               // no row -> throws; NULL value -> null; 
-OptionalStruct<int> o = GetNumber.Query<OptionalStruct<int>>(cnn); // no row -> HasValue == false; NULL value -> throws;
+Album album = GetAlbum.Query<Single<Album>>(cnn);
+// No result raises RINKU4001. A second result raises RINKU4002.
 ```
 
-Every wrapper converts implicitly to its inner `T`, so you can pass it wherever the `T` is expected. Column-level `NULL` rules are on [nullability](../mapping/nullability.md).
+## Zero or one result
+
+```csharp
+Album? album = FindAlbum.Query<SingleOrDefault<Album>>(cnn, new { albumId = 999 });
+// No result becomes null. A second result raises RINKU4002.
+```
+
+Use `SingleOrDefaultStruct<T>` for a value type.
+
+```csharp
+SingleOrDefaultStruct<int> count = FindCount.Query<SingleOrDefaultStruct<int>>(cnn);
+```
+
+## Buffered results
+
+```csharp
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
+// No results returns an empty list.
+```
+
+Arrays use the same buffered behavior as lists.
+
+```csharp
+Album[] albums = GetAlbums.Query<Album[]>(cnn);
+// No results returns an empty array.
+```
+
+## Synchronous stream
+
+```csharp
+IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
+
+foreach (Album album in albums)
+    Show(album);
+```
+
+The command remains active while the sequence is enumerated. Errors and output parameters can therefore arrive during or after enumeration.
+
+See [streaming](streaming.md) for disposal, output parameters, and asynchronous row consumption.
+
+## Database NULL
+
+Row absence and database `NULL` are separate choices.
+
+### A present result may be NULL
+
+Use `MaybeNull<T>` for a reference type and `T?` for a value type.
+
+```csharp
+string? title = GetNullableTitle.Query<MaybeNull<string>>(cnn);
+int? year = GetNullableYear.Query<int?>(cnn);
+// No result still raises RINKU4001.
+```
+
+### No result or NULL
+
+Use `OptionalNullable<T>` for a reference type and `OptionalNullableStruct<T>` for a value type.
+
+```csharp
+OptionalNullable<string> title = FindNullableTitle.Query<OptionalNullable<string>>(cnn);
+OptionalNullableStruct<int> year = FindNullableYear.Query<OptionalNullableStruct<int>>(cnn);
+// Accepts no result or a present database NULL.
+```
+
+### Exactly one result, including NULL
+
+Put the null-accepting shape inside `Single<T>`.
+
+```csharp
+Single<MaybeNull<string>> title = GetOneNullableTitle.Query<Single<MaybeNull<string>>>(cnn);
+Single<int?> year = GetOneNullableYear.Query<Single<int?>>(cnn);
+// No result or a second result still raises an error.
+```
+
+### At most one result, including NULL
+
+Use `SingleOrDefaultNullable<T>` for a reference type and `SingleOrDefaultNullableStruct<T>` for a value type.
+
+```csharp
+SingleOrDefaultNullable<string> title = FindOneNullableTitle.Query<SingleOrDefaultNullable<string>>(cnn);
+SingleOrDefaultNullableStruct<int> year = FindOneNullableYear.Query<SingleOrDefaultNullableStruct<int>>(cnn);
+// Accepts no result or database NULL. A second result raises RINKU4002.
+```
+
+Rinku includes these wrappers for result counts and database `NULL` values.
+
+| Required behavior | Reference-type shape | Value-type shape |
+| --- | --- | --- |
+| Present value, including `NULL` | `MaybeNull<T>` | `T?` |
+| No result or `NULL` | `OptionalNullable<T>` | `OptionalNullableStruct<T>` |
+| Exactly one result | `Single<T>` | `Single<T>` |
+| At most one result | `SingleOrDefault<T>` | `SingleOrDefaultStruct<T>` |
+| At most one result, including `NULL` | `SingleOrDefaultNullable<T>` | `SingleOrDefaultNullableStruct<T>` |
+
+An object that collapses through `[AbortOnNull]` reaches its containing result slot in the same way.
+
+```csharp
+OptionalNullable<Album> album = FindOuterJoinedAlbum.Query<OptionalNullable<Album>>(cnn);
+// Accepts no result or a collapsed Album.
+```
+
+The [database NULL guide](../mapping/nulls.md) covers column rules and collapsed nested objects.
 
 ## Scalars
 
-A primitive `T` maps the first column of the first row. `Query<T>` is valid when
-the command is a `SELECT` whose result is one scalar. `ExecuteScalar<T>` is the
-matching shape for an execution that also returns one value.
+With the default mapping registration, a scalar result reads the first column.
 
 ```csharp
-int count = CountTracks.Query<int>(cnn);              // SELECT: read one scalar
-int alt   = CountTracks.ExecuteScalar<int>(cnn);      // also works
+int count = CountAlbums.Query<int>(cnn);
+```
+
+```sql
+SELECT COUNT(*) FROM albums
 ```
 
 ## Tuples
 
-Ask for a `ValueTuple` and its elements are taken in order, the tuple names (`Item1`, `Item2`, ...) ignored. Each element then negotiates as usual. A basic type has no name left to match, so it takes the next column. A complex element still matches its own members by name.
-
-Every tuple element must negotiate successfully. A row with fewer columns than the tuple has no tuple parser; use a
-type with a construction path whose final parameter has a default, or provide separate construction paths, when two
-row shapes are both valid.
+The built-in tuple registration combines several mapped values into one result.
 
 ```csharp
-// Basic: strictly by column order
-var (id, name) = cmd.Query<(int, string)>(cnn);
-
-// Mixed: the basic element takes the next column, the complex one negotiates its own
-var (id, location) = cmd.Query<(int, Location)>(cnn);
-
-// Complex: each element matches its member names, in order
-public record struct Person(int Id, string Name);
-var (p1, p2) = cmd.Query<(Person, Person)>(cnn);
-// Columns: Id | Name | Id | Name  -> p1 takes the first pair, p2 the second
+(int id, string title) = GetAlbumSummary.Query<(int, string)>(cnn);
 ```
 
-Positional parsing comes from the type's registration, and any type can opt into it. See [registering with another info](../mapping/registration.md#registering-with-another-info).
+The [tuple guide](../mapping/tuples.md) covers sequential reading and repeated object types.
 
-## Adding your own shape
+## Custom result shapes
 
-Every shape above is an ordinary type the engine produces from a small parser. Wrap one in a name you prefer:
-
-```csharp
-public static OptionalNullable<T> QueryFirstOrDefault<T>(this QueryCommand cmd, DbConnection cnn, object? p = null)
-    where T : class => cmd.Query<OptionalNullable<T>>(cnn, p);
-```
-
-Adding a shape of your own works the same way the built-in ones were added. See [parsers](../mapping/parsers.md#adding-a-result-shape).
+Use a [complete-result parser](../customization/result-parsers.md) when the included shapes do not describe how many results to read or what to return when none exist. Use a [type registration](../customization/type-registration.md) when returned columns need another mapping rule.

@@ -1,14 +1,15 @@
 using System.Collections;
+using Rinku.Querying.Defaults;
 using System.Data;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
 using System.Text;
-using RinkuLib.Commands;
-using RinkuLib.DbParsing;
-using RinkuLib.Queries;
+using Rinku;
+using Rinku.Mapping;
+using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
-using RinkuLib.TypeAccessing;
+using Rinku.Internal;
+using Rinku.Mapping.Parsers;
 using Xunit;
 
 #pragma warning disable CS0618 // These tests intentionally exercise the legacy System.Data.SqlClient provider.
@@ -23,7 +24,7 @@ namespace RinkuLib.Tests.Queries;
 public class QueryRuntimeInternalsTests {
     static ITypeParser<int> IntParser() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
-        return TypeParser.GetTypeParser<int>(ref cols);
+        return TypeParser.GetTypeParser<int>(cols);
     }
 
     static ColumnInfo[] Schema() => [new("V", typeof(int), false)];
@@ -38,22 +39,21 @@ public class QueryRuntimeInternalsTests {
         var query = new QueryCommand("SELECT V FROM t WHERE /*A*/x = 1 AND /*B*/y = 2");
         var qt = query.QueryText;
         var parser = IntParser();
-        var schema = Schema();
         int len = query.Mapper.Count;
 
         var mapA = new bool[len];
         mapA[query.Mapper.GetIndex("A")] = true;
-        var cache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(qt, mapA, schema, parser);
+        var cache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(qt, mapA, parser);
         Assert.Single(cache);
         Assert.Equal(2, cache[0].CondStates.Length);
 
-        var same = cache.GetUpdatedCache(qt, mapA, schema, parser);
+        var same = cache.GetUpdatedCache(qt, mapA, parser);
         Assert.Same(cache, same);
         Assert.Equal(2, same[0].CondStates.Length);
 
         var mapB = new bool[len];
         mapB[query.Mapper.GetIndex("B")] = true;
-        var narrowed = cache.GetUpdatedCache(qt, mapB, schema, parser);
+        var narrowed = cache.GetUpdatedCache(qt, mapB, parser);
         Assert.NotSame(cache, narrowed);
         Assert.Empty(narrowed[0].CondStates);
         Assert.Equal(2, cache[0].CondStates.Length);
@@ -64,17 +64,16 @@ public class QueryRuntimeInternalsTests {
         var query = new QueryCommand("SELECT V FROM t WHERE /*A*/x = 1 AND /*B*/y = 2");
         var qt = query.QueryText;
         var parser = IntParser();
-        var schema = Schema();
         int len = query.Mapper.Count;
 
         var both = new bool[len];
         both[query.Mapper.GetIndex("A")] = true;
         both[query.Mapper.GetIndex("B")] = true;
-        var cache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(qt, both, schema, parser);
+        var cache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(qt, both, parser);
 
         var onlyA = new bool[len];
         onlyA[query.Mapper.GetIndex("A")] = true;
-        cache = cache.GetUpdatedCache(qt, onlyA, schema, parser);
+        cache = cache.GetUpdatedCache(qt, onlyA, parser);
         var state = Assert.Single(cache[0].CondStates);
         Assert.Equal(query.Mapper.GetIndex("A"), state >> 1);
         Assert.Equal(1, state & 1);
@@ -88,17 +87,18 @@ public class QueryRuntimeInternalsTests {
         int len = query.Mapper.Count;
 
         ColumnInfo[] otherSchema = [new("W", typeof(long), false)];
+        var otherParser = TypeParser.GetTypeParser<long>(otherSchema);
         var mapA = new bool[len];
         mapA[query.Mapper.GetIndex("A")] = true;
-        var cache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(qt, mapA, otherSchema, parser);
+        var cache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(qt, mapA, otherParser);
         var mapB = new bool[len];
         mapB[query.Mapper.GetIndex("B")] = true;
-        cache = cache.GetUpdatedCache(qt, mapB, Schema(), parser);
+        cache = cache.GetUpdatedCache(qt, mapB, parser);
         Assert.Equal(2, cache.Length);
 
         var flipped = new bool[len];
         flipped[query.Mapper.GetIndex("A")] = true;
-        cache = cache.GetUpdatedCache(qt, flipped, Schema(), parser);
+        cache = cache.GetUpdatedCache(qt, flipped, parser);
         Assert.Equal(2, cache.Length);
         Assert.Empty(cache[^1].CondStates);
         Assert.Equal(2, cache[0].CondStates.Length);
@@ -111,8 +111,8 @@ public class QueryRuntimeInternalsTests {
         var parser = IntParser();
         var map = new bool[query.Mapper.Count];
 
-        var cache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(qt, map, Schema(), parser, 0);
-        cache = cache.GetUpdatedCache(qt, map, Schema(), parser, 1);
+        var cache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(qt, map, parser, 0);
+        cache = cache.GetUpdatedCache(qt, map, parser, 1);
         Assert.Equal(2, cache.Length);
     }
 
@@ -123,7 +123,7 @@ public class QueryRuntimeInternalsTests {
         int len = query.Mapper.Count;
         var mapA = new bool[len];
         mapA[query.Mapper.GetIndex("A")] = true;
-        query.ParsingCache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(query.QueryText, mapA, Schema(), parser);
+        query.ParsingCache = Array.Empty<ParsingCacheItem>().GetUpdatedCache(query.QueryText, mapA, parser);
 
         Assert.True(query.TryGetCachedParser<int>(mapA.AsSpan(), out var hit));
         Assert.NotNull(hit);
@@ -144,15 +144,15 @@ public class QueryRuntimeInternalsTests {
     public void Parameter_ledger_updates_and_reindexes() {
         var query = new QueryCommand("SELECT * FROM t WHERE a = ?@A AND b = ?@B");
         var ps = query.Parameters;
-        Assert.False(ps.UpdateCache(-1, InferedDbParamCache.ForceInfered));
-        Assert.False(ps.UpdateCache(9, InferedDbParamCache.ForceInfered));
+        Assert.False(ps.UpdateCache(-1, InferredDbParamCache.ForceInferred));
+        Assert.False(ps.UpdateCache(9, InferredDbParamCache.ForceInferred));
 
         int a = query.Mapper.GetIndex("@A"), b = query.Mapper.GetIndex("@B");
-        Assert.True(ps.UpdateCache(b, InferedDbParamCache.ForceInfered));
+        Assert.True(ps.UpdateCache(b, InferredDbParamCache.ForceInferred));
         Assert.True(ps.IsCached(b));
-        Assert.True(ps.UpdateCache(b, InferedDbParamCache.ForceInfered));
-        Assert.True(ps.UpdateCache(a, InferedDbParamCache.ForceInfered));
-        Assert.True(ps.UpdateCache(a, InferedDbParamCache.Instance));
+        Assert.True(ps.UpdateCache(b, InferredDbParamCache.ForceInferred));
+        Assert.True(ps.UpdateCache(a, InferredDbParamCache.ForceInferred));
+        Assert.True(ps.UpdateCache(a, InferredDbParamCache.Instance));
         Assert.False(ps.IsCached(a));
 
         var vars = new object?[query.Mapper.Count];
@@ -167,7 +167,7 @@ public class QueryRuntimeInternalsTests {
 
         ps.UpdateCachedIndexes();
         Assert.True(ps.NeedToCache(map));
-        Assert.True(ps.UpdateCache(a, InferedDbParamCache.ForceInfered));
+        Assert.True(ps.UpdateCache(a, InferredDbParamCache.ForceInferred));
         ps.UpdateCachedIndexes();
         Assert.False(ps.NeedToCache(map));
         Assert.False(ps.NeedToCache(vars));
@@ -177,13 +177,35 @@ public class QueryRuntimeInternalsTests {
     public void Special_handler_ledger_skips_settled_handlers() {
         var query = new QueryCommand("SELECT * FROM t WHERE b IN (?@Ids_X)");
         var cmd = new FakeCommand();
-        InferedDbParamCache.Instance.Use("@Ids", (IDbCommand)cmd, 1);
+        InferredDbParamCache.Instance.Use("@Ids", (IDbCommand)cmd, 1);
         var handler = query.Parameters.SpecialHandlers[0];
         Assert.False(handler.IsCached);
-        query.Parameters.UpdateSpecialHandlers(new ForceInferedParamCache(cmd));
+        query.Parameters.UpdateSpecialHandlers(new ForceInferredParamCache(cmd));
         Assert.True(handler.IsCached);
-        query.Parameters.UpdateSpecialHandlers(new ForceInferedParamCache(cmd));
+        query.Parameters.UpdateSpecialHandlers(new ForceInferredParamCache(cmd));
         Assert.True(query.Parameters.IsCached(query.Mapper.GetIndex("@Ids")));
+    }
+
+    [Fact]
+    public void Reset_returns_plain_and_special_parameter_metadata_to_inferred() {
+        var query = new QueryCommand("SELECT * FROM t WHERE a = ?@A AND b IN (?@Ids_X)");
+        var parameters = query.Parameters;
+        int plainIndex = query.Mapper.GetIndex("@A");
+        var special = Assert.IsType<MultiVariableHandler>(parameters.SpecialHandlers[0]);
+        Assert.True(parameters.UpdateCache(plainIndex, InferredDbParamCache.ForceInferred));
+        special.CachedParam = InferredDbParamCache.ForceInferred;
+        special.IsCached = true;
+        parameters.UpdateCachedIndexes();
+
+        parameters.Reset();
+
+        Assert.Same(DbParameterDefaults.Current.Inferred, parameters.VariablesInfo[plainIndex]);
+        Assert.Same(DbParameterDefaults.Current.Inferred, special.CachedParam);
+        Assert.False(parameters.IsCached(plainIndex));
+        Assert.False(special.IsCached);
+        Span<bool> usage = stackalloc bool[query.Mapper.Count];
+        usage[plainIndex] = true;
+        Assert.True(parameters.NeedToCache(usage));
     }
     sealed class MakerProbeCommand : FakeCommand;
 
@@ -191,14 +213,14 @@ public class QueryRuntimeInternalsTests {
     public void Learning_prefers_a_registered_maker() {
         var query = new QueryCommand("SELECT * FROM t WHERE a = ?@A");
         var cmd = new MakerProbeCommand();
-        InferedDbParamCache.Instance.Use("@A", (IDbCommand)cmd, 1);
-        IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferedParamCache.GetInfoGetterMaker<MakerProbeCommand>);
+        InferredDbParamCache.Instance.Use("@A", (IDbCommand)cmd, 1);
+        IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferredParamCache.GetInfoGetterMaker<MakerProbeCommand>);
         try {
             query.UpdateCache(cmd);
             Assert.True(query.Parameters.IsCached(query.Mapper.GetIndex("@A")));
         }
         finally {
-            IDbParamInfoGetter.ParamGetterMakers.Remove(ForceInferedParamCache.GetInfoGetterMaker<MakerProbeCommand>);
+            IDbParamInfoGetter.ParamGetterMakers.Remove(ForceInferredParamCache.GetInfoGetterMaker<MakerProbeCommand>);
         }
     }
 
@@ -206,14 +228,14 @@ public class QueryRuntimeInternalsTests {
     public void Learning_skips_makers_that_pass() {
         var query = new QueryCommand("SELECT * FROM t WHERE a = ?@A");
         var cmd = new FakeCommand();
-        InferedDbParamCache.Instance.Use("@A", (IDbCommand)cmd, 1);
-        IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferedParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>);
+        InferredDbParamCache.Instance.Use("@A", (IDbCommand)cmd, 1);
+        IDbParamInfoGetter.ParamGetterMakers.Add(ForceInferredParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>);
         try {
             query.UpdateCache(cmd);
             Assert.True(query.Parameters.IsCached(query.Mapper.GetIndex("@A")));
         }
         finally {
-            IDbParamInfoGetter.ParamGetterMakers.Remove(ForceInferedParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>);
+            IDbParamInfoGetter.ParamGetterMakers.Remove(ForceInferredParamCache.GetInfoGetterMaker<System.Data.SqlClient.SqlCommand>);
         }
     }
 
@@ -311,7 +333,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_saveuse_of_empty_is_absent() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         object? value = Array.Empty<int>();
         Assert.True(h.SaveUse(new FakeCommand(), ref value));
         Assert.Null(value);
@@ -319,7 +341,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_saveuse_crosses_the_digit_boundary() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         object? value = Enumerable.Range(1, 12).ToArray();
         var cmd = new FakeCommand();
         Assert.True(h.SaveUse(cmd, ref value));
@@ -330,7 +352,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_update_grows_across_the_digit_boundary() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         object? value = Enumerable.Range(1, 3).ToArray();
         var cmd = new FakeCommand();
         Assert.True(h.SaveUse(cmd, ref value));
@@ -341,7 +363,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_update_from_null_and_to_non_collection() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         object? current = null;
         Assert.True(h.Update(new FakeCommand(), ref current, null));
         Assert.False(h.Update(new FakeCommand(), ref current, 5));
@@ -355,14 +377,14 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_update_to_null_from_a_bad_current_returns_false() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         object? current = "not an array";
         Assert.False(h.Update(new FakeCommand(), ref current, null));
     }
 
     [Fact]
     public void Spread_use_on_a_DbCommand_binds_and_crosses_the_digit_boundary() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         var cmd = new FakeCommand();
         object? value = Enumerable.Range(1, 12).ToArray();
         Assert.True(h.Use((DbCommand)cmd, ref value));
@@ -375,7 +397,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_use_on_an_IDbCommand_binds_and_crosses_the_digit_boundary() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         IDbCommand cmd = new FakeCommand();
         object? value = Enumerable.Range(1, 12).ToArray();
         Assert.True(h.Use(cmd, ref value));
@@ -387,7 +409,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_use_on_an_IDbCommand_of_a_countless_sequence_rewrites_to_count() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         IDbCommand cmd = new FakeCommand();
         object? value = new PeekableSource(5, 6, 7);
         Assert.True(h.Use(cmd, ref value));
@@ -396,7 +418,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_use_on_a_DbCommand_of_a_countless_sequence_rewrites_to_count() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         var cmd = new FakeCommand();
         object? value = new PeekableSource(5, 6, 7);
         Assert.True(h.Use((DbCommand)cmd, ref value));
@@ -405,7 +427,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_update_from_null_current_with_empty_new_removes_nothing() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         var cmd = new FakeCommand();
         object? current = Array.Empty<object>();
         Assert.True(h.Update(cmd, ref current, null));
@@ -420,7 +442,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_handle_reads_a_count_int() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         var sb = new ValueStringBuilder(stackalloc char[64]);
         sb.Append("IN (");
         h.Handle(ref sb, 2);
@@ -430,7 +452,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_handle_rejects_a_value_with_no_count() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         var sb = new ValueStringBuilder(stackalloc char[8]);
         bool threw = false;
         try {
@@ -529,7 +551,7 @@ public class QueryRuntimeInternalsTests {
     public async Task UpdateCacheAsync_learns_like_the_sync_path() {
         var query = new QueryCommand("SELECT * FROM t WHERE a = ?@A");
         var cmd = new FakeCommand();
-        InferedDbParamCache.Instance.Use("@A", (IDbCommand)cmd, 1);
+        InferredDbParamCache.Instance.Use("@A", (IDbCommand)cmd, 1);
         await query.UpdateCacheAsync(cmd, TestContext.Current.CancellationToken);
         Assert.True(query.Parameters.IsCached(query.Mapper.GetIndex("@A")));
     }
@@ -725,14 +747,14 @@ public class QueryRuntimeInternalsTests {
         var query = new QueryCommand("SELECT * FROM t WHERE a = ?@A AND b = ?@B");
         var ps = query.Parameters;
         int a = query.Mapper.GetIndex("@A"), b = query.Mapper.GetIndex("@B");
-        Assert.True(ps.UpdateCache(a, InferedDbParamCache.ForceInfered));
-        Assert.True(ps.UpdateCache(b, InferedDbParamCache.ForceInfered));
+        Assert.True(ps.UpdateCache(a, InferredDbParamCache.ForceInferred));
+        Assert.True(ps.UpdateCache(b, InferredDbParamCache.ForceInferred));
         ps.UpdateCachedIndexes();
 
         Span<bool> map = stackalloc bool[query.Mapper.Count];
         map[a] = true;
         Assert.False(ps.NeedToCache(map));
-        Assert.True(ps.UpdateCache(a, InferedDbParamCache.Instance));
+        Assert.True(ps.UpdateCache(a, InferredDbParamCache.Instance));
         Assert.True(ps.NeedToCache(map));
     }
 
@@ -743,21 +765,21 @@ public class QueryRuntimeInternalsTests {
             sb.Append(" AND c = ?@V").Append(i);
         var query = new QueryCommand(sb.ToString());
         var ps = query.Parameters;
-        Assert.True(ps.UpdateCache(query.Mapper.GetIndex("@V0"), InferedDbParamCache.ForceInfered));
+        Assert.True(ps.UpdateCache(query.Mapper.GetIndex("@V0"), InferredDbParamCache.ForceInferred));
         ps.UpdateCachedIndexes();
         Assert.Equal(299, ps.NbNonCached);
     }
 
     [Fact]
     public void Spread_saveuse_rejects_a_non_collection() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         object? value = new object();
         Assert.False(h.SaveUse(new FakeCommand(), ref value));
     }
 
     [Fact]
     public void Spread_use_leaves_a_cheaply_countable_generic_set_in_place() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         IDbCommand cmd = new FakeCommand();
         object? value = new HashSet<object> { 1, 2 };
         Assert.True(h.Use(cmd, ref value));
@@ -767,7 +789,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Spread_handle_counts_a_sequence_with_a_non_disposable_enumerator() {
-        var h = HandlerWith(InferedDbParamCache.ForceInfered);
+        var h = HandlerWith(InferredDbParamCache.ForceInferred);
         var sb = new ValueStringBuilder(stackalloc char[64]);
         h.Handle(ref sb, new NonDisposableEnumerable([4, 5]));
         Assert.Equal("@Ids_1, @Ids_2", sb.ToStringAndDispose());
@@ -928,12 +950,11 @@ public class QueryRuntimeInternalsTests {
     public struct Mark4; public struct Mark5; public struct Mark6; public struct Mark7;
 
     /// <summary>
-    /// The accessor lookup runs without the lock while another thread is registering, so what it reads has
-    /// to be one array holding a handle and its plan together. Reading a handle list and a plan list
-    /// separately lets a reader pair the two from either side of a registration.
+    /// The direct-accessor lookup runs without the lock, so each cache entry keeps its type handle and
+    /// delegate together in the same immutable array element.
     /// </summary>
     [Fact]
-    public void Accessor_cache_lookup_holds_up_while_registrations_land() {
+    public void Direct_accessor_cache_lookup_is_safe_under_contention() {
         Type[] types = [
             typeof(RacedArgs<Mark0>), typeof(RacedArgs<Mark1>), typeof(RacedArgs<Mark2>), typeof(RacedArgs<Mark3>),
             typeof(RacedArgs<Mark4>), typeof(RacedArgs<Mark5>), typeof(RacedArgs<Mark6>), typeof(RacedArgs<Mark7>)];
@@ -946,22 +967,22 @@ public class QueryRuntimeInternalsTests {
                 var handle = type.TypeHandle.Value;
                 barrier.SignalAndWait();
                 for (int k = 0; k < 200; k++)
-                    Assert.NotNull(query.GetAccessorCache(handle, type));
+                    Assert.NotNull(query.GetDirectAccessor(handle, type));
             });
         }
     }
 
     [Fact]
-    public async Task Accessor_cache_registration_is_safe_under_contention() {
+    public async Task Direct_accessor_cache_generation_is_safe_under_contention() {
         var query = new QueryCommand("SELECT * FROM t WHERE a > ?@Min");
         var handle = typeof(ClassArgs).TypeHandle.Value;
-        TypeAccessorCache? fromBlocked = null;
+        DirectAccessor? fromBlocked = null;
         Task blocked;
-        TypeAccessorCache winner;
+        DirectAccessor winner;
         lock (QueryCommand.TypeAccessorSharedLock) {
-            blocked = Task.Run(() => { fromBlocked = query.GetAccessorCache(handle, typeof(ClassArgs)); }, TestContext.Current.CancellationToken);
+            blocked = Task.Run(() => { fromBlocked = query.GetDirectAccessor(handle, typeof(ClassArgs)); }, TestContext.Current.CancellationToken);
             Thread.Sleep(200);
-            winner = query.GetAccessorCache(handle, typeof(ClassArgs));
+            winner = query.GetDirectAccessor(handle, typeof(ClassArgs));
         }
         await blocked;
         Assert.Same(winner, fromBlocked);

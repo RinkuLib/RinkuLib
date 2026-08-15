@@ -1,7 +1,7 @@
 using System.Reflection.Emit;
-using RinkuLib.DbParsing;
+using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tools;
+using Rinku.Internal;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -53,13 +53,13 @@ public class CustomNullHandlerTests {
     [Fact]
     public void A_scalar_read_under_a_custom_rule_emits_the_long_branch() {
         ColumnInfo[] cols = [new("V", typeof(int), true)];
-        var parser = TypeParser.GetTypeParser<int>(ref cols, LongBranchHandler.Instance);
+        var parser = TypeParser.GetTypeParser<int>(cols, LongBranchHandler.Instance);
         using var reader = Rows.Reader(cols, [7]);
         reader.Read();
         Assert.Equal(7, parser.Parse(reader).Result);
 
         ColumnInfo[] nullCols = [new("V", typeof(int), true)];
-        var nullParser = TypeParser.GetTypeParser<int>(ref nullCols, LongBranchHandler.Instance);
+        var nullParser = TypeParser.GetTypeParser<int>(nullCols, LongBranchHandler.Instance);
         using var nullReader = Rows.Reader(nullCols, [DBNull.Value]);
         nullReader.Read();
         Assert.Equal(0, nullParser.Parse(nullReader).Result);
@@ -68,7 +68,7 @@ public class CustomNullHandlerTests {
     [Fact]
     public void An_object_read_under_a_custom_rule_emits_the_long_branch() {
         var cols = PairCols;
-        var parser = TypeParser.GetTypeParser<Pair>(ref cols, LongBranchHandler.Instance);
+        var parser = TypeParser.GetTypeParser<Pair>(cols, LongBranchHandler.Instance);
         using var reader = Rows.Reader(PairCols, [1, "a"]);
         reader.Read();
         var parsed = parser.Parse(reader).Result;
@@ -79,7 +79,7 @@ public class CustomNullHandlerTests {
     [Fact]
     public void A_root_marked_abort_on_null_collapses_to_the_default() {
         var cols = PairCols;
-        var parser = TypeParser.GetTypeParser<Collapsible>(ref cols, AbortOnNullAndNullableHandle.Instance);
+        var parser = TypeParser.GetTypeParser<Collapsible>(cols, AbortOnNullAndNullableHandle.Instance);
         using var reader = Rows.Reader(PairCols, [3, "c"]);
         reader.Read();
         Assert.Equal(3, parser.Parse(reader).Result!.Id);
@@ -92,7 +92,7 @@ public class CustomNullHandlerTests {
     [Fact]
     public void A_root_that_asks_for_a_jump_target_gets_one() {
         var cols = PairCols;
-        var parser = TypeParser.GetTypeParser<Collapsible>(ref cols, CollapsingHandler.Instance);
+        var parser = TypeParser.GetTypeParser<Collapsible>(cols, CollapsingHandler.Instance);
         using var reader = Rows.Reader(PairCols, [2, "b"]);
         reader.Read();
         Assert.Equal(2, parser.Parse(reader).Result!.Id);
