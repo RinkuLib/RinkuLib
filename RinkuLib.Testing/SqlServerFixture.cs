@@ -22,8 +22,8 @@ public sealed class SqlServerFixture : IAsyncDisposable {
                 await using var cnn = GetConnection();
                 await cnn.OpenAsync();
                 await using var cmd = cnn.CreateCommand();
-                cmd.CommandText = "SELECT DB_ID(N'tempdb')";
-                if (Convert.ToInt32(await cmd.ExecuteScalarAsync()) == 2)
+                cmd.CommandText = "SELECT state FROM sys.databases WHERE name = N'tempdb'";
+                if (Convert.ToInt32(await cmd.ExecuteScalarAsync()) == 0)
                     return;
             }
             catch (DbException) when (attempt < 59) { }
