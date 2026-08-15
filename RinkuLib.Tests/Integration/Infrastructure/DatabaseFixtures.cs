@@ -111,8 +111,8 @@ public class DBFixture<T> : IAsyncLifetime where T : IDbConnection {
                 using var cnn = (System.Data.Common.DbConnection)(object)GetConnection();
                 await cnn.OpenAsync();
                 using var cmd = cnn.CreateCommand();
-                cmd.CommandText = "SELECT DB_ID(N'tempdb')";
-                if (Convert.ToInt32(await cmd.ExecuteScalarAsync()) == 2)
+                cmd.CommandText = "SELECT state FROM sys.databases WHERE name = N'tempdb'";
+                if (Convert.ToInt32(await cmd.ExecuteScalarAsync()) == 0)
                     return;
             }
             catch (System.Data.Common.DbException) when (attempt < 59) { }
