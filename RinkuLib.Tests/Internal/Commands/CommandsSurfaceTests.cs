@@ -1155,6 +1155,63 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         }
     }
 
+    sealed class CancellingReaderCommand : FakeCommand {
+        public int DisposeCount;
+
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken ct)
+            => Task.FromException<DbDataReader>(new OperationCanceledException(ct));
+
+        protected override void Dispose(bool disposing) {
+            if (disposing)
+                DisposeCount++;
+            base.Dispose(disposing);
+        }
+    }
+
+    sealed class CancellingReaderConnection : DbConnection {
+        private ConnectionState state;
+
+        public CancellingReaderCommand? LastCommand { get; private set; }
+        [AllowNull]
+        public override string ConnectionString { get; set; } = "";
+        public override string Database => "Cancellation";
+        public override string DataSource => "Cancellation";
+        public override string ServerVersion => "1";
+        public override ConnectionState State => state;
+        public override void ChangeDatabase(string databaseName) { }
+        public override void Close() => state = ConnectionState.Closed;
+        public override void Open() => state = ConnectionState.Open;
+        public override Task OpenAsync(CancellationToken ct) {
+            state = ConnectionState.Open;
+            return Task.CompletedTask;
+        }
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
+        protected override DbCommand CreateDbCommand() {
+            LastCommand = new CancellingReaderCommand { Connection = this };
+            return LastCommand;
+        }
+    }
+
+    [Fact]
+    public async Task Cancelled_multi_reader_creation_disposes_only_an_internally_owned_command() {
+        var query = new QueryCommand("SELECT 1");
+        using var ownedConnection = new CancellingReaderConnection();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query.ExecuteMultiReaderAsync(ownedConnection, ct: TestContext.Current.CancellationToken));
+
+        Assert.Equal(1, Assert.IsType<CancellingReaderCommand>(ownedConnection.LastCommand).DisposeCount);
+        Assert.Equal(ConnectionState.Closed, ownedConnection.State);
+
+        using var callerConnection = new CancellingReaderConnection();
+        Task<MultiReader> run = query.ExecuteMultiReaderAsync(callerConnection, out DbCommand callerCommand, ct: TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+
+        Assert.Equal(0, Assert.IsType<CancellingReaderCommand>(callerCommand).DisposeCount);
+        Assert.Equal(ConnectionState.Closed, callerConnection.State);
+        callerCommand.Dispose();
+    }
+
     [Fact]
     public async Task Completing_the_last_result_closes_without_cancelling_and_defers_command_disposal() {
         var query = new QueryCommand("SELECT V FROM t");

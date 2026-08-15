@@ -4,7 +4,7 @@ using Rinku.Mapping.Defaults;
 
 namespace Rinku.Mapping;
 
-/// <summary>Direcly match to the first unused column with the matching type</summary>
+/// <summary>Maps a scalar to the first unused compatible column and applies the standard conversions.</summary>
 public class BaseTypeInfo : ScalarTypeParsingInfo {
     /// <summary>Singleton</summary>
     public static readonly BaseTypeInfo Instance = new();
@@ -27,12 +27,10 @@ public class BaseTypeInfo : ScalarTypeParsingInfo {
             parameter.NullColHandler, ordinal);
     }
 }
-/// <summary>
-/// When registering a type with <see cref="CtorTypeInfo"/> use this attribute to mark the ctor to use
-/// </summary>
+/// <summary>Marks the constructor used by <see cref="CtorTypeInfo"/>.</summary>
 [AttributeUsage(AttributeTargets.Constructor)]
 public class DbConstructorAttribute : Attribute { }
-/// <summary>Handling using a parameterized ctor ignoring parameters names and only considering order and types</summary>
+/// <summary>Maps constructor parameters by column order and type instead of by name.</summary>
 public class CtorTypeInfo : TypeParsingInfo {
     /// <summary>Singleton</summary>
     public static readonly CtorTypeInfo Instance;

@@ -4,14 +4,13 @@ using System.Data.Common;
 namespace Rinku.Querying;
 
 /// <summary>
-/// Implements the reusable parameter lifecycle for a CLR value that must be converted before it is sent to
-/// the database.
+/// Base settings for a parameter whose value must be converted before it is sent to the database.
 /// </summary>
 /// <typeparam name="T">The CLR type accepted by the parameter.</typeparam>
 /// <remarks>
 /// Override <see cref="ConvertValue(T)"/> for the conversion. Override <see cref="ConfigureParameter"/> when
 /// the created parameter needs a type, size, precision, scale, or provider-specific setting. Inherit directly
-/// from <see cref="DbParamInfo"/> when the parameter needs a different lifecycle.
+/// from <see cref="DbParamInfo"/> when the parameter needs different reuse behavior.
 /// </remarks>
 public abstract class ConvertedDbParamInfo<T> : DbParamInfo {
     /// <summary>Creates a cached conversion strategy.</summary>

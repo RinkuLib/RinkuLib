@@ -276,6 +276,12 @@ public class EndToEndBenchmark : IAsyncDisposable {
             if (dapperSingleSync != commandSingleSync || dapperSingleSync != sqlSingleSync)
                 throw new Exception("Query one (single) Sync: Results differ.");
 
+            var dapperSingleOrDefaultSync = Dapper_QuerySingleOrDefault();
+            var commandSingleOrDefaultSync = RinkuCommand_QuerySingleOrDefaultT();
+            var sqlSingleOrDefaultSync = RinkuSql_QuerySingleOrDefaultT();
+            if (dapperSingleOrDefaultSync != commandSingleOrDefaultSync || dapperSingleOrDefaultSync != sqlSingleOrDefaultSync)
+                throw new Exception("Query one (single or default) Sync: Results differ.");
+
             var dapperFirstAsync = await Dapper_QueryFirstAsync();
             var commandFirstAsync = await RinkuCommand_QueryTAsync();
             var sqlFirstAsync = await RinkuSql_QueryTAsync();
@@ -304,6 +310,18 @@ public class EndToEndBenchmark : IAsyncDisposable {
             var sqlSingleAsync = await RinkuSql_QuerySingleTAsync();
             if (dapperSingleAsync != commandSingleAsync || dapperSingleAsync != sqlSingleAsync)
                 throw new Exception("Query one (single) Async: Results differ.");
+
+            var dapperSingleOrDefaultAsync = await Dapper_QuerySingleOrDefaultAsync();
+            var commandSingleOrDefaultAsync = await RinkuCommand_QuerySingleOrDefaultTAsync();
+            var sqlSingleOrDefaultAsync = await RinkuSql_QuerySingleOrDefaultTAsync();
+            if (dapperSingleOrDefaultAsync != commandSingleOrDefaultAsync || dapperSingleOrDefaultAsync != sqlSingleOrDefaultAsync)
+                throw new Exception("Query one (single or default) Async: Results differ.");
+
+            var dapperLifecycle = await Dapper_ConnectionLifecycleAsync();
+            var commandLifecycle = await RinkuCommand_ConnectionLifecycleAsync();
+            var sqlLifecycle = await RinkuSql_ConnectionLifecycleAsync();
+            if (dapperLifecycle != commandLifecycle || dapperLifecycle != sqlLifecycle)
+                throw new Exception("Connection lifecycle Async: Results differ.");
 
             foreach (int rowCount in new[] { 50, RowCount }) {
                 var dapperStreamSync = Dapper_QueryUnbuffered(rowCount);
@@ -429,6 +447,12 @@ public class EndToEndBenchmark : IAsyncDisposable {
             if (dapperMultiResult != commandMultiResult || dapperMultiResult != sqlMultiResult)
                 throw new Exception("Multiple Result Sets: Sums differ.");
 
+            var dapperMultiResultSync = Dapper_MultiResultSetSync();
+            var commandMultiResultSync = RinkuCommand_MultiResultSetSync();
+            var sqlMultiResultSync = RinkuSql_MultiResultSetSync();
+            if (dapperMultiResultSync != commandMultiResultSync || dapperMultiResultSync != sqlMultiResultSync)
+                throw new Exception("Multiple Result Sets Sync: Sums differ.");
+
             if (await Dapper_FixedCount() != RowCount
                 || await RinkuCommand_FixedCount() != RowCount
                 || await RinkuCommand_ConditionalCountWithoutId() != RowCount
@@ -448,6 +472,8 @@ public class EndToEndBenchmark : IAsyncDisposable {
             const long expectedReaderChecksum = 101275;
             if (Dapper_DirectReader() != expectedReaderChecksum || RinkuCommand_DirectReader() != expectedReaderChecksum)
                 throw new Exception("Direct reader: Results differ.");
+            if (await Dapper_DirectReaderAsync() != expectedReaderChecksum || await RinkuCommand_DirectReaderAsync() != expectedReaderChecksum)
+                throw new Exception("Direct reader Async: Results differ.");
 
             if (Dapper_Transaction() != 1 || RinkuCommand_Transaction() != 1)
                 throw new Exception("Transaction: Results differ.");
@@ -458,7 +484,7 @@ public class EndToEndBenchmark : IAsyncDisposable {
             if (await Dapper_TableValuedParameter() != 50 || await RinkuCommand_TableValuedParameter() != 50)
                 throw new Exception("Table-valued parameter: Results differ.");
 
-            if (Dapper_RowParserSelection() != 54 || RinkuCommand_RowParserSelection() != 54)
+            if (Dapper_RowParserSelection() != 54 || RinkuCommand_RowParserSelection() != 54 || RinkuCommand_InterfaceFactory() != 54)
                 throw new Exception("Per-row parser selection: Results differ.");
 
             var dapperContext = await Dapper_ExecutionContext();
@@ -558,6 +584,13 @@ public class EndToEndBenchmark : IAsyncDisposable {
         return sum;
     }
 
+    private static async Task<long> ReadChecksumAsync(DbDataReader reader) {
+        long sum = 0;
+        while (await reader.ReadAsync())
+            sum += reader.GetInt32(0) + reader.GetInt64(1);
+        return sum;
+    }
+
     private static bool SameGroups(List<PostGroup> left, List<PostGroup> right) {
         if (left.Count != right.Count)
             return false;
@@ -636,6 +669,15 @@ public class EndToEndBenchmark : IAsyncDisposable {
     [Benchmark, BenchmarkCategory("Query one (single) Sync")]
     public Post RinkuSql_QuerySingleT() => cnn.Query<Single<Post>>(SelectPostSql, new { id = NextId() });
 
+    [Benchmark(Baseline = true), BenchmarkCategory("Query one (single or default) Sync")]
+    public Post? Dapper_QuerySingleOrDefault() => cnn.QuerySingleOrDefault<Post>(SelectPostSql, new { id = NextId() });
+
+    [Benchmark, BenchmarkCategory("Query one (single or default) Sync")]
+    public Post? RinkuCommand_QuerySingleOrDefaultT() => QueryPostCmd.Query<SingleOrDefault<Post>>(cnn, new { id = NextId() });
+
+    [Benchmark, BenchmarkCategory("Query one (single or default) Sync")]
+    public Post? RinkuSql_QuerySingleOrDefaultT() => cnn.Query<SingleOrDefault<Post>>(SelectPostSql, new { id = NextId() });
+
 
     [Benchmark(Baseline = true), BenchmarkCategory("Query one Async")]
     public async Task<Post> Dapper_QueryFirstAsync() => await cnn.QueryFirstAsync<Post>(SelectPostSql, new { id = NextId() });
@@ -696,6 +738,33 @@ public class EndToEndBenchmark : IAsyncDisposable {
 
     [Benchmark, BenchmarkCategory("Query one (single) Async")]
     public async Task<Post> RinkuSql_QuerySingleTAsync() => await cnn.QueryAsync<Single<Post>>(SelectPostSql, new { id = NextId() });
+
+    [Benchmark(Baseline = true), BenchmarkCategory("Query one (single or default) Async")]
+    public async Task<Post?> Dapper_QuerySingleOrDefaultAsync() => await cnn.QuerySingleOrDefaultAsync<Post>(SelectPostSql, new { id = NextId() });
+
+    [Benchmark, BenchmarkCategory("Query one (single or default) Async")]
+    public async Task<Post?> RinkuCommand_QuerySingleOrDefaultTAsync() => await QueryPostCmd.QueryAsync<SingleOrDefault<Post>>(cnn, new { id = NextId() });
+
+    [Benchmark, BenchmarkCategory("Query one (single or default) Async")]
+    public async Task<Post?> RinkuSql_QuerySingleOrDefaultTAsync() => await cnn.QueryAsync<SingleOrDefault<Post>>(SelectPostSql, new { id = NextId() });
+
+    [Benchmark(Baseline = true), BenchmarkCategory("Connection lifecycle Async")]
+    public async Task<Post> Dapper_ConnectionLifecycleAsync() {
+        await using var connection = _fixture.GetConnection();
+        return await connection.QueryFirstAsync<Post>(SelectPostSql, new { id = NextId() });
+    }
+
+    [Benchmark, BenchmarkCategory("Connection lifecycle Async")]
+    public async Task<Post> RinkuCommand_ConnectionLifecycleAsync() {
+        await using var connection = _fixture.GetConnection();
+        return await QueryPostCmd.QueryAsync<Post>(connection, new { id = NextId() });
+    }
+
+    [Benchmark, BenchmarkCategory("Connection lifecycle Async")]
+    public async Task<Post> RinkuSql_ConnectionLifecycleAsync() {
+        await using var connection = _fixture.GetConnection();
+        return await connection.QueryAsync<Post>(SelectPostSql, new { id = NextId() });
+    }
 
 
     [Benchmark(Baseline = true), BenchmarkCategory("Query Sync (Stream)")]
@@ -963,6 +1032,30 @@ public class EndToEndBenchmark : IAsyncDisposable {
         return p1.Sum() + p2.Sum();
     }
 
+    [Benchmark(Baseline = true), BenchmarkCategory("Multiple Result Sets Sync")]
+    public int Dapper_MultiResultSetSync() {
+        using var grid = cnn.QueryMultiple(MultiSql, new { a = NextId(), b = NextId() });
+        var p1 = grid.ReadFirst<Post>();
+        var p2 = grid.ReadFirst<Post>();
+        return p1.Sum() + p2.Sum();
+    }
+
+    [Benchmark, BenchmarkCategory("Multiple Result Sets Sync")]
+    public int RinkuCommand_MultiResultSetSync() {
+        using var multi = MultiCmd.ExecuteMultiReader(cnn, new { a = NextId(), b = NextId() });
+        var p1 = multi.Query<Post>();
+        var p2 = multi.Query<Post>();
+        return p1.Sum() + p2.Sum();
+    }
+
+    [Benchmark, BenchmarkCategory("Multiple Result Sets Sync")]
+    public int RinkuSql_MultiResultSetSync() {
+        using var multi = cnn.ExecuteMultiReader(MultiSql, out _, new { a = NextId(), b = NextId() });
+        var p1 = multi.Query<Post>();
+        var p2 = multi.Query<Post>();
+        return p1.Sum() + p2.Sum();
+    }
+
     [Benchmark(Baseline = true), BenchmarkCategory("Scalar count: fixed path and reusable conditional path without parameter Async")]
     public Task<int> Dapper_FixedCount() => cnn.QuerySingleAsync<int>(CountSql);
 
@@ -1031,6 +1124,24 @@ public class EndToEndBenchmark : IAsyncDisposable {
         }
         finally {
             command.Dispose();
+        }
+    }
+
+    [Benchmark(Baseline = true), BenchmarkCategory("Direct reader Async")]
+    public async Task<long> Dapper_DirectReaderAsync() {
+        await using var reader = await SqlMapper.ExecuteReaderAsync(cnn, ReadPostsSql);
+        return await ReadChecksumAsync(reader);
+    }
+
+    [Benchmark, BenchmarkCategory("Direct reader Async")]
+    public async Task<long> RinkuCommand_DirectReaderAsync() {
+        var reader = await ReadPostsCmd.ExecuteReaderAsync(cnn, out var command);
+        try {
+            await using (reader)
+                return await ReadChecksumAsync(reader);
+        }
+        finally {
+            await command.DisposeAsync();
         }
     }
 

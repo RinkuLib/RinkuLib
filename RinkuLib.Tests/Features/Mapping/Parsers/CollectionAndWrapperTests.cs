@@ -76,6 +76,16 @@ public class CollectionAndWrapperTests {
     }
 
     [Fact]
+    public void OptionalNullableStruct_wraps_null_values_too() {
+        ColumnInfo[] cols = [new("V", typeof(int), true)];
+        using var reader = Rows.Reader(cols, [DBNull.Value]);
+        var parser = TypeParser.GetTypeParser<OptionalNullableStruct<int>>(cols);
+        reader.Read();
+        int? value = parser.Parse(reader).Result;
+        Assert.Null(value);
+    }
+
+    [Fact]
     public void MaybeNull_reads_value_and_null() {
         ColumnInfo[] cols = [new("V", typeof(string), true)];
         using var reader = Rows.Reader(cols, ["x"], [DBNull.Value]);

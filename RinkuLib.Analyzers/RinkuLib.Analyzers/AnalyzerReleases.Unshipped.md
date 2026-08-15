@@ -1,7 +1,8 @@
 ﻿### New Rules
 Rule ID | Category | Severity | Notes
 --------|----------|----------|--------------------
-RK0000  | Rinku    | Hidden   | Access symbol with based on xml
-RK0001  | Rinku    | Hidden   | Access type to add based on
-RK0002  | Rinku    | Hidden   | Access methods groups for completion
-RK0100  | Rinku    | Warning  | Ensure sync
+RK0000  | Rinku    | Hidden   | Offer actions for a BasedOn link
+RK0001  | Rinku    | Hidden   | Offer to add a schema link
+RK0002  | Rinku    | Hidden   | Offer to complete a method call
+RK0100  | Rinku    | Warning  | Report an outdated BasedOn link
+RK0101  | Rinku    | Warning  | Require a matching constructor

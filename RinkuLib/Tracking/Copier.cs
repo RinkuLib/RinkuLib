@@ -5,29 +5,20 @@ using System.Reflection;
 using System.Reflection.Emit;
 
 namespace Rinku.Tracking;
-/// <summary>
-/// Defines the signature for custom cloning logic.
-/// </summary>
+/// <summary>Copies a value using application supplied rules.</summary>
 /// <typeparam name="T">The type of the object.</typeparam>
 [return: NotNullIfNotNull(nameof(source))]
 public delegate T? CopyDelegate<T>(T? source);
-/// <summary>
-/// Defines a contract for types that provide custom cloning logic.
-/// </summary>
+/// <summary>Implement this interface when a type should control how it is copied.</summary>
 /// <typeparam name="T">The type of the returned object.</typeparam>
 public interface ICopyable<T>
 {
     /// <summary>
     /// Returns a new instance that is a functional copy of the current object.
     /// </summary>
-    /// <remarks>
-    /// Implementing this interface allows a type to override default cloning 
-    /// behavior, ensuring that complex state or dependencies are handled 
-    /// correctly during the copy process.
-    /// </remarks>
     T Copy();
 }
-/// <summary>Core contract for a field copy plan emitted into the clone method.</summary>
+/// <summary>Writes the copy instructions for one field. Use it for a custom field copy rule.</summary>
 public interface ICopyFieldPlan
 {
     /// <summary>Emits the copy for <paramref name="field"/>.</summary>
@@ -37,15 +28,13 @@ public interface ICopyFieldPlan
 [AttributeUsage(AttributeTargets.Field)]
 public abstract class CopyFieldAttribute : Attribute, ICopyFieldPlan
 {
-    /// <summary>
-    /// Emits IL instructions to copy the field value to the target clone.
-    /// </summary>
-    /// <param name="field">The metadata of the field currently being processed.</param>
-    /// <param name="il">The IL generator for the target dynamic method.</param>
-    /// <param name="clone">The local variable representing the new instance.</param>
+    /// <summary>Writes the instructions that assign the field on the copied value.</summary>
+    /// <param name="field">The field to copy.</param>
+    /// <param name="il">The writer to use.</param>
+    /// <param name="clone">The copied value being filled.</param>
     public abstract void Emit(FieldInfo field, ILGenerator il, LocalBuilder clone);
 }
-/// <summary>The entry point for copying, <c>source.Copy()</c>, which clones by the strategy registered for the value's actual type.</summary>
+/// <summary>Provides <c>source.Copy()</c> using the copy rules registered for the value type.</summary>
 public static class CopyExtensions {
     private static readonly ConcurrentDictionary<Type, Func<object, object?>> Dispatchers = new();
     /// <summary>
@@ -54,15 +43,8 @@ public static class CopyExtensions {
     /// <typeparam name="T">The type of the object to clone.</typeparam>
     /// <param name="source">The object instance to clone.</param>
     /// <returns>
-    /// A new instance of <typeparamref name="T"/>. The specific cloning logic 
-    /// (e.g., shallow, deep, or selective) is determined by the implementation 
-    /// of the type <typeparamref name="T"/> and its associated field attributes.
+    /// A new instance of <typeparamref name="T"/> created with its registered copy rules.
     /// </returns>
-    /// <remarks>
-    /// Use this method to request a logically independent clone of an object. 
-    /// The library automatically selects the most efficient strategy to fulfill 
-    /// the request based on the object's structure.
-    /// </remarks>
     [return: NotNullIfNotNull(nameof(source))]
     public static T? Copy<T>(this T? source) {
         if (source is null)
@@ -90,9 +72,7 @@ public static class CopyExtensions {
             .Compile();
     }
 }
-/// <summary>
-/// Provides a centralized manager for the cloning strategy of a specific type.
-/// </summary>
+/// <summary>Configures and runs copying for <typeparamref name="T"/>.</summary>
 /// <typeparam name="T">The type being managed.</typeparam>
 public static class Copier<T> {
     private static readonly CopyDelegate<T> _defaultStrategy = Build();
@@ -100,37 +80,35 @@ public static class Copier<T> {
     private static readonly object ConfigurationLock = new();
     private static Dictionary<FieldInfo, ICopyFieldPlan> FieldPlans = [];
     /// <summary>
-    /// Executes the current cloning strategy for the type.
+    /// Copies the value using the current rules.
     /// </summary>
     [return: NotNullIfNotNull(nameof(source))]
     public static T? Copy(T? source) => _strategy(source);
     /// <summary>
-    /// Executes the original, automatically detected cloning strategy for the type.
+    /// Copies the value using the rules found on the type.
     /// </summary>
     /// <param name="source">The object to clone.</param>
     [return: NotNullIfNotNull(nameof(source))]
     public static T? DefaultCopy(T? source) => _defaultStrategy(source);
     /// <summary>
-    /// Registers a custom cloning strategy for the type.
+    /// Replaces copying for this type with the supplied delegate.
     /// </summary>
     /// <param name="customStrategy">The delegate to perform the copy operation.</param>
     /// <remarks>
-    /// This method is intended for types where you cannot modify the source code to 
-    /// implement <see cref="ICopyable{T}"/> or add <see cref="CopyFieldAttribute"/> 
-    /// decorations (e.g., third-party or library types). This strategy becomes the 
-    /// default for all subsequent <see cref="CopyExtensions.Copy{T}"/> calls.
+    /// Use this for a type you cannot change to implement <see cref="ICopyable{T}"/> or mark with
+    /// <see cref="CopyFieldAttribute"/>. Later <see cref="CopyExtensions.Copy{T}"/> calls use this delegate.
     /// </remarks>
     public static void SetStrategy(CopyDelegate<T> customStrategy) => _strategy = customStrategy;
     /// <summary>
-    /// Reverts the cloning strategy to the original, automatically detected implementation.
+    /// Restores the copy rules found on the type and its fields.
     /// </summary>
     public static void ResetStrategy() => _strategy = Build(FieldPlans);
     /// <summary>
-    /// Registers or replaces the plan for one field in the automatic clone strategy.
+    /// Registers or replaces the copy rule for one field.
     /// </summary>
     /// <param name="field">A field declared by <typeparamref name="T"/> or one of its base types.</param>
     /// <param name="plan">The field copy plan.</param>
-    /// <remarks>Register during setup. The next automatic copy uses the rebuilt strategy.</remarks>
+    /// <remarks>Register during setup. The next copy uses the new rule.</remarks>
     public static void RegisterFieldPlan(FieldInfo field, ICopyFieldPlan plan) {
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(plan);
@@ -143,7 +121,7 @@ public static class Copier<T> {
             _strategy = Build(FieldPlans);
         }
     }
-    /// <summary>Removes all runtime field plans and restores the attribute-only automatic strategy.</summary>
+    /// <summary>Removes registered field rules and restores the rules declared by attributes.</summary>
     public static void ResetFieldPlans() {
         lock (ConfigurationLock) {
             FieldPlans = [];

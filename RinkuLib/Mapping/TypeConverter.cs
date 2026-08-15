@@ -13,8 +13,6 @@ public interface ITypeConverter {
     /// <summary>The culture to use for the parsing</summary>
     public static IFormatProvider FormatProvider = CultureInfo.InvariantCulture;
 #pragma warning restore CA2211
-    /// <summary>The field for emit to use for the parsing</summary>
-    public static readonly FieldInfo _providerField = typeof(ITypeConverter).GetField(nameof(FormatProvider))!;
     /// <summary>The type produced by the conversion.</summary>
     public Type OutputType { get; }
     /// <summary>Converts the current value to <see cref="OutputType"/>.</summary>
@@ -139,7 +137,10 @@ public interface ITypeConverter {
         return true;
     }
 }
-/// <summary>No-op: Source and Target are already compatible.</summary>
+internal static class TypeConverterRuntime {
+    internal static readonly FieldInfo FormatProviderField = typeof(ITypeConverter).GetField(nameof(ITypeConverter.FormatProvider))!;
+}
+/// <summary>Leaves a value unchanged when the source and target types are compatible.</summary>
 public class IdentityConverter(Type type) : ITypeConverter {
     /// <inheritdoc/>
     public Type OutputType { get; } = type;
@@ -147,7 +148,7 @@ public class IdentityConverter(Type type) : ITypeConverter {
     public void EmitConversion(Generator generator, Type sourceType) { }
 }
 
-/// <summary>Primitive IL-level casts (e.g., Conv_I4, Conv_R8).</summary>
+/// <summary>Converts a value with the supplied conversion operation.</summary>
 public class OpCodeConverter(Type target, OpCode op) : ITypeConverter {
     /// <inheritdoc/>
     public Type OutputType { get; } = target; private readonly OpCode _op = op;
@@ -166,7 +167,7 @@ public class BoxConverter(Type targetType) : ITypeConverter {
     }
 }
 
-/// <summary>Reference type casting (object -> Class/Interface).</summary>
+/// <summary>Casts a reference to the target class or interface.</summary>
 public class CastClassConverter(Type targetType) : ITypeConverter {
     /// <inheritdoc/>
     public Type OutputType { get; } = targetType;
@@ -175,7 +176,7 @@ public class CastClassConverter(Type targetType) : ITypeConverter {
     public void EmitConversion(Generator generator, Type sourceType) => generator.Emit(OpCodes.Castclass, OutputType);
 }
 
-/// <summary>Calls static op_Implicit or op_Explicit methods.</summary>
+/// <summary>Converts a value through an implicit or explicit conversion method.</summary>
 public class MethodCallConverter(MethodInfo method) : ITypeConverter {
     /// <inheritdoc/>
     public Type OutputType { get; } = method.ReturnType;
@@ -184,7 +185,7 @@ public class MethodCallConverter(MethodInfo method) : ITypeConverter {
     public void EmitConversion(Generator generator, Type sourceType) => generator.Emit(OpCodes.Call, _method);
 }
 
-/// <summary>String to T via IParsable. Uses static Call.</summary>
+/// <summary>Converts text through <see cref="IParsable{TSelf}"/> or a static <c>Parse</c> method.</summary>
 public class ParsableConverter(Type targetType) : ITypeConverter {
     /// <inheritdoc/>
     public Type OutputType { get; } = targetType;
@@ -193,7 +194,7 @@ public class ParsableConverter(Type targetType) : ITypeConverter {
     public void EmitConversion(Generator generator, Type sourceType) {
         var method = OutputType.GetMethod(nameof(IParsable<>.Parse), BindingFlags.Public | BindingFlags.Static, [typeof(string), typeof(IFormatProvider)]);
         if (method is not null && method.ReturnType == OutputType) {
-            generator.Emit(OpCodes.Ldsfld, ITypeConverter._providerField);
+            generator.Emit(OpCodes.Ldsfld, TypeConverterRuntime.FormatProviderField);
             generator.Emit(OpCodes.Call, method);
             return;
         }
@@ -208,8 +209,7 @@ public class ParsableConverter(Type targetType) : ITypeConverter {
 }
 
 /// <summary>
-/// String to an enum, by name or by the number written out, matching the name whatever its casing. This
-/// sits ahead of the enum being read as its underlying type, which would send the name to a number parse.
+/// Converts text to an enum by name or number. Name matching ignores case.
 /// </summary>
 public class StringToEnumConverter(Type enumType) : ITypeConverter {
     private static readonly MethodInfo ParseDefinition = typeof(Enum)
@@ -226,7 +226,7 @@ public class StringToEnumConverter(Type enumType) : ITypeConverter {
     }
 }
 
-/// <summary>T to String using 'constrained' to avoid boxing structs.</summary>
+/// <summary>Converts a value to text and uses <see cref="ITypeConverter.FormatProvider"/> when supported.</summary>
 public class ToStringConverter : ITypeConverter {
     /// <inheritdoc/>
     public Type OutputType => typeof(string);
@@ -241,7 +241,7 @@ public class ToStringConverter : ITypeConverter {
         generator.Emit(OpCodes.Ldloca, local);
         var method = sourceType.GetMethod(nameof(ToString), [typeof(IFormatProvider)]);
         if (method is not null && method.ReturnType == typeof(string)) {
-            generator.Emit(OpCodes.Ldsfld, ITypeConverter._providerField);
+            generator.Emit(OpCodes.Ldsfld, TypeConverterRuntime.FormatProviderField);
             generator.Emit(OpCodes.Call, method);
             return;
         }

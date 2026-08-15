@@ -9,15 +9,12 @@ namespace Rinku.Mapping.Conversion;
 /// <summary>A conversion that writes its result through the out parameter and returns whether it succeeded.</summary>
 public delegate bool CastFunc<TFrom, TTo>(TFrom value, out TTo result);
 /// <summary>
-/// Converts a value from one type to another at runtime, covering casts, numeric conversions, enum
-/// conversions, and parsing, for when a value's type does not match the one a caller wants. Each type pair
-/// resolves its conversion once, emitting a specialized method for it, and reuses it. A custom parser
-/// registered with <see cref="AddParser"/> replaces that emitted conversion for the pair and takes effect
-/// even after the pair was first used.
+/// Converts values through casts, numeric conversions, enum conversions, and parsing.
+/// Use <see cref="AddParser"/> to replace conversion for one source and target type pair.
 /// </summary>
 public static class Caster {
     private static readonly BindingFlags PublicStatic = BindingFlags.Public | BindingFlags.Static;
-    /// <summary>Register a custom conversion from <typeparamref name="TFrom"/> to <typeparamref name="TTo"/>. It takes priority over the built-in paths.</summary>
+    /// <summary>Registers a custom conversion from <typeparamref name="TFrom"/> to <typeparamref name="TTo"/>.</summary>
     public static void AddParser<TFrom, TTo>(CastFunc<TFrom, TTo> parser) => Caster<TFrom, TTo>.SetCustom(parser);
     /// <summary>Converts <paramref name="value"/> to <typeparamref name="TTo"/>, returning <see langword="false"/> when no conversion fits.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -35,7 +32,7 @@ public static class Caster {
         });
         _ = 1;
     }
-    /// <summary>Parse an object value to <typeparamref name="T"/>.</summary>
+    /// <summary>Converts an object value to <typeparamref name="T"/> or throws when conversion is not possible.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static T? Parse<T>(this object? value) {
@@ -48,13 +45,6 @@ public static class Caster {
          ?? t.GetMethod("op_Explicit", PublicStatic, [f]) ?? t.GetMethod("op_Implicit", PublicStatic, [f]);
         return m != null && m.ReturnType == t;
     }
-    /// <summary>
-    /// Whether a value type is a plain number, so it can go through <see cref="INumberBase{TSelf}.CreateTruncating{TOther}"/>.
-    /// Only ever asked about the non-enum value types the resolver reaches (see <c>Repr</c>), so it takes the
-    /// built-in numeric type codes, rejects the value types that share a code but are not numbers
-    /// (<see cref="DateTime"/>, <see cref="Guid"/>, <see cref="TimeSpan"/>), and finally accepts a user type
-    /// that implements the generic-math interface (e.g. <see cref="Half"/>, <see cref="Int128"/>).
-    /// </summary>
     internal static bool IsNumeric(Type t) {
         switch (Type.GetTypeCode(t)) {
             case TypeCode.SByte:
@@ -84,11 +74,10 @@ public static class Caster {
         return false;
     }
 }
-/// <summary>The cached converter from <typeparamref name="TFrom"/> to <typeparamref name="TTo"/>, resolved once per type pair and reused.</summary>
+/// <summary>Converts values from <typeparamref name="TFrom"/> to <typeparamref name="TTo"/>.</summary>
 public static class Caster<TFrom, TTo> {
     private static volatile CastFunc<TFrom, TTo> _convert = CasterEmit.Build<TFrom, TTo>();
 
-    /// <summary>Replaces the conversion with a custom parser. Rebuild through <see cref="CasterEmit"/> to return to the default.</summary>
     internal static void SetCustom(CastFunc<TFrom, TTo> parser) => _convert = parser;
 
     /// <summary>Converts <paramref name="value"/>, returning <see langword="false"/> when no conversion fits.</summary>
@@ -105,11 +94,6 @@ public static class Caster<TFrom, TTo> {
         return _convert(value, out result);
     }
 }
-/// <summary>
-/// Emits, once per type pair, a specialized method with the signature <c>bool(TFrom, out TTo)</c> that
-/// performs the conversion directly. Value conversions (numbers, enums, nullables, operators) compile to
-/// straight-line IL with no boxing; the reference and parsing paths call the small bridge helpers below.
-/// </summary>
 internal static class CasterEmit {
     internal static CastFunc<TFrom, TTo> Build<TFrom, TTo>() {
         var dm = new DynamicMethod(
@@ -188,11 +172,6 @@ internal static class CasterEmit {
         Return(il, false);
     }
 
-    /// <summary>
-    /// Wraps a value-to-value conversion into the four nullability combinations. <paramref name="convert"/>
-    /// assumes the present <paramref name="cF"/> value is on the stack and leaves a <paramref name="cT"/>
-    /// value; the wrapper adds the missing-input checks and the result wrap or unwrap around it.
-    /// </summary>
     private static void EmitLifted(ILGenerator il, Type cF, Type cT, bool fromNull, bool toNull, Action<ILGenerator> convert) {
         Type? nullT = toNull ? typeof(Nullable<>).MakeGenericType(cT) : null;
 
@@ -228,7 +207,6 @@ internal static class CasterEmit {
         }
     }
 
-    /// <summary>Stores a <paramref name="cT"/> value already on the stack into the result, wrapping it when the target is nullable.</summary>
     private static void StoreResult(ILGenerator il, Type cT, Type? nullT) {
         if (nullT is not null) {
             il.Emit(OpCodes.Newobj, nullT.GetConstructor([cT])!);
@@ -239,7 +217,6 @@ internal static class CasterEmit {
         }
     }
 
-    /// <summary>Reinterprets a numeric or enum representation to another, truncating the value. Same representations need no work.</summary>
     private static void EmitNumeric(ILGenerator il, Type reprF, Type reprT) {
         if (reprF == reprT)
             return;
@@ -285,10 +262,6 @@ internal static class CasterEmit {
         }, tryParse, constrainedOn: cT);
     }
 
-    /// <summary>
-    /// Runs a <c>bool TryParse(..., out cT)</c> into a temporary and, on success, wraps it into the nullable
-    /// result. <paramref name="pushArgs"/> pushes every argument before the out parameter.
-    /// </summary>
     private static void EmitParseIntoNullable(ILGenerator il, Type cT, Action<ILGenerator> pushArgs, MethodInfo tryParse, Type? constrainedOn) {
         Type nullT = typeof(Nullable<>).MakeGenericType(cT);
         var tmp = il.DeclareLocal(cT);
@@ -328,7 +301,6 @@ internal static class CasterEmit {
         il.Emit(OpCodes.Ret);
     }
 
-    /// <summary>The numeric or enum underlying type used to reinterpret a value, or null when it is neither.</summary>
     private static Type? Repr(Type t)
         => t.IsEnum ? Enum.GetUnderlyingType(t) : Caster.IsNumeric(t) ? t : null;
 

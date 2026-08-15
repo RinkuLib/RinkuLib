@@ -459,10 +459,6 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         var cols = ValueCol;
         var inner = TypeParser.GetTypeParser<int>(cols);
 
-        var list = new ListTypeParser<int>(inner);
-        Assert.NotEqual((System.Data.CommandBehavior)(-1), list.Behavior);
-        Assert.Empty(list.Default());
-
         var optional = new OptionalTypeParser<OptionalStruct<int>, int>(inner);
         Assert.NotEqual((System.Data.CommandBehavior)(-1), optional.Behavior);
         Assert.False(optional.Default().HasValue);
@@ -488,9 +484,6 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal([1, 2], (await fastList.ParseAsync(r1, ct)).Result);
 
         var inner = TypeParser.GetTypeParser<int>(cols);
-        using var r2 = Rows.Reader(ValueCol, [3], [4]);
-        await r2.ReadAsync(ct);
-        Assert.Equal([3, 4], (await new ListTypeParser<int>(inner).ParseAsync(r2, ct)).Result);
 
         using var r3 = Rows.Reader(ValueCol, [5]);
         await r3.ReadAsync(ct);

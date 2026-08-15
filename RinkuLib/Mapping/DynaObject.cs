@@ -28,37 +28,29 @@ public class DynaObjectConverter : JsonConverter<DynaObject> {
 public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOnlyDictionary<string, int> {
     /// <summary>Writes the columns as JSON properties, used by the JSON converter.</summary>
     public abstract void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options);
-    ///<inheritdoc/>
     internal DynaObject(Mapper mapper, int len) {
         if (mapper.Count != len)
             throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Expect length of {len} but {nameof(mapper)} is of length {mapper.Count}");
         Mapper = mapper;
     }
-    /// <summary>The mapper to the fields</summary>
+    /// <summary>Gets the column names and their indexes.</summary>
     public readonly Mapper Mapper;
     /// <inheritdoc/>
     public int Count => Mapper.Count;
 
-    /// <summary>
-    /// Get the value at the corresponding index
-    /// </summary>
+    /// <summary>Tries to read the value at the given column index.</summary>
     public abstract bool TryGet<T>(int index, [MaybeNullWhen(false)] out T val);
-    /// <summary>The miss road of <see cref="TryGet{T}(int, out T)"/>, shared by the generated shapes.</summary>
     private protected static bool Fail<T>([MaybeNullWhen(false)] out T val) {
         val = default;
         return false;
     }
-    /// <summary>
-    /// Get the value with the corresponding index
-    /// </summary>
+    /// <summary>Gets the value at the given column index.</summary>
     public T Get<T>(int index) {
         if (!TryGet<T>(index, out var val))
             throw new RinkuReadException(ErrorCodes.CannotReadColumn, $"Unable to get value at index {index} of type {typeof(T)}");
         return val;
     }
-    /// <summary>
-    /// Get the value with the corresponding key
-    /// </summary>
+    /// <summary>Gets the value from the named column.</summary>
     public T Get<T>(string key) {
         var ind = Mapper.GetIndex(key);
         if (ind < 0)
@@ -67,9 +59,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
             throw new RinkuReadException(ErrorCodes.CannotReadColumn, $"Unable to get value for {key} of type {typeof(T)}");
         return val;
     }
-    /// <summary>
-    /// Get the value with the corresponding key
-    /// </summary>
+    /// <summary>Gets the value from the named column.</summary>
     public T Get<T>(ReadOnlySpan<char> key) {
         var ind = Mapper.GetIndex(key);
         if (ind < 0)
@@ -79,22 +69,16 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         return val;
     }
 
-    /// <summary>
-    /// Set the value at the corresponding index
-    /// </summary>
+    /// <summary>Tries to replace the value at the given column index.</summary>
     public abstract bool Set<T>(int index, T value);
-    /// <summary>
-    /// Get the value with the corresponding key
-    /// </summary>
+    /// <summary>Tries to replace the value in the named column.</summary>
     public bool Set<T>(string key, T value) {
         var ind = Mapper.GetIndex(key);
         if (ind < 0)
             return false;
         return Set(ind, value);
     }
-    /// <summary>
-    /// Get the value with the corresponding key
-    /// </summary>
+    /// <summary>Tries to replace the value in the named column.</summary>
     public bool Set<T>(ReadOnlySpan<char> key, T value) {
         var ind = Mapper.GetIndex(key);
         if (ind < 0)
@@ -102,7 +86,6 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         return Set(ind, value);
     }
 
-    /// <inheritdoc/>
     int IReadOnlyDictionary<string, int>.this[string key] => Mapper.GetIndex(key);
     /// <inheritdoc/>
     public object? this[int ind] {
@@ -154,12 +137,9 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
     /// Gets the unique keys held by this mapper as a <see cref="ReadOnlySpan{String}"/>.
     /// </summary>
     public ReadOnlySpan<string> Keys => Mapper.Keys;
-    /// <inheritdoc/>
     IEnumerable<string> IReadOnlyDictionary<string, int>.Keys => ((IReadOnlyDictionary<string, int>)Mapper).Keys;
-    /// <inheritdoc/>
     IEnumerable<string> IReadOnlyDictionary<string, object?>.Keys => ((IReadOnlyDictionary<string, int>)Mapper).Keys;
 
-    /// <inheritdoc/>
     IEnumerable<int> IReadOnlyDictionary<string, int>.Values => Mapper.Values;
     /// <inheritdoc/>
     public IEnumerable<object?> Values { get {
@@ -213,9 +193,7 @@ public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOn
         }
         return TryGet(ind, out value);
     }
-    /// <inheritdoc/>
     IEnumerator<KeyValuePair<string, int>> IEnumerable<KeyValuePair<string, int>>.GetEnumerator() => Mapper.GetEnumerator();
-    /// <inheritdoc/>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     /// <inheritdoc/>
     public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() {
@@ -299,7 +277,6 @@ internal class DynaObject<T0, T1, T2>(T0 val0, T1 val1, T2 val2, Mapper mapper) 
         JsonSerializer.Serialize(writer, val2, options);
     }
 }
-/// <summary>A <see cref="DynaObject"/> with four typed columns.</summary>
 internal class DynaObject<T0, T1, T2, T3>(T0 val0, T1 val1, T2 val2, T3 val3, Mapper mapper) : DynaObject(mapper, 4) {
     private T0? val0 = val0; 
     private T1? val1 = val1; 

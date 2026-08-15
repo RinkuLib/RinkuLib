@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
 using System.Linq;
@@ -16,64 +17,81 @@ namespace RinkuLib.Analyzers;
 public sealed class AddBasedOnCodeFixProvider : CodeFixProvider {
     public override ImmutableArray<string> FixableDiagnosticIds => [AddBasedOnAnalyzer.DiagnosticId];
     public override FixAllProvider GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
+
     public override async Task RegisterCodeFixesAsync(CodeFixContext context) {
-        var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken);
+        var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);
         if (root is null)
             return;
 
-        var declaration = FindTargetDeclaration(root, context.Diagnostics.First());
+        var diagnostic = context.Diagnostics.First();
+        var declaration = DocumentationTags.FindContainingType(root, diagnostic.Location.SourceSpan);
         if (declaration is null)
             return;
 
-        var candidates = await FindSchemaSymbolsAsync(context.Document.Project, context.CancellationToken);
-
-        if (candidates.Count == 0)
+        var schemas = await FindSchemasAsync(context.Document.Project, context.CancellationToken).ConfigureAwait(false);
+        if (schemas.Length == 0)
             return;
 
-        var nestedActions = candidates
-            .Select(symbol => CodeAction.Create(
-                title: GetDisplayName(symbol),
-                createChangedDocument: ct => ApplyFixAsync(context.Document, declaration.SpanStart, symbol, ct),
-                equivalenceKey: $"basedon-{symbol.ToDisplayString()}"))
-            .Cast<CodeAction>()
-            .ToImmutableArray();
-
         context.RegisterCodeFix(
-            CodeAction.Create("Add BasedOn Link...", nestedActions, false),
-            context.Diagnostics.First());
+            CodeAction.Create(
+                "Add schema link",
+                [
+                    CreateLinkChoice(context.Document, declaration.SpanStart, DocumentationTags.BasedOn, "Track schema changes", schemas),
+                    CreateLinkChoice(context.Document, declaration.SpanStart, DocumentationTags.MatchConstructor, "Require a matching constructor", schemas)
+                ],
+                isInlinable: false),
+            diagnostic);
     }
-    private static async Task<List<ISymbol>> FindSchemaSymbolsAsync(Project project, CancellationToken ct) {
-        var compilation = await project.GetCompilationAsync(ct);
+
+    private static CodeAction CreateLinkChoice(
+        Document document,
+        int declarationStart,
+        string tagName,
+        string title,
+        ImmutableArray<ISymbol> schemas) {
+        var actions = schemas.Select(symbol => (CodeAction)CodeAction.Create(
+            symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            cancellationToken => ApplyAsync(document, declarationStart, symbol, tagName, cancellationToken),
+            $"Add-{tagName}-{symbol.ToDisplayString()}"));
+        return CodeAction.Create(title, actions.ToImmutableArray(), isInlinable: false);
+    }
+
+    private static async Task<ImmutableArray<ISymbol>> FindSchemasAsync(Project project, CancellationToken cancellationToken) {
+        var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
         if (compilation is null)
             return [];
 
-        var result = new List<ISymbol>();
-
+        var symbols = ImmutableArray.CreateBuilder<ISymbol>();
         foreach (var tree in compilation.SyntaxTrees) {
-            ct.ThrowIfCancellationRequested();
-
-            var root = await tree.GetRootAsync(ct);
+            cancellationToken.ThrowIfCancellationRequested();
+            var root = await tree.GetRootAsync(cancellationToken).ConfigureAwait(false);
             var model = compilation.GetSemanticModel(tree);
-
-            foreach (var member in root.DescendantNodes().OfType<MemberDeclarationSyntax>()) {
-                if (!BasedOnHelper.HasTag(member, "Schema"))
+            foreach (var declaration in root.DescendantNodes().OfType<MemberDeclarationSyntax>()) {
+                if (!DocumentationTags.HasTag(declaration, DocumentationTags.Schema))
                     continue;
 
-                ISymbol? symbol = member switch {
-                    TypeDeclarationSyntax type => model.GetDeclaredSymbol(type, ct),
-                    MethodDeclarationSyntax method => model.GetDeclaredSymbol(method, ct),
+                ISymbol? symbol = declaration switch {
+                    TypeDeclarationSyntax type => model.GetDeclaredSymbol(type, cancellationToken),
+                    MethodDeclarationSyntax method => model.GetDeclaredSymbol(method, cancellationToken),
                     _ => null
                 };
-
-                if (symbol != null)
-                    result.Add(symbol);
+                if (symbol is not null)
+                    symbols.Add(symbol);
             }
         }
 
-        return result;
+        return symbols
+            .OrderBy(symbol => symbol.ToDisplayString(), StringComparer.Ordinal)
+            .ToImmutableArray();
     }
-    private static async Task<Document> ApplyFixAsync(Document document, int declarationStart, ISymbol symbol, CancellationToken ct) {
-        var root = await document.GetSyntaxRootAsync(ct);
+
+    private static async Task<Document> ApplyAsync(
+        Document document,
+        int declarationStart,
+        ISymbol schema,
+        string tagName,
+        CancellationToken cancellationToken) {
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
         if (root is null)
             return document;
 
@@ -83,37 +101,40 @@ public sealed class AddBasedOnCodeFixProvider : CodeFixProvider {
             .AncestorsAndSelf()
             .OfType<TypeDeclarationSyntax>()
             .FirstOrDefault();
-
         if (declaration is null)
             return document;
 
-        var updated = InsertBasedOnTag(declaration, symbol);
-        var newRoot = root.ReplaceNode(declaration, updated);
-
-        return document.WithSyntaxRoot(newRoot);
+        var timestamp = tagName == DocumentationTags.BasedOn
+            ? DocumentationTags.GetLatestSchemaTimestamp(schema, cancellationToken)
+            : null;
+        var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
+        var newLine = text.Lines.Count > 1
+            ? text.ToString(Microsoft.CodeAnalysis.Text.TextSpan.FromBounds(text.Lines[0].End, text.Lines[1].Start))
+            : Environment.NewLine;
+        var updated = AddTag(declaration, schema, tagName, timestamp, newLine);
+        return document.WithSyntaxRoot(root.ReplaceNode(declaration, updated));
     }
-    private static TypeDeclarationSyntax InsertBasedOnTag(TypeDeclarationSyntax declaration, ISymbol symbol) {
+
+    private static TypeDeclarationSyntax AddTag(
+        TypeDeclarationSyntax declaration,
+        ISymbol symbol,
+        string tagName,
+        DateTimeOffset? timestamp,
+        string newLine) {
         var leadingTrivia = declaration.GetLeadingTrivia();
         var lastTrivia = leadingTrivia.LastOrDefault();
-        var indent = lastTrivia.IsKind(SyntaxKind.WhitespaceTrivia) ? lastTrivia.ToString() : "";
-        var newCommentText = $"{indent}/// <BasedOn cref=\"{GetCref(symbol)}\" />\r\n";
-        var newTrivia = SyntaxFactory.ParseLeadingTrivia(newCommentText);
-        int insertIndex = leadingTrivia.Count;
-        if (lastTrivia.IsKind(SyntaxKind.WhitespaceTrivia))
-            insertIndex--;
-        var updatedTrivia = leadingTrivia.InsertRange(insertIndex, newTrivia);
-        return declaration.WithLeadingTrivia(updatedTrivia);
+        var indent = lastTrivia.IsKind(SyntaxKind.WhitespaceTrivia) ? lastTrivia.ToString() : string.Empty;
+        var lastUpdated = timestamp.HasValue
+            ? $" LastUpdated=\"{timestamp.Value.UtcDateTime:yyyy-MM-ddTHH:mmZ}\""
+            : string.Empty;
+        var comment = SyntaxFactory.ParseLeadingTrivia(
+            $"{indent}/// <{tagName} cref=\"{GetCref(symbol)}\"{lastUpdated} />{newLine}");
+        var index = lastTrivia.IsKind(SyntaxKind.WhitespaceTrivia)
+            ? leadingTrivia.Count - 1
+            : leadingTrivia.Count;
+        return declaration.WithLeadingTrivia(leadingTrivia.InsertRange(index, comment));
     }
-    private static TypeDeclarationSyntax? FindTargetDeclaration(SyntaxNode root, Diagnostic diagnostic) {
-        return root
-            .FindToken(diagnostic.Location.SourceSpan.Start)
-            .Parent?
-            .AncestorsAndSelf()
-            .OfType<TypeDeclarationSyntax>()
-            .FirstOrDefault();
-    }
-    private static string GetDisplayName(ISymbol symbol) =>
-        symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-    private static string GetCref(ISymbol symbol) =>
-        symbol.ToDisplayString().Replace('<', '{').Replace('>', '}');
+
+    private static string GetCref(ISymbol symbol)
+        => symbol.ToDisplayString().Replace('<', '{').Replace('>', '}');
 }

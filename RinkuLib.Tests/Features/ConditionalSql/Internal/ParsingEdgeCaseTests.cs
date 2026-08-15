@@ -209,6 +209,36 @@ public class ParsingEdgeCaseTests {
         Render.Expect(query.StartBuilder(), "SELECT 'a value', `col`, \"dq\" FROM Users");
     }
 
+    [Fact]
+    public void PostgreSql_dollar_quote_hides_default_variables() {
+        const string sql = "SELECT $$ @notAParameter $$, @realParameter";
+        var query = new QueryCommand(sql);
+        Assert.Equal(["@realParameter"], query.Mapper.Keys.ToArray());
+        var builder = query.StartBuilder();
+        builder.Use("@realParameter", 7);
+        Render.Expect(builder, sql, ("@realParameter", 7));
+    }
+
+    [Fact]
+    public void PostgreSql_dollar_quote_and_dollar_variable_coexist() {
+        const string sql = "SELECT $$literal$$ FROM albums WHERE AlbumId = $albumId";
+        var query = new QueryCommand(sql, '$');
+        Assert.Equal(["$albumId"], query.Mapper.Keys.ToArray());
+        var builder = query.StartBuilder();
+        builder.Use("$albumId", 7);
+        Render.Expect(builder, sql, ("$albumId", 7));
+    }
+
+    [Fact]
+    public void PostgreSql_tagged_dollar_quote_hides_all_template_syntax() {
+        const string sql = "SELECT $body$ @ignored $ignored /*Ignored*/ ( ) $body$, $real";
+        var query = new QueryCommand(sql, '$');
+        Assert.Equal(["$real"], query.Mapper.Keys.ToArray());
+        var builder = query.StartBuilder();
+        builder.Use("$real", 1);
+        Render.Expect(builder, sql, ("$real", 1));
+    }
+
     /// <summary>
     /// A <c>--</c> comment is copied through as written, and what it holds is read as nothing. A variable
     /// named in one is not a key, so it never reaches the mapper and never binds a parameter.

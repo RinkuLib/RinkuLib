@@ -1,123 +1,149 @@
 # Parameter metadata
 
-How a `DbParameter` gets its type and size. The default needs no configuration. It is documented because it is a point you can take over.
-
-## What happens by default
-
-1. On a variable's first use, a plain `DbParameter` is created with just the value. The provider infers the rest.
-2. Right after execution, the command captures each parameter's resolved metadata (type, size) and caches it.
-3. Every later call binds that parameter from the cache, which helps plan reuse and driver overhead.
-
-A captured size is rounded up to 100, 500, 4000, or unbounded before it is cached, so a `varchar` learned at 50 binds at 100. Sizes group into a handful of buckets instead of one cache entry per length, and a plan is reused across calls whose values differ in length. Pin the size yourself, below, when a parameter needs an exact one.
-
-## Setting it yourself
-
-Pin a parameter's metadata up front instead of letting it be learned.
+The first execution lets the provider infer ordinary parameter metadata.
 
 ```csharp
-TrackCmd.UpdateParamCache("@Name", TypedDbParamCache.Get(DbType.AnsiStringFixedLength, 1000));
+static readonly QueryCommand RenameAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+
+RenameAlbum.Execute(cnn, new { albumId = 12, title = "Blue" });
 ```
 
-Reset all learned and pinned metadata on one command through its parameter ledger. Every entry returns to the current inferred strategy, including metadata owned by special handlers, and later runs learn it again:
-
-```csharp
-TrackCmd.Parameters.Reset();
+```sql
+UPDATE albums SET Title = @title WHERE AlbumId = @albumId
 ```
 
-There is no separate named reset. `UpdateParamCache(name, DbParameterDefaults.Current.Inferred)` already provides that operation when an application needs it.
+After execution, the default inference path stores `DbType`. Sized text and binary parameters also store a widened size.
 
-## Converting a custom parameter value
+```text
+Provider result for @title: DbType.String, Size 4
+Cached for @title:          DbType.String, Size 100
+```
 
-Use `ConvertedDbParamInfo<T>` when the value needs conversion but the normal parameter lifecycle is enough.
+Later executions apply the cached metadata before assigning the new value.
 
 ```csharp
-sealed class NamesParam : ConvertedDbParamInfo<Names>
-{
-    protected override object ConvertValue(Names value)
-        => string.Join(',', value.Items);
+RenameAlbum.Execute(cnn, new { albumId = 12, title = "A much longer title" });
+```
 
-    protected override void ConfigureParameter(IDbDataParameter parameter)
-        => parameter.DbType = DbType.String;
+```text
+Applied before execution: DbType.String, Size 100
+Assigned value:            A much longer title
+```
+
+The cached metadata is not inferred again. A later incompatible value may be converted, truncated, or rejected by the provider.
+
+## Size buckets
+
+The default buckets use the size reported by the provider after execution.
+
+```text
+Reported Size -1         -> cached Size -1
+Other Size <= 100        -> cached Size 100
+Reported Size 101..500   -> cached Size 500
+Reported Size 501..4000  -> cached Size 4000
+Reported Size > 4000     -> cached Size -1
+```
+
+Zero enters the first bucket. A provider-reported unbounded size remains unbounded.
+
+```text
+Reported Size 0   -> cached Size 100
+Reported Size -1  -> cached Size -1
+```
+
+Size is retained only for these database types.
+
+```csharp
+DbType[] sizedTypes = [
+    DbType.String,
+    DbType.AnsiString,
+    DbType.Binary,
+    DbType.Xml,
+    DbType.AnsiStringFixedLength,
+    DbType.StringFixedLength
+];
+```
+
+Every other database type retains only `DbType` through ordinary post-execution inference.
+
+```text
+Provider result: DbType.Decimal, Precision 18, Scale 4
+Default cache:   DbType.Decimal
+```
+
+Direction, precision, and scale are not learned by this path.
+
+## Pin one parameter
+
+Replace one ordinary parameter strategy when its database metadata is known beforehand.
+
+```csharp
+RenameAlbum.UpdateParamCache("@title", TypedDbParamCache.Get(DbType.String, 500));
+```
+
+```text
+Every execution: DbType.String, Size 500
+```
+
+`UpdateParamCache` replaces an inferred, learned, or previously pinned ordinary strategy. A parameter owned by a special handler is reset through that handler instead.
+
+## Learn again
+
+Reset the command before the next execution when a cached type or size should be inferred again.
+
+```csharp
+RenameAlbum.Parameters.Reset();
+
+RenameAlbum.Execute(cnn, new { albumId = 12, title = "A title whose metadata should be learned again" });
+```
+
+Every bindable ordinary strategy returns to `DbParameterDefaults.Current.Inferred`. Every special handler receives `ResetCache(inferred)`.
+
+The built-in multi-value handler resets its element strategy.
+
+```csharp
+static readonly QueryCommand FindAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@albumIds_X)");
+
+FindAlbums.Parameters.Reset();
+// The cached metadata for each expanded element will be learned again.
+```
+
+A custom handler that owns more cached strategies overrides `ResetCache`. The base implementation resets only its `IsCached` state.
+
+## Metadata discovered from a procedure
+
+`FromProc` copies declared metadata instead of using ordinary post-execution inference.
+
+```csharp
+QueryCommand RenumberAlbums = QueryCommand.FromProc("RenumberAlbums", setupConnection);
+```
+
+```text
+Copied exactly when declared: DbType, precision, scale
+Otherwise copied exactly:     DbType, size
+Also copied:                  output direction and return-value metadata
+```
+
+The copied strategy remains in use until it is explicitly replaced or reset.
+
+The stored-procedure return value is declared command metadata, not a bindable `QueryParameters` entry.
+
+```csharp
+RenumberAlbums.Parameters.Reset();
+
+RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12, moved = 0 });
+
+using (command) {
+    int returnValue = command.GetReturnValue<int>();
 }
-
-Search.UpdateParamCache("@names", new NamesParam());
 ```
 
-The wrapper creates the parameter, updates it on reuse, removes it when the value becomes null, and supports
-both command interfaces. Inherit directly from `DbParamInfo` when the parameter needs a different lifecycle.
+`Parameters.Reset()` resets `albumId`, `moved`, and handler-owned strategies. It does not reset the return-value strategy. The return parameter has no caller value or placeholder and is recreated automatically with its declared type, size, precision, scale, and `ReturnValue` direction.
 
-## Output parameters
+There is currently no public operation that resets or replaces the return-value strategy.
 
-Direction is part of the metadata. Pin an output parameter with a directional cache, run through an overload that hands you the command, and read the value once the read completes. `Execute`, `ExecuteScalar`, `Query`, and their async forms all take an `out DbCommand`, like the reader methods.
+## Provider-specific discovery
 
-```csharp
-static readonly QueryCommand Renumber = new("EXEC dbo.RenumberTracks @albumId, @moved OUTPUT");
+Some providers expose size, precision, scale, or other parameter metadata that the default learning path does not keep. Register an `IDbParamInfoGetter` when a command needs that metadata copied into its parameter plan.
 
-Renumber.UpdateParamCache("@moved", new DirectionalSizedDbParamCache(ParameterDirection.Output, DbType.Int32));
-
-List<Track> renumbered = Renumber.Query<List<Track>>(cnn, out DbCommand cmd, new { albumId = 1, moved = 0 });
-
-int moved = cmd.GetOutputValue<int>("@moved");
-cmd.Dispose();
-```
-
-When a command exposes a return-value parameter, read it without relying on the name chosen by the provider.
-
-```csharp
-static readonly QueryCommand Renumber = QueryCommand.FromProc("dbo.RenumberTracks", cnn);
-
-Renumber.Execute(cnn, out DbCommand cmd, new { albumId = 1, moved = 0 });
-int moved = cmd.GetOutputValue<int>("@moved");
-int returnValue = cmd.GetReturnValue<int>();
-cmd.Dispose();
-```
-
-`FromProc` creates the provider-declared return-value parameter automatically. It is not a named input slot and
-does not need a placeholder; named output parameters still do.
-
-The details that matter:
-
-- The `out DbCommand` overloads leave the command alive and in your hands, dispose it when done. The overloads without it create and dispose their own command, so outputs are not reachable there.
-- A named output parameter is only created for a supplied value, so give it a placeholder (`moved = 0` above) to bring it into the command. A stored-procedure return value is added automatically.
-- Providers fill outputs when the reader closes. A buffered shape completes its read before returning. A streamed shape fills them only after enumeration finishes.
-- A [builder bound to your own command](parameters.md#a-builder-bound-to-one-dbcommand) works the same way, its command is yours already.
-- `DirectionalScaledDbParamCache` is the same with precision and scale, for decimals.
-- A command built by [`QueryCommand.FromProc`](index.md#stored-procedures) has this done for it. The procedure states the direction and the size, so output and return-value parameters need no pinning of their own and their declared metadata is retained. The return-value parameter is created automatically; named output parameters still use a placeholder value when running the command.
-
-## Plugging in a provider
-
-The capture step is pluggable. A maker inspects the command and, when it recognizes it, returns a getter that reads provider-specific metadata.
-
-```csharp
-IDbParamInfoGetter.ParamGetterMakers.Add((IDbCommand cmd, out IDbParamInfoGetter getter) => {
-    if (cmd is MyProviderCommand mine) {
-        getter = new MyProviderParamInfoGetter(mine);
-        return true;
-    }
-    getter = null!;
-    return false;
-});
-```
-
-Register makers once at startup. When no maker matches, the default reads the standard `DbParameter` properties, which is what step 2 above does.
-
-## Replacing the fallback
-
-Provider getters are the narrow extension point. To replace the general fallback instead, assign an
-`IDbParameterDefaults` implementation during startup:
-
-```csharp
-DbParameterDefaults.Current = new MyParameterDefaults();
-```
-
-It supplies the initial inferred `DbParamInfo` and turns a live `IDbDataParameter` into the strategy cached for
-later calls. Query parsing and parameter arrays depend only on that contract. The shipped
-`DefaultDbParameterServices` can be wrapped when only one decision needs changing.
-
-This contract is resolved while a parameter ledger is created and while provider metadata is learned. Warm
-rebinding keeps the selected `DbParamInfo` in the ledger and calls it directly; it does not resolve
-`DbParameterDefaults.Current` for each parameter on each trip.
-
-The literal, raw, numeric, and spread handlers are installed into `QueryFactory.BaseHandlerMapper` and
-`SpecialHandler.SpecialHandlerGetter`. Those registries hold handler contracts, so a custom suffix is one
-registration and replacing a shipped suffix does not require replacing query parsing or binding.
+The full getter and its registration are shown in [parameter binding customization](../customization/parameters.md).

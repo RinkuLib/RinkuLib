@@ -4,9 +4,8 @@ using Rinku.Internal;
 
 namespace Rinku.Querying;
 /// <summary>
-/// Reads a SQL template once and produces the pieces a <see cref="QueryCommand"/> runs from, the stripped
-/// text, the parts that can switch on and off, and the map from key names to slots. You meet it when
-/// subclassing <see cref="QueryCommand"/> to change how templates are read, most code never touches it.
+/// Reads a SQL template into its text, conditional parts, handlers, and named value slots.
+/// Use it when subclassing <see cref="QueryCommand"/> to change how a template is read.
 /// </summary>
 public struct QueryFactory {
     /// <summary>

@@ -17,7 +17,9 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand OneName = new("SELECT Name FROM Users WHERE ID = 1");
     private static readonly QueryCommand NoRows = new("SELECT Name FROM Users WHERE 1 = 0");
     private static readonly QueryCommand NoIntRows = new("SELECT ID FROM Users WHERE 1 = 0");
+    private static readonly QueryCommand OneInt = new("SELECT ID FROM Users WHERE ID = 1");
     private static readonly QueryCommand NullEmail = new("SELECT Email FROM Users WHERE ID = 1");
+    private static readonly QueryCommand NullInt = new("SELECT Val FROM Scratch WHERE Val IS NULL ORDER BY ID DESC LIMIT 1");
     private static readonly QueryCommand SalaryOfOne = new("SELECT Salary FROM Users WHERE ID = 1");
 
     [Fact]
@@ -105,6 +107,22 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     }
 
     [Fact]
+    public void OptionalNullableStruct_returns_null_for_a_missing_row_or_database_null() {
+        using var cnn = Db.GetConnection();
+        cnn.Open();
+        using (var seed = cnn.CreateCommand()) {
+            seed.CommandText = "INSERT INTO Scratch (Val) VALUES (NULL)";
+            seed.ExecuteNonQuery();
+        }
+        int? value = OneInt.Query<OptionalNullableStruct<int>>(cnn);
+        int? missing = NoIntRows.Query<OptionalNullableStruct<int>>(cnn);
+        int? databaseNull = NullInt.Query<OptionalNullableStruct<int>>(cnn);
+        Assert.Equal(1, value);
+        Assert.Null(missing);
+        Assert.Null(databaseNull);
+    }
+
+    [Fact]
     public void Single_with_exactly_one_row_returns_it() {
         using var cnn = Db.GetConnection();
         string name = OneName.Query<Single<string>>(cnn);
@@ -122,6 +140,71 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         using var cnn = Db.GetConnection();
         Refusals.Raises(ErrorCodes.ShapeRefusedResult,
             () => AllUsers.Query<Single<(long, string, string?)>>(cnn));
+    }
+
+    [Fact]
+    public void SingleOrDefault_with_exactly_one_row_returns_it() {
+        using var cnn = Db.GetConnection();
+        string? name = OneName.Query<SingleOrDefault<string>>(cnn);
+        Assert.Equal("John", name);
+    }
+
+    [Fact]
+    public void SingleOrDefault_with_no_rows_returns_default() {
+        using var cnn = Db.GetConnection();
+        string? name = NoRows.Query<SingleOrDefault<string>>(cnn);
+        int? id = NoIntRows.Query<SingleOrDefaultStruct<int>>(cnn);
+        string? nullableName = NoRows.Query<SingleOrDefaultNullable<string>>(cnn);
+        int? nullableId = NoIntRows.Query<SingleOrDefaultNullableStruct<int>>(cnn);
+        Assert.Null(name);
+        Assert.Null(id);
+        Assert.Null(nullableName);
+        Assert.Null(nullableId);
+    }
+
+    [Fact]
+    public void SingleOrDefault_with_a_null_value_keeps_the_inner_null_rule() {
+        using var cnn = Db.GetConnection();
+        Assert.Throws<NullValueAssignmentException>(() => NullEmail.Query<SingleOrDefault<string>>(cnn));
+    }
+
+    [Fact]
+    public void Single_shapes_accept_nullable_values_and_references() {
+        using var cnn = Db.GetConnection();
+        cnn.Open();
+        using (var seed = cnn.CreateCommand()) {
+            seed.CommandText = "INSERT INTO Scratch (Val) VALUES (NULL)";
+            seed.ExecuteNonQuery();
+        }
+
+        int? singleValue = NullInt.Query<Single<int?>>(cnn);
+        int? singleOrDefaultValue = NullInt.Query<SingleOrDefaultNullableStruct<int>>(cnn);
+        MaybeNull<string> singleReference = NullEmail.Query<Single<MaybeNull<string>>>(cnn);
+        string? singleOrDefaultReference = NullEmail.Query<SingleOrDefaultNullable<string>>(cnn);
+
+        Assert.Throws<NullValueAssignmentException>(() => NullInt.Query<SingleOrDefaultStruct<int>>(cnn));
+        Assert.Null(singleValue);
+        Assert.Null(singleOrDefaultValue);
+        Assert.Null((string?)singleReference);
+        Assert.Null(singleOrDefaultReference);
+    }
+
+    [Fact]
+    public void SingleOrDefault_with_more_than_one_row_throws() {
+        using var cnn = Db.GetConnection();
+        Refusals.Raises(ErrorCodes.ShapeRefusedResult,
+            () => AllUsers.Query<SingleOrDefaultStruct<(long, string, string?)>>(cnn));
+    }
+
+    [Fact]
+    public async Task SingleOrDefault_has_the_same_rules_async() {
+        using var cnn = Db.GetConnection();
+        string? name = await OneName.QueryAsync<SingleOrDefault<string>>(cnn, ct: TestContext.Current.CancellationToken);
+        string? missing = await NoRows.QueryAsync<SingleOrDefault<string>>(cnn, ct: TestContext.Current.CancellationToken);
+        Assert.Equal("John", name);
+        Assert.Null(missing);
+        await Assert.ThrowsAsync<RinkuShapeException>(async () =>
+            await AllUsers.QueryAsync<SingleOrDefaultStruct<(long, string, string?)>>(cnn, ct: TestContext.Current.CancellationToken));
     }
 
     [Fact]

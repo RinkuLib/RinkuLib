@@ -1,18 +1,28 @@
-- name: Running Queries
-  href: index.md
-- name: Result Shapes
+- name: Execute SQL
+  href: execution.md
+- name: Supplying values
+  href: values.md
+- name: Build from application logic
+  href: builders.md
+- name: Result shapes
   href: result-shapes.md
-- name: Supplying Values
-  href: parameters.md
-- name: Custom Member Rules
-  href: custom-member-rules.md
-- name: Multiple Result Sets
+- name: Async execution
+  href: async.md
+- name: Streaming
+  href: streaming.md
+- name: Transactions, timeouts, and cancellation
+  href: execution-context.md
+- name: Multiple result sets
   href: multiple-results.md
-- name: Collections
-  href: collections.md
-- name: The SQL String
+- name: Raw readers
+  href: readers.md
+- name: Stored procedures and output values
+  href: stored-procedures.md
+- name: Existing DbCommand
+  href: dbcommand.md
+- name: IDbConnection support
+  href: idbconnection.md
+- name: SQL-string shortcuts
   href: sql-string.md
-- name: Any DbCommand
-  href: direct-dbcommand.md
-- name: Parameter Metadata
+- name: Parameter metadata
   href: parameter-metadata.md

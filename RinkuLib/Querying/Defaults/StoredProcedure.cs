@@ -6,15 +6,9 @@ using System.Runtime.CompilerServices;
 namespace Rinku.Querying.Defaults;
 
 /// <summary>
-/// Reads what a stored procedure declares so a <see cref="QueryCommand"/> can bind it, the work behind
-/// <see cref="QueryCommand.FromProc(string, IDbConnection)"/>.
+/// Reads stored procedure parameter names, types, sizes, and directions from the database. Use
+/// <see cref="QueryCommand.FromProc(string, IDbConnection)"/> while creating a command.
 /// </summary>
-/// <remarks>
-/// A procedure's parameters are known to the database and to nobody else, which is why one cannot be read
-/// out of its own text the way a template can. Asking once, where the command is built, settles the names and
-/// their metadata together, so a run binds each parameter with the type, size and direction the procedure
-/// declared instead of leaving a first run to infer them.
-/// </remarks>
 public static class StoredProcedure {
     /// <summary>
     /// How a procedure's parameters are read onto a command. Every provider ships this as
@@ -116,7 +110,7 @@ public static class StoredProcedure {
     }
     /// <summary>
     /// Reads a procedure through the command builder the provider ships beside its command, which is named
-    /// for it: a <c>SqlCommand</c> is read by <c>SqlCommandBuilder</c>, an <c>NpgsqlCommand</c> by
+    /// for it. A <c>SqlCommand</c> is read by <c>SqlCommandBuilder</c> and an <c>NpgsqlCommand</c> by
     /// <c>NpgsqlCommandBuilder</c>. The one found for a command type is kept, so the search happens once.
     /// </summary>
     public static void DeriveThroughProvider(IDbCommand command) {

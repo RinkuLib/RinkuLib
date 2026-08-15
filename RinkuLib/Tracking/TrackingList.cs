@@ -2,32 +2,27 @@ using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Rinku.Tracking;
-/// <summary>
-/// A collection that track removals and revivals 
-/// </summary>
+/// <summary>A list that tracks removed items and restores a removed item when it is added again.</summary>
 public class TrackingList<TOg, TTrackingItem> : ITrackingList<TOg>, IList<TTrackingItem>, IReadOnlyList<TTrackingItem> where TTrackingItem : ITrackingItem<TOg> {
     private TTrackingItem[] _items;
     private int _count;
     private readonly List<TOg> _removed = [];
-    /// <summary>
-    /// Gets items to track from
-    /// </summary>
+    /// <summary>Creates a tracking list from the supplied items.</summary>
     public TrackingList(IEnumerable<TTrackingItem> items, int initialCapacity = 4) {
         _items = new TTrackingItem[items.TryGetNonEnumeratedCount(out var count) ? count : initialCapacity];
         foreach (var item in items)
             Add(item);
     }
-    /// <summary>Check if items are equals</summary>
+    /// <summary>Returns whether two tracking items represent the same value.</summary>
     protected virtual bool ItemEquals(TTrackingItem item1, TTrackingItem item2)
         => EqualityComparer<TTrackingItem>.Default.Equals(item1, item2);
-    /// <summary>Get the tracking item at the specified index</summary>
+    /// <summary>Gets the tracking item at the given index by reference.</summary>
     public ref TTrackingItem Get(int index) {
         if (index >= _count)
             throw new IndexOutOfRangeException();
         return ref _items[index];
     }
-    /// <summary>Set the tracking item at the specified index</summary>
-    /// <remarks>Will be treated as a removal of the previous and an insertion of the new (without moving around)</remarks>
+    /// <summary>Replaces the item and tracks the old value as removed.</summary>
     public void Set(int index, TTrackingItem item) {
         if (index >= _count)
             throw new IndexOutOfRangeException();

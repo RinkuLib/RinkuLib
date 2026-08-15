@@ -3,9 +3,8 @@ using Rinku.Internal;
 namespace Rinku.Mapping;
 
 /// <summary>
-/// A reusable <see cref="TypeParsingInfo"/> implementation core for values negotiated from one result
-/// column. It applies the ordinary name, sequential-read, reuse, and fallback rules; implementations only
-/// decide whether a candidate column can produce a plan.
+/// A base registration for values read from one result column.
+/// Derive from this type to add a scalar mapping while keeping the standard name, order, reuse, and fallback rules.
 /// </summary>
 public abstract class ScalarTypeParsingInfo : TypeParsingInfo {
     /// <inheritdoc/>
@@ -54,7 +53,7 @@ public abstract class ScalarTypeParsingInfo : TypeParsingInfo {
 
     /// <summary>
     /// Tries to create the plan for one name-compatible candidate column. Returning <see langword="null"/>
-    /// lets negotiation continue with the next column.
+    /// lets matching continue with the next column.
     /// </summary>
     /// <param name="targetType">The closed target type requested by the containing mapping.</param>
     /// <param name="parentType">The type containing the value being read.</param>
@@ -66,9 +65,8 @@ public abstract class ScalarTypeParsingInfo : TypeParsingInfo {
 }
 
 /// <summary>
-/// A typed single-column parsing implementation. The same registration also accepts <c>Nullable&lt;T&gt;</c>
-/// when <typeparamref name="T"/> is a value type; the implementation sees that closed target during plan
-/// creation and decides how to emit its wrapper.
+/// A typed base registration for values read from one result column.
+/// A value type registration also accepts its nullable form.
 /// </summary>
 public abstract class ScalarTypeParsingInfo<T> : ScalarTypeParsingInfo {
     /// <inheritdoc/>

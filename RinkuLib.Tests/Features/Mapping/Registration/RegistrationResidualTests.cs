@@ -3,6 +3,7 @@ using Rinku.Mapping.Defaults;
 using System.Reflection.Emit;
 using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
+using RinkuLib.Tests.Documentation;
 using Rinku.Internal;
 using Xunit;
 
@@ -67,6 +68,7 @@ public class RegistrationResidualTests {
     }
 
     [Fact]
+    [DocumentationExample("registration.md", "readable-registration")]
     public void AreReadable_registers_a_parameter_type_that_was_not_registered() {
         ColumnInfo[] cols = [new("A", typeof(int), false)];
         var built = Rows.ParseOne<OpenHolder<Unregistered>>(cols, 5);
@@ -441,7 +443,7 @@ public class RegistrationResidualTests {
         var mapper = dyna.Mapper;
         var tooFewParams = new DbItemPlan[2];
         Refusals.Raises(ErrorCodes.InternalInvariant, () =>
-            new DynaObjParserInfinite([], tooFewParams, mapper).Emit(cols, Wrap(new DynamicMethod("x", typeof(void), Type.EmptyTypes).GetILGenerator()), default, out _));
+            new DynaObjParserInfinite([], tooFewParams, mapper).Emit(cols, Wrap(new DynamicMethod("x", typeof(void), Type.EmptyTypes).GetILGenerator()), default));
     }
 
 

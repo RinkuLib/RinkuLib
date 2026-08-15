@@ -5,7 +5,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 
 namespace Rinku.Tracking;
-/// <summary>Copying a collection, either sharing its elements (<see cref="ShallowCopy"/>) or cloning each one (<see cref="DeepCopy"/>).</summary>
+/// <summary>Copies a collection by sharing its elements or by copying each element.</summary>
 public static class CollectionCopyExtensions {
     private static readonly ConcurrentDictionary<Type, Func<object, object>> ShallowDispatchers = new();
     private static readonly ConcurrentDictionary<Type, Func<object, object>> DeepCollectionDispatchers = new();

@@ -3,35 +3,13 @@ using System.Runtime.InteropServices;
 using Rinku.Mapping.Parsers;
 
 namespace Rinku.Querying;
-/// <summary>
-/// One learned row parser, kept with the command conditions and result-set position that select it on a later
-/// run. Schema compatibility belongs to the parser and is resolved before this optimized command cache.
-/// </summary>
-public struct ParsingCacheItem(ITypeParser Parser, int[] CondStates, int ResultSetIndex) {
-    /// <summary>
-    /// The parser that reads a row into the target type.
-    /// </summary>
+internal struct ParsingCacheItem(ITypeParser Parser, int[] CondStates, int ResultSetIndex) {
     public ITypeParser Parser  = Parser;
-    /// <summary>
-    /// The conditional key states this parser is valid for, so it is only reused for a matching run.
-    /// </summary>
     public int[] CondStates = CondStates;
-    /// <summary>
-    /// Which result set this parser belongs to, counting only sets that return columns.
-    /// </summary>
     public int ResultSetIndex = ResultSetIndex;
 }
-/// <summary>Adds a learned parser to a cache, merging it with a matching entry when one is already there.</summary>
-public static class ParsingCacheExtensions {
-    /// <summary>
-    /// Returns the cache with the parser folded in, reusing and widening the entry for the same parser instance
-    /// when one exists, otherwise adding a new one.
-    /// </summary>
-    /// <remarks>
-    /// The array it is given is never written into. Widening an entry copies first, so a lookup running
-    /// beside this one reads a whole array or the one before it, never an entry half moved.
-    /// </remarks>
-    public static ParsingCacheItem[] GetUpdatedCache<T>(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ITypeParser<T> cache, int resultSetIndex = 0) {
+internal static class ParsingCacheExtensions {
+    internal static ParsingCacheItem[] GetUpdatedCache<T>(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ITypeParser<T> cache, int resultSetIndex = 0) {
         for (var i = 0; i < parsingCache.Length; i++) {
             ref var item = ref parsingCache[i];
             if (item.ResultSetIndex == resultSetIndex && ReferenceEquals(item.Parser, cache)) {
@@ -39,6 +17,7 @@ public static class ParsingCacheExtensions {
                 var widened = GetUpdatedStates(usageMap, item.CondStates);
                 if (widened.Length == currentLen)
                     return parsingCache;
+                // Readers scan the published array without a lock.
                 var merged = (ParsingCacheItem[])parsingCache.Clone();
                 merged[i].CondStates = widened;
                 currentLen = widened.Length;

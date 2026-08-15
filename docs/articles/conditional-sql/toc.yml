@@ -1,12 +1,14 @@
-- name: Conditional SQL
-  href: index.md
-- name: Optional Variables
-  href: optional-variables.md
-- name: Conditional Markers
-  href: conditional-markers.md
-- name: Dynamic Projection
+- name: Conditional variables
+  href: variables.md
+- name: Expand a collection
+  href: collections.md
+- name: Conditional markers
+  href: markers.md
+- name: Dynamic projection
   href: dynamic-projection.md
-- name: Handlers
+- name: Value handlers
   href: handlers.md
-- name: Cheat Sheet
+- name: Template syntax
+  href: template-syntax.md
+- name: Cheat sheet
   href: cheatsheet.md

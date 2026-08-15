@@ -23,7 +23,6 @@ public sealed class ForBoolCondAttribute : AccessorEmitterHandler {
     }
 }
 
-/// <summary>Generate the IL emit to get the usage of a condition at a specific index (field / prop)</summary>
 internal sealed class BoolConditionEmitter : AccessorEmitterBase {
     internal static readonly BoolConditionEmitter Instance = new();
 

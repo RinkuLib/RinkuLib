@@ -3,9 +3,8 @@ using System.Runtime.InteropServices;
 using Rinku.Internal;
 
 namespace Rinku.Mapping.Defaults; 
-/// <summary>The default implementation of TypeParsingInfo</summary>
+/// <summary>Provides the standard mapping settings for a class, record, or struct.</summary>
 public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanProvideParamInfos, ICanAddMember, ICanProvideConstructions, ICanProvideMembers, ICanUpdateGroupKey {
-    /// <inheritdoc/>
     private IGroupingRule? _groupKey;
     private bool _groupKeyConfigured;
     /// <inheritdoc/>
@@ -31,18 +30,9 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             throw new RinkuConfigurationException(ErrorCodes.TypeNotUsableByInfo,
                 $"The associated type with this instance is {Type} so it can't be bound with {TargetType}");
     }
-    /// <summary>
-    /// Whether a construction or member whose result is <paramref name="target"/> can build this info's
-    /// <see cref="Type"/>. Besides a stack-equivalent match, a generic method registered against the open
-    /// definition is valid: its return (e.g. <c>Ext&lt;T&gt;</c>) closes to <see cref="Type"/> at parse time.
-    /// </summary>
     private bool IsValidTarget(Type target)
         => target.IsStackEquivalent(Type)
         || (Type.IsGenericTypeDefinition && target.IsGenericType && target.GetGenericTypeDefinition() == Type);
-    /// <summary>
-    /// The internal state tracker indicating if the automatic discovery of members and 
-    /// constructors (Registration Phase) has been performed.
-    /// </summary>
     private bool IsInit;
     private bool _usePrivateMembers;
     /// <summary>

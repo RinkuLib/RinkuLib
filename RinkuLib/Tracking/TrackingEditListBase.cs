@@ -4,13 +4,11 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Rinku.Tracking;
 
-/// <summary>
-/// A collection that track removal and revival and uses <typeparamref name="TEditItem"/> to manage editing state
-/// </summary>
+/// <summary>A tracking list whose items support editing, commit, and cancel.</summary>
 public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TEditItem> items, int initialCapacity = 4)
     : TrackingList<TOg, TEditItem>(items, items.TryGetNonEnumeratedCount(out var count) && initialCapacity < count ? count : initialCapacity),
     IList<TEdit>, IReadOnlyList<TEdit>, IEditableList<TOg, TEdit>, IList, IBindingList, ICancelAddNew, IAddSetNewItem<TEdit> where TEditItem : IEditableItem<TEdit>, ITrackingItem<TOg> {
-    /// <summary>Create a new instance of the edit item from an instance of <typeparamref name="TEdit"/></summary>
+    /// <summary>Creates a tracking item for a newly added editable value.</summary>
     public abstract TEditItem MakeNewEditItem(TEdit newItem);
     /// <inheritdoc/>
     public TEdit this[int index] {
@@ -43,7 +41,7 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
     }
     /// <inheritdoc/>
     public bool IsEditing(int index) => Get(index).IsEditing;
-    /// <summary>Check if items are equals</summary>
+    /// <summary>Returns whether two editable values represent the same item.</summary>
     protected virtual bool ItemEquals(TEdit item1, TEdit? item2)
         => EqualityComparer<TEdit>.Default.Equals(item1, item2);
     /// <inheritdoc/>
@@ -218,7 +216,7 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     object? IBindingList.AddNew() => AddNew();
-    /// <summary>A typed implementation of <see cref="IBindingList.AddNew"/></summary>
+    /// <summary>Adds a new editable value using the configured factory.</summary>
     public virtual TEdit AddNew() {
         if (_addNewFactory is null)
             throw new RinkuTrackingException(ErrorCodes.NoAddNewFactory, "Cannot add a new item. Provide a factory or handle the AddingNew event");
@@ -241,11 +239,11 @@ public abstract class TrackingEditListBase<TOg, TEdit, TEditItem>(IEnumerable<TE
     public virtual void RemoveIndex(PropertyDescriptor property) { }
 }
 /// <summary>
-/// Indicate that you can add a factory to create a new instance of <typeparamref name="TEdit"/>
+/// Allows a list to receive the factory used by <c>IBindingList.AddNew()</c>.
 /// </summary>
 public interface IAddSetNewItem<TEdit> {
     /// <summary>
-    /// Sets the factory method required to create new items via IBindingList.AddNew().
+    /// Sets the factory used to create new items through <c>IBindingList.AddNew()</c>.
     /// </summary>
     public void SetNewItemFactory(Func<TEdit> factory);
 }

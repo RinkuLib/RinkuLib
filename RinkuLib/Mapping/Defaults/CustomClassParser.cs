@@ -6,8 +6,8 @@ using Rinku.Internal;
 namespace Rinku.Mapping.Defaults;
 
 /// <summary>
-/// A composite parser that builds complex types and fills their members.
-/// It coordinates the evaluation stack to satisfy constructor parameters and setter methods.
+/// Describes how to create an object and fill its members from a row.
+/// Use it when composing a custom object mapping from smaller plans.
 /// </summary>
 public class CustomClassParser(Type ParentType, Type Type, string ParamName, INullColHandler NullColHandler, MemberInfo MethodBase, List<DbItemPlan> Parameters, List<(MemberInfo, DbItemPlan)>? Members = null) : SimpleDbItemParser, ICompositeDbItemPlan {
     private readonly Type ParentType = ParentType;
@@ -18,17 +18,11 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
     private readonly List<DbItemPlan> Readers = Parameters;
     private readonly List<(MemberInfo, DbItemPlan)> Members = Members ?? EmptyMembers;
     private static readonly List<(MemberInfo, DbItemPlan)> EmptyMembers = [];
-    /// <summary>The constructor or factory this node builds its instance with, what the multi-row emit calls.</summary>
     internal MethodBase Construction => (MethodBase)MethodBase;
-    /// <summary>The construction arguments in order, each a plan for one constructor or factory parameter.</summary>
     internal IReadOnlyList<DbItemPlan> ConstructorArguments => Readers;
-    /// <summary>The members filled after construction, each a target and its plan.</summary>
     internal IReadOnlyList<(MemberInfo Member, DbItemPlan Plan)> PostMembers => Members;
-    /// <summary>The type this node builds.</summary>
     internal Type ResultType => Type;
-    /// <summary>The group boundary key of this node's type, captured in pass 1 and negotiated by the multi-row emit.</summary>
     internal IGroupingRule? GroupKey { get; init; }
-    /// <summary>The name-matching context this node negotiated in, so the key can match its columns the same way.</summary>
     internal ColModifier Context { get; init; }
     Type ICompositeDbItemPlan.ResultType => Type;
     MethodBase ICompositeDbItemPlan.Construction => (MethodBase)MethodBase;
@@ -58,17 +52,16 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
         }
     }
     /// <inheritdoc/>
-    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
+    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint) {
         Label? jump = null;
         var localSetPoint = NeedNullSetPoint(cols) ? nullSetPoint : default;
-        targetObject = null;
         for (int i = 0; i < Readers.Count; i++) {
             var reader = Readers[i];
             if (!localSetPoint.HasValue && reader.NeedNullSetPoint(cols)) {
                 jump = generator.DefineLabel();
                 localSetPoint = new(jump.Value, 0);
             }
-            ((ISimpleDbItemPlan)reader).Emit(cols, generator, localSetPoint.WithItemOnStack(i), out targetObject);
+            ((ISimpleDbItemPlan)reader).Emit(cols, generator, localSetPoint.WithItemOnStack(i));
         }
         EmitMemberDispatch(generator, MethodBase);
         var under = Nullable.GetUnderlyingType(Type);
@@ -96,7 +89,7 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
             var (member, reader) = Members[i];
             Label? l = reader.NeedNullSetPoint(cols) ? generator.DefineLabel() : null;
             generator.Emit(opCode, instanceLocal);
-            ((ISimpleDbItemPlan)reader).Emit(cols, generator, l.HasValue ? new(l.Value, 1) : default, out _);
+            ((ISimpleDbItemPlan)reader).Emit(cols, generator, l.HasValue ? new(l.Value, 1) : default);
             EmitMemberDispatch(generator, member);
             if (l.HasValue)
                 generator.MarkLabel(l.Value);

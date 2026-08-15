@@ -17,19 +17,19 @@ public interface ITrackingList<T> : ICount {
 }
 /// <summary>A list that tracks which items are being edited, with commit and cancel per item.</summary>
 public interface ITrackingEditList : ICount {
-    /// <summary>Indicate if an element in the collection contains an edit</summary>
+    /// <summary>Gets whether any item has an active edit.</summary>
     public bool HasChanges { get; }
-    /// <summary>Indicate if the element at an index is editing</summary>
+    /// <summary>Gets whether the item at the index is being edited.</summary>
     public bool IsEditing(int index);
-    /// <summary>Ensure that the item is in an editing state</summary>
+    /// <summary>Starts editing the item when it is not already being edited.</summary>
     public bool EnsureEditing(int index);
-    /// <summary>Commit the edit of the element at the index</summary>
+    /// <summary>Commits the edit at the given index.</summary>
     public bool CommitEdit(int index);
-    /// <summary>Cancel the edit of the element at the index</summary>
+    /// <summary>Cancels the edit at the given index.</summary>
     public bool CancelEdit(int index, bool canRemove = false);
-    /// <summary>Commit the edit of the element at the index</summary>
+    /// <summary>Commits the edit at the given index.</summary>
     public Task<bool> CommitEditAsync(int index);
-    /// <summary>Cancel the edit of the element at the index</summary>
+    /// <summary>Cancels the edit at the given index.</summary>
     public Task<bool> CancelEditAsync(int index);
 }
 /// <summary>The typed edit list, handing back the editable value for the item at an index.</summary>
@@ -54,15 +54,15 @@ public interface IValidatableList : ICount {
 }
 /// <summary>A validatable list whose validation errors are of type <typeparamref name="TError"/>.</summary>
 public interface IValidatableList<out TError> : IValidatableList, IMetadataList<TError>;
-/// <summary>A combinaison of <see cref="ITrackingList{TOg}"/> and <see cref="ITrackingEditList"/></summary>
+/// <summary>Combines original value tracking with editable items.</summary>
 public interface IEditableList<TOg> : ITrackingList<TOg>, ITrackingEditList;
-/// <summary>A combinaison of <see cref="ITrackingList{TOg}"/> and <see cref="ITrackingEditList{TEdit}"/></summary>
+/// <summary>Combines typed original value tracking with typed editable items.</summary>
 public interface IEditableList<TOg, TEdit> : IEditableList<TOg>, ITrackingEditList<TEdit>;
-/// <summary>A combinaison of <see cref="ITrackingList{TOg}"/>, <see cref="ITrackingEditList{TEdit}"/> and  <see cref="IMetadataList{TMetadata}"/></summary>
+/// <summary>Combines editable items with one metadata value per item.</summary>
 public interface IMetadataEditableList<TEdit, TMetadata> : ITrackingEditList<TEdit>, IMetadataList<TMetadata>;
-/// <summary>A combinaison of <see cref="ITrackingEditList"/> and <see cref="IValidatableList{TError}"/></summary>
+/// <summary>Combines editable items with validation errors.</summary>
 public interface IValidatableEditableList<TError> : ITrackingEditList, IValidatableList<TError>;
-/// <summary>A combinaison of <see cref="ITrackingEditList{TEdit}"/> and <see cref="IValidatableList{TError}"/></summary>
+/// <summary>Combines typed editable items with validation errors.</summary>
 public interface IValidatableEditableList<TEdit, TError> : ITrackingEditList<TEdit>, IValidatableEditableList<TError>;
-/// <summary>A combinaison of <see cref="ITrackingList{TOg}"/>, <see cref="ITrackingEditList{TEdit}"/> and <see cref="IValidatableList{TError}"/></summary>
+/// <summary>Combines original value tracking, typed edits, and validation errors.</summary>
 public interface IValidatableEditableList<TOg, TEdit, TError> : IEditableList<TOg, TEdit>, IValidatableEditableList<TEdit, TError>;

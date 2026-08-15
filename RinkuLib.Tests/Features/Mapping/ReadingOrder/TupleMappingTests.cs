@@ -71,16 +71,30 @@ public class TupleMappingTests {
     }
 
     [Fact]
-    public void Scalar_and_object_combine_in_one_tuple() {
+    public void Artist_id_and_constructor_mapped_album_combine_in_one_tuple() {
         ColumnInfo[] cols = [
-            new("Total", typeof(int), false),
+            new("ArtistId", typeof(int), false),
+            new("Id", typeof(int), false),
+            new("Title", typeof(string), false),
+        ];
+        var (artistId, album) = Rows.ParseOne<(int, TupleAlbum)>(cols, 9, 1, "Blue");
+        Assert.Equal(9, artistId);
+        Assert.Equal(1, album.Id);
+        Assert.Equal("Blue", album.Title);
+    }
+
+    [Fact]
+    public void Employee_and_manager_map_from_consecutive_columns() {
+        ColumnInfo[] cols = [
             new("Id", typeof(int), false),
             new("Name", typeof(string), false),
+            new("ID", typeof(int), false),
+            new("NAME", typeof(string), false),
         ];
-        var (total, user) = Rows.ParseOne<(int, PropUser)>(cols, 9, 1, "Ann");
-        Assert.Equal(9, total);
-        Assert.Equal(1, user.Id);
-        Assert.Equal("Ann", user.Name);
+        var (employee, manager) = Rows.ParseOne<(TupleEmployee, TupleEmployee)>(cols, 1, "Ada", 2, "Grace");
+
+        Assert.Equal(new TupleEmployee(1, "Ada"), employee);
+        Assert.Equal(new TupleEmployee(2, "Grace"), manager);
     }
 
     [Fact]
@@ -147,3 +161,5 @@ public class TupleMappingTests {
 public record class SplitStop(int ID, string Name, string? Other = null);
 public record class SplitStopFreeOther(int ID, string Name, [CanLookAnywhere] string? Other = null);
 public record class SplitStopFreeId([CanLookAnywhere] int ID, string Name, string? Other = null);
+public record TupleAlbum(int Id, string Title) : IDbReadable;
+public record TupleEmployee(int Id, string Name) : IDbReadable;

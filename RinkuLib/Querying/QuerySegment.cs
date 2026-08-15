@@ -1,47 +1,34 @@
 namespace Rinku.Querying;
 /// <summary>
-/// One piece of a compiled template, either a run of literal text or a handler spot. A render walks these in
-/// order to build the SQL.
+/// One part of a query template. It contains literal text or a handler that writes a value.
 /// </summary>
 /// <param name="Start">The absolute start position within the normalized <c>Query</c> string.</param>
 /// <param name="Length">The total length of the segment (including potential excess).</param>
 /// <param name="ExcessOrInd">
-/// <list type="bullet">
-/// <item><b>If Handler exists:</b> Acts as the <c>Mapper</c> index to fetch the variable value.</item>
-/// <item><b>If Handler is null:</b> The count of trailing characters to trim if this segment is the last one rendered in its section.</item>
-/// </list>
+/// The value index when <paramref name="Handler"/> is present.
+/// Otherwise the number of trailing characters to remove when the segment ends its section.
 /// </param>
-/// <param name="IsSection">If <c>true</c>, this segment marks the boundary of a new structural block (e.g., a WHERE or SELECT clause).</param>
+/// <param name="IsSection">Whether this segment starts a SQL section such as <c>WHERE</c> or <c>SELECT</c>.</param>
 /// <param name="Handler">
-/// The processing logic for this segment.
-/// <list type="bullet">
-/// <item><b>null:</b> No complex logic, the segment passes through as-is.</item>
-/// <item><b>Concrete Implementation:</b> Required for segments that must transform an external value 
-/// (at <paramref name="ExcessOrInd"/>) into a SQL-ready string.</item>
-/// </list>
-/// <i>Note: <c>IQuerySegmentHandler.NotSet</c> is a transient state used during factory construction.
-/// It must be replaced with a valid handler before the segment runs.</i>
+/// The handler that writes a value into the SQL.
+/// Use <see langword="null"/> for literal text.
 /// </param>
 public record struct QuerySegment(int Start, int Length, int ExcessOrInd, bool IsSection, IQuerySegmentHandler? Handler);
 /// <summary>
-/// One optional part of a compiled template, tying a key to the run of segments it switches on or off.
+/// One optional part of a query template and the segments its key turns on or off.
 /// </summary>
 /// <param name="CondIndex">
-/// The index in the external state array (defined by the <c>Mapper</c> contract) used to
-/// determine if this logical branch should be included.
+/// The value index that decides whether the SQL part is included.
 /// </param>
 /// <param name="SegmentInd">The starting index in the <see cref="QueryFactory.Segments"/> array controlled by this condition.</param>
 /// <param name="Length">The number of contiguous <see cref="QuerySegment"/>s tied to this logical footprint.</param>
 /// <param name="NbConditionSkip">
-/// <para><b>If Positive (> 0):</b> A forward-jump offset for AND/Nested logic. 
-/// If the condition fails, the engine skips this many subsequent <see cref="Condition"/> entries.</para>
-/// <para><b>If Negative (&lt; 0):</b> An OR-group relationship. The absolute value 
-/// indicates the total number of conditions (including itself) that form the OR block. 
-/// If this condition is met (True), the engine can short-circuit and skip the remaining members of the OR-group.</para>
+/// A positive value is the number of following conditions skipped when this condition fails.
+/// A negative value marks an OR group and its absolute value is the size of that group.
 /// </param>
-/// <param name="IsNeeded">Represent the not operator, true require usage, while false require non-usage</param>
+/// <param name="IsNeeded">Whether the value must be present rather than absent.</param>
 public record struct Condition(int CondIndex, int SegmentInd, int Length, int NbConditionSkip, bool IsNeeded) : IComparable<Condition> {
-    /// <summary>The logic for sorting</summary>
+    /// <summary>Orders conditions by their SQL segment.</summary>
     public readonly int CompareTo(Condition other) {
         int c = SegmentInd.CompareTo(other.SegmentInd);
         if (c != 0)

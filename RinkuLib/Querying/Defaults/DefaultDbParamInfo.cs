@@ -23,7 +23,7 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     public readonly DbParamInfo MakeInfoAt(int i) {
         var p = Command.Parameters[i] as IDbDataParameter
             ?? throw new RinkuBindingException(ErrorCodes.InvalidParameterAtIndex, $"there is no valid parameter at index {i}");
-        return MakeInfo(p);
+        return DbParameterDefaults.Current.MakeInfo(p);
     }
 
     /// <inheritdoc/>
@@ -39,6 +39,7 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
         if (Unsafe.IsNullRef(ref arr))
             return TypedDbParamCache.Get(type);
         int inferredSize = p.Size switch {
+            -1 => -1,
             <= 100 => 100,
             <= 500 => 500,
             <= 4000 => 4000,
@@ -80,7 +81,7 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
         for (int i = 0; i < count; i++) {
             if (parameters[i] is not IDbDataParameter p || !string.Equals(p.ParameterName, paramName))
                 continue;
-            info = MakeInfo(p);
+            info = DbParameterDefaults.Current.MakeInfo(p);
             return true;
         }
         info = null;
@@ -135,18 +136,15 @@ public struct ForceInferredParamCache(IDbCommand cmd) : IDbParamInfoGetter {
         return false;
     }
 }
-/// <summary>
-/// Represents metadata for fixed-type database parameters (e.g., Integers, Booleans) 
-/// where size is not a factor in performance optimization.
-/// </summary>
+/// <summary>Provides fixed <see cref="DbType"/> settings for a database parameter.</summary>
 public class TypedDbParamCache : DbParamInfo {
-    /// <summary> Returns a cached instance for the specified <see cref="DbType"/>. </summary>
+    /// <summary>Gets parameter settings for the supplied type and optional size.</summary>
     public static DbParamInfo Get(DbType type, int size = 0) {
         if (SizedDbParamCache.TryGet(type, size, out var cache))
             return cache;
         return CachedItems[(int)type];
     }
-    /// <summary> Returns a cached instance for the specified <see cref="DbType"/>. </summary>
+    /// <summary>Gets parameter settings for the supplied fixed size type.</summary>
     public static TypedDbParamCache Get(DbType type) => CachedItems[(int)type];
     /// <summary>The <see cref="DbType"/> that will be used to create the parameter.</summary>
     public readonly DbType Type;
@@ -158,7 +156,6 @@ public class TypedDbParamCache : DbParamInfo {
         CachedItems = new TypedDbParamCache[28];
         for (int i = 0; i < 28; i++)
             CachedItems[i] = new((DbType)i);
-        //should skip 24
     }
     /// <inheritdoc/>
     public override bool Update(IDbCommand cmd, ref object? currentValue, object? newValue) {
@@ -205,14 +202,12 @@ public class TypedDbParamCache : DbParamInfo {
     }
 }
 /// <summary>
-/// Represents metadata for variable-length database parameters (e.g., Strings, Binary). 
-/// It optimizes performance by rounding sizes to common thresholds (100, 500, 4000) 
-/// to reduce query plan fragmentation.
+/// Provides type and size settings for text, binary, and XML parameters. Sizes are rounded to shared limits
+/// to reduce database query plan fragmentation.
 /// </summary>
 public class SizedDbParamCache : DbParamInfo {
     /// <summary>
-    /// Retrieves or creates a sized cache entry using a binary search and 
-    /// threshold-based rounding.
+    /// Gets parameter settings for the supplied type and requested size.
     /// </summary>
     public static SizedDbParamCache Get(DbType type, int size) {
         ref var arr = ref GetCacheArray(type);
@@ -326,8 +321,8 @@ public class SizedDbParamCache : DbParamInfo {
     }
 }
 /// <summary>
-/// A fallback implementation used when specific database types have not yet been 
-/// resolved or cached. Relies on driver-level type inference.
+/// Leaves the parameter type to the database provider.
+/// Use <see cref="ForceInferred"/> when the command should not learn parameter details.
 /// </summary>
 public class InferredDbParamCache : DbParamInfo {
     /// <summary>Singleton instance of the inferred cache.</summary>

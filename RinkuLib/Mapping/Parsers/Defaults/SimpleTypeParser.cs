@@ -26,8 +26,9 @@ public sealed class SimpleTypeParser<T> : BaseTypeParser<T>, ISimpleParser<T> {
         Fingerprint = fingerprint;
         GeneratedNullColHandler = generatedNullColHandler;
     }
-    internal bool MatchesGenerated(CommandBehavior behavior, EmissionFingerprint fingerprint, object? target) => Behavior == behavior
-        && Fingerprint == fingerprint && PreparedSimpleParser<T>.TargetsEqual(Parser.Target, target);
+    internal bool MatchesGenerated(CommandBehavior behavior, EmissionFingerprint fingerprint, object[] targets) => Behavior == behavior
+        && Fingerprint == fingerprint && Parser.Target is object[] currentTargets
+        && PreparedSimpleParser<T>.TargetsEqual(currentTargets, targets);
     /// <inheritdoc/>
     public override bool CanParse(ColumnInfo[] schema) {
         if (Schema is { } exactSchema && exactSchema.Accepts(schema))
@@ -40,8 +41,8 @@ public sealed class SimpleTypeParser<T> : BaseTypeParser<T>, ISimpleParser<T> {
     public readonly Func<DbDataReader, T> Parser;
     /// <inheritdoc/>
     public override void Dispose() {
-        if (GeneratedNullColHandler is not null && Parser.Target is IGeneratedParserTarget target)
-            target.Dispose();
+        if (GeneratedNullColHandler is not null && Parser.Target is object[] targets)
+            PreparedSimpleParser<T>.DisposeTargets(targets);
     }
     /// <inheritdoc/>
     public Func<DbDataReader, T> RowParser => Parser;

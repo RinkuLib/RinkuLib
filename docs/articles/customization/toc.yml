@@ -1,0 +1,19 @@
+- name: Advanced customization
+  href: index.md
+- name: Type registrations and defaults
+  href: type-registration.md
+- name: Multi-row mappings
+  href: multi-row.md
+- name: Complete-result parsers
+  href: result-parsers.md
+- name: Mapping slot rules
+  href: slot-rules.md
+- name: Parameter member rules
+  href: parameter-members.md
+- name: Parameter binding
+  href: parameters.md
+- name: Conditional SQL handlers
+  href: conditional-sql.md
+- name: Cache ownership
+  href: caches.md
+

@@ -1,24 +1,23 @@
 using System.Data;
 using System.Data.Common;
 using System.Reflection;
+using Rinku.Mapping.Defaults;
 using Rinku.Mapping.Emission;
 
 namespace Rinku.Mapping.Parsers.Defaults;
 
 /// <summary>
-/// The driver for a multi-row parse. It allocates the emitted state struct once per group, folds rows into it
-/// through <see cref="IMultiRowState{T}.Read"/>, owns the reader advance so the emitted state carries no loop,
-/// and materialises the result with <see cref="IMultiRowState{T}.Build"/>. <typeparamref name="TState"/> is the
-/// emitted struct, reached through the <see cref="IMultiRowState{T}"/> constraint so its calls are unboxed.
+/// Reads a multi row value through <typeparamref name="TState"/>. Use this parser when a state object can add
+/// each row and build the final value.
 /// </summary>
 public class MultiRowTypeParser<T, TState> : BaseTypeParser<T>
     where TState : IMultiRowState<T>, new() {
     private readonly ColumnInfo[] Schema;
     private readonly CommandBehavior ReaderBehavior;
     private int Disposed;
-    /// <summary>Creates a driver with the conservative multi-result behavior.</summary>
+    /// <summary>Creates a parser for the supplied schema.</summary>
     public MultiRowTypeParser(ColumnInfo[] schema) : this(schema, CommandBehavior.SingleResult) { }
-    /// <summary>Creates a driver carrying the reader behavior negotiated from the emitted plan.</summary>
+    /// <summary>Creates a parser for the supplied schema and reader behavior.</summary>
     public MultiRowTypeParser(ColumnInfo[] schema, CommandBehavior behavior) {
         Schema = schema;
         ReaderBehavior = (behavior | CommandBehavior.SingleResult) & ~CommandBehavior.SingleRow;
@@ -65,35 +64,31 @@ public class MultiRowTypeParser<T, TState> : BaseTypeParser<T>
         if (Interlocked.Exchange(ref Disposed, 1) != 0)
             return;
         var fields = typeof(TState).GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-        List<IGeneratedParserTarget> targets = [];
+        List<object[]> targets = [];
         for (int i = 0; i < fields.Length; i++) {
-            if (fields[i].FieldType != typeof(object) || fields[i].GetValue(null) is not IGeneratedParserTarget target)
+            if (fields[i].FieldType != typeof(object[]) || fields[i].GetValue(null) is not object[] currentTargets)
                 continue;
             fields[i].SetValue(null, null);
             bool found = false;
             for (int j = 0; j < targets.Count; j++)
-                if (ReferenceEquals(targets[j], target)) {
+                if (ReferenceEquals(targets[j], currentTargets)) {
                     found = true;
                     break;
                 }
             if (!found)
-                targets.Add(target);
+                targets.Add(currentTargets);
         }
         for (int i = 0; i < targets.Count; i++)
-            targets[i].Dispose();
+            PreparedSimpleParser<T>.DisposeTargets(targets[i]);
     }
 }
 
-/// <summary>
-/// The driver for a multi-row parse whose result is a collection at the top of the query. It is the ordinary
-/// multi-row driver except that no rows give an empty collection, built from the state's empty buffers, rather
-/// than throwing, matching how <see cref="ListTypeParser{T}"/> reads a top-level list.
-/// </summary>
+/// <summary>Reads a multi row collection and returns an empty collection when no row is available.</summary>
 public class MultiRowCollectionTypeParser<T, TState> : MultiRowTypeParser<T, TState>
     where TState : IMultiRowState<T>, new() {
-    /// <summary>Creates a collection driver with the conservative multi-result behavior.</summary>
+    /// <summary>Creates a collection parser for the supplied schema.</summary>
     public MultiRowCollectionTypeParser(ColumnInfo[] schema) : base(schema) { }
-    /// <summary>Creates a collection driver carrying the reader behavior negotiated from the emitted plan.</summary>
+    /// <summary>Creates a collection parser for the supplied schema and reader behavior.</summary>
     public MultiRowCollectionTypeParser(ColumnInfo[] schema, CommandBehavior behavior) : base(schema, behavior) { }
     /// <inheritdoc/>
     public override T Default() => new TState().Build();

@@ -1,4 +1,5 @@
 namespace Rinku.Mapping;
+
 /// <summary>Matches when no name is provided (identity match).</summary>
 public record NoNameComparer() : IMutatableNameComparer {
     /// <summary>The singleton instance of the <see cref="NoNameComparer"/>.</summary>
@@ -7,7 +8,14 @@ public record NoNameComparer() : IMutatableNameComparer {
     /// <inheritdoc/>
     public string GetDefaultName() => "";
     /// <inheritdoc/>
-    public bool Match(ReadOnlySpan<char> colName, Span<INameComparer> nameComparers) => nameComparers.Length == 0 || nameComparers.MatchNext(colName);
+    public bool Match(ReadOnlySpan<char> colName, Span<INameComparer> nameComparers) {
+        if (nameComparers.Length == 0)
+            return true;
+        for (int length = 0; length <= colName.Length; length++)
+            if (nameComparers.MatchNext(colName[..length]))
+                return true;
+        return false;
+    }
     /// <inheritdoc/>
     public bool Contains(string name) => false;
 

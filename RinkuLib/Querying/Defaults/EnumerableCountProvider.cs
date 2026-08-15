@@ -3,22 +3,12 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 
 namespace Rinku.Querying.Defaults;
-/// <summary>
-/// Interface that indicate an IEnumerable object speficif interface that provide a count
-/// </summary>
-public interface ICountableEnumerablePossibility {
-    /// <summary>
-    /// Try to get/make the delegate that will get the count if the interface match.
-    /// </summary>
+internal interface ICountableEnumerablePossibility {
     public bool TryGetDelegate(Type iFace, ConcurrentDictionary<Type, Func<object, int>> cache, out Func<object, int>? func);
 }
-/// <summary>
-/// Handles generic interface definitions like ICollection or IReadOnlyCollection
-/// </summary>
-public class GenericCountContract(Type genericDefinition, string propertyName = "Count") : ICountableEnumerablePossibility {
+internal class GenericCountContract(Type genericDefinition, string propertyName = "Count") : ICountableEnumerablePossibility {
     private readonly Type _genericDefinition = genericDefinition;
     private readonly string _propertyName = propertyName;
-    /// <inheritdoc/>
     public bool TryGetDelegate(Type iFace, ConcurrentDictionary<Type, Func<object, int>> cache, out Func<object, int>? func) {
         if (iFace.IsGenericType && iFace.GetGenericTypeDefinition() == _genericDefinition) {
             func = cache.GetOrAdd(iFace, t => BuildDelegate(t, _propertyName));
@@ -36,10 +26,7 @@ public class GenericCountContract(Type genericDefinition, string propertyName = 
         return Expression.Lambda<Func<object, int>>(body, param).Compile();
     }
 }
-/// <summary>
-/// A class to get non enumerable count in non generic IEnumerable
-/// </summary>
-public static class EnumerableCountProvider {
+internal static class EnumerableCountProvider {
     private static readonly ConcurrentDictionary<Type, Func<object, int>> _cache = new();
 
     private static readonly ICountableEnumerablePossibility[] _contracts = [
@@ -48,22 +35,7 @@ public static class EnumerableCountProvider {
     ];
 
 
-    /// <summary>
-    ///   Attempts to determine the number of elements in a sequence without forcing an enumeration.
-    /// </summary>
-    /// <param name="source">A sequence that contains elements to be counted.</param>
-    /// <param name="count">
-    ///     When this method returns, contains the count of <paramref name="source" /> if successful,
-    ///     or zero if the method failed to determine the count.</param>
-    /// <returns>
-    ///   <see langword="true" /> if the count of <paramref name="source"/> can be found without enumerating it,
-    ///   <see langword="false" /> if not.
-    /// </returns>
-    /// <remarks>
-    ///   Tests the type of <paramref name="source"/> for the ones that expose a count without enumerating,
-    ///   <see cref="ICollection{T}"/>, <see cref="ICollection"/>, and a few internal LINQ types.
-    /// </remarks>
-    public static bool TryGetNonEnumeratedCount(this IEnumerable source, out int count) {
+    internal static bool TryGetNonEnumeratedCount(this IEnumerable source, out int count) {
         var concreteType = source.GetType();
         if (_cache.TryGetValue(concreteType, out var getter)) {
             count = getter(source);

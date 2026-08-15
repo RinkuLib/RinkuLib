@@ -2,41 +2,118 @@ using System.Data;
 using System.Data.Common;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.ExceptionServices;
 using Rinku.Mapping.Parsers;
 using Rinku.Mapping.Parsers.Defaults;
 using Rinku.Internal;
 
 namespace Rinku.Mapping.Defaults;
 
-/// <summary>
-/// Emits the state struct for a multi-row plan and closes <see cref="MultiRowTypeParser{T, TState}"/> over it.
-/// The struct implements <see cref="IMultiRowState{T}"/>, reuses the single-row <see cref="SimpleDbItemParser.Emit"/>
-/// for every collapsed subtree by pointing its <see cref="Generator"/> at a method on the struct, and reaches
-/// non-public members through the <see cref="StateTypeAssembly"/> access-check bypass. A fully-simple plan
-/// collapses to one value slot; a spanning plan lays out one level per grouping node, folding rows top-down and
-/// closing bottom-up.
-/// </summary>
 internal static class MultiRowEmitter {
-    private static readonly Type[] ReadValueArgs = [typeof(object), typeof(DbDataReader)];
+    private static readonly Type[] ReadValueArgs = [typeof(object[]), typeof(DbDataReader)];
+    private static readonly MethodInfo BuildRecursiveMethod = typeof(MultiRowEmitter).GetMethod(nameof(BuildRecursiveClosed), BindingFlags.NonPublic | BindingFlags.Static)!;
     private const MethodAttributes InterfaceMethod =
         MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.Final
         | MethodAttributes.HideBySig | MethodAttributes.NewSlot;
     private const MethodAttributes StateHelper = MethodAttributes.Private | MethodAttributes.Static;
     private const FieldAttributes Priv = FieldAttributes.Private;
 
-    /// <summary>Builds the multi-row parser for <typeparamref name="T"/> from its negotiated plan.</summary>
-    internal static ITypeParser<T> Build<T>(DbItemPlan rd, ColumnInfo[] cols)
-        => DbItemPlan.AllSimple(rd) ? BuildCollapsed<T>(rd, cols)
-         : rd is IMultiRowPlan acc ? BuildCollectionRoot<T>(acc, cols)
-         : BuildSpine<T>(rd, cols);
+    internal static ITypeParser<T> Build<T>(DbItemPlan rd, ColumnInfo[] cols) {
+        return DbItemPlan.AllSimple(rd) ? BuildCollapsed<T>(rd, cols)
+            : rd is IMultiRowPlan { Element: IMultiRowPlan } recursive ? BuildRecursive<T>(recursive, cols)
+            : rd is IMultiRowPlan acc ? BuildCollectionRoot<T>(acc, cols)
+            : BuildSpine<T>(rd, cols);
+    }
 
-    /// <summary>
-    /// The top-level collection case: the result itself is a registered collection, so the state accumulates
-    /// every element, grouping a spanning element the same way a nested collection does, and <c>Build</c>
-    /// finishes the buffer into the declared collection. This is what lets a query ask for a registered
-    /// collection at the top without a dedicated parser. The boundary never changes, so the read runs to the
-    /// end of the rows.
-    /// </summary>
+    private static ITypeParser<T> BuildRecursive<T>(IMultiRowPlan plan, ColumnInfo[] cols) {
+        try {
+            return (ITypeParser<T>)BuildRecursiveMethod.MakeGenericMethod(typeof(T), plan.ElementType, plan.BufferType).Invoke(null, [plan, cols])!;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null) {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
+    }
+
+    private static ITypeParser<TResult> BuildRecursiveClosed<TResult, TElement, TBuffer>(IMultiRowPlan plan, ColumnInfo[] cols) {
+        var elementParser = Build<TElement>(plan.Element, cols);
+        var strategy = EmitAccumulatorStrategy<TResult, TElement, TBuffer>(plan);
+        var parserType = typeof(RecursiveAccumulatorTypeParser<,,,>).MakeGenericType(typeof(TResult), typeof(TElement), typeof(TBuffer), strategy);
+        return (ITypeParser<TResult>)Activator.CreateInstance(parserType, [elementParser])!;
+    }
+
+    private static Type EmitAccumulatorStrategy<TResult, TElement, TBuffer>(IMultiRowPlan plan) {
+        StateTypeAssembly.AllowAccessTo(typeof(TResult));
+        StateTypeAssembly.AllowAccessTo(typeof(TElement));
+        StateTypeAssembly.AllowAccessTo(typeof(TBuffer));
+        StateTypeAssembly.AllowAccessTo(plan.AddMethod.DeclaringType!);
+        if (plan.Construct?.DeclaringType is { } finishType)
+            StateTypeAssembly.AllowAccessTo(finishType);
+        var contract = typeof(IAccumulatorStrategy<,,>).MakeGenericType(typeof(TResult), typeof(TElement), typeof(TBuffer));
+        var tb = StateTypeAssembly.DefineState($"Accumulator_{typeof(TResult).Name}_{Guid.NewGuid():N}");
+        tb.AddInterfaceImplementation(contract);
+        EmitStrategySeed(tb, contract, plan.InitialState);
+        EmitStrategyAdd(tb, contract, plan.AddMethod);
+        EmitStrategyFinish(tb, contract, plan.Construct);
+        return tb.CreateType();
+    }
+
+    private static void EmitStrategySeed(TypeBuilder tb, Type contract, MethodBase initialState) {
+        var method = tb.DefineMethod("Seed", InterfaceMethod, initialState is ConstructorInfo ctor ? ctor.DeclaringType! : ((MethodInfo)initialState).ReturnType, Type.EmptyTypes);
+        var il = method.GetILGenerator();
+        if (initialState is ConstructorInfo seedCtor)
+            il.Emit(OpCodes.Newobj, seedCtor);
+        else
+            il.Emit(OpCodes.Call, (MethodInfo)initialState);
+        il.Emit(OpCodes.Ret);
+        tb.DefineMethodOverride(method, contract.GetMethod("Seed")!);
+    }
+
+    private static void EmitStrategyAdd(TypeBuilder tb, Type contract, MethodInfo add) {
+        if (add.IsStatic)
+            throw Unsupported("a static accumulator add method");
+        var bufferType = contract.GetGenericArguments()[2];
+        var elementType = contract.GetGenericArguments()[1];
+        var method = tb.DefineMethod("Add", InterfaceMethod, typeof(void), [bufferType.MakeByRefType(), elementType]);
+        var il = method.GetILGenerator();
+        il.Emit(OpCodes.Ldarg_1);
+        if (!bufferType.IsValueType)
+            il.Emit(OpCodes.Ldind_Ref);
+        il.Emit(OpCodes.Ldarg_2);
+        il.Emit(add.IsVirtual && !bufferType.IsValueType ? OpCodes.Callvirt : OpCodes.Call, add);
+        if (add.ReturnType != typeof(void))
+            il.Emit(OpCodes.Pop);
+        il.Emit(OpCodes.Ret);
+        tb.DefineMethodOverride(method, contract.GetMethod("Add")!);
+    }
+
+    private static void EmitStrategyFinish(TypeBuilder tb, Type contract, MethodBase? finish) {
+        var types = contract.GetGenericArguments();
+        var resultType = types[0];
+        var bufferType = types[2];
+        var method = tb.DefineMethod("Finish", InterfaceMethod, resultType, [bufferType]);
+        var il = method.GetILGenerator();
+        if (finish is null) {
+            il.Emit(OpCodes.Ldarg_1);
+        }
+        else if (finish is ConstructorInfo ctor) {
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Newobj, ctor);
+        }
+        else {
+            var factory = (MethodInfo)finish;
+            if (factory.IsStatic)
+                il.Emit(OpCodes.Ldarg_1);
+            else if (bufferType.IsValueType)
+                il.Emit(OpCodes.Ldarga_S, 1);
+            else
+                il.Emit(OpCodes.Ldarg_1);
+            il.Emit(factory.IsVirtual && !factory.IsStatic && !bufferType.IsValueType ? OpCodes.Callvirt : OpCodes.Call, factory);
+        }
+        il.Emit(OpCodes.Ret);
+        tb.DefineMethodOverride(method, contract.GetMethod("Finish")!);
+    }
+
     private static ITypeParser<T> BuildCollectionRoot<T>(IMultiRowPlan acc, ColumnInfo[] cols) {
         var (tb, stateInterface) = BeginState(typeof(T));
         var master = new Level { ResultType = typeof(T), IsMaster = true, Boundary = AlwaysGroupedBoundary.Instance };
@@ -47,7 +124,6 @@ internal static class MultiRowEmitter {
         return Close<T>(Assemble(tb, stateInterface, typeof(T), master), cols, BehaviorFor(acc.Element), collectionRoot: true);
     }
 
-    /// <summary>Defines a fresh state struct for <paramref name="resultType"/> and wires its interface, the head every build path shares.</summary>
     private static (TypeBuilder Tb, Type StateInterface) BeginState(Type resultType) {
         StateTypeAssembly.AllowAccessTo(resultType);
         var tb = StateTypeAssembly.DefineState(StateName(resultType));
@@ -56,37 +132,29 @@ internal static class MultiRowEmitter {
         return (tb, stateInterface);
     }
 
-    /// <summary>Emits the level-driven struct body (ctor, closes, read, build), bakes the type, and binds its targets.</summary>
     private static Type Assemble(TypeBuilder tb, Type stateInterface, Type resultType, Level master) {
         EmitStateCtor(tb, master);
         EmitCloseMethods(master);
         EmitRead(tb, stateInterface, master);
         EmitBuild(tb, stateInterface, resultType, master);
         var created = tb.CreateType();
-        SetTargetFields(created, master);
+        SetTargetsFields(created, master);
         return created;
     }
 
-    /// <summary>
-    /// The one-slot case: a plan with no accumulator collapses to a single value slot whose <c>Read</c> fills
-    /// it from the group's first row and whose <c>Build</c> returns it, reproducing the single-row parse.
-    /// </summary>
     private static ITypeParser<T> BuildCollapsed<T>(DbItemPlan rd, ColumnInfo[] cols) {
         var resultType = typeof(T);
         var (tb, stateInterface) = BeginState(resultType);
         var valueField = tb.DefineField("_v", resultType, Priv);
         var liveField = tb.DefineField("_live", typeof(bool), Priv);
-        var readValue = EmitConstruct(tb, rd, cols, "ReadValue", resultType, out var targetObj);
-        FieldBuilder? targetField = targetObj is null
-            ? null
-            : tb.DefineField("_target", typeof(object), Priv | FieldAttributes.Static);
+        var readValue = EmitConstruct(tb, rd, cols, "ReadValue", resultType, out var targets);
+        FieldBuilder targetField = tb.DefineField("_targets", typeof(object[]), Priv | FieldAttributes.Static);
 
         EmitCollapsedRead(tb, stateInterface, valueField, liveField, readValue, targetField);
         EmitReturnField(tb, stateInterface, "Build", valueField, resultType);
 
         var created = tb.CreateType();
-        if (targetField is not null)
-            created.GetField("_target", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, targetObj);
+        created.GetField("_targets", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, targets);
         return Close<T>(created, cols, BehaviorFor(rd));
     }
 
@@ -102,46 +170,39 @@ internal static class MultiRowEmitter {
         public MethodInfo? Add;
         public Level SubLevel = null!;
         public MemberInfo? Member;
-        public FieldBuilder? TargetField;
-        public object? Target;
+        public FieldBuilder TargetsField = null!;
+        public object[] Targets = null!;
         public INullColHandler? NullRule;
+        public bool CanCollapse;
         public bool IsBuffer => Kind is SlotKind.SimpleBuffer or SlotKind.SubLevelBuffer;
     }
 
-    /// <summary>
-    /// The build surface a maker lowers its negotiated key through: it compiles readers into state helpers and
-    /// defines the state fields that hold the key across rows, all on the level's state builder.
-    /// </summary>
     private sealed class BoundaryBuild(TypeBuilder tb, ColumnInfo[] cols, string tag) : IBoundaryBuild {
         private int next;
         public IBoundaryReader Reader(DbItemPlan reader, Type type) => new ReaderHandle(tb, reader, cols, $"Key_{tag}_{next++}", type);
         public IBoundaryField Field(Type type) => new FieldHandle(tb.DefineField($"_{tag}_k{next++}", type, Priv));
     }
 
-    /// <summary>A key reader compiled into a state helper, invoked as <c>helper(target, reader)</c>.</summary>
     private sealed class ReaderHandle : IBoundaryReader {
         private readonly MethodBuilder Method;
-        private readonly FieldBuilder? TargetField;
+        private readonly FieldBuilder TargetsField;
         public Type Type { get; }
         public int? Column { get; }
-        public (FieldInfo Field, object Target)? Target { get; }
+        public (FieldInfo Field, object[] Targets) Targets { get; }
         public ReaderHandle(TypeBuilder tb, DbItemPlan reader, ColumnInfo[] cols, string name, Type type) {
             Type = type;
-            Method = EmitConstruct(tb, reader, cols, name, type, out var target);
+            Method = EmitConstruct(tb, reader, cols, name, type, out var targets);
             Column = reader is IColumnOrdinalPlan ordinal ? ordinal.ColumnOrdinal : null;
-            if (target is not null) {
-                TargetField = tb.DefineField($"_tgt_{name}", typeof(object), Priv | FieldAttributes.Static);
-                Target = (TargetField, target);
-            }
+            TargetsField = tb.DefineField($"_tgts_{name}", typeof(object[]), Priv | FieldAttributes.Static);
+            Targets = (TargetsField, targets);
         }
         public void EmitRead(Generator g) {
-            EmitTarget(g, TargetField);
+            EmitTargets(g, TargetsField);
             g.Emit(OpCodes.Ldarg_1);
             g.Emit(OpCodes.Call, Method);
         }
     }
 
-    /// <summary>A per-instance state field on the state struct, loaded and stored through <c>arg0</c>.</summary>
     private sealed class FieldHandle(FieldBuilder field) : IBoundaryField {
         public void EmitThis(Generator g) => g.Emit(OpCodes.Ldarg_0);
         public void EmitLoad(Generator g) {
@@ -166,15 +227,9 @@ internal static class MultiRowEmitter {
         public MethodInfo? ParentAdd;
         public MethodBuilder? CloseMethod;
         public Level CaptureInto = null!;
-        /// <summary>A collection root has no constructor; its <c>Build</c> finishes its single buffer slot instead of invoking one.</summary>
         public bool BuildsFromBuffer => Construction is null;
     }
 
-    /// <summary>
-    /// Builds the spine and emits its state struct. The master level owns <c>Read</c>/<c>Build</c>; every sub
-    /// level owns a <c>Close</c> that builds its instance, appends it to its parent's buffer, and resets, which
-    /// is the flush cascade the master's boundary switches and end-of-data both call.
-    /// </summary>
     private static ITypeParser<T> BuildSpine<T>(DbItemPlan rd, ColumnInfo[] cols) {
         if (rd is not ICompositeDbItemPlan root)
             throw Unsupported($"a multi-row root of shape {rd.GetType().Name}");
@@ -183,34 +238,32 @@ internal static class MultiRowEmitter {
         return Close<T>(Assemble(tb, stateInterface, typeof(T), master), cols, BehaviorFor(rd));
     }
 
-    /// <summary>After the type is baked, fills the static field that holds each construction's bound target (a DynaObject mapper).</summary>
-    private static void SetTargetFields(Type created, Level level) {
+    private static void SetTargetsFields(Type created, Level level) {
         foreach (var s in level.CtorSlots.Concat(level.MemberSlots)) {
-            if (s.TargetField is not null)
-                created.GetField(s.TargetField.Name, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, s.Target);
+            if (s.TargetsField is not null)
+                created.GetField(s.TargetsField.Name, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, s.Targets);
             if (s.Kind == SlotKind.SubLevelDirect)
-                SetTargetFields(created, s.SubLevel);
+                SetTargetsFields(created, s.SubLevel);
         }
         if (level.Boundary is not null)
-            foreach (var (field, target) in level.Boundary.Targets)
-                created.GetField(field.Name, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, target);
+            foreach (var (field, targets) in level.Boundary.Targets)
+                created.GetField(field.Name, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, targets);
         if (level.Child is not null)
-            SetTargetFields(created, level.Child);
+            SetTargetsFields(created, level.Child);
     }
 
-    /// <summary>Emits the accumulator's <c>Add</c> on the never-null buffer, non-virtual when it can be, discarding a non-void return so a set filled in place folds like a list.</summary>
     private static void EmitAdd(ILGenerator il, MethodInfo add) {
         il.Emit(add.IsVirtual ? OpCodes.Callvirt : OpCodes.Call, add);
         if (add.ReturnType != typeof(void))
             il.Emit(OpCodes.Pop);
     }
 
-    private static void EmitTarget(ILGenerator il, FieldInfo? targetField) {
-        if (targetField is null)
-            il.Emit(OpCodes.Ldnull);
-        else
-            il.Emit(OpCodes.Ldsfld, targetField);
+    private static void EmitLoadBuffer(ILGenerator il, FieldInfo field) {
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(field.FieldType.IsValueType ? OpCodes.Ldflda : OpCodes.Ldfld, field);
     }
+
+    private static void EmitTargets(ILGenerator il, FieldInfo targetsField) => il.Emit(OpCodes.Ldsfld, targetsField);
 
     private static Level BuildLevel(ICompositeDbItemPlan node, TypeBuilder tb, ColumnInfo[] cols, bool isMaster, FieldBuilder? parentBuffer, string tag, Level? hoistTo = null) {
         StateTypeAssembly.AllowAccessTo(node.ResultType);
@@ -238,21 +291,10 @@ internal static class MultiRowEmitter {
         return level;
     }
 
-    /// <summary>
-    /// Negotiates the level's boundary: the maker lowers its key through a <see cref="BoundaryBuild"/> into the
-    /// emitter, always-grouped for a tuple, else a build-time throw. The emitter never inspects a concrete
-    /// boundary; the member key, the method, and the always-grouped boundary all reach emit through
-    /// <see cref="GroupingBoundary"/>.
-    /// </summary>
     private static GroupingBoundary BuildBoundary(ICompositeDbItemPlan node, TypeBuilder tb, ColumnInfo[] cols, string tag)
         => (node.GroupKey ?? new InferredGroupingRule(node.ConstructorArguments, (MethodBase)node.Construction, node.ResultType))
             .MakeBoundary(node.ResultType, cols, node.Context, new BoundaryBuild(tb, cols, tag));
 
-    /// <summary>
-    /// Turns one construction slot, a constructor argument or a settable member, into a state slot. A simple
-    /// value collapses to one field captured once; an accumulator becomes a buffer, either of simple elements
-    /// or of a nested spanning sub level. A member slot carries the member it is assigned to at construction.
-    /// </summary>
     private static Slot ClassifySlot(DbItemPlan plan, Type slotType, MemberInfo? member, TypeBuilder tb, ColumnInfo[] cols, Level level, string tag) {
         var into = level.CaptureInto;
         Slot slot;
@@ -262,9 +304,10 @@ internal static class MultiRowEmitter {
             if (DbItemPlan.AllSimple(acc.Element)) {
                 slot = new Slot {
                     Kind = SlotKind.SimpleBuffer, Field = buffer, ElementType = acc.ElementType, Construct = acc.Construct, InitialState = acc.InitialState, Add = acc.AddMethod, Member = member, NullRule = acc.NullRule,
-                    Reader = EmitTryReadElement(tb, acc.Element, acc.ElementType, cols, tag, out var tobj),
+                    Reader = EmitTryReadElement(tb, acc.Element, acc.ElementType, cols, tag, out var targets),
+                    CanCollapse = acc.Element.NeedNullSetPoint(cols),
                 };
-                CaptureTarget(slot, tobj, tb, tag);
+                CaptureTargets(slot, targets, tb, tag);
                 into.SimpleBuffers.Add(slot);
             }
             else if (acc.Element is ICompositeDbItemPlan sub) {
@@ -284,9 +327,9 @@ internal static class MultiRowEmitter {
         else if (DbItemPlan.AllSimple(plan)) {
             slot = new Slot {
                 Kind = SlotKind.Simple, Field = tb.DefineField($"_s{tag}", slotType, Priv), Member = member,
-                Reader = EmitConstruct(tb, plan, cols, $"Read_{tag}", slotType, out var tobj),
+                Reader = EmitConstruct(tb, plan, cols, $"Read_{tag}", slotType, out var targets),
             };
-            CaptureTarget(slot, tobj, tb, tag);
+            CaptureTargets(slot, targets, tb, tag);
             into.Simples.Add(slot);
         }
         else if (plan is ICompositeDbItemPlan directSpanning) {
@@ -298,11 +341,9 @@ internal static class MultiRowEmitter {
         return slot;
     }
 
-    private static void CaptureTarget(Slot slot, object? targetObj, TypeBuilder tb, string tag) {
-        if (targetObj is null)
-            return;
-        slot.TargetField = tb.DefineField($"_tgt_{tag}", typeof(object), Priv | FieldAttributes.Static);
-        slot.Target = targetObj;
+    private static void CaptureTargets(Slot slot, object[] targets, TypeBuilder tb, string tag) {
+        slot.TargetsField = tb.DefineField($"_tgts_{tag}", typeof(object[]), Priv | FieldAttributes.Static);
+        slot.Targets = targets;
     }
 
     private static Type MemberValueType(MemberInfo member) => member switch {
@@ -312,7 +353,6 @@ internal static class MultiRowEmitter {
         _ => throw Unsupported($"a construction member of kind {member.MemberType}"),
     };
 
-    /// <summary>Every buffer this level owns, reaching through inlined direct sub-objects whose buffers live on their own slots.</summary>
     private static IEnumerable<Slot> BufferSlots(Level level) {
         foreach (var s in level.CtorSlots)
             foreach (var b in BuffersOf(s))
@@ -330,7 +370,6 @@ internal static class MultiRowEmitter {
                 yield return b;
     }
 
-    /// <summary>Emits the parameterless struct constructor that pre-fills every buffer across all levels.</summary>
     private static void EmitStateCtor(TypeBuilder tb, Level master) {
         var buffers = new List<Slot>();
         CollectBuffers(master, buffers);
@@ -345,7 +384,6 @@ internal static class MultiRowEmitter {
         il.Emit(OpCodes.Ret);
     }
 
-    /// <summary>Emits seeding one buffer field with its accumulator's construction, a <c>Newobj</c> for a constructor or a <c>Call</c> for a static factory.</summary>
     private static void EmitSeed(ILGenerator il, Slot slot) {
         il.Emit(OpCodes.Ldarg_0);
         if (slot.InitialState is ConstructorInfo ctor)
@@ -362,7 +400,6 @@ internal static class MultiRowEmitter {
             CollectBuffers(level.Child, into);
     }
 
-    /// <summary>Emits each sub level's <c>Close</c>: cascade-close its own child, build its instance, append it to the parent buffer, reset.</summary>
     private static void EmitCloseMethods(Level level) {
         if (level.Child is not null)
             EmitCloseMethods(level.Child);
@@ -370,8 +407,7 @@ internal static class MultiRowEmitter {
             return;
         var il = level.CloseMethod.GetILGenerator();
         EmitCascadeCloseChild(il, level);
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Ldfld, level.ParentBuffer!);
+        EmitLoadBuffer(il, level.ParentBuffer!);
         EmitConstructNode(il, level);
         EmitAdd(il, level.ParentAdd!);
         foreach (var s in BufferSlots(level))
@@ -384,7 +420,6 @@ internal static class MultiRowEmitter {
         il.Emit(OpCodes.Ret);
     }
 
-    /// <summary>Emits <c>if (child.live) child.Close();</c>, the head of the cascade.</summary>
     private static void EmitCascadeCloseChild(ILGenerator il, Level level) {
         if (level.Child?.CloseMethod is null || level.Child.Live is null)
             return;
@@ -397,11 +432,6 @@ internal static class MultiRowEmitter {
         il.MarkLabel(skip);
     }
 
-    /// <summary>
-    /// Emits the construction of a level's instance: load each constructor-argument slot in order (finishing
-    /// buffers into their declared collection) and <c>newobj</c>, then assign each settable member from its
-    /// slot. Leaves the built instance on the stack.
-    /// </summary>
     private static void EmitConstructNode(ILGenerator il, Level level) {
         foreach (var s in level.CtorSlots)
             EmitLoadSlotValue(il, s);
@@ -423,10 +453,6 @@ internal static class MultiRowEmitter {
         il.Emit(OpCodes.Ldloc, instance);
     }
 
-    /// <summary>
-    /// Leaves a slot's value on the stack: a captured field (a buffer finished into its collection), or, for a
-    /// nested object that is not a collection, that object built inline from its own hoisted slots.
-    /// </summary>
     private static void EmitLoadSlotValue(ILGenerator il, Slot slot) {
         if (slot.Kind == SlotKind.SubLevelDirect) {
             EmitConstructNode(il, slot.SubLevel);
@@ -455,11 +481,6 @@ internal static class MultiRowEmitter {
         return mb;
     }
 
-    /// <summary>
-    /// Emits one level's fold, then descends. The master ends the group (<c>return false</c>) when its key
-    /// changes; a sub level closes itself within its parent (the cascade) when its key changes; each level
-    /// captures its key and simple slots on its first row and appends its simple-element buffers every row.
-    /// </summary>
     private static void EmitLevelRead(ILGenerator il, Level level) {
         Label absent = default;
         bool gated = !level.IsMaster && level.Boundary?.PresenceColumn is int;
@@ -504,7 +525,7 @@ internal static class MultiRowEmitter {
                 capturing.EmitCapture(Wrap(il));
             foreach (var s in level.Simples) {
                 il.Emit(OpCodes.Ldarg_0);
-                EmitTarget(il, s.TargetField);
+                EmitTargets(il, s.TargetsField);
                 il.Emit(OpCodes.Ldarg_1);
                 il.Emit(OpCodes.Call, s.Reader);
                 il.Emit(OpCodes.Stfld, s.Field);
@@ -517,20 +538,26 @@ internal static class MultiRowEmitter {
 
         foreach (var b in level.SimpleBuffers) {
             var element = il.DeclareLocal(b.ElementType);
-            var add = il.DefineLabel();
-            var done = il.DefineLabel();
-            EmitTarget(il, b.TargetField);
+            EmitTargets(il, b.TargetsField);
             il.Emit(OpCodes.Ldarg_1);
             il.Emit(OpCodes.Ldloca, element);
             il.Emit(OpCodes.Call, b.Reader);
-            il.Emit(OpCodes.Brtrue, add);
-            b.NullRule!.HandleNullForMultiRow(b.Field.FieldType, b.ElementType, "element", element, Wrap(il), new(done, 0));
-            il.MarkLabel(add);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldfld, b.Field);
+            Label done = default;
+            if (b.CanCollapse) {
+                var add = il.DefineLabel();
+                done = il.DefineLabel();
+                il.Emit(OpCodes.Brtrue, add);
+                b.NullRule!.HandleNullForMultiRow(b.Field.FieldType, b.ElementType, "element", element, Wrap(il), new(done, 0));
+                il.MarkLabel(add);
+            }
+            else {
+                il.Emit(OpCodes.Pop);
+            }
+            EmitLoadBuffer(il, b.Field);
             il.Emit(OpCodes.Ldloc, element);
             EmitAdd(il, b.Add!);
-            il.MarkLabel(done);
+            if (b.CanCollapse)
+                il.MarkLabel(done);
         }
 
         if (level.Child is not null)
@@ -553,12 +580,7 @@ internal static class MultiRowEmitter {
         return mb;
     }
 
-    /// <summary>
-    /// Emits a static construction method reusing the single-row emit verbatim: the reader stays <c>arg1</c>
-    /// and the optional bound target is <c>arg0</c>, so <see cref="SimpleDbItemParser.Emit"/> writes byte-for
-    /// -byte what the single-row road writes. The outer null jump lands on a <c>default</c> return.
-    /// </summary>
-    private static MethodBuilder EmitConstruct(TypeBuilder tb, DbItemPlan node, ColumnInfo[] cols, string name, Type resultType, out object? targetObj) {
+    private static MethodBuilder EmitConstruct(TypeBuilder tb, DbItemPlan node, ColumnInfo[] cols, string name, Type resultType, out object[] targets) {
         var mb = tb.DefineMethod(name, StateHelper, resultType, ReadValueArgs);
         Generator gen =
 #if DEBUG
@@ -567,7 +589,8 @@ internal static class MultiRowEmitter {
             new(mb.GetILGenerator());
 #endif
         Label? nullJump = node.NeedNullSetPoint(cols) ? gen.DefineLabel() : null;
-        ((ISimpleDbItemPlan)node).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default, out targetObj);
+        ((ISimpleDbItemPlan)node).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default);
+        targets = gen.GetTargets();
         if (nullJump.HasValue) {
             var parsed = gen.DefineLabel();
             gen.Emit(OpCodes.Br, parsed);
@@ -579,14 +602,9 @@ internal static class MultiRowEmitter {
         return mb;
     }
 
-    /// <summary>
-    /// Emits <c>bool TryReadElem(object, DbDataReader, out E)</c>: it reads one element with the single-row
-    /// emit, and a collapse (an <c>[AbortOnNull]</c> null) lands on <c>value = default; return false</c> so
-    /// the accumulator skips the add. The bool carries the signal for both reference and value-type elements.
-    /// </summary>
-    private static MethodBuilder EmitTryReadElement(TypeBuilder tb, DbItemPlan element, Type elementType, ColumnInfo[] cols, string tag, out object? targetObj) {
+    private static MethodBuilder EmitTryReadElement(TypeBuilder tb, DbItemPlan element, Type elementType, ColumnInfo[] cols, string tag, out object[] targets) {
         var mb = tb.DefineMethod($"Elem_{tag}", StateHelper, typeof(bool),
-            [typeof(object), typeof(DbDataReader), elementType.MakeByRefType()]);
+            [typeof(object[]), typeof(DbDataReader), elementType.MakeByRefType()]);
         mb.DefineParameter(3, ParameterAttributes.Out, "value");
         Generator gen =
 #if DEBUG
@@ -596,7 +614,8 @@ internal static class MultiRowEmitter {
 #endif
         bool collapses = element.NeedNullSetPoint(cols);
         Label collapse = gen.DefineLabel();
-        ((ISimpleDbItemPlan)element).Emit(cols, gen, collapses ? new(collapse, 0) : default, out targetObj);
+        ((ISimpleDbItemPlan)element).Emit(cols, gen, collapses ? new(collapse, 0) : default);
+        targets = gen.GetTargets();
         var tmp = gen.DeclareLocal(elementType);
         gen.Emit(OpCodes.Stloc, tmp);
         gen.Emit(OpCodes.Ldarg_2);
@@ -614,11 +633,7 @@ internal static class MultiRowEmitter {
         return mb;
     }
 
-    /// <summary>
-    /// Emits the one-slot <c>Read</c>: fill the value slot from the first row and go live, return false on any
-    /// later row so the driver stops without consuming it.
-    /// </summary>
-    private static void EmitCollapsedRead(TypeBuilder tb, Type stateInterface, FieldInfo valueField, FieldInfo liveField, MethodInfo readValue, FieldInfo? targetField) {
+    private static void EmitCollapsedRead(TypeBuilder tb, Type stateInterface, FieldInfo valueField, FieldInfo liveField, MethodInfo readValue, FieldInfo targetField) {
         var mb = tb.DefineMethod("Read", InterfaceMethod, typeof(bool), [typeof(DbDataReader)]);
         var il = mb.GetILGenerator();
         var notLive = il.DefineLabel();
@@ -629,10 +644,7 @@ internal static class MultiRowEmitter {
         il.Emit(OpCodes.Ret);
         il.MarkLabel(notLive);
         il.Emit(OpCodes.Ldarg_0);
-        if (targetField is null)
-            il.Emit(OpCodes.Ldnull);
-        else
-            il.Emit(OpCodes.Ldsfld, targetField);
+        il.Emit(OpCodes.Ldsfld, targetField);
         il.Emit(OpCodes.Ldarg_1);
         il.Emit(OpCodes.Call, readValue);
         il.Emit(OpCodes.Stfld, valueField);
@@ -653,7 +665,6 @@ internal static class MultiRowEmitter {
         tb.DefineMethodOverride(mb, stateInterface.GetMethod(name)!);
     }
 
-    /// <summary>Closes the driver over the baked state, the collection driver when the result is a top-level collection so no rows give an empty one.</summary>
     private static CommandBehavior BehaviorFor(DbItemPlan plan) {
         var previousOrdinal = -1;
         return CommandBehavior.SingleResult | (plan.IsSequencial(ref previousOrdinal) ? CommandBehavior.SequentialAccess : 0);

@@ -12,14 +12,7 @@ public sealed class QueryParameters : IDbParamCache {
     internal SpecialHandler[] _specialHandlers;
     /// <summary>The special handlers, the ones that expand into several parameters.</summary>
     public ReadOnlySpan<SpecialHandler> SpecialHandlers => _specialHandlers;
-    /// <summary>
-    /// The parameters still to learn, ascending, empty once they have all settled. It is the one field the
-    /// answer comes from, so a reader takes it in a single read and its length is the count. Holding a
-    /// count beside it would be two fields that cannot be published together, and a reader catching them
-    /// apart would answer from a count that did not match the list it walked.
-    /// </summary>
     internal int[] _nonCachedIndexes;
-    /// <summary>How many parameters are still to learn.</summary>
     internal int NbNonCached => _nonCachedIndexes.Length;
     /// <summary>Starts with every parameter unsettled, its binding inferred until a run teaches it more.</summary>
     public QueryParameters(int NbNormalVariables, SpecialHandler[] specialHandlers) {
@@ -62,10 +55,6 @@ public sealed class QueryParameters : IDbParamCache {
             _specialHandlers[i].ResetCache(inferred);
         UpdateCachedIndexes();
     }
-    /// <summary>
-    /// The list without <paramref name="ind"/>, for a parameter that just became cached and has nothing
-    /// left to learn. A list that never held it is handed back as it is, with nothing allocated.
-    /// </summary>
     private static int[] WithoutIndex(int[] oldArray, int ind) {
         var at = Array.IndexOf(oldArray, ind);
         if (at < 0)
@@ -77,9 +66,6 @@ public sealed class QueryParameters : IDbParamCache {
         Array.Copy(oldArray, at + 1, res, at, res.Length - at);
         return res;
     }
-    /// <summary>
-    /// The list with <paramref name="ind"/> in its place, for a parameter that went back to being unsettled.
-    /// </summary>
     private static int[] WithIndex(int[] oldArray, int ind) {
         int len = oldArray.Length;
         var res = new int[len + 1];

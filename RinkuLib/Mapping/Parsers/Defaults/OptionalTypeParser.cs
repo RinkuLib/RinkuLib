@@ -24,7 +24,7 @@ public sealed class OptionalTypeParser<TOpt, T>(ITypeParser<T> elementParser) : 
         return (canContinue, TOpt.Make(res));
     }
 }
-/// <summary>The <see cref="OptionalTypeParser{TOpt, T}"/> fast path, for an element read by a plain row delegate.</summary>
+/// <summary>Builds an optional value with a row delegate that does not advance the reader.</summary>
 public sealed class FastOptionalTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser, ITypeParser schemaParser) : BaseTypeParser<TOpt>, ISimpleParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly Func<DbDataReader, T> Parser = parser;
     private readonly ITypeParser SchemaParser = schemaParser;
@@ -47,23 +47,20 @@ public sealed class FastOptionalTypeParser<TOpt, T>(CommandBehavior behavior, Fu
         return (await reader.ReadAsync(ct).ConfigureAwait(false), res);
     }
 }
-/// <summary>The refusal <see cref="Single{T}"/> raises, its own rule rather than one the engine applies.</summary>
 file static class SingleShape {
     internal static RinkuShapeException MoreThanOne()
-        => new("The query returned more than one result for Single<T>");
+        => new("The query returned more than one result for a single-result shape");
 }
 /// <summary>
-/// The parser behind <see cref="Single{T}"/>. It reads one row and throws if the query returned more,
-/// enforcing exactly one result.
+/// A base for a wrapper that accepts no more than one result.
+/// Override <see cref="BaseTypeParser{T}.Default"/> to choose what an empty query returns.
 /// </summary>
-public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
+public abstract class BaseSingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly ITypeParser<T> ElementParser = elementParser;
     /// <inheritdoc/>
     public override CommandBehavior Behavior => ElementParser.Behavior & ~CommandBehavior.SingleRow;
     /// <inheritdoc/>
     public override bool CanParse(ColumnInfo[] schema) => ElementParser.CanParse(schema);
-    /// <inheritdoc/>
-    public override TOpt Default() => throw new RinkuNoRowsException();
     /// <inheritdoc/>
     public override (bool CanContinue, TOpt Result) Parse(DbDataReader reader) {
         var (canContinue, res) = ElementParser.Parse(reader);
@@ -79,16 +76,30 @@ public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : Ba
         return (false, TOpt.Make(res));
     }
 }
-/// <summary>The <see cref="SingleTypeParser{TOpt, T}"/> fast path, for an element read by a plain row delegate.</summary>
-public sealed class FastSingleTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser, ITypeParser schemaParser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
+
+/// <summary>Requires exactly one result.</summary>
+public sealed class SingleTypeParser<TOpt, T>(ITypeParser<T> elementParser) : BaseSingleTypeParser<TOpt, T>(elementParser) where TOpt : struct, IWrapping<TOpt, T> {
+    /// <inheritdoc/>
+    public override TOpt Default() => throw new RinkuNoRowsException();
+}
+
+/// <summary>Returns the default value for no result and refuses a second result.</summary>
+public sealed class SingleOrDefaultTypeParser<TOpt, T>(ITypeParser<T> elementParser) : BaseSingleTypeParser<TOpt, T>(elementParser) where TOpt : struct, IWrapping<TOpt, T> {
+    /// <inheritdoc/>
+    public override TOpt Default() => default;
+}
+
+/// <summary>
+/// A base for a single-result wrapper whose element has a row delegate.
+/// Override <see cref="BaseTypeParser{T}.Default"/> to choose what an empty query returns.
+/// </summary>
+public abstract class BaseFastSingleTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser, ITypeParser schemaParser) : BaseTypeParser<TOpt> where TOpt : struct, IWrapping<TOpt, T> {
     private readonly Func<DbDataReader, T> Parser = parser;
     private readonly ITypeParser SchemaParser = schemaParser;
     /// <inheritdoc/>
     public override CommandBehavior Behavior { get; } = behavior & ~CommandBehavior.SingleRow;
     /// <inheritdoc/>
     public override bool CanParse(ColumnInfo[] schema) => SchemaParser.CanParse(schema);
-    /// <inheritdoc/>
-    public override TOpt Default() => throw new RinkuNoRowsException();
     /// <inheritdoc/>
     public override (bool CanContinue, TOpt Result) Parse(DbDataReader reader) {
         var res = TOpt.Make(Parser(reader));
@@ -103,4 +114,16 @@ public sealed class FastSingleTypeParser<TOpt, T>(CommandBehavior behavior, Func
             throw SingleShape.MoreThanOne();
         return (false, res);
     }
+}
+
+/// <summary>Requires exactly one result through a row delegate.</summary>
+public sealed class FastSingleTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser, ITypeParser schemaParser) : BaseFastSingleTypeParser<TOpt, T>(behavior, parser, schemaParser) where TOpt : struct, IWrapping<TOpt, T> {
+    /// <inheritdoc/>
+    public override TOpt Default() => throw new RinkuNoRowsException();
+}
+
+/// <summary>Returns the default value for no result through a row delegate and refuses a second result.</summary>
+public sealed class FastSingleOrDefaultTypeParser<TOpt, T>(CommandBehavior behavior, Func<DbDataReader, T> parser, ITypeParser schemaParser) : BaseFastSingleTypeParser<TOpt, T>(behavior, parser, schemaParser) where TOpt : struct, IWrapping<TOpt, T> {
+    /// <inheritdoc/>
+    public override TOpt Default() => default;
 }

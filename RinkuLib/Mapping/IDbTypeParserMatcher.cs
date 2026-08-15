@@ -4,19 +4,19 @@ namespace Rinku.Mapping;
 /// </summary>
 public interface IDbReadable;
 /// <summary>
-/// Builds the plan for reading one member or parameter, how it is named, whether it may be null, and how its
-/// value is produced. The seam for taking over a member's mapping.
+/// Provides the rules for reading one member or parameter.
+/// Implement this interface to replace the mapping of selected members or parameters.
 /// </summary>
 public interface IParamInfoMaker {
     /// <summary>
-    /// Builds the read plan for a member or parameter from its reflection metadata.
+    /// Creates the mapping settings for one member or construction parameter.
     /// </summary>
-    /// <param name="Type">The type of the member/parameter.</param>
-    /// <param name="NullColHandler">The generated colHandler</param>
-    /// <param name="NameComparer">The generated name comparer</param>
-    /// <param name="name">The name of the member/parameter.</param>
-    /// <param name="attributes">Metadata attributes attached to the member.</param>
-    /// <param name="usageFlags">Provide the determined usage flags</param>
-    /// <param name="param">Instance of the member</param>
+    /// <param name="Type">The member or parameter type.</param>
+    /// <param name="NullColHandler">The current null rule.</param>
+    /// <param name="NameComparer">The current name rule.</param>
+    /// <param name="name">The member or parameter name.</param>
+    /// <param name="attributes">The attributes declared on it.</param>
+    /// <param name="usageFlags">The current column usage rules.</param>
+    /// <param name="param">The reflected member or parameter when available.</param>
     public ParamInfo MakeMatcher(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, string? name, object[] attributes, UsageFlags usageFlags, object? param);
 }

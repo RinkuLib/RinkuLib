@@ -5,7 +5,7 @@ using Rinku.Internal;
 
 namespace Rinku.Mapping;
 
-/// <summary>Identify a parameter that should not be null, but the row provided a null value. Can be direcly a null column or a sub-class that lead to a null value</summary>
+/// <summary>Thrown when a database <c>NULL</c> is assigned to a value that does not accept null.</summary>
 public class NullValueAssignmentException(Type parentType, Type paramType, string paramName) : RinkuReadException(ErrorCodes.NullNotAllowed, $"Constraint Violation: Parameter '{paramName}' of type '{paramType.Name}' is marked as non-nullable, but the source provided a null value. Parent: {parentType}") {
     /// <summary>The name of the parameter that should not be null</summary>
     public readonly string ParameterName = paramName;
@@ -15,30 +15,24 @@ public class NullValueAssignmentException(Type parentType, Type paramType, strin
     public readonly Type ParameterType = paramType;
 }
 /// <summary>
-/// One node in a type's read plan, it knows how to read its own part of a row, whether a single column, a
-/// nested object, or a default. The plan is a tree of these, and the object parser is compiled from it.
+/// Describes how part of a result is read. Return a plan from
+/// <see cref="TypeParsingInfo.TryGetParser(Type, RecursiveInfo, ParamInfo, ColumnInfo[], ColModifier, ref ColumnUsage, MethodCtorInfo.AdditionalFlags)"/>
+/// when adding custom type mapping.
 /// </summary>
 public abstract class DbItemPlan {
     /// <summary>
-    /// Whether reading this node can hit a <c>NULL</c> that has to collapse the owning object, so a recovery
-    /// point is needed.
+    /// Returns whether this plan can collapse its owning object when it reads a <c>NULL</c>.
     /// </summary>
     public abstract bool NeedNullSetPoint(ColumnInfo[] cols);
     /// <summary>
-    /// Whether this node reads its columns in order, the condition that lets the result stream sequentially.
+    /// Returns whether this plan reads columns in increasing order. Update <paramref name="previousIndex"/>
+    /// with the final column used.
     /// </summary>
     public abstract bool IsSequencial(ref int previousIndex);
     /// <summary>
-    /// This node's children in the plan tree, for the walk that decides whether the whole plan is single-row.
-    /// Leaves have none.
+    /// Gets the child plans. Return an empty sequence for a plan with no children.
     /// </summary>
     public virtual IEnumerable<DbItemPlan> Children => [];
-    /// <summary>
-    /// Whether <paramref name="node"/> and everything beneath it is a <see cref="SimpleDbItemParser"/>, the
-    /// one condition for the single compiled delegate. There is no capability flag, the ability to emit single
-    /// row is simply being the specialized type, checked here recursively. A collection or other node that is
-    /// not one fails it, so any plan containing one takes the multi-row road.
-    /// </summary>
     internal static bool AllSimple(DbItemPlan node) {
         if (node is not ISimpleDbItemPlan)
             return false;
@@ -51,8 +45,8 @@ public abstract class DbItemPlan {
     internal static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;
 
     /// <summary>
-    /// Emits a throw instruction for an <see cref="NullValueAssignmentException"/> when 
-    /// a non-nullable target receives a null value from the schema.
+    /// Writes a throw for <see cref="NullValueAssignmentException"/>. Use it when a target rejects
+    /// database <c>NULL</c>.
     /// </summary>
     public static void EmitThrowNullAssignment(Type parentType, Type paramType, string paramName, Generator generator) {
         generator.Emit(OpCodes.Ldtoken, parentType);
@@ -64,7 +58,7 @@ public abstract class DbItemPlan {
         generator.Emit(OpCodes.Throw);
     }
     /// <summary>
-    /// Emits the instructions to place the default value of a <see cref="Type"/> onto the stack.
+    /// Writes the default value of <paramref name="type"/> onto the evaluation stack.
     /// </summary>
     public static void EmitDefaultValue(Type type, Generator generator) {
         if (!type.IsValueType) {
@@ -89,8 +83,7 @@ public abstract class DbItemPlan {
         }
     }
     /// <summary>
-    /// Generates the branching logic for null recovery, marking the jump label and 
-    /// loading the default value if the jump is triggered.
+    /// Completes a null branch and leaves the default value on the evaluation stack when that branch is used.
     /// </summary>
     public static void EmitNullJump(Label nullJump, Type type, Generator generator) {
         Label endOfLogic = generator.DefineLabel();
@@ -100,8 +93,7 @@ public abstract class DbItemPlan {
         generator.MarkLabel(endOfLogic);
     }
     /// <summary>
-    /// Dispatches the appropriate IL instruction (Call, Callvirt, Stfld, or Newobj) 
-    /// based on whether the member is a Method, Property, Field, or Constructor.
+    /// Writes the call, construction, or assignment for the supplied member.
     /// </summary>
     public static void EmitMemberDispatch(Generator generator, MemberInfo member) {
         if (member is ConstructorInfo ctor) {
@@ -125,13 +117,13 @@ public abstract class DbItemPlan {
             generator.Emit(OpCodes.Call, m);
     }
 }
-/// <summary>Emits a plan that reads its value from the current row.</summary>
+/// <summary>Marks a plan that can read its value from the current row.</summary>
 public interface ISimpleDbItemPlan {
-    /// <summary>Emits the row read and leaves the value on the evaluation stack.</summary>
-    void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject);
+    /// <summary>Writes the row read and leaves the value on the evaluation stack.</summary>
+    void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint);
 }
 
-/// <summary>A negotiated plan that exposes the single database column it reads.</summary>
+/// <summary>Exposes the single database column read by a plan.</summary>
 public interface IColumnOrdinalPlan {
     /// <summary>The zero-based result-column ordinal.</summary>
     int ColumnOrdinal { get; }
@@ -147,32 +139,29 @@ public interface ICompositeDbItemPlan {
     IReadOnlyList<DbItemPlan> ConstructorArguments { get; }
     /// <summary>The plans for values assigned after construction.</summary>
     IReadOnlyList<(MemberInfo Member, DbItemPlan Plan)> PostMembers { get; }
-    /// <summary>The explicit grouping rule, or null when the emitter should infer one.</summary>
+    /// <summary>The explicit grouping rule or <see langword="null"/> to use the default rule.</summary>
     IGroupingRule? GroupKey { get; }
-    /// <summary>The name matching context used while negotiating this plan.</summary>
+    /// <summary>The name matching settings used by this plan.</summary>
     ColModifier Context { get; }
 }
 
 /// <summary>
-/// A node that can read its value from the current row alone, the more specific parser the single-row road is
-/// built from. The base <see cref="DbItemPlan"/> is the general, multi-row case and carries no single-row
-/// emit, this is the specialization that does. When every node in a plan is one of these the plan takes the
-/// happy path, the single compiled delegate, otherwise the multi-row road negotiates a state object instead.
+/// Base plan for a value that can be read from the current row. Derive from this type when a custom plan can
+/// provide its own read instructions.
 /// </summary>
 public abstract class SimpleDbItemParser : DbItemPlan, ISimpleDbItemPlan {
     /// <summary>
-    /// Reads this node's value from the current row, handling a <c>NULL</c> and any type conversion.
+    /// Writes the instructions that read this value from the current row.
     /// </summary>
     /// <param name="cols">The columns the result carries.</param>
-    /// <param name="generator">The IL generator the read is written into.</param>
+    /// <param name="generator">The instruction writer to use.</param>
     /// <param name="nullSetPoint">Where to jump when a value is <c>NULL</c> and the object must collapse.</param>
-    /// <param name="targetObject">Set to an object the compiled reader needs passed in, or <see langword="null"/>.</param>
-    public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject);
+    public abstract void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint);
 }
 
 /// <summary>
-/// Base plan for a value read from one column. It owns ordinal ordering and nullable-column handling while
-/// the implementation emits the non-null read and leaves its <see cref="OutputType"/> on the stack.
+/// Base plan for a value read from one column.
+/// Derive from this type to define how a database value is read after the standard null and order checks.
 /// </summary>
 public abstract class ScalarDbItemPlan(Type parentType, Type outputType, string parameterName,
     INullColHandler nullHandler, int ordinal) : SimpleDbItemParser, IColumnOrdinalPlan {
@@ -200,11 +189,10 @@ public abstract class ScalarDbItemPlan(Type parentType, Type outputType, string 
     }
 
     /// <inheritdoc/>
-    public sealed override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint,
-        out object? targetObject) {
+    public sealed override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint) {
         var column = cols[ColumnOrdinal];
         if (!column.IsNullable) {
-            EmitValue(column, generator, out targetObject);
+            EmitValue(column, generator);
             return;
         }
         Label notNull = generator.DefineLabel();
@@ -216,33 +204,27 @@ public abstract class ScalarDbItemPlan(Type parentType, Type outputType, string 
         generator.Emit(branch, notNull);
         Label? endLabel = NullHandler.HandleNull(ParentType, OutputType, ParameterName, generator, nullSetPoint);
         generator.MarkLabel(notNull);
-        EmitValue(column, generator, out targetObject);
+        EmitValue(column, generator);
         if (endLabel.HasValue)
             generator.MarkLabel(endLabel.Value);
     }
 
     /// <summary>
-    /// Emits the non-null read for <paramref name="column"/> and leaves exactly one
+    /// Writes the non null read for <paramref name="column"/> and leaves exactly one
     /// <see cref="OutputType"/> value on the evaluation stack.
     /// </summary>
-    /// <param name="column">The negotiated schema column.</param>
-    /// <param name="generator">The generated parser's IL writer.</param>
-    /// <param name="targetObject">
-    /// An optional object to bind as argument zero of the generated parser, or <see langword="null"/> for
-    /// entirely static emitted code.
-    /// </param>
-    protected abstract void EmitValue(ColumnInfo column, Generator generator, out object? targetObject);
+    /// <param name="column">The result column to read.</param>
+    /// <param name="generator">The instruction writer to use.</param>
+    protected abstract void EmitValue(ColumnInfo column, Generator generator);
 }
 
-/// <summary>A typed <see cref="ScalarDbItemPlan"/> whose emitted non-null value is <typeparamref name="T"/>.</summary>
+/// <summary>A typed <see cref="ScalarDbItemPlan"/> that reads <typeparamref name="T"/>.</summary>
 public abstract class ScalarDbItemPlan<T>(Type parentType, string parameterName, INullColHandler nullHandler,
     int ordinal) : ScalarDbItemPlan(parentType, typeof(T), parameterName, nullHandler, ordinal);
-/// <summary>
-/// A recovery location (Jump Point) used during IL emission to handle null values.
-/// </summary>
+/// <summary>Marks where a custom read plan continues after a database <c>NULL</c> collapses a value.</summary>
 public readonly struct NullSetPoint(Label Label, int NbOnStack) {
     /// <summary>
-    /// Indicates if a valid recovery label is defined for the current context.
+    /// Gets whether a valid recovery location is available.
     /// </summary>
     public readonly bool HasValue = true;
     private readonly Label Label = Label;
@@ -251,18 +233,16 @@ public readonly struct NullSetPoint(Label Label, int NbOnStack) {
         this.HasValue = HasValue;
     }
     /// <summary>
-    /// The number of items currently on the evaluation stack that must be
-    /// removed if a null jump occurs.
+    /// Gets the number of evaluation stack items removed when jumping.
     /// </summary>
     public readonly int NbOfPopToMake => NbOnStack;
     /// <summary>
-    /// Returns a new context tracking additional items placed on the stack.
+    /// Returns a new value that includes added evaluation stack items.
     /// </summary>
     public NullSetPoint WithItemOnStack(int nbItemOnStack)
         => new(Label, NbOnStack + nbItemOnStack, HasValue);
     /// <summary>
-    /// Emits the necessary <c>Pop</c> instructions to clear the stack and 
-    /// branches to the recovery label.
+    /// Removes tracked evaluation stack items and jumps to the recovery location.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown if no recovery label is defined.</exception>
     public void MakeNullJump(Generator generator) {
@@ -275,9 +255,8 @@ public readonly struct NullSetPoint(Label Label, int NbOnStack) {
 }
 
 /// <summary>
-/// Describes a plan that folds one element from each row into an accumulator.
-/// The default multi-row emitter consumes this capability; another plan implementation can provide the same
-/// behavior without deriving from the built-in accumulator plan.
+/// Describes a plan that adds one element from each row to an accumulated result.
+/// Implement this interface for a custom multi row plan.
 /// </summary>
 public interface IMultiRowPlan {
     /// <summary>The plan that reads one element from a row.</summary>

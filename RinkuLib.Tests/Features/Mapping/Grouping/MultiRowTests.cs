@@ -4,6 +4,7 @@ using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace RinkuLib.Tests.DbParsing;
@@ -82,9 +83,10 @@ public class MultiRowTests {
 
     public sealed record TagParent([property: GroupKey] int Id, [KeepNullElements] List<string?> Tags) : IDbReadable;
     public sealed record NotNullTagParent([property: GroupKey] int Id, [System.Diagnostics.CodeAnalysis.NotNull] List<string> Tags) : IDbReadable;
+    public readonly record struct NullPreservingList<T>([NoName][KeepNullElements] List<T> Values) : IDbReadable;
     public sealed record InferredParent(int Id, string Name, List<Child> Children) : IDbReadable;
     public sealed record ValueAfterCollection(List<Child> Children, int Trailing) : IDbReadable;
-    public sealed record DynaHolder(List<DynaObject> Rows) : IDbReadable {
+    public sealed record DynaHolder([NoName] List<DynaObject> Rows) : IDbReadable {
         [GroupKey]
         public static (bool Same, int Next) KeyOf(int stored, int id) => (id == stored, id);
     }
@@ -188,6 +190,7 @@ public class MultiRowTests {
     // --- keyed grouping ---------------------------------------------------------------------------------
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
     public void A_keyed_list_groups_children_under_each_parent() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<Parent>>(cols);
@@ -225,6 +228,7 @@ public class MultiRowTests {
     }
 
     [Fact]
+    [DocumentationExample("grouping.md", "composite-group-key")]
     public void A_composite_key_tells_apart_rows_that_share_only_one_part() {
         ColumnInfo[] cols = [
             new("RegionId", typeof(int), false),
@@ -439,6 +443,7 @@ public class MultiRowTests {
     }
 
     [Fact]
+    [DocumentationExample("grouping.md", "inferred-grouping")]
     public void A_keyless_type_infers_its_leading_scalars_as_the_key() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<InferredParent>>(cols);
@@ -687,6 +692,18 @@ public class MultiRowTests {
     }
 
     [Fact]
+    public void A_root_collection_can_keep_null_elements_through_a_value_wrapper() {
+        ColumnInfo[] cols = [new("Value", typeof(string), true)];
+        var parser = TypeParser.GetTypeParser<NullPreservingList<string?>>(cols);
+        using var reader = Rows.Reader(cols, ["a"], [DBNull.Value], ["b"]);
+        reader.Read();
+
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(["a", null, "b"], result.Values);
+    }
+
+    [Fact]
     public void NotNull_on_collection_throws_when_null_element_encountered() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Tags", typeof(string), true)];
         var parser = TypeParser.GetTypeParser<List<NotNullTagParent>>(cols);
@@ -766,6 +783,7 @@ public class MultiRowTests {
     public sealed record HashParent([property: GroupKey] int Id, string Name, HashSet<Child> Children) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "hashset-multi-row")]
     public void A_user_registered_HashSet_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<HashParent>>(cols);
@@ -782,6 +800,7 @@ public class MultiRowTests {
     }
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
     public void A_built_in_array_member_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<ArrayParent>>(cols);
@@ -798,6 +817,7 @@ public class MultiRowTests {
     }
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
     public void A_built_in_IEnumerable_member_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<EnumerableParent>>(cols);

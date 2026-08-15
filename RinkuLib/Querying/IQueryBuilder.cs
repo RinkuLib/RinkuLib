@@ -2,8 +2,8 @@ namespace Rinku.Querying;
 
 /// <summary>
 /// Supplies a query's values from code instead of a parameter object. You set variables and switch
-/// conditional parts on or off, then run the command off the builder. This is the road to take when the
-/// values come from branching C# logic rather than a ready-made object.
+/// conditional parts on or off, then run the command from the builder. Use it when values come from
+/// branching C# logic instead of one parameter object.
 /// </summary>
 /// <remarks>
 /// A query is a set of optional pieces. Nothing is included until you ask for it. A variable is a piece

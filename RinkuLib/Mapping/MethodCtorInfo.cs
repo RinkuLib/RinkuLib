@@ -21,13 +21,13 @@ public sealed class AreReadableAttribute : Attribute;
 /// <see cref="ConstructorInfo"/> or static <see cref="MethodInfo"/>.
 /// </summary>
 public class MethodCtorInfo {
-    private static Action<MethodCtorInfo>? _registrationInitializer;
+    private static Func<MethodCtorInfo, MethodCtorInfo>? _registrationInitializer;
     /// <summary>
     /// Adjusts each construction path produced by <see cref="TryNew(MethodBase, out MethodCtorInfo)"/> before
-    /// automatic registration can publish it. Configure this once during application startup. Direct
-    /// construction remains the lower-level escape hatch and does not invoke it.
+    /// automatic registration can publish it. Return the received path after changing it or return a replacement.
+    /// Configure this once during application startup. Direct construction does not invoke it.
     /// </summary>
-    public static Action<MethodCtorInfo>? RegistrationInitializer {
+    public static Func<MethodCtorInfo, MethodCtorInfo>? RegistrationInitializer {
         get => Volatile.Read(ref _registrationInitializer);
         set => Volatile.Write(ref _registrationInitializer, value);
     }
@@ -35,8 +35,7 @@ public class MethodCtorInfo {
     [Flags]
     public enum AdditionalFlags : byte {
         /// <summary>
-        /// Indicate that the engine can continue to map additional properties or fields 
-        /// after the primary method/constructor has been called.
+        /// Allows properties and fields to be filled after construction.
         /// </summary>
         CanCompleteWithMembers = 0b1,
         /// <summary>
@@ -55,8 +54,7 @@ public class MethodCtorInfo {
         set => _flags = value;
     }
     /// <summary>
-    /// Indicate that the engine can continue to map additional properties or fields 
-    /// after the primary method/constructor has been called.
+    /// Gets whether properties and fields may be filled after construction.
     /// </summary>
     public bool CanCompleteWithMembers => Flags.HasFlag(AdditionalFlags.CanCompleteWithMembers);
     /// <summary>
@@ -151,8 +149,11 @@ public class MethodCtorInfo {
             flags |= AdditionalFlags.CanCompleteWithMembers;
         if (MethodBase.IsDefined(typeof(AreReadableAttribute)))
             flags |= AdditionalFlags.ParametersAreReadable;
-        mci = new(MethodBase, Parameters!, flags, true);
-        TypeParsingInfo.ApplyRegistrationInitializer(Volatile.Read(ref _registrationInitializer), mci);
+        var created = new MethodCtorInfo(MethodBase, Parameters!, flags, true);
+        mci = TypeParsingInfo.ApplyRegistrationInitializer(Volatile.Read(ref _registrationInitializer), created);
+        if (mci.TargetType != created.TargetType)
+            throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch,
+                $"The replacement construction creates {mci.TargetType} instead of {created.TargetType}");
         return true;
     }
     /// <summary>
@@ -164,8 +165,11 @@ public class MethodCtorInfo {
             mci = null;
             return false;
         }
-        mci = new(MethodBase, Parameters!, Flags, true);
-        TypeParsingInfo.ApplyRegistrationInitializer(Volatile.Read(ref _registrationInitializer), mci);
+        var created = new MethodCtorInfo(MethodBase, Parameters!, Flags, true);
+        mci = TypeParsingInfo.ApplyRegistrationInitializer(Volatile.Read(ref _registrationInitializer), created);
+        if (mci.TargetType != created.TargetType)
+            throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch,
+                $"The replacement construction creates {mci.TargetType} instead of {created.TargetType}");
         return true;
     }
     /// <summary>
@@ -280,7 +284,7 @@ public class MethodCtorInfo {
         return true;
     }
     /// <summary>
-    /// Orders a set of candidates so the most specific ones are checked first during negotiation.
+    /// Orders construction candidates from the most specific to the least specific.
     /// </summary>
     public static MethodCtorInfo[] GetOrderedInfos(Span<MethodCtorInfo> infos) {
         var arr = new MethodCtorInfo[infos.Length];
@@ -299,9 +303,9 @@ public class MethodCtorInfo {
         return arr;
     }
     /// <summary>
-    /// Thread-safely inserts this candidate into an existing sorted array of candidates.
+    /// Adds or replaces this candidate in a list ordered from the most specific choice to the least specific.
     /// </summary>
-    /// <param name="infos">A reference to the sorted candidate array.</param>
+    /// <param name="infos">The candidate list to update.</param>
     public void InsertInto(ref MethodCtorInfo[] infos) {
         int existingI = 0;
         var len = infos.Length;

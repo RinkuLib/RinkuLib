@@ -1,47 +1,49 @@
-﻿using System;
 using System.Collections.Immutable;
-using System.Globalization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 
-namespace RinkuLib.Analyzers {
-    [DiagnosticAnalyzer(LanguageNames.CSharp)]
-    public sealed class SyncBasedOnAnalyzer : DiagnosticAnalyzer {
-        public const string DiagnosticId = "RK0100";
+namespace RinkuLib.Analyzers;
 
-        private static readonly LocalizableString Title = new LocalizableResourceString(nameof(Resources.SyncBasedOnTitle), Resources.ResourceManager, typeof(Resources));
-        private static readonly LocalizableString MessageFormat = new LocalizableResourceString(nameof(Resources.SyncBasedOnMessageFormat), Resources.ResourceManager, typeof(Resources));
-        private static readonly LocalizableString Description = new LocalizableResourceString(nameof(Resources.SyncBasedOnDescription), Resources.ResourceManager, typeof(Resources));
-        private const string Category = "Rinku";
+[DiagnosticAnalyzer(LanguageNames.CSharp)]
+public sealed class SyncBasedOnAnalyzer : DiagnosticAnalyzer {
+    public const string DiagnosticId = "RK0100";
 
-        private static readonly DiagnosticDescriptor Rule = new(DiagnosticId, Title, MessageFormat, Category, DiagnosticSeverity.Warning, true, Description);
+    private static readonly DiagnosticDescriptor Rule = new(
+        DiagnosticId,
+        "BasedOn link is out of date",
+        "'{0}' may no longer match '{1}'",
+        "Rinku",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A referenced schema changed after the BasedOn link was acknowledged.");
 
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => [Rule];
+    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => [Rule];
 
-        public override void Initialize(AnalysisContext context) {
-            context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
-            context.EnableConcurrentExecution();
-            context.RegisterSymbolAction(AnalyzeNamedType, SymbolKind.NamedType);
-        }
-        private static void AnalyzeNamedType(SymbolAnalysisContext context) {
-            if (context.Symbol is not INamedTypeSymbol type)
-                return;
+    public override void Initialize(AnalysisContext context) {
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        context.EnableConcurrentExecution();
+        context.RegisterSymbolAction(AnalyzeType, SymbolKind.NamedType);
+    }
 
-            var cancellationToken = context.CancellationToken;
-            var compilation = context.Compilation;
-            var basedOnSymbols = BasedOnHelper.GetBasedOnSymbols(type, compilation, cancellationToken);
-            foreach (var (basedOnSymbol, basedOnTimestamp) in basedOnSymbols) {
-                foreach (var schemaTag in BasedOnHelper.GetTags(basedOnSymbol, "Schema", cancellationToken)) {
-                    foreach (var item in BasedOnHelper.GetAttributes(schemaTag!, "LastUpdated")) {
-                        if (!DateTimeOffset.TryParse(item, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dt))
-                            continue;
-                        if ((basedOnTimestamp is null || dt > basedOnTimestamp) && type.Locations.Length > 0) {
-                            context.ReportDiagnostic(Diagnostic.Create(Rule, type.Locations[0], type.Name, basedOnSymbol.Name));
-                            return;
-                        }
-                    }
-                }
-            }
+    private static void AnalyzeType(SymbolAnalysisContext context) {
+        if (context.Symbol is not INamedTypeSymbol type)
+            return;
+
+        foreach (var reference in DocumentationTags.GetReferences(
+            type,
+            DocumentationTags.BasedOn,
+            context.Compilation,
+            context.CancellationToken)) {
+            var schemaTimestamp = DocumentationTags.GetLatestSchemaTimestamp(reference.Symbol, context.CancellationToken);
+            if (!schemaTimestamp.HasValue
+                || reference.LastUpdated.HasValue && schemaTimestamp <= reference.LastUpdated)
+                continue;
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                Rule,
+                reference.Tag.GetLocation(),
+                type.Name,
+                reference.Symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
         }
     }
 }

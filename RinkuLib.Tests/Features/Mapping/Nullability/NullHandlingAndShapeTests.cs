@@ -231,12 +231,14 @@ public class NullHandlingAndShapeTests {
     }
 
     [Fact]
-    public void A_custom_root_null_rule_reaches_the_wrapped_element() {
+    public void A_custom_root_null_rule_keeps_nullable_elements() {
         ColumnInfo[] cols = [new("V", typeof(int), true)];
+        using var reader = Rows.Reader(cols, [1], [DBNull.Value], [2]);
         var parser = TypeParser.GetTypeParser<List<int?>>(cols, NullableTypeHandle.Instance);
-        Assert.NotNull(parser);
+        reader.Read();
+        Assert.Equal([1, null, 2], parser.Parse(reader).Result);
         var maker = new ReusingBaseTypeParserMaker([typeof(List<>)],
-            (Type def, Type item, ref object?[] _) => typeof(ListTypeParser<>).MakeGenericType(item));
+            (Type def, Type item, ref object?[] _) => typeof(object));
         Assert.False(maker.TryMakeParser<int>(NotNullHandle.Instance, cols, out _));  
     }
 

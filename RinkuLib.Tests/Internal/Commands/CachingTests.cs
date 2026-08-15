@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Reflection;
 using Rinku;
 using Rinku.Mapping;
 using Rinku.Querying;
@@ -14,6 +15,8 @@ namespace RinkuLib.Tests.Execution;
 /// SQL never poison each other's cache.
 /// </summary>
 public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
+    public record UserIdentity(long ID, string Name, string? Email = null);
+
     [Fact]
     public void Each_condition_shape_gets_its_own_parser() {
         var query = new QueryCommand("SELECT ID, /*Name*/Name FROM Users WHERE Name = ?@Name");
@@ -171,6 +174,41 @@ public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         second.Use("@Cols", "Salary, Email");
         Assert.Equal(["ID", "Name"], second.Query<DynaObject>(cnn).Keys.ToArray());
     }
+
+    [Fact]
+    public void Non_generic_CachedTypeParser_caches_each_requested_type_over_its_fixed_schema() {
+        using var cache = CachedTypeParser.From<UserRow>();
+        var userParser = cache.Get<UserRow>();
+        Assert.Same(userParser, cache.Get<UserRow>());
+
+        var identityParser = cache.Get<UserIdentity>();
+        Assert.NotSame(userParser, identityParser);
+
+        using var cnn = Db.Open();
+        using var cmd = cnn.CreateCommand();
+        cmd.CommandText = "SELECT ID, Name, Email FROM Users WHERE ID = 1";
+        Assert.Equal("John", userParser.Query(cmd).Name);
+        Assert.Equal("John", identityParser.Query(cmd).Name);
+    }
+
+    [Fact]
+    public void Non_generic_CachedTypeParser_accepts_every_schema_source() {
+        using var type = new CachedTypeParser(typeof(UserRow));
+        using var ctor = new CachedTypeParser(typeof(UserRow).GetConstructors()[0]);
+        MethodInfo methodInfo = typeof(CachingTests).GetMethod(nameof(MakeUserIdentity))
+            ?? throw new InvalidOperationException("The schema factory method was not found.");
+        using var method = new CachedTypeParser(methodInfo);
+        using var factory = new CachedTypeParser((Func<long, string, string?, UserIdentity>)MakeUserIdentity);
+        using var generic = CachedTypeParser.From<UserRow>();
+
+        Assert.NotNull(type.Get<UserIdentity>());
+        Assert.NotNull(ctor.Get<UserIdentity>());
+        Assert.NotNull(method.Get<UserIdentity>());
+        Assert.NotNull(factory.Get<UserIdentity>());
+        Assert.NotNull(generic.Get<UserIdentity>());
+    }
+
+    public static UserIdentity MakeUserIdentity(long id, string name, string? email) => new(id, name, email);
 
     /// <summary>
     /// A root dictionary is the schema-adaptive alternative for a controlled raw projection. Its cached row

@@ -128,6 +128,14 @@ public class ConditionalMarkersDocTests {
     }
 
     [Fact]
+    public void Or_after_and_applies_to_the_accumulated_result() {
+        var b = Build("SELECT * FROM tracks WHERE /*Cheap&Pricey|InCatalog*/UnitPrice > @minPrice");
+        b.Use("InCatalog");
+        b.Use("@minPrice", 1);
+        Render.Expect(b, "SELECT * FROM tracks WHERE UnitPrice > @minPrice", ("@minPrice", 1));
+    }
+
+    [Fact]
     public void Negation_keeps_a_footprint_only_when_the_key_is_absent() {
         Render.Expect(Build("SELECT * FROM products WHERE /*!All*/IsActive = 1"), "SELECT * FROM products WHERE IsActive = 1");
         var b = Build("SELECT * FROM products WHERE /*!All*/IsActive = 1");

@@ -1,6 +1,8 @@
-# RinkuLib: A Modular Micro-ORM
+# RinkuLib
 
-A micro-ORM for .NET, built directly on **ADO.NET**. You write the SQL, name a type, and get your objects back.
+A micro-ORM for .NET built directly on **ADO.NET**. You keep the SQL and choose a result type. Rinku reads the result into that type.
+
+Read the [documentation](https://rinkulib.github.io/RinkuLib/), see the [Dapper guide](https://rinkulib.github.io/RinkuLib/articles/reference/dapper.html), or browse the [source on GitHub](https://github.com/RinkuLib/RinkuLib).
 
 ```csharp
 using Rinku;
@@ -11,20 +13,20 @@ public record Album(int Id, string Title);
 static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 1 });
-// GetAlbums.Query<Album>(cnn, ...)               -> a single album
+// GetAlbums.Query<Album>(cnn, ...)               -> the first album
 // GetAlbums.Query<IEnumerable<Album>>(cnn, ...)  -> streamed
 ```
 
-The result shape follows the type argument. `Album` is one of your own types, any class, record, or struct works, with no attributes and no configuration. Reach for the capabilities one at a time or together.
+The type argument chooses the result parser. A class, record, or struct can be used directly when the columns match a constructor or writable members. Nested types follow separate registration rules. Parsers can also be added or replaced.
 
-- **Object mapping.** Compile a mapping from the result schema to your type through a configurable negotiation.
-- **Conditional SQL.** One template that adapts to the values you pass, valid without string concatenation.
+Rinku includes these features.
+
+- **Object mapping.** Map returned columns to your types and change the rules when needed.
+- **Conditional SQL.** Mark optional SQL in one template without assembling strings at the call site.
 - **Code generation.** Generate ready-to-run `DbCommand`s from your database schema at design time.
 - **Tracking.** Edit, commit, and revert change tracking over an `IEnumerable`.
 
 Mapping is the spine, and the rest builds on it. Targets .NET 8 and .NET 10.
-
-Full documentation: <https://rinkulib.github.io/RinkuLib/>.
 
 ## Conditional SQL
 
@@ -40,10 +42,4 @@ List<Album> albums = Search.Query<List<Album>>(cnn, new { artistId = 1 });
 
 ## How it works
 
-You define the template first, so your code only decides what's used and never concatenates SQL, the statement stays valid wherever a value lands, with no `WHERE 1=1`. Mapping works the same way. A configurable negotiation maps the flat result onto the shape of your C# type, and the type decides how the columns nest and how many rows it takes.
-
-## Links
-
-- Documentation: <https://rinkulib.github.io/RinkuLib/>
-- Coming from Dapper: <https://rinkulib.github.io/RinkuLib/articles/reference/dapper.html>
-- Source: <https://github.com/RinkuLib/RinkuLib>
+You define the template first, so application code chooses which marked parts are active without joining SQL strings or adding `WHERE 1=1`. The result type chooses a parser. The parser and mapping rules decide how to read the returned columns and rows.

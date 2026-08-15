@@ -4,11 +4,10 @@ namespace Rinku.Mapping;
 /// <summary>
 /// Produces the type's default value, the parser used for a member that has no matching column.
 /// </summary>
-public class DefaultEmiter(Type targetType) : SimpleDbItemParser {
+public class DefaultEmitter(Type targetType) : SimpleDbItemParser {
     private readonly Type targetType = targetType;
     /// <inheritdoc/>
-    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
-        targetObject = null;
+    public override void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint) {
         EmitDefaultValue(targetType, generator);
     }
     /// <inheritdoc/>
@@ -17,19 +16,19 @@ public class DefaultEmiter(Type targetType) : SimpleDbItemParser {
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => false;
 }
-/// <summary>Fallback that emits the default value of the type.</summary>
+/// <summary>Uses the type default when no result column matches a member.</summary>
 public class DefaultValueFallback : IFallbackParserGetter {
     /// <summary>Singleton</summary>
     public static readonly DefaultValueFallback Instance = new();
     private DefaultValueFallback() { }
     /// <inheritdoc/>
-    public DbItemPlan? FallbackTryGetParser(Type type) => new DefaultEmiter(type);
+    public DbItemPlan? FallbackTryGetParser(Type type) => new DefaultEmitter(type);
 }
-/// <summary>Applies reading-order flags to a <see cref="ColModifier"/>, per slot or across a subtree.</summary>
+/// <summary>Applies column order and reuse settings to one slot or its complete nested value.</summary>
 public class FlagUpdater(UsageFlags Flags, bool Subtree = false) : IColModifier {
-    /// <summary>The flag that will be added to the current modifyer</summary>
+    /// <summary>Gets the column usage setting added by this fallback.</summary>
     public UsageFlags Flags = Flags;
-    /// <summary>When true the flags govern a complex slot's whole subtree, otherwise only its first column.</summary>
+    /// <summary>Gets whether the settings apply to the complete nested value.</summary>
     public readonly bool Subtree = Subtree;
     /// <summary>Singleton</summary>
     public static readonly FlagUpdater CanReuse = new(UsageFlags.CanReuse);
@@ -58,7 +57,7 @@ public class FlagUpdater(UsageFlags Flags, bool Subtree = false) : IColModifier 
 /// plan the reading-order and default attributes assemble.
 /// </summary>
 public class ParamInfoPlus(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, IColModifier colModifier, IFallbackParserGetter fallbackParserGetter) : ParamInfo(Type, NullColHandler, NameComparer) {
-    /// <summary>When true, scalar negotiation accepts only the exact column type.</summary>
+    /// <summary>When true, a scalar value accepts only a column with the exact type.</summary>
     public override bool RequireExactType {
         get => field;
         set => field = value;
@@ -89,14 +88,12 @@ public interface IColModifier {
     /// <summary>A modifier that changes nothing.</summary>
     public static readonly IColModifier Nothing = new NothingInst();
     private class NothingInst : IColModifier {
-        /// <inheritdoc/>
         public void UpdateColModifier(ref ColModifier mod) { }
     }
-    /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
+    /// <summary>Applies settings before a slot is mapped.</summary>
     public void UpdateColModifier(ref ColModifier mod);
     /// <summary>
-    /// Set up the modifier as a complex slot's subtree is entered, a subtree-scope flag applies across
-    /// the subtree, a slot-scope one arms the swap for the subtree's first claimed column.
+    /// Applies settings when a nested value begins.
     /// </summary>
     public void EnterSubtree(ref ColModifier mod, int nbClaims) { }
 }
@@ -105,7 +102,6 @@ public interface IFallbackParserGetter {
     /// <summary>A fallback that supplies nothing, leaving an unmatched member an error.</summary>
     public static readonly IFallbackParserGetter Nothing = new NothingInst();
     private class NothingInst : IFallbackParserGetter {
-        /// <inheritdoc/>
         public DbItemPlan? FallbackTryGetParser(Type type) => null;
     }
     /// <summary>

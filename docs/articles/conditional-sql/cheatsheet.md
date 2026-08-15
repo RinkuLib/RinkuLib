@@ -1,24 +1,45 @@
-# Cheat sheet
+# Conditional SQL cheat sheet
 
-| Marker | Meaning | Example |
+## Values and handlers
+
+| Template | Supplied value | Generated SQL |
 | --- | --- | --- |
-| `@Var` | Plain parameter, static text | `WHERE TrackId = @Id` |
-| `?@Var` | Optional variable, prunes its footprint when unused | `AND Name = ?@Name` |
-| `/*Key*/` | Conditional footprint under a custom key | `/*ShowPrice*/UnitPrice` |
-| `/*@Var*/` | Conditional footprint tied to a variable | `/*@AlbumId*/AlbumId = ...` |
-| `|` `&` in a marker | Combine keys, or / and, left to right | `/*A|B&C*/` |
-| `!` in a marker | Negate a key, keep the footprint when it is absent, no space after it | `/*!All*/` |
-| `&AND` / `&OR` / `&,` | Weld footprints into one | `?@A &AND ?@B` |
-| `???` | Boundary a footprint cannot cross, emits nothing | `SELECT DISTINCT ??? /*X*/Id, Name` |
-| `?SELECT` | Dynamic projection, each column becomes a condition | `?SELECT AlbumId AS Id, Title FROM ...` |
-| `col!` in `?SELECT` | Always-kept column | `?SELECT AlbumId AS Id!, Title` |
-| `col&,` in `?SELECT` | Join columns under the last one's key | `?SELECT AlbumId AS Id&, Title` |
-| `/*Key*/col` in `?SELECT` | Extra key required on top of the column's own | `?SELECT Id, /*Admin*/Email` |
-| `@Var_N` | Number written into the SQL | `OFFSET @Skip_N ROWS` |
-| `@Var_S` | Quoted string literal | `Name = @Name_S` |
-| `@Var_R` | Raw SQL, unescaped, injection risk | `FROM @Table_R` |
-| `@Var_X` | Collection spread into parameters | `IN (@GenreIds_X)` |
-| `/*~ ... */` | Literal comment, kept in the output | `/*~ hint */SELECT ...` |
-| `-- ...` | Line comment, kept in the output, nothing in it is read | `SELECT Id -- @x is a note` |
+| `WHERE Id = @id` | `id = 7` | `WHERE Id = @id` |
+| `WHERE Id = ?@id` | no `id` | removed |
+| `OFFSET @skip_N ROWS` | `skip = 10` | `OFFSET 10 ROWS` |
+| `Name = @name_S` | `name = "O'Brien"` | `Name = 'O''Brien'` |
+| `ORDER BY @order_R` | `order = "Title DESC"` | `ORDER BY Title DESC` |
+| `IN (@ids_X)` | `ids = [2, 5]` | `IN (@ids_1, @ids_2)` |
+| `IN (?@ids_X)` | `ids = []` | condition removed |
 
-Details: [optional variables](optional-variables.md), [conditional markers](conditional-markers.md), [dynamic projection](dynamic-projection.md), [handlers](handlers.md).
+## Conditional keys
+
+| Template | Meaning |
+| --- | --- |
+| `/*Key*/column` | Keep the footprint when `Key` is active. |
+| `/*@value*/column` | Keep it when `@value` is supplied. |
+| `/*A&B*/column` | Require both keys. |
+| `/*A|B*/column` | Accept either key. |
+| `/*!All*/condition` | Keep it while `All` is inactive. |
+| `/*A|B&C*/column` | Evaluate left to right as `(A OR B) AND C`. |
+
+## Footprint controls
+
+| Template | Meaning |
+| --- | --- |
+| `?@a &AND ?@b` | Keep or remove both conditions together. |
+| `?@a &OR ?@b` | Keep or remove both alternatives together. |
+| `/*Key*/a&, b&, c` | Keep or remove the grouped list entries together. |
+| `DISTINCT??? /*Key*/column` | Prevent the column footprint from taking `DISTINCT`. |
+| `/*~ note */` | Emit the block comment as `/* note */`. |
+
+## Dynamic projection
+
+| Template | Meaning |
+| --- | --- |
+| `?SELECT Id, Title` | Use `Id` and `Title` as independent keys. |
+| `?SELECT AlbumId AS Id!, Title` | Always keep `Id`. |
+| `?SELECT AlbumId AS Id&, Title` | Keep both columns under the `Title` key. |
+| `?SELECT /*Admin*/Id` | Require both `Id` and `Admin`. |
+
+See full examples for [variables](variables.md), [collections](collections.md), [markers](markers.md), [dynamic projection](dynamic-projection.md), [handlers](handlers.md), and [template syntax](template-syntax.md).

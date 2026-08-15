@@ -5,11 +5,8 @@ using System.Runtime.Intrinsics;
 #endif
 
 namespace Rinku.Querying.Defaults;
-/// <summary>
-/// The optimized implementation of Mapper
-/// </summary>
 #if NET7_0_OR_GREATER
-public sealed unsafe class OptiMapper<T> : Mapper where T : ICaseComparer {
+internal sealed unsafe class OptiMapper<T> : Mapper where T : ICaseComparer {
 #else
 public sealed unsafe class AsciiMapper : Mapper {
 #endif
@@ -34,7 +31,6 @@ public sealed unsafe class AsciiMapper : Mapper {
         }
 #endif
     }
-    /// <inheritdoc />
     public override int GetIndex(string key) {
         if (key == null)
             return -1;
@@ -63,7 +59,6 @@ public sealed unsafe class AsciiMapper : Mapper {
             return -1;
         }
     }
-    /// <inheritdoc />
     public override int GetIndex(ReadOnlySpan<char> key) {
         int len = key.Length;
         fixed (char* keyPtr = &MemoryMarshal.GetReference(key)) {
@@ -113,7 +108,6 @@ public sealed unsafe class AsciiMapper : Mapper {
             step = sPtr[MapperHelper.GetIndexFromStep(step, keyPtr)];
         return step;
     }
-    /// <inheritdoc />
     protected override void DisposeUnmanaged() {
         uint* ptr = _steps;
         _steps = null;
@@ -129,34 +123,11 @@ public sealed unsafe class AsciiMapper : Mapper {
 }
 #if NET8_0_OR_GREATER
 
-/// <summary>
-/// Defines a contract for high-performance, static string comparison strategies.
-/// </summary>
-/// <remarks>
-/// This interface uses static abstract members to allow <see cref="OptiMapper{T}"/> 
-/// to perform comparisons without the overhead of virtual calls or object allocation.
-/// </remarks>
-public unsafe interface ICaseComparer {
-
-    /// <summary>
-    /// Performs a high-speed equality check between a raw character buffer and a string.
-    /// </summary>
-    /// <param name="keyPtr">The pointer to the start of the search key characters.</param>
-    /// <param name="candidate">The existing string from the mapper's key collection to compare against.</param>
-    /// <param name="len">The character count to compare.</param>
-    /// <remarks>
-    /// <strong>Safety Contract:</strong> This method does NOT perform bounds checking. 
-    /// The caller MUST ensure that <paramref name="keyPtr"/> is pinned and has a valid range of at least <paramref name="len"/>, 
-    /// and that <c>candidate.Length == len</c>. 
-    /// </remarks>
-    /// <returns><see langword="true"/> if the sequences match based on the strategy, otherwise <see langword="false"/>.</returns>
+internal unsafe interface ICaseComparer {
+    // keyPtr must stay pinned and contain at least len characters.
     static abstract bool Equals(char* keyPtr, string candidate, int len);
 }
-/// <summary>
-/// ASCII comparison strategy using SIMD (Vector128) acceleration.
-/// </summary>
-public struct AsciiStrategy : ICaseComparer {
-    /// <inheritdoc />
+internal struct AsciiStrategy : ICaseComparer {
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static unsafe bool Equals(char* keyPtr, string candidate, int len) {
@@ -203,11 +174,7 @@ public struct AsciiStrategy : ICaseComparer {
         }
     }
 }
-/// <summary>
-/// A comparison strategy for full Unicode support using standard .NET culture-aware rules.
-/// </summary>
-public unsafe struct UnicodeStrategy : ICaseComparer {
-    /// <inheritdoc />
+internal unsafe struct UnicodeStrategy : ICaseComparer {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static unsafe bool Equals(char* keyPtr, string candidate, int len) {
         return new ReadOnlySpan<char>(keyPtr, len)

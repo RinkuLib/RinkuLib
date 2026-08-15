@@ -8,8 +8,7 @@ namespace Rinku.Mapping;
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class AbortOnNullAttribute : Attribute;
 /// <summary>
-/// Builds the null rule for a member from its reflection metadata, the seam behind an attribute that changes
-/// how a column's <c>NULL</c> is treated.
+/// Creates the null rule supplied by an attribute on a member or parameter.
 /// </summary>
 public interface INullColHandlerMaker {
     /// <summary>
@@ -22,7 +21,7 @@ public interface INullColHandlerMaker {
 /// This is the column-level counterpart to the null-accepting result shapes.
 /// </summary>
 public interface INullColHandler {
-    /// <summary>Whether handling this null needs a jump target set up beforehand, used internally while emitting.</summary>
+    /// <summary>Returns whether the generated reader needs a target for this null rule.</summary>
     public bool NeedNullJumpSetPoint(Type closedType);
     /// <summary>Whether the branch this handler emits is short-form, an emit detail.</summary>
     public bool IsBr_S(Type closedType);

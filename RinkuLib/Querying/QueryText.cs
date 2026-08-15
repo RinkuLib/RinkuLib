@@ -51,32 +51,23 @@ public class RequiredHandlerValueException : RinkuBindingException {
         => Index = -1;
 }
 /// <summary>
-/// The compiled form of a template, ready to render the SQL for each run. Built once from the template and
-/// held on the <see cref="QueryCommand"/>, it drops the parts a run leaves out and fills the handler spots,
-/// returning the original template untouched when nothing was optional.
+/// Renders a query template for one run. Use <see cref="IQueryText.Parse(object[])"/> to inspect the SQL that
+/// a set of values produces without running a command.
 /// </summary>
-/// <remarks>
-/// What a template is made of settles when it is read and never changes after, so the kind of render it needs
-/// is picked once, here, rather than asked again on every run. <see cref="Create"/> returns the one that fits,
-/// and each carries only the work its own templates call for.
-/// </remarks>
 public abstract class QueryText : IQueryText {
-    /// <summary> The template as written, with the markers stripped. </summary>
+    /// <summary>Gets the template with conditional markers removed.</summary>
     public readonly string QueryString;
-    /// <summary> The template broken into the runs of text and handler spots a render walks. </summary>
+    /// <summary>Gets the literal text and handler parts of the template.</summary>
     public readonly QuerySegment[] Segments;
-    /// <summary> The optional parts and the keys that switch them on or off. </summary>
+    /// <summary>Gets the optional parts and their controlling keys.</summary>
     public readonly Condition[] Conditions;
     /// <summary>The number of key slots a run's values array must carry, checked by <see cref="Parse(object[])"/>.</summary>
     public readonly int RequiredVariablesLength;
     /// <inheritdoc/>
     public int HandlerValuesLength => NbHandlers;
-    /// <summary>The first key a handler renders, the offset the values span is indexed from.</summary>
-    protected readonly int HandlersStart;
-    /// <summary>How many keys a handler renders.</summary>
-    protected readonly int NbHandlers;
-    /// <summary>The buffer size a render is expected to grow to, learned from the runs so far.</summary>
-    protected int AverageLengthChunk;
+    private protected readonly int HandlersStart;
+    private protected readonly int NbHandlers;
+    private protected int AverageLengthChunk;
     private int NbExecuted;
     private const int MaxExecution = 1024;
 
@@ -89,14 +80,6 @@ public abstract class QueryText : IQueryText {
         HandlersStart = handlersStart;
         NbHandlers = nbHandlers;
     }
-    /// <summary>
-    /// The render for this template, chosen from what the template turned out to hold.
-    /// </summary>
-    /// <param name="queryString">The template with its markers stripped.</param>
-    /// <param name="segments">The runs of text and handler spots.</param>
-    /// <param name="conditions">The optional parts and their keys.</param>
-    /// <param name="handlersStart">The first key a handler renders.</param>
-    /// <param name="nbHandlers">How many keys a handler renders.</param>
     internal static QueryText Create(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers) {
         if (conditions.Length == 1 && segments.Length == 1)
             return new StaticQueryText(queryString, segments, conditions, handlersStart, nbHandlers);
@@ -115,10 +98,8 @@ public abstract class QueryText : IQueryText {
     public abstract string Parse(object?[] variables);
     /// <inheritdoc/>
     public abstract string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues);
-    /// <summary>Opens the builder a render writes into, sized from what the runs so far have needed.</summary>
     private protected ValueStringBuilder StartBuilder()
         => AverageLengthChunk <= 512 ? new ValueStringBuilder(512) : new ValueStringBuilder(AverageLengthChunk);
-    /// <summary>Folds a render's length into the size the next one starts at.</summary>
     private protected void UpdateAvg(int length) {
         if (NbExecuted > MaxExecution)
             return;
@@ -129,28 +110,17 @@ public abstract class QueryText : IQueryText {
     }
 }
 
-/// <summary>
-/// A template with nothing optional and no handler spot. Every run sends the same SQL, so a render is the
-/// template itself.
-/// </summary>
-public sealed class StaticQueryText : QueryText {
+internal sealed class StaticQueryText : QueryText {
     internal StaticQueryText(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers)
         : base(queryString, segments, conditions, handlersStart, nbHandlers) { }
-    /// <inheritdoc/>
     public override string Parse(object?[] variables) => QueryString;
-    /// <inheritdoc/>
     public override string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues) => QueryString;
 }
 
-/// <summary>
-/// A template with optional parts and no handler spot. A render decides what to keep and copies it, and needs
-/// to know only which keys a run supplied, never their values.
-/// </summary>
-public sealed class ConditionalQueryText : QueryText {
+internal sealed class ConditionalQueryText : QueryText {
     internal ConditionalQueryText(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers)
         : base(queryString, segments, conditions, handlersStart, nbHandlers) { }
 
-    /// <inheritdoc/>
     public override unsafe string Parse(object?[] variables) {
         Debug.Assert(variables.Length == RequiredVariablesLength);
         ref object? pVarBase = ref MemoryMarshal.GetArrayDataReference(variables);
@@ -218,7 +188,6 @@ public sealed class ConditionalQueryText : QueryText {
         return sb.ToStringAndDispose();
     }
 
-    /// <inheritdoc/>
     public override unsafe string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues) {
         Debug.Assert(usageMap.Length == RequiredVariablesLength);
         var sb = StartBuilder();
@@ -286,15 +255,10 @@ public sealed class ConditionalQueryText : QueryText {
     }
 }
 
-/// <summary>
-/// A template carrying at least one handler spot. A render writes those spots from the values the binding
-/// pass left, so this is the only kind that reads values at all.
-/// </summary>
-public sealed class HandledQueryText : QueryText {
+internal sealed class HandledQueryText : QueryText {
     internal HandledQueryText(string queryString, QuerySegment[] segments, Condition[] conditions, int handlersStart, int nbHandlers)
         : base(queryString, segments, conditions, handlersStart, nbHandlers) { }
 
-    /// <inheritdoc/>
     public override unsafe string Parse(object?[] variables) {
         Debug.Assert(variables.Length == RequiredVariablesLength);
         ref object? pVarBase = ref MemoryMarshal.GetArrayDataReference(variables);
@@ -371,7 +335,6 @@ public sealed class HandledQueryText : QueryText {
         return sb.ToStringAndDispose();
     }
 
-    /// <inheritdoc/>
     public override unsafe string Parse(Span<bool> usageMap, ReadOnlySpan<object?> handlerValues) {
         Debug.Assert(usageMap.Length == RequiredVariablesLength);
         Debug.Assert(handlerValues.Length == NbHandlers);

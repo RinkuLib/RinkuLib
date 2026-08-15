@@ -7,6 +7,7 @@ using Rinku.Mapping.Defaults;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using RinkuLib.Tests.Infrastructure;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -14,6 +15,7 @@ namespace RinkuLib.Tests.Mapping;
 [Collection("GlobalMappingConfiguration")]
 public class ConfigurationCacheTests {
     [Fact]
+    [DocumentationExample("parsers.md", "global-parser-invalidation")]
     public void Schema_invalidation_asks_a_retaining_command_before_disposal() {
         var maker = new DisposableValueMaker();
         TypeParser.TypeParserMakers.Insert(0, maker);
@@ -308,6 +310,7 @@ public class ConfigurationCacheTests {
     }
 
     [Fact]
+    [DocumentationExample("parsers.md", "parser-disposing-event")]
     public void Disposing_event_reports_the_exact_parser_and_runs_before_disposal() {
         var maker = new DisposableValueMaker();
         TypeParser.TypeParserMakers.Insert(0, maker);
@@ -355,12 +358,12 @@ public class ConfigurationCacheTests {
         Assert.Contains(TypeParser.ReadingInfos, entry => ReferenceEquals(entry.Parser, parser));
         var stateType = parser.GetType().GetGenericArguments()[1];
         var targetFields = stateType.GetFields(BindingFlags.Static | BindingFlags.NonPublic)
-            .Where(field => field.FieldType == typeof(object)).ToArray();
-        Assert.Contains(targetFields, field => field.GetValue(null) is Mapper);
+            .Where(field => field.FieldType == typeof(object[])).ToArray();
+        Assert.Contains(targetFields, field => field.GetValue(null) is object[] targets && targets.Any(target => target is Mapper));
 
         Assert.True(TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences) >= 1);
 
-        Assert.DoesNotContain(targetFields, field => field.GetValue(null) is Mapper);
+        Assert.DoesNotContain(targetFields, field => field.GetValue(null) is object[] targets && targets.Any(target => target is Mapper));
     }
 
     [Fact]
@@ -391,18 +394,18 @@ public class ConfigurationCacheTests {
     }
 
     [Fact]
-    public void Documented_custom_HashSet_shape_reads_distinct_rows() {
-        var maker = new ReusingBaseTypeParserMaker(
-            [typeof(HashSet<>)],
-            (definition, itemType, ref _) => typeof(HashSetParser<>).MakeGenericType(itemType));
+    [DocumentationExample("parsers.md", "custom-result-parser")]
+    [DocumentationExample("parsers.md", "register-result-parser")]
+    public void Documented_custom_Last_shape_reads_the_final_row() {
+        var maker = new ReusingBaseTypeParserMaker([typeof(Last<>)], (definition, itemType, ref _) => typeof(LastParser<>).MakeGenericType(itemType));
         TypeParser.TypeParserMakers.Insert(0, maker);
         try {
             ColumnInfo[] columns = [new("Value", typeof(int), false)];
-            using var reader = Rows.Reader(columns, [1], [1], [2]);
-            var parser = TypeParser.GetTypeParser<HashSet<int>>(columns);
+            using var reader = Rows.Reader(columns, [1], [2], [3]);
+            var parser = TypeParser.GetTypeParser<Last<int>>(columns);
 
             Assert.True(reader.Read());
-            Assert.Equal([1, 2], parser.Parse(reader).Result.Order());
+            Assert.Equal(3, parser.Parse(reader).Result.Value);
         }
         finally {
             TypeParser.TypeParserMakers.Remove(maker);
@@ -426,6 +429,7 @@ public class ConfigurationCacheTests {
     }
 
     [Fact]
+    [DocumentationExample("parsers.md", "schema-independent-parser")]
     public void Parser_decides_whether_different_schemas_share_one_global_entry() {
         var maker = new SchemaIndependentMaker();
         TypeParser.TypeParserMakers.Insert(0, maker);
@@ -460,6 +464,20 @@ public class ConfigurationCacheTests {
         Assert.True(first.CanParse(secondSchema));
         Assert.Equal((1, 2), firstValue);
         Assert.Equal((3, 4), secondValue);
+    }
+
+    [Fact]
+    [DocumentationExample("parsers.md", "get-parser")]
+    public void Direct_parser_reads_a_reader_positioned_on_its_first_row() {
+        ColumnInfo[] columns = [new("Value", typeof(int), false)];
+        ITypeParser<CacheValue> parser = TypeParser.GetTypeParser<CacheValue>(columns);
+        using var reader = Rows.Reader(columns, [42]);
+
+        CacheValue value = reader.Read()
+            ? parser.Parse(reader).Result
+            : parser.Default();
+
+        Assert.Equal(new CacheValue(42), value);
     }
 
     [Fact]
@@ -601,29 +619,25 @@ public class ConfigurationCacheTests {
         public override async ValueTask<(bool CanContinue, SchemaIndependentValue Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) => (await reader.ReadAsync(ct), new());
     }
 
-    private sealed class HashSetParser<T>(ITypeParser<T> element) : BaseTypeParser<HashSet<T>> {
+    private readonly record struct Last<T>(T Value);
+
+    private sealed class LastParser<T>(ITypeParser<T> element) : BaseTypeParser<Last<T>> {
         public override bool CanParse(ColumnInfo[] schema) => element.CanParse(schema);
         public override CommandBehavior Behavior => element.Behavior & ~CommandBehavior.SingleRow;
-        public override HashSet<T> Default() => [];
+        public override Last<T> Default() => throw new RinkuNoRowsException();
 
-        public override (bool CanContinue, HashSet<T> Result) Parse(DbDataReader reader) {
-            var set = new HashSet<T>();
-            bool canContinue;
-            do {
-                (canContinue, var item) = element.Parse(reader);
-                set.Add(item);
-            } while (canContinue);
-            return (false, set);
+        public override (bool CanContinue, Last<T> Result) Parse(DbDataReader reader) {
+            (bool more, T value) = element.Parse(reader);
+            while (more)
+                (more, value) = element.Parse(reader);
+            return (false, new Last<T>(value));
         }
 
-        public override async ValueTask<(bool CanContinue, HashSet<T> Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
-            var set = new HashSet<T>();
-            bool canContinue;
-            do {
-                (canContinue, var item) = await element.ParseAsync(reader, ct);
-                set.Add(item);
-            } while (canContinue);
-            return (false, set);
+        public override async ValueTask<(bool CanContinue, Last<T> Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default) {
+            (bool more, T value) = await element.ParseAsync(reader, ct);
+            while (more)
+                (more, value) = await element.ParseAsync(reader, ct);
+            return (false, new Last<T>(value));
         }
     }
 }

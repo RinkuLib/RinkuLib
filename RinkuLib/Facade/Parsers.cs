@@ -4,9 +4,8 @@ using Rinku.Internal;
 
 namespace Rinku;
 /// <summary>
-/// The columns <typeparamref name="T"/> maps to, worked out once from its shape and cached. A read-only view
-/// of how the mapper sees a type, the column names, their CLR types, and which are nullable, without touching
-/// a database.
+/// Describes the columns <typeparamref name="T"/> maps to without opening a database connection.
+/// Each item gives the column name, CLR type, and nullability.
 /// </summary>
 /// <typeparam name="T">The type whose columns to describe.</typeparam>
 public static class TypeSchema<T> {
@@ -19,8 +18,8 @@ public static class TypeSchema<T> {
 }
 
 /// <summary>
-/// Works out the columns a type maps to, its names, CLR types, and nullability, from a type, constructor, or
-/// method. This is the shape <see cref="TypeSchema{T}"/> caches, exposed for describing a type on your own terms.
+/// Describes the columns mapped by a type, constructor, or method.
+/// Use it when the generic <see cref="TypeSchema{T}"/> form does not fit.
 /// </summary>
 public static class SchemaExtractor {
     /// <summary>The columns of <paramref name="type"/>, taken from its longest constructor when it has one, otherwise its public properties and fields.</summary>

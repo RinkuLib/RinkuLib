@@ -4,14 +4,17 @@ using Rinku;
 using Rinku.Querying;
 using Rinku.Querying.Defaults;
 using RinkuLib.Tests.Infrastructure;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace RinkuLib.Tests.Templating;
 
+/// <summary>Includes the positional example from docs/articles/customization/parameters.md.</summary>
 public class PositionalParameterTests {
     private const string Sql = "SELECT * FROM Users WHERE Id = ? AND Status = ?";
 
     [Fact]
+    [DocumentationExample("parameters.md", "positional-parameter")]
     public void Manual_slots_keep_positional_sql_and_external_parameter_setup_controls_the_parameters() {
         var query = new QueryCommand(Sql, ["param0", "param1"], CommandType.Text);
         Assert.True(query.UpdateParamCache(0, new PositionalDbParamInfo()));

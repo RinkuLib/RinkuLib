@@ -9,14 +9,10 @@ namespace Rinku.Mapping;
 
 /// <summary>
 /// Builds the parser that reads a result into a given <c>T</c>. Cached parsers decide which schemas they can
-/// accept; when none can, the makers in <see cref="TypeParserMakers"/> are tried in order and the first to
-/// claim <c>T</c> builds one. Add your own maker to that list to teach the engine a new shape.
+/// accept. When none can, the makers in <see cref="TypeParserMakers"/> are tried in order and the first to
+/// claim <c>T</c> builds one. Add a maker to that list to register a custom result type.
 /// </summary>
 public static class TypeParser {
-    /// <summary>
-    /// The cache for parsers requested and root nullability. Copy-on-write so readers scan lock-free
-    /// while writers swap in a grown array under the cache's own lock.
-    /// </summary>
     internal static (INullColHandler NullColHandler, object Parser)[] ReadingInfos = [];
     /// <summary>
     /// Raised after a parser leaves the global cache and before it is disposed. A cache retaining the exact
@@ -41,8 +37,8 @@ public static class TypeParser {
     /// </summary>
     public static readonly TypeParserMakerCollection TypeParserMakers = [];
     /// <summary>
-    /// Installs an initial fallback and maker set once. The shipped implementation uses this during bootstrap
-    /// without coupling the parser cache to those implementations.
+    /// Installs the initial fallback and parser makers.
+    /// Call this once during startup when replacing all supplied defaults.
     /// </summary>
     public static bool TryInstallDefaults(ITypeParserMaker fallback, params ITypeParserMaker[] makers) {
         lock (TypeParserMakers) {
@@ -101,15 +97,11 @@ public static class TypeParser {
     /// Releases an owner's reference to <paramref name="parser"/> and disposes it only when neither the
     /// global cache nor another subscribed cache reports that it still retains the same instance.
     /// </summary>
-    /// <returns><see langword="true"/> when the parser was disposed; <see langword="false"/> while another cache retains it.</returns>
+    /// <returns><see langword="true"/> when the parser was disposed. Otherwise <see langword="false"/>.</returns>
     public static bool Release(ITypeParser parser) {
         ArgumentNullException.ThrowIfNull(parser);
         return TryDisposeParser(parser, ParserInvalidationMode.CheckUsage);
     }
-    /// <summary>
-    /// Removes an exact parser from the global cache only when no subscribed cache still retains it.
-    /// The global entry is restored when another owner reports usage.
-    /// </summary>
     internal static bool TryInvalidateIfUnreferenced(ITypeParser parser) {
         lock (TypeParserMakers) {
             var current = ReadingInfos;
@@ -206,14 +198,12 @@ public static class TypeParser {
     /// <summary>The root nullability implied by <typeparamref name="T"/> itself.</summary>
     public static INullColHandler GetDefaultNullColHandler<T>() => GetDefaultNullColHandler(typeof(T));
     /// <summary>
-    /// The parser for <typeparamref name="T"/> over a result's columns, reused when a cached parser accepts
-    /// the shape and built otherwise. The cache is a linear scan kept to hold memory down, not for
-    /// speed, so looking a parser up per query is slow, run commands through a cache that keeps the parser
-    /// after first use instead.
+    /// Gets a parser for <typeparamref name="T"/> that accepts the supplied columns.
+    /// Reuse the returned parser or a <see cref="QueryCommand"/> instead of calling this for every execution.
     /// </summary>
     /// <param name="cols">The columns the result carries.</param>
     /// <param name="nullColHandler">
-    /// An override of the root nullability, any <see cref="INullColHandler"/> implementation.
+    /// A custom root null rule.
     /// When omitted or equal to <see cref="GetDefaultNullColHandler"/>, the type's own nullability applies
     /// </param>
     public static ITypeParser<T> GetTypeParser<T>(ColumnInfo[] cols, INullColHandler? nullColHandler = null) {

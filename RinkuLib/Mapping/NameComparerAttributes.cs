@@ -43,7 +43,7 @@ public sealed class AltUpToAttribute(string AlternativeName, string KeyUpTo) : A
         => new NameMultiSpanKey(AlternativeName, KeyUpTo);
 }
 /// <summary>
-/// Builds the name matcher for a member from an attribute, the seam a custom matching attribute implements.
+/// Creates the name comparer supplied by an attribute on a member or parameter.
 /// </summary>
 public interface INameComparerMaker {
     /// <summary>

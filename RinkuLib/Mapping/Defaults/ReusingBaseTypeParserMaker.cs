@@ -9,16 +9,16 @@ namespace Rinku.Mapping.Defaults;
 /// <summary>Picks the parser type to build for a generic wrapper definition and its element type.</summary>
 public delegate Type GetParserType(Type def, Type itemType, ref object?[] ctorArgs);
 /// <summary>
-/// A ready-made <see cref="ITypeParserMaker"/> for a shape that wraps a single element type, like
-/// <c>List&lt;T&gt;</c> or a shape of your own. It builds the element parser and hands it to your wrapper's
-/// constructor, so one registration maps the wrapper for any <c>T</c>. This is the easy road to a new result
-/// shape, implement <see cref="ITypeParserMaker"/> directly only when it is not a generic wrapper.
+/// A base class for a result type that wraps one element type.
+/// Derive from this class for wrappers such as <c>Result&lt;T&gt;</c>.
+/// Implement <see cref="ITypeParserMaker"/> directly for other result types.
 /// </summary>
-public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetParserType GetParserType, GetParserType? GetParserTypeWhenSimple = null) : ITypeParserMaker {
+public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetParserType GetParserType, GetParserType? GetParserTypeWhenSimple = null, Func<Type, Type>? GetElementType = null) : ITypeParserMaker {
     private readonly Type[] acceptedGenericDefinitions = acceptedGenericDefinitions;
     private readonly INullColHandler?[] elementNullability = GetElementNullability(acceptedGenericDefinitions);
     private readonly GetParserType getParserType = GetParserType;
     private readonly GetParserType? getParserTypeWhenSimple = GetParserTypeWhenSimple;
+    private readonly Func<Type, Type>? getElementType = GetElementType;
     /// <summary>
     /// The element nullability a wrapper definition declares on its value parameter, resolved by
     /// <see cref="ParamInfo.GetDeclaredNullColHandler"/> (e.g. the <see cref="MaybeNullAttribute"/> on
@@ -88,6 +88,8 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
 
         var def = type.GetGenericTypeDefinition();
         var itemType = type.GetGenericArguments()[0];
+        if (getElementType is not null)
+            itemType = getElementType(itemType);
 
         INullColHandler? elementHandler;
         if (nullColHandler != TypeParser.GetDefaultNullColHandler<T>())

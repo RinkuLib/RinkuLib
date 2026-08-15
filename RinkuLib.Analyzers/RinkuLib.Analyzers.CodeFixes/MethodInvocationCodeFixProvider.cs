@@ -53,9 +53,14 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
             CodeAction.Create("Generate invocation", [.. actions], isInlinable: false),
             diagnostic);
     }
-    private static async Task<Document> ApplyFixForMethodAsync(Document document, ExpressionSyntax expression, IMethodSymbol method, CancellationToken ct) {
-        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
-        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
+
+    private static async Task<Document> ApplyFixForMethodAsync(
+        Document document,
+        ExpressionSyntax expression,
+        IMethodSymbol method,
+        CancellationToken cancellationToken) {
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
 
         if (root is null || model is null)
             return document;
@@ -71,8 +76,8 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
             return document;
 
         var available = CollectAvailableSymbols(model, targetExpression);
-        bool callerIsStatic = IsStaticContext(caller, model, ct);
-        var callerType = GetCallerType(caller, model, ct);
+        var callerIsStatic = IsStaticContext(caller, model, cancellationToken);
+        var callerType = GetCallerType(caller, model, cancellationToken);
 
         var arguments = new List<ArgumentSyntax>();
         var missing = new List<IParameterSymbol>();
@@ -113,18 +118,21 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
         return document.WithSyntaxRoot(newRoot);
     }
     private static SyntaxNode? FindCaller(SyntaxNode node)
-        => node.Ancestors().FirstOrDefault(n =>
-            n is MethodDeclarationSyntax
+        => node.Ancestors().FirstOrDefault(candidate =>
+            candidate is MethodDeclarationSyntax
             or ConstructorDeclarationSyntax
             or LocalFunctionStatementSyntax);
 
-    private static bool IsStaticContext(SyntaxNode caller, SemanticModel model, CancellationToken ct) {
-        var symbol = model.GetDeclaredSymbol(caller, ct);
-        return symbol is IMethodSymbol m && m.IsStatic;
+    private static bool IsStaticContext(SyntaxNode caller, SemanticModel model, CancellationToken cancellationToken) {
+        var symbol = model.GetDeclaredSymbol(caller, cancellationToken);
+        return symbol is IMethodSymbol method && method.IsStatic;
     }
 
-    private static INamedTypeSymbol? GetCallerType(SyntaxNode caller, SemanticModel model, CancellationToken ct) {
-        var symbol = model.GetDeclaredSymbol(caller, ct);
+    private static INamedTypeSymbol? GetCallerType(
+        SyntaxNode caller,
+        SemanticModel model,
+        CancellationToken cancellationToken) {
+        var symbol = model.GetDeclaredSymbol(caller, cancellationToken);
         return symbol?.ContainingType;
     }
 
@@ -139,11 +147,11 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
     }
 
     private static ExpressionSyntax? TryDirectMatch(IParameterSymbol parameter, List<ISymbol> available, bool callerIsStatic) {
-        foreach (var s in available) {
-            if (callerIsStatic && s is IFieldSymbol or IPropertySymbol && !s.IsStatic)
+        foreach (var symbol in available) {
+            if (callerIsStatic && symbol is IFieldSymbol or IPropertySymbol && !symbol.IsStatic)
                 continue;
-            if (NameMatches(s, parameter) && TypeMatches(s, parameter)) {
-                return SyntaxFactory.IdentifierName(s.Name);
+            if (NameMatches(symbol, parameter) && TypeMatches(symbol, parameter)) {
+                return SyntaxFactory.IdentifierName(symbol.Name);
             }
         }
         return null;
@@ -215,7 +223,7 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
         var additions = new List<ParameterSyntax>();
 
         foreach (var p in missing) {
-            bool exists = paramList.Parameters.Any(existing =>
+            var exists = paramList.Parameters.Any(existing =>
                 string.Equals(existing.Identifier.ValueText, p.Name, StringComparison.Ordinal));
 
             if (exists)
@@ -250,18 +258,18 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
         };
     }
 
-    private static bool NameMatches(ISymbol s, IParameterSymbol p)
-        => string.Equals(s.Name, p.Name, StringComparison.OrdinalIgnoreCase);
+    private static bool NameMatches(ISymbol symbol, IParameterSymbol parameter)
+        => string.Equals(symbol.Name, parameter.Name, StringComparison.OrdinalIgnoreCase);
 
-    private static bool TypeMatches(ISymbol s, IParameterSymbol p)
-        => SymbolEqualityComparer.Default.Equals(GetSymbolType(s), p.Type);
+    private static bool TypeMatches(ISymbol symbol, IParameterSymbol parameter)
+        => SymbolEqualityComparer.Default.Equals(GetSymbolType(symbol), parameter.Type);
 
-    private static ITypeSymbol? GetSymbolType(ISymbol s)
-        => s switch {
-            ILocalSymbol l => l.Type,
-            IParameterSymbol p => p.Type,
-            IFieldSymbol f => f.Type,
-            IPropertySymbol p => p.Type,
+    private static ITypeSymbol? GetSymbolType(ISymbol symbol)
+        => symbol switch {
+            ILocalSymbol local => local.Type,
+            IParameterSymbol parameter => parameter.Type,
+            IFieldSymbol field => field.Type,
+            IPropertySymbol property => property.Type,
             _ => null
         };
 }

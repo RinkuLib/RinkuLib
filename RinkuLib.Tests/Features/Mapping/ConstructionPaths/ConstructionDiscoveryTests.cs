@@ -70,7 +70,7 @@ public class ConstructionDiscoveryTests {
 
     public record NestedReuseBeforeTail(
         [MayReuseCol] NestedReuseValues Child,
-        Dictionary<string, object> Tail) : IDbReadable;
+        [NoName] Dictionary<string, object> Tail) : IDbReadable;
 
     public record NestedReuseValues(int A, int B) : IDbReadable;
 

@@ -5,6 +5,7 @@ using Rinku.Mapping;
 using Rinku.Mapping.Defaults;
 using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace RinkuLib.Tests.Mapping;
@@ -50,6 +51,7 @@ public class CustomDatabaseTypeTests {
     }
 
     [Fact]
+    [DocumentationExample("registration.md", "scalar-registration")]
     public void Registered_conversions_work_for_scalars_members_and_nullable_targets() {
         TypeParsingInfo.AddOrSet(typeof(RegisteredDate), RegisteredDateTypeInfo.Instance);
         TypeParsingInfo.AddOrSet(typeof(RegisteredNames), RegisteredNamesTypeInfo.Instance);

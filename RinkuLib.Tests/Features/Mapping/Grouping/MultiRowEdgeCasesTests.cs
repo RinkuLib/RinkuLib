@@ -6,6 +6,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Rinku.Mapping.Defaults;
 using Rinku.Mapping.Parsers;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace RinkuLib.Tests.DbParsing;
@@ -70,11 +71,10 @@ public class MultiRowEdgeCasesTests {
             previousIndex = column;
             return true;
         }
-        public void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint, out object? targetObject) {
+        public void Emit(ColumnInfo[] cols, Generator generator, NullSetPoint nullSetPoint) {
             generator.Emit(OpCodes.Ldarg_1);
             generator.Emit(OpCodes.Ldc_I4, column);
             generator.Emit(OpCodes.Callvirt, typeof(DbDataReader).GetMethod(nameof(DbDataReader.GetInt32), [typeof(int)])!);
-            targetObject = null;
         }
     }
 
@@ -129,6 +129,7 @@ public class MultiRowEdgeCasesTests {
     }
 
     [Fact]
+    [DocumentationExample("custom-multi-row-types.md", "aggregate-multi-row")]
     public void An_aggregate_folds_every_row_into_one_value() {
         ColumnInfo[] cols = [new("Amount", typeof(double), false)];
         var parser = TypeParser.GetTypeParser<Average>(cols);
@@ -282,6 +283,7 @@ public class MultiRowEdgeCasesTests {
     public sealed record RegionGroup(int Ordinal, string Region, List<int> Codes) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("grouping.md", "custom-group-rule")]
     public void A_rule_and_attribute_defined_outside_the_library_drive_grouping() {
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<List<RegionGroup>>(cols);
@@ -301,6 +303,7 @@ public class MultiRowEdgeCasesTests {
     public sealed record RuntimeTypeKeyed(int Ordinal, string Region, List<int> Codes) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("grouping.md", "runtime-group-key")]
     public void SetGroupKey_sets_a_type_level_rule_at_runtime() {
         TypeParsingInfoHelper.SetGroupKey<RuntimeTypeKeyed>(new LooseColumnRule("Region"));
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
@@ -319,6 +322,7 @@ public class MultiRowEdgeCasesTests {
     public sealed record RuntimePathKeyed(int Ordinal, string Region, List<int> Codes) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("grouping.md", "runtime-path-group-key")]
     public void SetGroupKey_sets_a_construction_level_rule_at_runtime() {
         TypeParsingInfo.GetOrAdd<RuntimePathKeyed>()
             .GetConstruction(typeof(int), typeof(string), typeof(List<int>)).GroupKey = new LooseColumnRule("Region");
@@ -339,6 +343,7 @@ public class MultiRowEdgeCasesTests {
     public sealed record RuntimeClearTypeKey(int Ordinal, string Region, List<int> Codes) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("grouping.md", "runtime-group-key")]
     public void ClearGroupKey_removes_a_type_attribute_and_restores_inference() {
         TypeParsingInfoHelper.ClearGroupKey<RuntimeClearTypeKey>();
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
@@ -695,6 +700,7 @@ public class MultiRowEdgeCasesTests {
     public sealed record Ledger(List<int> Lines, [GroupKey] int AccountId) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("grouping.md", "parameter-group-key")]
     public void A_parameter_key_after_the_collection_resolves_the_throw_and_groups() {
         ColumnInfo[] cols = [new("Lines", typeof(int), false), new("AccountId", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<List<Ledger>>(cols);
@@ -1162,6 +1168,7 @@ public class MultiRowEdgeCasesTests {
     public sealed record ColumnKeyAccount(string Holder, List<int> Entries) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("grouping.md", "column-group-key")]
     public void A_column_name_key_on_the_type_groups_with_no_member() {
         ColumnInfo[] cols = [new("Number", typeof(int), false), new("Holder", typeof(string), false), new("Entries", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<List<ColumnKeyAccount>>(cols);
@@ -1286,6 +1293,7 @@ public class MultiRowEdgeCasesTests {
     }
 
     [Fact]
+    [DocumentationExample("grouping.md", "method-group-key")]
     public void A_type_level_static_method_boundary_groups_by_the_method_logic() {
         ColumnInfo[] cols = [new("SessionDate", typeof(DateTime), false), new("Values", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<List<TypeMethodBoundary>>(cols);
@@ -1320,6 +1328,7 @@ public class MultiRowEdgeCasesTests {
     }
 
     [Fact]
+    [DocumentationExample("grouping.md", "grouping-precedence")]
     public void A_path_level_key_overrides_the_type_level_key() {
         var d1 = new DateTime(2026, 7, 30);
         var d2 = new DateTime(2026, 7, 31);

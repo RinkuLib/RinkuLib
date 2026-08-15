@@ -14,29 +14,6 @@ internal enum CondFlags : byte {
     NextIsSection = 0b_0100_0000,
     Finished = 0b_1000_0000,
 }
-/// <summary>
-/// The footprint of a condition marker within the query.
-/// Maps a condition key to the specific segment of the parsed string it influences.
-/// </summary>
-/// <remarks>
-/// <para>This structure captures the 'where and what' for the next building phase. 
-/// It tracks the range of text associated with a condition, allowing the final builder 
-/// to decide which segments to include in the resulting SQL.</para>
-/// <list type="bullet">
-/// <item>
-/// <description><b>Condition Markers:</b> Can be variables (@Var or :Var) or comments (/*Marker*/). 
-/// Comments provide more flexibility for complex boolean logic (e.g., /*A&amp;B*/).</description>
-/// </item>
-/// <item>
-/// <description><b>Required Variables:</b> If <see cref="Flags"/> is <see cref="CondFlags.IsRequired"/>, the marker represents 
-/// a mandatory parameter (variable) rather than a conditional segment.</description>
-/// </item>
-/// <item>
-/// <description><b>Footprint Mapping:</b> The range from <see cref="StartIndex"/> to <see cref="EndIndex"/> 
-/// defines the text segment associated with the condition key.</description>
-/// </item>
-/// </list>
-/// </remarks>
 internal struct CondInfo {
     public const char NotCommentChar = '!';
     public const char AndComment = (char)1;
@@ -46,29 +23,12 @@ internal struct CondInfo {
     public const char None = (char)3;
     public const char Special = (char)8;
     public static bool IsComment(char type) => type <= OrComment;
-    /// <summary>The identifier for the condition, the key (e.g., a variable name or a name in comment).</summary>
     public string Cond { get; private set; }
-    /// <summary>
-    /// The start of the string segment influenced by this condition.
-    /// </summary>
     public int StartIndex { get; private set; }
-    /// <summary>The index where the variable or marker token itself begins in the query string.</summary>
     public int VarIndex { get; private set; }
-    /// <summary>
-    /// The category of the condition (e.g., None, Comment-based, Select-based, Special...).
-    /// Decides how the segment is processed in the next phase.
-    /// </summary>
     public char Type { get; private set; }
-    /// <summary>
-    /// A bitmask tracking nesting depth (Parens/CASE) and SQL section context.
-    /// Or excesses of current and previous segment
-    /// </summary>
     public ulong ParMapOrExcesses { get; private set; }
     public CondFlags Flags { get; set; }
-    /// <summary>The ending index of the SQL segment controlled by this condition.</summary>
-    /// <remarks>
-    /// May carry the previous segment excess before being finished
-    /// </remarks>
     public int EndIndex { get; private set; }
     public static CondInfo NewRequired(string Cond, char Type, int VarIndex)
         => new() {
@@ -96,9 +56,6 @@ internal struct CondInfo {
                ParMapOrExcesses = parMap,
                EndIndex = prevExcessExcess
         };
-    /// <summary>
-    /// Closes the condition's footprint and updates section-related flags in the ParMap.
-    /// </summary>
     public void Finish(int endIndex, bool nextIsSection) {
         ParMapOrExcesses = (ulong)EndIndex;
         Flags |= CondFlags.Finished;
@@ -121,40 +78,20 @@ internal struct CondInfo {
         StartIndex = StartInd;
 
     }
-    /// <summary>
-    /// Re-records the nesting level the marker sits at. A marker opening a parenthesis is read before that
-    /// level is known to be a section level, so it is recorded one bit short and has to be corrected once
-    /// the bit is set, or nothing at that level ever matches it to close its footprint.
-    /// </summary>
     public void UpdateNestingLevel(ulong parMap) => ParMapOrExcesses = parMap;
+    public void SetType(char type) => Type = type;
     public readonly bool IsFinished => Flags.HasFlag(CondFlags.Finished);
     public readonly bool IsRequired => Flags.HasFlag(CondFlags.IsRequired);
     public readonly bool NeedSectionToFinish => Flags.HasFlag(CondFlags.NeedSectionToFinish);
     public readonly bool NextSegmentIsSection => Flags.HasFlag(CondFlags.NextIsSection);
     public readonly int PrevSegmentExcess => (int)(uint)ParMapOrExcesses;
 }
-/// <summary>
-/// A pointer-based scanner that identifies condition markers and maps their footprints while normalizing the query string.
-/// </summary>
-/// <remarks>
-/// <para>1. <b>Condition Mapping:</b> Identifies variables (using the specified <c>variableChar</c> like '@' or ':') 
-/// and /*Comments*/ as synonymous condition markers. Comments allow for more flexibility.</para>
-/// <para>2. <b>Nesting &amp; Scope:</b> Uses a 62-bit stack (<c>ParMap</c>) to track depth. '(' and 'CASE' increment depth, 
-/// while ')' and 'END' decrement it, ensuring markers are closed at the correct logical boundary.</para>
-/// <para>3. <b>Select Extraction:</b> When enabled, the parser treats individual columns in the SELECT clause 
-/// as conditional markers, allowing specific columns to be toggled or identified in the next phase.</para>
-/// </remarks>
-public unsafe ref struct QueryExtractor {
-    /// <summary>Identifier for optional conditions (default '?'). e.g., ?@VarName.</summary>
+internal unsafe ref struct QueryExtractor {
     public const char OptionalVariableIdentifier = '?';
-    /// <summary>Identifier for joining two (or more) footprint together (default '&amp;'). e.g., (SELECT A&amp;, B) or (WHERE A &gt; @A &amp;AND B &lt; @B)</summary>
     public const char JoinAndOrChar = '&';
-    /// <summary>Identifier that indicate that a column in a dynamic projection is always used</summary>
     public const char SelectColumnAlwaysUsed = '!';
-    /// <summary>Identifier to indicate that a comment should not be a condition, but actually a comment</summary>
     public const char CommentAsCommentChar = '~';
 #pragma warning disable CA2211
-    /// <summary>Identifier to indicate that a variable is a handled variable</summary>
     public static char HandlerChar = '_';
 #pragma warning restore CA2211
     private int Length;
@@ -177,26 +114,10 @@ public unsafe ref struct QueryExtractor {
     private ulong SelectExtractionParMap;
     private PooledArray<CondInfo> Conditions;
     private uint LastCondSectionLength;
-    /// <summary>
-    /// Performs a single-pass scan of the query to identify and map condition footprints.
-    /// </summary>
-    /// <param name="query">The raw SQL input to be parsed.</param>
-    /// <param name="variableChar">The character prefix used to identify variables (e.g., '@' or ':').</param>
-    /// <param name="newQuery">The resulting normalized SQL string, cleaned of condition markers and formatted for usage.</param>
-    /// <returns>
-    /// A <see cref="PooledArray{CondInfo}.Locked"/> collection containing the footprints and other metadata for every condition and variable 
-    /// found.
-    /// </returns>
-    /// <exception cref="Exception">Thrown on invalid syntax, such as unclosed comments, quotes, or excessive nesting depth.</exception>
     internal static PooledArray<CondInfo>.Locked Segment(string query, char variableChar, out string newQuery) {
         var seg = new QueryExtractor();
         return seg.SegmentQuery(query, variableChar, out newQuery);
     }
-    /// <summary>
-    /// The primary scanning loop. It uses a single pass with raw pointers to minimize allocations.
-    /// The 'Builder' is a normalization buffer, while 'Conditions' tracks the metadata
-    /// for segments that can be toggled later.
-    /// </summary>
     private PooledArray<CondInfo>.Locked SegmentQuery(string query, char variableChar, out string newQuery) {
         Length = query.Length;
         if (Length <= 1)
@@ -220,6 +141,8 @@ public unsafe ref struct QueryExtractor {
             LastChar = p + Length;
             for (; CurrentChar < LastChar; CurrentChar++) {
                 Builder[BuilderInd++] = *CurrentChar;
+                if (CurrentQuote == 0 && PrevBoundary && *CurrentChar == '$' && TryManageDollarQuote())
+                    continue;
                 if (IsBoundary(*CurrentChar)) {
                     ManageBoundary();
                     continue;
@@ -420,11 +343,6 @@ public unsafe ref struct QueryExtractor {
         CurrentChar--;
         return true;
     }
-    /// <param name="currentCharAddedToBuilder">Whether the <c>/</c> already went into the builder.</param>
-    /// <param name="minStart">
-    /// The earliest index a clause marker's footprint may start at. A marker sitting right after an opening
-    /// parenthesis would otherwise walk back onto it and prune it, leaving its closing half behind.
-    /// </param>
     private bool TryManageComment(bool currentCharAddedToBuilder, int minStart = 0) {
         if (*CurrentChar != '/' || CurrentChar[1] != '*')
             return false;
@@ -446,6 +364,7 @@ public unsafe ref struct QueryExtractor {
         }
         var type = CondInfo.AndComment;
         var nbCond = 0;
+        int firstCond = Conditions.Length;
         int ind;
         while (true) {
             var cond = GetCommentString(out var isNot);
@@ -461,6 +380,7 @@ public unsafe ref struct QueryExtractor {
             type = *CurrentChar == CondInfo.OrCommentChar ? CondInfo.OrComment : CondInfo.AndComment;
             CurrentChar++;
         }
+        nbCond = RewriteMarkerLeftToRight(firstCond, nbCond);
         CurrentChar += 2;
         SkipWhiteSpace();
         Debug.Assert(nbCond > 0, "the marker loop always collects at least one condition");
@@ -482,11 +402,36 @@ public unsafe ref struct QueryExtractor {
         }
         return true;
     }
-    /// <summary>
-    /// Copies a <c>--</c> comment through to the end of its line without reading it, the opening dash
-    /// already being in the builder. What sits in one is text, so a variable or a marker written there is
-    /// neither, and the line stays in the query as written.
-    /// </summary>
+    private int RewriteMarkerLeftToRight(int firstCond, int count) {
+        if (count < 3)
+            return count;
+        var groups = new List<List<CondInfo>> { new() { Conditions[firstCond] } };
+        for (int i = 1; i < count; i++) {
+            var condition = Conditions[firstCond + i];
+            if (condition.Type == CondInfo.OrComment) {
+                for (int group = 0; group < groups.Count; group++)
+                    groups[group].Add(condition);
+                continue;
+            }
+            groups.Add([condition]);
+        }
+        int expandedCount = 0;
+        for (int group = 0; group < groups.Count; group++)
+            expandedCount += groups[group].Count;
+        if (expandedCount == count)
+            return count;
+        for (int i = 0; i < count; i++)
+            Conditions.RemoveAt(Conditions.Length - 1);
+        for (int group = 0; group < groups.Count; group++) {
+            var conditions = groups[group];
+            for (int i = 0; i < conditions.Count; i++) {
+                var condition = conditions[i];
+                condition.SetType(i == 0 ? CondInfo.AndComment : CondInfo.OrComment);
+                Conditions.Add(condition);
+            }
+        }
+        return expandedCount;
+    }
     private void ManageLineComment() {
         while (CurrentChar + 1 < LastChar && CurrentChar[1] != '\n' && CurrentChar[1] != '\r')
             Builder[BuilderInd++] = *++CurrentChar;
@@ -535,6 +480,40 @@ public unsafe ref struct QueryExtractor {
         }
         return false;
     }
+    private bool TryManageDollarQuote() {
+        var delimiterEnd = CurrentChar + 1;
+        if (delimiterEnd >= LastChar)
+            return false;
+        if (*delimiterEnd != '$') {
+            if (!IsDollarTagStart(*delimiterEnd))
+                return false;
+            do delimiterEnd++; while (delimiterEnd < LastChar && IsDollarTagPart(*delimiterEnd));
+            if (delimiterEnd >= LastChar || *delimiterEnd != '$')
+                return false;
+        }
+        int delimiterLength = (int)(delimiterEnd - CurrentChar) + 1;
+        var closing = delimiterEnd + 1;
+        while (LastChar - closing >= delimiterLength) {
+            if (*closing == '$' && DollarDelimiterMatches(CurrentChar, closing, delimiterLength)) {
+                var closingEnd = closing + delimiterLength - 1;
+                for (var source = CurrentChar + 1; source <= closingEnd; source++)
+                    Builder[BuilderInd++] = *source;
+                CurrentChar = closingEnd;
+                PrevBoundary = false;
+                return true;
+            }
+            closing++;
+        }
+        return false;
+    }
+    private static bool DollarDelimiterMatches(char* opening, char* closing, int length) {
+        for (int i = 1; i < length; i++)
+            if (opening[i] != closing[i])
+                return false;
+        return true;
+    }
+    private static bool IsDollarTagStart(char c) => c == '_' || char.IsLetter(c);
+    private static bool IsDollarTagPart(char c) => c == '_' || char.IsLetterOrDigit(c);
     private void RaiseParentesis(bool checkSection) {
         if (ParMap >= 0x8000000000000000UL)
             throw new RinkuTemplateException(ErrorCodes.ScopeTooDeep, "cannot have more than 63 level deep of parentesis / cases");
@@ -628,15 +607,6 @@ public unsafe ref struct QueryExtractor {
         "then",
         ";"
     ];
-    /// <summary>
-    /// Whether a section keyword starts here, and how long it is.
-    /// </summary>
-    /// <remarks>
-    /// The character after a keyword is read first, since that is what tells a keyword from a word that
-    /// merely starts like one, and a keyword longer than the text that is left cannot be there at all. The
-    /// text ends at <see cref="LastChar"/>, which addresses the terminator and is a boundary like any other,
-    /// so a keyword closing the query still matches while nothing is read past it.
-    /// </remarks>
     private bool MatchSection(char* ptr, out int secLen) {
         var remaining = (int)(LastChar - ptr);
         for (int i = 0; i < SQLSections.Length; i++) {
@@ -654,16 +624,6 @@ public unsafe ref struct QueryExtractor {
         secLen = 0;
         return false;
     }
-    /// <summary>Closes every footprint that ends at this point, naming a projection's column as it goes.</summary>
-    /// <param name="segmentEndIndex">Where the footprints being closed end.</param>
-    /// <param name="isSection">Whether a section keyword starts here.</param>
-    /// <param name="currentExcess">The boundary token's length, carried for the trim.</param>
-    /// <param name="keepUnstartedColumn">
-    /// Whether a dynamic projection's column that has not begun yet is left open. A boundary that ends a
-    /// column names it from the text in front of it, and a wall placed before the first column has only the
-    /// modifier it was written to isolate. The wall says the column starts after it, so the column waits for
-    /// the boundary that really ends it.
-    /// </param>
     private bool UpdateConditionsEnd(int segmentEndIndex, bool isSection, uint currentExcess, bool keepUnstartedColumn = false) {
         int j = Conditions.Length - 1;
         var nbSectionComment = (int)(LastCondSectionLength >> 16);

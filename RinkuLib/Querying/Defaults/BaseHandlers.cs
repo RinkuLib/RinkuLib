@@ -35,7 +35,7 @@ public class StringVariableHandler() : IQuerySegmentHandler {
 /// Injects a raw value directly into the SQL text without any escaping or modification.
 /// </summary>
 /// <remarks>
-/// <b>Caution:</b> Use this only for trusted values, such as dynamically generated 
+/// Use this only for trusted values such as dynamically generated
 /// table names or identifiers that cannot be parameterized.
 /// </remarks>
 public class RawVariableHandler() : IQuerySegmentHandler {
@@ -53,8 +53,8 @@ public class RawVariableHandler() : IQuerySegmentHandler {
 /// Injects a number directly into the SQL text.
 /// </summary>
 /// <remarks>
-/// Optimized for numeric values that do not require quotes or escaping. An enum writes its numeric value, a
-/// bool writes 1 or 0, and any other numeric type is written with invariant formatting.
+/// Use it for values that do not need quotes or escaping. An enum writes its number, a bool writes 1 or 0,
+/// and other numeric values use invariant formatting.
 /// </remarks>
 public class NumberVariableHandler() : IQuerySegmentHandler {
     /// <summary>Singleton for <see cref="NumberVariableHandler"/></summary>
@@ -73,7 +73,10 @@ public class NumberVariableHandler() : IQuerySegmentHandler {
                 sb.Append(b ? '1' : '0');
                 break;
             case Enum e:
-                sb.Append(Convert.ToInt64(e).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                if (Enum.GetUnderlyingType(e.GetType()) == typeof(ulong))
+                    sb.Append(Convert.ToUInt64(e).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                else
+                    sb.Append(Convert.ToInt64(e).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 break;
             default:
                 if (value is IFormattable formattable) {

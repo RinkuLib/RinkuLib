@@ -2,39 +2,29 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace Rinku.Mapping;
-/// <summary>Use to actually create the comparer</summary>
+/// <summary>Creates the name comparer used by one member or parameter.</summary>
 public delegate INameComparer NameComparerFactory(Type type, string? name, string[] altNames, object[] attributes, object? param, List<INameComparerMaker> nameComparerMakers);
 
 /// <summary>Requires the database column type to equal the parameter or member type.</summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class ExactTypeAttribute : Attribute;
 /// <summary>
-/// Handles the standard negotiation flow for constructor parameters, properties, and fields.
+/// Describes how one constructor parameter, property, or field matches and reads a column.
+/// Change its name and null rules when the defaults do not match the database.
 /// </summary>
-/// <remarks>
-/// <para><b>I. Negotiation Strategy:</b></para>
-/// This class implements a two-tiered resolution process based on the global registry. 
-/// If the target type is <b>Registered</b> in <see cref="TypeParsingInfo"/>, it triggers 
-/// a recursive negotiation to build a complex object. If the type is unregistered, 
-/// it attempts a direct column-to-value mapping.
-/// 
-/// <para><b>II. Thread-Safe Configuration:</b></para>
-/// It maintains the state for <see cref="INameComparer"/> and <see cref="INullColHandler"/> 
-/// using <see cref="Interlocked"/> operations, allowing for dynamic updates to naming 
-/// and null-handling rules during the registration phase.
-/// </remarks>
 public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer NameComparer) {
-    private static Action<ParamInfo>? _registrationInitializer;
+    private static Func<ParamInfo, ParamInfo>? _registrationInitializer;
     /// <summary>
-    /// Adjusts each matcher produced by <see cref="Create"/> before it is returned to the registration path.
-    /// Configure this once during application startup. Direct construction with <see cref="ParamInfo(Type, INullColHandler, INameComparer)"/>
-    /// is the lower-level escape hatch and does not invoke it.
+    /// Gets or sets the callback applied to every slot created by <see cref="Create"/>.
+    /// Set it during application startup to apply a naming or null rule across the application.
+    /// Return the received slot after changing it or return a replacement.
+    /// Slots created directly do not call it.
     /// </summary>
-    public static Action<ParamInfo>? RegistrationInitializer {
+    public static Func<ParamInfo, ParamInfo>? RegistrationInitializer {
         get => Volatile.Read(ref _registrationInitializer);
         set => Volatile.Write(ref _registrationInitializer, value);
     }
-    /// <summary>A default type to use for singleton, should only be used in transient ParamInfos</summary>
+    /// <summary>Marks a temporary slot whose type will be supplied later.</summary>
     public static readonly Type NoType = typeof(NoTypeType);
     private static class NoTypeType;
     /// <summary>
@@ -52,11 +42,10 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         set => Interlocked.Exchange(ref field, value);
     } = NameComparer;
     /// <summary>
-    /// The C# type of the parameter or member. (Can be generic)
+    /// The type of the parameter or member.
     /// </summary>
     public Type Type = Type;
-    /// <summary>Whether scalar negotiation requires the exact column type.</summary>
-    /// <remarks>The stateful form lives on <see cref="ParamInfoPlus"/> so ordinary slots stay compact.</remarks>
+    /// <summary>Gets or sets whether the column type must be an exact match.</summary>
     public virtual bool RequireExactType {
         get => false;
         set {
@@ -65,21 +54,40 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         }
     }
     /// <summary>
-    /// Updates the <see cref="NullColHandler"/> to handle a recovery jump if a null is encountered.
+    /// Sets whether a null value stops construction of the containing object.
     /// </summary>
     public void SetAbortOnNull(bool abortOnNull) => NullColHandler = NullColHandler.SetAbortOnNull(Type, abortOnNull);
-    /// <summary>Provide a way to modify the col modifier based on the param info state</summary>
+    /// <summary>Applies this slot's reading order rules.</summary>
     public virtual void UpdateColModifier(ref ColModifier mod) { }
     /// <summary>
-    /// Called by a complex parser as it enters this slot's subtree, so a reading-order flag on the slot
-    /// can govern the subtree (or arm the swap for its first claimed column). Base slots use
-    /// <see cref="UpdateColModifier"/> instead.
+    /// Applies this slot's reading order rules to a nested value.
     /// </summary>
     public virtual void EnterSubtree(ref ColModifier mod, int nbClaims) { }
     /// <summary>
-    /// Provide a way to retrieve a <see cref="DbItemPlan"/> when the normal way fails
+    /// Returns a copy that applies <paramref name="modifier"/> while keeping this slot's name, null, type,
+    /// exact type, and missing column rules.
     /// </summary>
-    /// <returns></returns>
+    public ParamInfo WithColModifier(IColModifier modifier) {
+        ArgumentNullException.ThrowIfNull(modifier);
+        if (GetType() != typeof(ParamInfo) && GetType() != typeof(ParamInfoPlus))
+            return new ColModifiedParamInfo(this, modifier);
+        var result = new ParamInfoPlus(Type, NullColHandler, NameComparer, modifier,
+            this is ParamInfoPlus plus ? plus.FallbackParserGetter : IFallbackParserGetter.Nothing) {
+            RequireExactType = RequireExactType
+        };
+        return result;
+    }
+    private sealed class ColModifiedParamInfo(ParamInfo source, IColModifier modifier)
+        : ParamInfo(source.Type, source.NullColHandler, source.NameComparer) {
+        public override bool RequireExactType { get; set; } = source.RequireExactType;
+        public override void UpdateColModifier(ref ColModifier mod) => modifier.UpdateColModifier(ref mod);
+        public override void EnterSubtree(ref ColModifier mod, int nbClaims) => modifier.EnterSubtree(ref mod, nbClaims);
+        public override DbItemPlan? FallbackTryGetParser(Type type) => source.FallbackTryGetParser(type);
+    }
+    /// <summary>
+    /// Provides a value when no result column matches this slot.
+    /// </summary>
+    /// <returns>The fallback plan or <see langword="null"/> when the slot is required.</returns>
     public virtual DbItemPlan? FallbackTryGetParser(Type type) => null;
     /// <summary>
     /// Adds an alternative name to the existing <see cref="NameComparer"/>.
@@ -123,16 +131,9 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         => !TypeParsingInfo.IsUsableType(f.FieldType) ? null :
             Create(f.FieldType, f.Name, f.GetCustomAttributes(true), f);
     /// <summary>
-    /// The central factory for matcher creation. Processes all custom attributes to define behavior.
+    /// Creates the slot rules for a member or parameter and applies its attributes.
     /// </summary>
-    /// <remarks>
-    /// <b>Attribute Hierarchy:</b>
-    /// <list type="bullet">
-    /// <item>If any attribute implements <see cref="IParamInfoMaker"/>, it takes control and creates the matcher.</item>
-    /// <item><see cref="AltAttribute"/> instances are collected to build optimized <see cref="INameComparer"/> versions.</item>
-    /// <item>Null-handling is resolved by <see cref="GetDeclaredNullColHandler"/> (<see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>, <see cref="AbortOnNullAttribute"/>, or a custom <see cref="INullColHandlerMaker"/>), falling back to the type's own nullability.</item>
-    /// </list>
-    /// </remarks>
+    /// <remarks>A custom <see cref="IParamInfoMaker"/> takes control before the standard attributes are applied.</remarks>
     public static ParamInfo Create(Type type, string? name, object[] attributes, object? param = null) {
         int altCount = 0;
         IParamInfoMaker maker = DefaultParamInfoMaker.Instance;
@@ -175,14 +176,8 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
                     IColModifier.Nothing, IFallbackParserGetter.Nothing);
             ((ParamInfoPlus)matcher).RequireExactType = true;
         }
-        Volatile.Read(ref _registrationInitializer)?.Invoke(matcher);
-        return matcher;
+        return TypeParsingInfo.ApplyRegistrationInitializer(Volatile.Read(ref _registrationInitializer), matcher);
     }
-    /// <summary>
-    /// The null rule for a type when nothing is declared: the collapse rule for a registered multi-row type (a
-    /// collection or aggregate) so a null element flows up out of the fold and is skipped, otherwise the type's
-    /// own nullability.
-    /// </summary>
     private static INullColHandler DefaultNullColHandler(Type type)
         => TypeParsingInfo.TryGetInfo(type, out var info) && info is IMultiRowTypeParsingInfo
             ? AbortOnNullAndNotNullHandle.Instance
@@ -213,10 +208,10 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
         handler ??= type.IsNullable() ? NullableTypeHandle.Instance : NotNullHandle.Instance;
         return handler.SetAbortOnNull(type, true);
     }
-    /// <summary>A delegate to implement your own name comparer dispatching strategy</summary>
+    /// <summary>Gets or sets the callback that chooses a name comparer.</summary>
     public static NameComparerFactory ComparerFactory { get; set; } = DispatchComparer;
     /// <summary>
-    /// The default dispatch logic you provided.
+    /// Creates a name comparer from a name, alternative names, and naming attributes.
     /// </summary>
     public static INameComparer DispatchComparer(Type type, string? name, string[] altNames, object[] attributes, object? param, List<INameComparerMaker> nameComparerMakers) {
         INameComparer current;

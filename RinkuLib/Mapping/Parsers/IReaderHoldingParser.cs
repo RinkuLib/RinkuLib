@@ -4,25 +4,14 @@ using System.Data.Common;
 namespace Rinku.Mapping.Parsers;
 
 /// <summary>
-/// A parser whose result keeps reading after it has returned, so the reader it was given is still being
-/// used once the call is over.
+/// Returns a result that continues using the reader while it is consumed. Implement this for a custom
+/// streamed result so the caller can finish or release the reader at the correct time.
 /// </summary>
-/// <remarks>
-/// A caller that owns the reader has to know when such a result is finished with it, and the result itself
-/// is the only thing that knows. <see cref="Rinku.MultiReader"/> needs this to step to the next set once
-/// the rows of this one have been walked, and a run that opened the reader before handing the rows over
-/// needs it to let go.
-/// </remarks>
 public interface IReaderHoldingParser<T> : ITypeParser<T> {
     /// <summary>
     /// Reads from a reader the caller owns, running <paramref name="onDone"/> once the rows are walked out
     /// or the walk is left early.
     /// </summary>
-    /// <remarks>
-    /// <typeparamref name="TDone"/> is a type parameter rather than a delegate so a struct passed here is
-    /// specialized into the read and costs no allocation, which matters because the caller is on the road
-    /// that reads every row.
-    /// </remarks>
     public T ParseThen<TDone>(DbDataReader reader, TDone onDone) where TDone : IReaderDone;
 }
 

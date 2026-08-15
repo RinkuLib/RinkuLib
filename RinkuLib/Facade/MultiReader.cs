@@ -48,12 +48,12 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         return cache;
     }
     /// <summary>
-    /// Automatically skips non-returning sets, parses the current result set as <typeparamref name="T"/>, then moves to the next result set. The result shape defines zero-row and row-count behavior.
+    /// Parses the current returning result set as <typeparamref name="T"/>, then moves to the next result set. Non-returning sets are skipped only when a query reaches them. The result shape defines zero-row and row-count behavior.
     /// To parse a set row by row and keep control of the reader, use <see cref="Get{T}"/> or <see cref="GetCurrentSetParser{T}"/>
     /// </summary>
     public T Query<T>() {
-        while (reader.FieldCount == 0)
-            reader.NextResult();
+        if (!SkipNonReturningResultSets())
+            Refuse.NoRows();
         nbResultSetPassedMinusOne++;
         bool goToNextResultSet = true;
         try {
@@ -74,13 +74,13 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         }
     }
     /// <summary>
-    /// Asynchronously skips non-returning sets, parses the current result set as <typeparamref name="T"/>, then moves to the next result set. The result shape defines zero-row and row-count behavior.
+    /// Asynchronously parses the current returning result set as <typeparamref name="T"/>, then moves to the next result set. Non-returning sets are skipped only when a query reaches them. The result shape defines zero-row and row-count behavior.
     /// To parse a set row by row and keep control of the reader, use <see cref="GetAsync{T}"/> or <see cref="GetCurrentSetParser{T}"/>
     /// </summary>
     /// <param name="ct">The forwarded cancellation token</param>
     public async ValueTask<T> QueryAsync<T>(CancellationToken ct = default) {
-        while (reader.FieldCount == 0)
-            await reader.NextResultAsync(ct).ConfigureAwait(false);
+        if (!await SkipNonReturningResultSetsAsync(ct).ConfigureAwait(false))
+            Refuse.NoRows();
         nbResultSetPassedMinusOne++;
         bool goToNextResultSet = true;
         try {
@@ -101,29 +101,35 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         }
     }
     /// <summary>
-    /// Asynchronously skips non-returning sets, lazily parses the rows in the current result set, and advances once enumeration completes.
+    /// Asynchronously lazily parses the current returning result set and advances when enumeration completes or its enumerator is disposed. Non-returning sets are skipped only when a query reaches them.
     /// </summary>
-    /// <param name="goToNextResultSet">Indicate if the reader should move to the next result set once enumeration completes</param>
+    /// <param name="goToNextResultSet">Whether ending or disposing the enumeration moves to the next result set.</param>
     /// <param name="ct">The forwarded cancellation token</param>
     public async IAsyncEnumerable<T> StreamQueryAsync<T>(bool goToNextResultSet = true, [EnumeratorCancellation] CancellationToken ct = default) {
-        while (reader.FieldCount == 0)
-            await reader.NextResultAsync(ct).ConfigureAwait(false);
+        if (!await SkipNonReturningResultSetsAsync(ct).ConfigureAwait(false)) {
+            Refuse.NoRows();
+            yield break;
+        }
         nbResultSetPassedMinusOne++;
-        var cache = GetCurrentSetParser<T>();
-        if (cache is ISimpleParser<T> simple) {
-            var rowParser = simple.RowParser;
-            while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                yield return rowParser(reader);
+        try {
+            var cache = GetCurrentSetParser<T>();
+            if (cache is ISimpleParser<T> simple) {
+                var rowParser = simple.RowParser;
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    yield return rowParser(reader);
+            }
+            else if (await reader.ReadAsync(ct).ConfigureAwait(false)) {
+                bool canContinue;
+                do {
+                    (canContinue, var item) = await cache.ParseAsync(reader, ct).ConfigureAwait(false);
+                    yield return item;
+                } while (canContinue);
+            }
         }
-        else if (await reader.ReadAsync(ct).ConfigureAwait(false)) {
-            bool canContinue;
-            do {
-                (canContinue, var item) = await cache.ParseAsync(reader, ct).ConfigureAwait(false);
-                yield return item;
-            } while (canContinue);
+        finally {
+            if (goToNextResultSet && !await reader.NextResultAsync(CancellationToken.None).ConfigureAwait(false))
+                await CompleteReaderAsync().ConfigureAwait(false);
         }
-        if (goToNextResultSet)
-            await reader.NextResultAsync(ct).ConfigureAwait(false);
     }
     /// <inheritdoc/>
     public override bool NextResult() {
@@ -142,10 +148,6 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         if (disposed)
             return;
         disposed = true;
-        if (!readerCompleted && !reader.IsClosed) {
-            try { cmd.Cancel(); }
-            catch { }
-        }
         if (!readerCompleted) {
             readerCompleted = true;
             await reader.DisposeAsync().ConfigureAwait(false);
@@ -169,10 +171,6 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         if (disposed)
             return;
         disposed = true;
-        if (!readerCompleted && !reader.IsClosed) {
-            try { cmd.Cancel(); }
-            catch { }
-        }
         if (!readerCompleted) {
             readerCompleted = true;
             reader.Dispose();
@@ -195,6 +193,22 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
             return;
         readerCompleted = true;
         await reader.DisposeAsync().ConfigureAwait(false);
+    }
+    private bool SkipNonReturningResultSets() {
+        while (reader.FieldCount == 0)
+            if (!reader.NextResult()) {
+                CompleteReader();
+                return false;
+            }
+        return true;
+    }
+    private async ValueTask<bool> SkipNonReturningResultSetsAsync(CancellationToken ct) {
+        while (reader.FieldCount == 0)
+            if (!await reader.NextResultAsync(ct).ConfigureAwait(false)) {
+                await CompleteReaderAsync().ConfigureAwait(false);
+                return false;
+            }
+        return true;
     }
     #region Implementation
     /// <inheritdoc/>
@@ -267,7 +281,6 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
     public override void Close() => reader.Close();
     /// <inheritdoc/>
     public override Task CloseAsync() => reader.CloseAsync();
-    /// <inheritdoc/>
     void IDisposable.Dispose() => Dispose();
     /// <inheritdoc/>
     public override DataTable? GetSchemaTable() => reader.GetSchemaTable();

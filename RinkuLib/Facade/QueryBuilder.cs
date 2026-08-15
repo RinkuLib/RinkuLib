@@ -4,14 +4,12 @@ using Rinku.Mapping.Parsers;
 
 namespace Rinku;
 /// <summary>
-/// Holds the values for one run of a <see cref="QueryCommand"/> in memory. You set variables and
-/// switch conditions on the builder, then run the command off it. Because the values live here and not on
-/// the command, the command stays stateless and shared while each builder is one call's worth of state.
+/// Holds the values for one run of a <see cref="QueryCommand"/>. Use it when you want to set values and
+/// conditions one at a time before running the query.
 /// </summary>
 /// <remarks>
-/// Reach for this form when the values come from C# logic rather than a ready-made object. To sync each
-/// change onto a live command instead, so a loop can reuse one <see cref="System.Data.IDbCommand"/>, use
-/// <see cref="QueryBuilderCommand{TCommand}"/>.
+/// Use <see cref="QueryBuilderCommand{TCommand}"/> when each change should also update one live
+/// <see cref="System.Data.IDbCommand"/> for repeated execution.
 /// </remarks>
 public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     /// <summary>
@@ -100,7 +98,6 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
         Variables[variableIndex] = value;
         return true;
     }
-    /// <inheritdoc/>
     void IQueryBuilder.Use(int variableIndex, object? value) => Use(variableIndex, value);
     /// <inheritdoc/>
     public readonly object? this[string condition] {

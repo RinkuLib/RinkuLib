@@ -8,10 +8,9 @@ using Rinku.Mapping.Parsers;
 namespace Rinku; 
 
 /// <summary>
-/// A reusable mapping from a <see cref="DbDataReader"/> to <typeparamref name="T"/>, for running a command
-/// you built yourself. Hold one in a <see langword="static"/> field and call <c>Query</c> on your command,
-/// it works out how to read <typeparamref name="T"/> from the first result's columns and reuses that on
-/// every later call. Safe to share across threads.
+/// Reads <typeparamref name="T"/> from database commands created by the caller.
+/// Keep one instance and reuse it when those commands return compatible columns.
+/// The instance can be shared across threads.
 /// </summary>
 public sealed class CachedTypeParser<T> : ICacheGivingParser<T>, IDisposable {
     private ITypeParser<T>? _parser;
@@ -65,12 +64,11 @@ public sealed class CachedTypeParser<T> : ICacheGivingParser<T>, IDisposable {
     public Task<T> QueryAsync(IDbCommand cmd, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
         => _parser is not null ? _parser.QueryAsync(cmd, cache, disposeCommand, ct) : cmd.QueryAsync(new CacheBridge(cache, this), disposeCommand, ct);
     /// <summary>
-    /// Streams the rows of <paramref name="cmd"/> as <typeparamref name="T"/>. Because the cache is keyed on
-    /// <typeparamref name="T"/>, a <c>CachedTypeParser&lt;List&lt;X&gt;&gt;</c> yields whole lists; use a
-    /// <c>CachedTypeParser&lt;X&gt;</c> to stream elements. Reuses the cached parser once learned.
+    /// Streams rows from <paramref name="cmd"/> as <typeparamref name="T"/>.
+    /// Use the row type for <typeparamref name="T"/> rather than a collection type.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public IAsyncEnumerable<T> StreamQueryAsync(DbCommand cmd, bool disposeCommand = true, CancellationToken ct = default)
+    public IAsyncEnumerable<T> StreamQueryAsync(DbCommand cmd, bool disposeCommand = false, CancellationToken ct = default)
         => _parser is not null
             ? cmd.StreamQueryAsync(_parser, disposeCommand: disposeCommand, ct: ct)
             : cmd.StreamQueryAsync(this, disposeCommand, ct);
@@ -100,8 +98,8 @@ public sealed class CachedTypeParser<T> : ICacheGivingParser<T>, IDisposable {
     /// <inheritdoc/>
     public ValueTask<ITypeParser<T>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default)
         => new(UpdateCache(cmd, reader));
-    /// <summary>Invalidates the parser learned by this cache.</summary>
-    /// <returns><see langword="true"/> when a parser was cached.</returns>
+    /// <summary>Forgets the parser held by this instance.</summary>
+    /// <returns><see langword="true"/> when a parser was removed.</returns>
     public bool Invalidate() {
         ITypeParser<T>? parser;
         lock (this) {
@@ -131,7 +129,7 @@ public sealed class CachedTypeParser<T> : ICacheGivingParser<T>, IDisposable {
         TypeParser.ParserDisposing -= OnParserDisposing;
         _subscribedToParserDisposing = false;
     }
-    /// <summary>Releases this cache's parser reference and invalidation subscription.</summary>
+    /// <summary>Stops this instance from receiving parser invalidation notices and releases its parser.</summary>
     public void Dispose() {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;

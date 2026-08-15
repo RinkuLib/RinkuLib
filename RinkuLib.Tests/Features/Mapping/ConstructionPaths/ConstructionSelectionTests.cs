@@ -1,6 +1,7 @@
 using System.Reflection;
 using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
+using RinkuLib.Tests.Documentation;
 using Rinku.Internal;
 using Xunit;
 
@@ -26,6 +27,7 @@ public class ConstructionSelectionTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "construction-selection")]
     public void More_specific_overload_wins_when_more_columns_match() {
         ColumnInfo[] cols = [
             new("OrderID", typeof(int), false),
@@ -60,6 +62,7 @@ public class ConstructionSelectionTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "add-construction")]
     public void Manually_registered_constructor_becomes_a_candidate() {
         Assert.True(TypeParsingInfo.GetOrAdd<IPayKind>().AddPossibleConstruction(
             typeof(ExternalPayment).GetConstructor(BindingFlags.Public | BindingFlags.Instance, [typeof(int)])
@@ -75,6 +78,7 @@ public class ConstructionSelectionTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "generic-construction")]
     public void Open_generic_factory_serves_every_closed_form() {
         TypeParsingInfo.GetOrAdd(typeof(Boxed<>))
             .AddPossibleConstruction(typeof(BoxedFactory).GetMethod(nameof(BoxedFactory.Create))!);
@@ -102,6 +106,7 @@ public class ConstructionSelectionTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "configure-construction")]
     public void SetAbortOnNull_by_visitor_collapses_the_object() {
         Assert.True(TypeParsingInfo.GetOrAdd<CollapsingParcel>()
             .SetAbortOnNull(slot => slot.Type == typeof(int) ? true : null));
@@ -116,6 +121,7 @@ public class ConstructionSelectionTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "add-construction-member")]
     public void AddMember_registers_an_external_setter_for_a_column() {
         Assert.True(TypeParsingInfo.GetOrAdd<SecretHolder>()
             .AddMember(typeof(SecretHolder).GetMethod(nameof(SecretHolder.SetSecret))!));
@@ -150,6 +156,7 @@ public class ConstructionSelectionTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "configure-construction")]
     public void CanCompleteWithMembers_hydrates_leftover_columns() {
         ColumnInfo[] cols = [
             new("Value", typeof(int), false),

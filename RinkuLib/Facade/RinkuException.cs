@@ -1,22 +1,20 @@
 namespace Rinku;
 
 /// <summary>
-/// The base of every failure the library raises on its own. Carries the <see cref="Code"/> that names the
-/// condition, so a caller can branch on it without matching message text, and points
-/// <see cref="Exception.HelpLink"/> at the entry documenting what to do about it.
+/// The base class for errors reported by Rinku.
+/// Use <see cref="Code"/> when application code must identify a specific error.
 /// </summary>
 /// <remarks>
-/// The derived families follow the stage a run had reached, so catching one narrows the search before the
-/// code narrows it further. See <see cref="ErrorCodes"/> for the bands.
+/// See <see cref="ErrorCodes"/> for the available codes.
 /// </remarks>
 public abstract class RinkuException : Exception {
     /// <summary>The <c>RINKU####</c> identifier for the condition that failed.</summary>
     public string Code { get; }
 
-    /// <summary>Builds the failure, prefixing its message with the code it carries.</summary>
+    /// <summary>Creates a Rinku error with a stable code.</summary>
     /// <param name="code">One of the constants on <see cref="ErrorCodes"/>.</param>
     /// <param name="message">What failed, naming the specific thing that failed.</param>
-    /// <param name="innerException">The underlying failure, when this one wraps another.</param>
+    /// <param name="innerException">The original error when one is available.</param>
     protected RinkuException(string code, string message, Exception? innerException = null)
         : base($"{code}: {message}", innerException) {
         Code = code;

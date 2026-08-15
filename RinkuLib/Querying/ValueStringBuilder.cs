@@ -5,8 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace Rinku.Querying;
 /// <summary>
-/// A stack-only, expandable string builder that uses a <see cref="Span{T}"/> for initial storage 
-/// and falls back to <see cref="ArrayPool{Char}"/> for larger workloads.
+/// Builds SQL text for a query handler. Append the text your handler wants to add to the command.
 /// </summary>
 public ref partial struct ValueStringBuilder {
     private char[]? _arrayToReturnToPool;
@@ -48,20 +47,13 @@ public ref partial struct ValueStringBuilder {
             Grow(capacity - _pos);
     }
 
-    /// <summary>
-    /// Get a pinnable reference to the builder.
-    /// Does not ensure there is a null char after <see cref="Length"/>
-    /// This overload is pattern matched in the C# 7.3+ compiler so you can omit
-    /// the explicit method call, and write eg "fixed (char* c = builder)"
-    /// </summary>
+    /// <summary>Gets a pinnable reference without adding a null character after <see cref="Length"/>.</summary>
     public readonly ref char GetPinnableReference() {
         return ref MemoryMarshal.GetReference(_chars);
     }
 
-    /// <summary>
-    /// Get a pinnable reference to the builder.
-    /// </summary>
-    /// <param name="terminate">Ensures that the builder has a null char after <see cref="Length"/></param>
+    /// <summary>Gets a pinnable reference to the current text.</summary>
+    /// <param name="terminate">Whether to add a null character after <see cref="Length"/>.</param>
     public ref char GetPinnableReference(bool terminate) {
         if (terminate) {
             EnsureCapacity(Length + 1);
@@ -87,7 +79,7 @@ public ref partial struct ValueStringBuilder {
         return s;
     }
 
-    /// <summary>Returns the underlying storage of the builder.</summary>
+    /// <summary>Gets the writable buffer. Only the first <see cref="Length"/> characters contain text.</summary>
     public readonly Span<char> RawChars => _chars;
 
     /// <summary>
@@ -270,14 +262,6 @@ public ref partial struct ValueStringBuilder {
         Append(c);
     }
 
-    /// <summary>
-    /// Resize the internal buffer either by doubling current buffer size or
-    /// by adding <paramref name="additionalCapacityBeyondPos"/> to
-    /// <see cref="_pos"/> whichever is greater.
-    /// </summary>
-    /// <param name="additionalCapacityBeyondPos">
-    /// Number of chars requested beyond current position.
-    /// </param>
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void Grow(int additionalCapacityBeyondPos) {
         Debug.Assert(additionalCapacityBeyondPos > 0);

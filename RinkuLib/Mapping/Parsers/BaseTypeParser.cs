@@ -5,9 +5,8 @@ using System.Runtime.CompilerServices;
 namespace Rinku.Mapping.Parsers;
 
 /// <summary>
-/// The base for parsers, adding the <c>Query</c> plumbing, open the connection if needed, execute, read, and
-/// clean up, on top of a <see cref="Parse"/> you supply. Derive from it to define a new result shape and get
-/// the execution methods for free.
+/// Base class for a custom result shape. Implement <see cref="Parse"/> and <see cref="Default"/> then use
+/// the inherited query methods to run commands with that shape.
 /// </summary>
 public abstract class BaseTypeParser<T> : ITypeParser<T> {
     /// <inheritdoc/>

@@ -11,8 +11,7 @@ public sealed class ConvertedScalarPlan(Type parentType, ITypeConverter converte
     public ITypeConverter Converter { get; } = converter;
 
     /// <inheritdoc/>
-    protected override void EmitValue(ColumnInfo column, Generator generator, out object? targetObject) {
-        targetObject = null;
+    protected override void EmitValue(ColumnInfo column, Generator generator) {
         generator.Emit(OpCodes.Ldarg_1);
         generator.Emit(OpCodes.Ldc_I4, ColumnOrdinal);
         var method = column.Type.GetDbMethod();
@@ -21,10 +20,6 @@ public sealed class ConvertedScalarPlan(Type parentType, ITypeConverter converte
         Converter.EmitConversion(generator, column.Type);
     }
 
-    /// <summary>
-    /// A column type outside the reader's typed getters is fetched as <see cref="Nullable{T}"/>; the value is
-    /// known non-null here, so it is unwrapped to leave the column type itself on the stack.
-    /// </summary>
     private static void EmitUnwrap(Generator generator, System.Reflection.MethodInfo method, Type columnType) {
         if (method.ReturnType == columnType)
             return;

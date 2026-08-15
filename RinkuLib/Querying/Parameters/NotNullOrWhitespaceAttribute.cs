@@ -37,15 +37,6 @@ public sealed class NotDefaultAttribute : AccessorEmitterHandler {
         return NotDefaultEmitter.Instance;
     }
 }
-/// <summary>Generates the not-null-or-whitespace condition for a string member.</summary>
-public sealed class StringUsageEmitter : MethodConditionEmitter {
-    private static readonly MethodInfo IsNullOrWhiteSpaceMethod =
-        typeof(string).GetMethod(nameof(string.IsNullOrWhiteSpace), [typeof(string)])!;
-
-    /// <summary>Creates the emitter for a string member.</summary>
-    public StringUsageEmitter(Type targetType, MemberInfo member)
-        : base(IsNullOrWhiteSpaceMethod, invert: true) { }
-}
 internal sealed class NotDefaultEmitter : AccessorEmitterBase {
     internal static readonly NotDefaultEmitter Instance = new();
 

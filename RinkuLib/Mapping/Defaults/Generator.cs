@@ -6,37 +6,34 @@ using Rinku.Internal;
 namespace Rinku.Mapping.Emission;
 #if DEBUG
 /// <summary>
-/// A wrapper for <see cref="ILGenerator"/> that provides instruction logging 
-/// and automatic local variable management.
+/// Writes parser instructions and provides reusable local variables. Custom read plans receive this type in
+/// their write methods.
 /// </summary>
-/// <remarks>
-/// This class can be compiled in two modes:
-/// <list type="bullet">
-/// <item><b>Standard:</b> A high-performance passthrough to the underlying IL generator.</item>
-/// <item><b>Verbose (<c>USE_VERBOSE_GENERATOR</c>):</b> Logs every emitted instruction to the Console, 
-/// providing a readable trace of the dynamic code being generated.</item>
-/// </list>
-/// </remarks>
 public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
 #pragma warning disable CA2211
-    /// <summary>Where the verbose instruction trace is written, the console by default.</summary>
-    public static Action<string> Write = Console.WriteLine;
+    internal static Action<string> Write = Console.WriteLine;
 #pragma warning restore CA2211
-    /// <summary>The underlying <see cref="ILGenerator"/></summary>
-    public readonly ILGenerator Il = generator;
-    /// <summary>The currently using schema to write actual column names</summary>
-    public readonly ColumnInfo[] Columns = cols;
-    /// <summary> 
-    /// Tracks declared locals to allow for slot reuse and cleaner generated code. 
-    /// </summary>
-
+    internal readonly ILGenerator Il = generator;
+    internal readonly ColumnInfo[] Columns = cols;
     private readonly Dictionary<Type, LocalBuilder> LocalCache = [];
     private readonly Dictionary<Label, string> LabelNames = [];
     private readonly Dictionary<Label, int> FingerprintLabels = [];
     private readonly EmissionFingerprintBuilder FingerprintBuilder = new();
+    private readonly List<object> GeneratedTargets = [];
 
     private int labelCounter = 0;
     internal EmissionFingerprint Fingerprint => FingerprintBuilder.Value;
+
+    internal void EmitTarget(object target) {
+        int index = GeneratedTargets.Count;
+        GeneratedTargets.Add(target);
+        Emit(OpCodes.Ldarg_0);
+        Emit(OpCodes.Ldc_I4, index);
+        Emit(OpCodes.Ldelem_Ref);
+        Emit(OpCodes.Castclass, target.GetType());
+    }
+
+    internal object[] GetTargets() => GeneratedTargets.ToArray();
 
     private int LabelId(Label label) {
         if (!FingerprintLabels.TryGetValue(label, out int id))
@@ -49,9 +46,7 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
         FingerprintBuilder.Add(kind);
     }
 
-    /// <summary>
-    /// An wrapper to reuse locals instead of creating a new one each time
-    /// </summary>
+    /// <summary>Gets a local for the given type and reuses one when available.</summary>
     public LocalBuilder GetLocal(Type type) {
         if (LocalCache.TryGetValue(type, out var local)) {
             Write($"[IL] ReuseLocal type={type.ShortName()} index={local.LocalIndex}");
@@ -205,7 +200,6 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
     private static string ShortParams(MethodBase method) {
         return string.Join(", ", method.GetParameters().Select(p => p.ParameterType.ShortName()));
     }
-    /// <summary>Describes a member for the trace, falling back to its name when it is a builder whose type is not yet baked.</summary>
     private static string Describe(string prefix, Func<string> full, string name) {
         try {
             return prefix + full();
@@ -309,28 +303,32 @@ public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
 }
 #else
 /// <summary>
-/// A wrapper for <see cref="ILGenerator"/> that provides automatic local variable management.
+/// Writes parser instructions and provides reusable local variables. Custom read plans receive this type in
+/// their write methods.
 /// </summary>
 public class Generator(ILGenerator generator) : ILGenerator {
-    /// <summary>The underlying <see cref="ILGenerator"/></summary>
-    public readonly ILGenerator Il = generator;
-    /// <summary> 
-    /// Tracks declared locals to allow for slot reuse and cleaner generated code. 
-    /// </summary>
-    public readonly Dictionary<Type, LocalBuilder> LocalCache = [];
+    internal readonly ILGenerator Il = generator;
+    private readonly Dictionary<Type, LocalBuilder> LocalCache = [];
     private readonly Dictionary<Label, int> FingerprintLabels = [];
     private readonly EmissionFingerprintBuilder FingerprintBuilder = new();
+    private readonly List<object> GeneratedTargets = [];
     internal EmissionFingerprint Fingerprint => FingerprintBuilder.Value;
+    internal void EmitTarget(object target) {
+        int index = GeneratedTargets.Count;
+        GeneratedTargets.Add(target);
+        Emit(OpCodes.Ldarg_0);
+        Emit(OpCodes.Ldc_I4, index);
+        Emit(OpCodes.Ldelem_Ref);
+        Emit(OpCodes.Castclass, target.GetType());
+    }
+    internal object[] GetTargets() => GeneratedTargets.ToArray();
     private int LabelId(Label label) {
         if (!FingerprintLabels.TryGetValue(label, out int id))
             FingerprintLabels[label] = id = FingerprintLabels.Count;
         return id;
     }
     private void Record(OpCode opcode, int kind) { FingerprintBuilder.Add(opcode); FingerprintBuilder.Add(kind); }
-    /// <summary>
-    /// Gets or declares a local variable of the specified type.
-    /// Reuses an existing slot if one was already declared for this type.
-    /// </summary>
+    /// <summary>Gets a local for the given type and reuses one when available.</summary>
     public LocalBuilder GetLocal(Type type) {
         if (LocalCache.TryGetValue(type, out var local))
             return local;

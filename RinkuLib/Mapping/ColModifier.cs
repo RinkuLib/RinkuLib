@@ -1,38 +1,32 @@
 namespace Rinku.Mapping;
-/// <summary>Inducate the column usage authorizations</summary>
+/// <summary>Controls column order and reuse while a type is mapped.</summary>
 [Flags]
 public enum UsageFlags {
-    /// <summary>Indicate that the next read should follow the precedent in columns order</summary>
+    /// <summary>Requires the next read to follow the previous read in column order.</summary>
     SequentialRead = 0b001,
     /// <summary>Indicates that a column may be read without consuming it, even when it was already consumed.</summary>
     CanReuse = 0b010,
-    /// <summary>Indicate the mode applies to a complex slot's whole subtree, not just its first column</summary>
+    /// <summary>Applies the setting to the complete nested value.</summary>
     Subtree = 0b100,
     /// <summary>Indicates that sequential reading should be removed.</summary>
     RemoveSequentialRead = int.MinValue
 }
-/// <summary>
-/// A hierarchical naming context that stores a chain of <see cref="INameComparer"/> instances.
-/// Used to resolve nested column names (e.g., "ParentChildTarget") during recursive object mapping.
-/// </summary>
+/// <summary>Holds the name and column usage settings for the current nested value.</summary>
 public struct ColModifier(params INameComparer[] Comparers) {
-    /// <summary>Informations on how the columns should be used</summary>
+    /// <summary>Gets or sets the column usage rules.</summary>
     public UsageFlags Flags = default;
-    /// <summary>The current chain of comparers</summary>
+    /// <summary>Gets the name rules from the root value to the current value.</summary>
     public readonly INameComparer[] Comparers = Comparers;
     /// <summary>
-    /// The <see cref="ColumnUsage.NbClaims"/> captured when a slot-scope subtree was entered, or -1 when
-    /// no such scope is active. The subtree's first claimed column (the read where <c>NbClaims</c> still
-    /// equals this) applies <see cref="SwapFirstFlags"/>. Every later read falls back to <see cref="Flags"/>.
+    /// Gets or sets the claim count at which <see cref="SwapFirstFlags"/> apply. A negative value disables it.
     /// </summary>
     public int SwapFirstAt = -1;
-    /// <summary>The flags applied to a slot-scope subtree's first claimed column.</summary>
+    /// <summary>Gets or sets the rules applied to the first claim of a nested value.</summary>
     public UsageFlags SwapFirstFlags = default;
-    /// <summary>Entry point without any modifications</summary>
+    /// <summary>Creates settings with no name or column changes.</summary>
     public ColModifier() : this([]) { }
     /// <summary>
-    /// Creates a new <see cref="ColModifier"/> by appending a single <see cref="INameComparer"/> 
-    /// to the current chain. Used when entering a nested object property.
+    /// Returns a copy with one name rule added for a nested value.
     /// </summary>
     /// <param name="comparer">The comparer to add to the chain.</param>
     /// <returns>A new modifier containing the updated chain.</returns>
@@ -49,17 +43,18 @@ public struct ColModifier(params INameComparer[] Comparers) {
     }
 }
 /// <summary>
-/// Use to indicate a snapshot of the column usage and the type at a previous node point
+/// Records the column usage and parent type at an earlier mapping point.
 /// </summary>
 public readonly struct RecursiveInfo(Type[] previousTypes, int colUsedToBeat) {
-    /// <summary>Indicate the latest type used (parent type)</summary>
+    /// <summary>Gets the latest parent type.</summary>
     public readonly Type LatestUsedType => PreviousTypes.Length > 0 ? PreviousTypes[^1] : typeof(RecursiveInfo);
-    /// <summary>The type that was used at that point</summary>
+    /// <summary>Gets the parent types already visited by this path.</summary>
     public readonly Type[] PreviousTypes = previousTypes;
-    /// <summary>The amount of column used at the start</summary>
+    /// <summary>Gets the number of columns claimed when this path began.</summary>
     public readonly int ColUsedToBeat = colUsedToBeat;
     /// <summary>
-    /// Use to generate the next usage in the chain
+    /// Tries to continue with another type. Returns <see langword="false"/> when the same path would repeat
+    /// without claiming another column.
     /// </summary>
     public bool CanContinue(Type usedType, int currentColUsed, out RecursiveInfo currentUsage) {
         if (currentColUsed > ColUsedToBeat) {

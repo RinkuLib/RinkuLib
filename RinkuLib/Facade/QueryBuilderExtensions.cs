@@ -47,9 +47,9 @@ public static class QueryBuilderExtensions {
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and returns the number of affected rows.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
         public int Execute(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -59,10 +59,10 @@ public static class QueryBuilderExtensions {
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and returns the number of affected rows.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<int> ExecuteAsync(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -72,9 +72,9 @@ public static class QueryBuilderExtensions {
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and returns the scalar value.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
         public T? ExecuteScalar<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -84,10 +84,10 @@ public static class QueryBuilderExtensions {
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and returns the scalar value.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<T?> ExecuteScalarAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -97,11 +97,11 @@ public static class QueryBuilderExtensions {
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="cmd">The command associated with the reader</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="cmd">The command that owns the reader.</param>
         /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
         public DbDataReader ExecuteReader(DbConnection cnn, out DbCommand cmd, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -111,12 +111,12 @@ public static class QueryBuilderExtensions {
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="cmd">The command associated with the reader</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="cmd">The command that owns the reader.</param>
         /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<DbDataReader> ExecuteReaderAsync(DbConnection cnn, out DbCommand cmd, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -126,40 +126,40 @@ public static class QueryBuilderExtensions {
         /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="cmd">The command associated with the reader</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="cmd">The command that owns the reader.</param>
         /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
         public MultiReader ExecuteMultiReader(DbConnection cnn, out DbCommand cmd, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
         /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="cmd">The command associated with the reader</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="cmd">The command that owns the reader.</param>
         /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<MultiReader> ExecuteMultiReaderAsync(DbConnection cnn, out DbCommand cmd, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
         }
         /// <summary>
-        /// Executes a <see cref="DbCommand"/> and parses the result as <typeparamref name="T"/>; the result shape defines zero-row and row-count behavior.
+        /// Executes a <see cref="DbCommand"/> and reads the result as <typeparamref name="T"/>. The requested type controls the result.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
         public T Query<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -171,12 +171,12 @@ public static class QueryBuilderExtensions {
             return cmd.Query(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), true);
         }
         /// <summary>
-        /// Asynchronously executes a <see cref="DbCommand"/> and parses the result as <typeparamref name="T"/>; the result shape defines zero-row and row-count behavior.
+        /// Asynchronously executes a <see cref="DbCommand"/> and reads the result as <typeparamref name="T"/>. The requested type controls the result.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<T> QueryAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
@@ -190,15 +190,15 @@ public static class QueryBuilderExtensions {
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and streams its rows as <typeparamref name="T"/>.
         /// </summary>
-        /// <param name="cnn">The connection to execute on</param>
-        /// <param name="transaction">The transaction to execute on</param>
-        /// <param name="timeout">The timeout for the command</param>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="cnn">The connection to use.</param>
+        /// <param name="transaction">The transaction to use.</param>
+        /// <param name="timeout">The command timeout in seconds.</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public IAsyncEnumerable<T> StreamQueryAsync<T>(DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             if (command.TryGetCachedParser<T>(vars, out var parser))
                 return cmd.StreamQueryAsync(parser, null, false, ct);
             else if (parser is not null)
@@ -255,7 +255,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
         /// <inheritdoc cref="QueryBuilderExtensions.ExecuteMultiReaderAsync(QueryBuilder, DbConnection, out DbCommand, CommandBehavior, DbTransaction, int?, CancellationToken)"/>
@@ -263,7 +263,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
         }
         /// <inheritdoc cref="QueryBuilderExtensions.Query{T}(QueryBuilder, DbConnection, DbTransaction, int?)"/>

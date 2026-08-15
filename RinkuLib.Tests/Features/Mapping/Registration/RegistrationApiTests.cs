@@ -3,6 +3,7 @@ using Rinku.Mapping.Defaults;
 using System.Reflection;
 using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
+using RinkuLib.Tests.Documentation;
 using Rinku.Internal;
 using Xunit;
 
@@ -253,6 +254,7 @@ public class RegistrationApiTests {
     }
 
     [Fact]
+    [DocumentationExample("registration.md", "remove-registration")]
     public void Exact_metadata_removal_does_not_invalidate_an_already_generated_parser() {
         Type type = typeof(RemovedRegistryProbe);
         ColumnInfo[] schema = [new("A", typeof(int), false)];
@@ -290,6 +292,7 @@ public class RegistrationApiTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "replace-constructions")]
     public void The_construction_and_member_sets_can_be_replaced_wholesale_after_discovery() {
         var info = new DefaultTypeParsingInfo(typeof(Payment));
         Assert.Equal(2, ((ICanProvideConstructions)info).PossibleConstructors.Length);
@@ -392,6 +395,7 @@ public class RegistrationApiTests {
     record Renamed(int First, int Second) : IDbReadable;
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "configure-construction")]
     public void Alt_names_and_null_rules_reach_every_slot_through_the_helper() {
         var info = TypeParsingInfo.GetOrAdd<Renamed>();
         Assert.True(info.UpdateAltName(c => c.Contains("First") ? c.AddAltName("Uno") : null));

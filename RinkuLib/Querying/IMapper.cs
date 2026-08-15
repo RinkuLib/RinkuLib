@@ -8,40 +8,19 @@ using Rinku.Querying.Defaults;
 
 namespace Rinku.Querying;
 /// <summary>
-/// A high-performance, immutable lookup table mapping case-insensitive string keys to fixed integer indices. 
-/// Designed to serve as a reusable schema for external arrays, enabling the creation of lightweight, 
-/// allocation-free dictionary structures.
+/// Maps case insensitive names to stable indexes. Create a new mapper when the key set changes. Use
+/// <see cref="GetKey"/> or <see cref="GetSameKey(string)"/> when reference comparison is useful.
 /// </summary>
-/// <remarks>
-/// <para>
-/// This class is strictly read-only and immutable. If the key set changes, a new instance must be constructed. 
-/// It is optimized for "build-once, read-many" scenarios.
-/// </para>
-/// <para>
-/// <b>Performance Tip:</b> In addition to index lookups, this class provides canonical string references. 
-/// By retrieving these via <c>GetSameKey</c>, consumers can replace expensive character-by-character 
-/// comparisons with O(1) reference equality checks in performance-critical loops.
-/// </para>
-/// </remarks>
 public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, IDisposable, IGeneratedParserTarget {
-    /// <summary>
-    /// A sentinel array used to indicate the mapper has been disposed in a thread-safe manner.
-    /// </summary>
-    protected static readonly string[] DeadKeys = [null!];
-    /// <summary>
-    /// The internal storage of unique, deduplicated keys.
-    /// </summary>
+    private static readonly string[] DeadKeys = [null!];
+    /// <summary>The names available to a custom mapper.</summary>
     protected string[] _keys = Keys;
     [ExcludeFromCodeCoverage]
     internal string[] GetKeysArray() => _keys;
-    /// <summary>
-    /// Gets a managed reference to the start of the key array. 
-    /// Allows for high-performance pointer-style iteration while bypassing array bounds checks.
-    /// </summary>
 #if NET5_0_OR_GREATER
-    public ref string KeysStartPtr => ref MemoryMarshal.GetArrayDataReference(_keys);
+    internal ref string KeysStartPtr => ref MemoryMarshal.GetArrayDataReference(_keys);
 #else
-    public ref string KeysStartPtr => ref _keys[0];
+    internal ref string KeysStartPtr => ref _keys[0];
 #endif
     /// <summary>
     /// Gets the unique keys held by this mapper as a <see cref="ReadOnlySpan{String}"/>.
@@ -65,56 +44,26 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// </summary>
     public int Count => _keys.Length;
 
-    /// <summary>
-    /// Retrieves the canonical string reference stored within the mapper for a given input.
-    /// </summary>
-    /// <param name="ind">The index of the key to look up.</param>
-    /// <returns>
-    /// The internal <see cref="string"/> instance if a match is found, otherwise <see langword="throw"/>.
-    /// </returns>
-    /// <remarks>
-    /// This is a high-performance optimization tool. By retrieving the internal string reference, 
-    /// subsequent comparisons can use **Reference Equality** (Object.ReferenceEquals) 
-    /// instead of character-by-character string comparisons, significantly accelerating 
-    /// downstream lookup logic.
-    /// </remarks>
+    /// <summary>Gets the stored name at the given index.</summary>
+    /// <param name="ind">The index to read.</param>
+    /// <returns>The stored string instance.</returns>
     public string GetKey(int ind) => _keys[ind];
 
-    /// <summary>
-    /// Retrieves the canonical string reference stored within the mapper for a given input.
-    /// </summary>
-    /// <param name="key">The key to look up.</param>
-    /// <returns>
-    /// The internal <see cref="string"/> instance if a match is found, otherwise <see langword="null"/>.
-    /// </returns>
-    /// <remarks>
-    /// This is a high-performance optimization tool. By retrieving the internal string reference, 
-    /// subsequent comparisons can use **Reference Equality** (Object.ReferenceEquals) 
-    /// instead of character-by-character string comparisons, significantly accelerating 
-    /// downstream lookup logic.
-    /// </remarks>
+    /// <summary>Gets the stored string instance that matches the name.</summary>
+    /// <param name="key">The name to find.</param>
+    /// <returns>The stored string instance or <see langword="null"/> when no name matches.</returns>
     public string GetSameKey(string key) {
         int i = GetIndex(key);
         return i >= 0 ? _keys[i] : null!;
     }
-    /// <summary>
-    /// Retrieves the canonical string reference stored within the mapper for a given input.
-    /// </summary>
-    /// <param name="key">The key to look up.</param>
-    /// <returns>
-    /// The internal <see cref="string"/> instance if a match is found, otherwise <see langword="null"/>.
-    /// </returns>
-    /// <remarks>
-    /// This is a high-performance optimization tool. By retrieving the internal string reference, 
-    /// subsequent comparisons can use **Reference Equality** (Object.ReferenceEquals) 
-    /// instead of character-by-character string comparisons, significantly accelerating 
-    /// downstream lookup logic.
-    /// </remarks>
+    /// <summary>Gets the stored string instance that matches the name.</summary>
+    /// <param name="key">The name to find.</param>
+    /// <returns>The stored string instance or <see langword="null"/> when no name matches.</returns>
     public string GetSameKey(ReadOnlySpan<char> key) {
         int i = GetIndex(key);
         return i >= 0 ? _keys[i] : null!;
     }
-    /// <summary>An optimal way to look using an prepended char</summary>
+    /// <summary>Finds the index after adding one character before <paramref name="value"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetIndex(char prependChar, string value) {
         Span<char> nameSpan = stackalloc char[value.Length + 1];
@@ -152,10 +101,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         for (int i = 0; i < keys.Length; i++)
             yield return new(keys[i], i);
     }
-    /// <summary>
-    /// Disposes the mapper and triggers unmanaged cleanup. 
-    /// This operation is thread-safe and ensures <see cref="DisposeUnmanaged"/> is called exactly once.
-    /// </summary>
+    /// <summary>Releases resources owned by this mapper. This method can be called more than once.</summary>
     public virtual void Dispose() {
         string[] originalKeys = Interlocked.Exchange(ref _keys, DeadKeys);
         if (!ReferenceEquals(originalKeys, DeadKeys)) {
@@ -163,20 +109,16 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
             GC.SuppressFinalize(this);
         }
     }
-    /// <summary>
-    /// Performs specialized cleanup of unmanaged memory or pooled resources used by the specific lookup strategy.
-    /// </summary>
+    /// <summary>Override this method to release resources owned by a custom mapper.</summary>
     protected abstract void DisposeUnmanaged();
     /// <inheritdoc/>
     [ExcludeFromCodeCoverage]
     ~Mapper() => Dispose();
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
-    /// <summary>
-    /// Factory method to build a schema from an existing collection of keys.
-    /// </summary>
+    /// <summary>Creates a mapper for the supplied names.</summary>
     /// <param name="keys">The collection of keys to index.</param>
-    /// <returns>A specialized <see cref="Mapper"/> instance.</returns>
+    /// <returns>A mapper that preserves the first occurrence of each name.</returns>
     /// <remarks>
     /// Input order is preserved. If duplicate keys (case-insensitive) are present, 
     /// only the first occurrence is stored, and its position becomes the fixed index for that key.
@@ -206,11 +148,9 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
             ArrayPool<string>.Shared.Return(pooledArr);
         return mapper;
     }
-    /// <summary>
-    /// Factory method to build a schema from a span of keys.
-    /// </summary>
+    /// <summary>Creates a mapper for the supplied names.</summary>
     /// <param name="keys">A span of keys used to define the schema.</param>
-    /// <returns>A specialized <see cref="Mapper"/> instance.</returns>
+    /// <returns>A mapper that preserves the first occurrence of each name.</returns>
     /// <remarks>
     /// Input order is preserved. If duplicate keys (case-insensitive) are present, 
     /// only the first occurrence is stored, and its position becomes the fixed index for that key.
@@ -257,22 +197,18 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// </summary>
     /// <returns>A singleton <see cref="Mapper"/> containing no keys.</returns>
     public static Mapper GetEmptyMapper() => EmptyMapper;
-    /// <summary>
-    /// Factory method specifically for a single-key schema.
-    /// </summary>
+    /// <summary>Creates a mapper containing one name at index zero.</summary>
     /// <param name="key">The sole key in the schema.</param>
-    /// <returns>An optimized <see cref="Mapper"/> containing exactly one key at index 0.</returns>
+    /// <returns>A mapper containing the supplied name.</returns>
     public static Mapper GetOneKeyMapper(string key) {
         if (key is null)
             throw new ArgumentNullException(nameof(key), "A key in the set was null");
         return new One(key);
     }
-    /// <summary>
-    /// Factory method specifically for a two-key schema.
-    /// </summary>
+    /// <summary>Creates a mapper containing up to two names.</summary>
     /// <param name="key1">The key to be assigned to index 0.</param>
     /// <param name="key2">The key to be assigned to index 1.</param>
-    /// <returns>A specialized <see cref="Mapper"/> instance.</returns>
+    /// <returns>A mapper containing the distinct supplied names.</returns>
     /// <remarks>
     /// If the keys are identical (case-insensitive), this returns a single-key mapper 
     /// to ensure the index remains stable at 0.

@@ -18,10 +18,6 @@ public sealed class UseDbNullAttribute : AccessorEmitterHandler {
         => index < 0 ? null : UseDbNullEmitter.Instance;
 }
 
-/// <summary>
-/// Deliberately implements the raw interface instead of <see cref="AccessorEmitterBase"/>: this rule has no
-/// usability test. It always marks the key used and converts only a null value to <see cref="DBNull.Value"/>.
-/// </summary>
 internal sealed class UseDbNullEmitter : IAccessorEmitter {
     internal static readonly UseDbNullEmitter Instance = new();
 

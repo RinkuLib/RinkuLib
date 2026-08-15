@@ -66,4 +66,61 @@ public class DictionaryTests {
         Assert.Equal("three@example.test", value.Remaining["Email"]);
         Assert.Equal(42L, value.Remaining["Score"]);
     }
+
+    [Fact]
+    public void A_named_dictionary_owns_only_columns_with_its_prefix() {
+        ColumnInfo[] cols = [
+            new("Id", typeof(int), false),
+            new("AlbumId", typeof(int), false),
+            new("ArtistId", typeof(int), false),
+            new("AlbumTitle", typeof(string), false),
+            new("ArtistName", typeof(string), false),
+        ];
+
+        var row = Rows.ParseOne<DictionaryGroups>(cols, 1, 12, 7, "Absolution", "Muse");
+
+        Assert.Equal(1, row.Id);
+        Assert.Equal(["AlbumId", "AlbumTitle"], row.Album.Keys);
+        Assert.Equal(["ArtistId", "ArtistName"], row.Artist.Keys);
+    }
+
+    [Fact]
+    public void Alt_adds_another_prefix_for_a_named_dictionary() {
+        ColumnInfo[] cols = [new("RecordId", typeof(int), false), new("RecordTitle", typeof(string), false)];
+
+        var row = Rows.ParseOne<AlternateDictionaryGroup>(cols, 12, "Absolution");
+
+        Assert.Equal(["RecordId", "RecordTitle"], row.Album.Keys);
+    }
+
+    [Fact]
+    public void A_custom_name_comparer_controls_a_dictionary_group() {
+        ColumnInfo[] cols = [new("PayloadCode", typeof(int), false), new("PayloadText", typeof(string), false)];
+
+        var row = Rows.ParseOne<CustomDictionaryGroup>(cols, 4, "ready");
+
+        Assert.Equal(["PayloadCode", "PayloadText"], row.Details.Keys);
+    }
+
+    [Fact]
+    public void Dictionaries_at_different_levels_keep_their_own_columns() {
+        ColumnInfo[] cols = [
+            new("HeaderCount", typeof(int), false),
+            new("BodyId", typeof(int), false),
+            new("BodyAlbumId", typeof(int), false),
+            new("BodyAlbumTitle", typeof(string), false),
+        ];
+
+        var row = Rows.ParseOne<MixedDictionaryLevels>(cols, 3, 7, 12, "Absolution");
+
+        Assert.Equal(["HeaderCount"], row.Header.Keys);
+        Assert.Equal(7, row.Body.Id);
+        Assert.Equal(["BodyAlbumId", "BodyAlbumTitle"], row.Body.Album.Keys);
+    }
 }
+
+public record DictionaryGroups(int Id, Dictionary<string, object> Album, Dictionary<string, object> Artist);
+public record AlternateDictionaryGroup([Alt("Record")] Dictionary<string, object> Album);
+public record CustomDictionaryGroup([DynamicPrefix("Payload")] Dictionary<string, object> Details);
+public record MixedDictionaryLevels(Dictionary<string, object> Header, DictionaryBody Body);
+public record DictionaryBody(int Id, Dictionary<string, object> Album) : IDbReadable;

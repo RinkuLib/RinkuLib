@@ -7,23 +7,20 @@ using Rinku.Querying;
 namespace Rinku;
 
 /// <summary>
-/// Runs a query straight from its SQL string, no <see cref="QueryCommand"/> to declare first. The command is
-/// built once and cached by the exact string, so repeating that string reuses it. Every result shape the
-/// declared form offers has a string counterpart here. Reach for <see cref="GetOrCreateCommand"/> when you
-/// want to hold and configure the cached command.
+/// Runs SQL without declaring a <see cref="QueryCommand"/> first.
+/// Calls that use the same SQL string share one command.
+/// Use <see cref="GetOrCreateCommand"/> to configure that command.
 /// </summary>
 public static class ConnectionQueryExtensions {
     /// <summary>
-    /// The shared command dictionary used by the SQL-string extensions. Keys are ordinarily SQL strings, but
-    /// callers may bind any key to a preconfigured command and manage entries with the dictionary API directly.
+    /// The commands used by SQL string extension methods.
+    /// A caller may also add a command under a custom key.
     /// </summary>
     public static readonly ConcurrentDictionary<string, QueryCommand> CommandCache = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Returns the shared <see cref="QueryCommand"/> for <paramref name="sql"/>, the same instance the
-    /// string-form <c>cnn.Query&lt;T&gt;(sql, ...)</c> calls reuse, creating and caching it on first request.
-    /// Hold onto it to own and configure it, its parameter metadata cache and the rest, exactly as with a
-    /// declared <see cref="QueryCommand"/>.
+    /// Gets the shared <see cref="QueryCommand"/> for <paramref name="sql"/>.
+    /// Use the returned command to change parameter settings or cache entries for later SQL string calls.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static QueryCommand GetOrCreateCommand(string sql) => CommandCache.GetOrAdd(sql, s => new QueryCommand(s));

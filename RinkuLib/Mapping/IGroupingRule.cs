@@ -3,17 +3,13 @@ using Rinku.Internal;
 namespace Rinku.Mapping;
 
 /// <summary>
-/// The group boundary rule held by a type mapping or a construction path, the un-negotiated key. In the emit step
-/// it is negotiated over the result's columns, resolving alternates, nesting, and generics, to produce the
-/// <see cref="GroupingBoundary"/> that emits the resolved key. The rule and the emitter are two things: the rule
-/// says what the key is, the boundary is the code that reads and compares it.
+/// Creates the group boundary for a spanning mapping.
+/// Implement this interface when the built in group key attributes cannot express the required rule.
 /// </summary>
 public interface IGroupingRule {
     /// <summary>
-    /// Negotiates the key over <paramref name="columns"/> under the same name-matching context
-    /// <paramref name="colModifier"/> the ordinary slots negotiated in, and lowers it through
-    /// <paramref name="build"/> into the boundary that emits it. The columns the key reads are reused, not
-    /// consumed, so the ordinary slots claim them first.
+    /// Creates a boundary for the supplied result columns.
+    /// Key columns must be read with reuse so normal members may also use them.
     /// </summary>
     GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build);
 }

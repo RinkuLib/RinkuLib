@@ -1,14 +1,11 @@
 namespace Rinku;
 
 /// <summary>
-/// Every condition the library raises, one constant per code. The bands follow the stage the run had
-/// reached, which is what decides where to look: <c>1###</c> reading the template, <c>2###</c> preparing a
-/// command from it, <c>3###</c> building a parser for the target type, <c>4###</c> reading a result
-/// through that parser, <c>5###</c> configuring a type, and <c>9###</c> invariants inside the library.
+/// Stable codes for errors reported by Rinku.
+/// Use these constants when application code must identify a specific error.
 /// </summary>
 /// <remarks>
-/// The summary on each constant is the source of its entry in the error reference. Keep them describing
-/// the condition rather than the fix, the fix belongs in the documentation page.
+/// The error reference explains each code and its common fixes.
 /// </remarks>
 public static class ErrorCodes {
     /// <summary>The template is under two characters.</summary>
@@ -64,13 +61,11 @@ public static class ErrorCodes {
     /// <summary>The parsing info cannot handle the type it was asked to validate.</summary>
     public const string TypeNotUsableByInfo = "RINKU5001";
     /// <summary>
-    /// A construction path was offered whose own shape the engine cannot call, a factory that is not
-    /// static or whose type parameters do not line up with what it returns.
+    /// A construction path cannot be called for the requested type.
     /// </summary>
     public const string ConstructionShapeNotUsable = "RINKU5002";
     /// <summary>
-    /// A member was offered whose own shape the engine cannot write to, a static field, a read-only
-    /// property, or a setter whose parameters do not line up with the instance it writes to.
+    /// A member cannot receive a value for the requested type.
     /// </summary>
     public const string UnusableMember = "RINKU5003";
     /// <summary>
@@ -79,8 +74,7 @@ public static class ErrorCodes {
     /// </summary>
     public const string TargetTypeMismatch = "RINKU5004";
     /// <summary>
-    /// A construction path or member was offered from a generic type other than the target, which the
-    /// engine cannot close at parse time.
+    /// A construction path or member comes from an unsupported generic type.
     /// </summary>
     public const string ForeignGenericSource = "RINKU5005";
     /// <summary>An accessor attribute was applied to a member whose type it cannot drive.</summary>
@@ -106,8 +100,7 @@ public static class ErrorCodes {
     public const string NoAddNewFactory = "RINKU6004";
 
     /// <summary>
-    /// An invariant inside the library did not hold. One code covers them all, since reaching any of them
-    /// leaves a caller the same thing to do, and the message carries which invariant it was.
+    /// The library entered an unexpected state.
     /// </summary>
     public const string InternalInvariant = "RINKU9001";
 }

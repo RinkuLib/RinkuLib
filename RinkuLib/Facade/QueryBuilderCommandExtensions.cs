@@ -25,18 +25,18 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.Execute(false, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and returns the number of affected rows.
         /// </summary>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<int> ExecuteAsync(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteAsync(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
@@ -46,18 +46,18 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteScalar<T>(false, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Executes the managed <see cref="DbCommand"/> and returns the scalar value.
         /// </summary>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<T?> ExecuteScalarAsync<T>(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteScalarAsync<T>(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
@@ -68,19 +68,19 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteReader(behavior, command.NeedToCache(vars) ? command : null);
         }
         /// <summary>
         /// Asynchronously runs the bound command and returns its <see cref="DbDataReader"/>.
         /// </summary>
         /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<DbDataReader> ExecuteReaderAsync(CommandBehavior behavior = default, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteReaderAsync(behavior, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <summary>
@@ -91,29 +91,29 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
         /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
         /// </summary>
         /// <param name="behavior">The behavior to use for the reader</param>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<MultiReader> ExecuteMultiReaderAsync(CommandBehavior behavior = default, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
         }
         /// <summary>
-        /// Executes the managed <see cref="DbCommand"/> and parses the result as <typeparamref name="T"/>; the result shape defines zero-row and row-count behavior.
+        /// Executes the managed <see cref="DbCommand"/> and reads the result as <typeparamref name="T"/>. The requested type controls the result.
         /// </summary>
         public T Query<T>() {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             if (command.TryGetCachedParser<T>(vars, out var parser))
                 return parser.Query(cmd, false);
             else if (parser is not null)
@@ -121,14 +121,14 @@ public static class QueryBuilderCommandExtensions {
             return cmd.Query(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false);
         }
         /// <summary>
-        /// Asynchronously executes the managed <see cref="DbCommand"/> and parses the result as <typeparamref name="T"/>; the result shape defines zero-row and row-count behavior.
+        /// Asynchronously executes the managed <see cref="DbCommand"/> and reads the result as <typeparamref name="T"/>. The requested type controls the result.
         /// </summary>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public Task<T> QueryAsync<T>(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             if (command.TryGetCachedParser<T>(vars, out var parser))
                 return parser.QueryAsync(cmd, false, ct);
             else if (parser is not null)
@@ -139,12 +139,12 @@ public static class QueryBuilderCommandExtensions {
         /// <summary>
         /// Asynchronously executes the managed <see cref="DbCommand"/> and streams its rows as <typeparamref name="T"/>.
         /// </summary>
-        /// <param name="ct">The forwarded cancellation token</param>
+        /// <param name="ct">The token that can stop the operation.</param>
         public IAsyncEnumerable<T> StreamQueryAsync<T>(CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             if (command.TryGetCachedParser<T>(vars, out var parser))
                 return cmd.StreamQueryAsync(parser, null, false, ct);
             else if (parser is not null)
@@ -159,7 +159,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.Execute(false, command.NeedToCache(vars) ? command : null);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteAsync(QueryBuilderCommand{DbCommand}, CancellationToken)"/>
@@ -167,7 +167,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteAsync(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteScalar{T}(QueryBuilderCommand{DbCommand})"/>
@@ -175,7 +175,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteScalar<T>(false, command.NeedToCache(vars) ? command : null);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteScalarAsync{T}(QueryBuilderCommand{DbCommand}, CancellationToken)"/>
@@ -183,7 +183,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteScalarAsync<T>(false, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteReader(QueryBuilderCommand{DbCommand}, CommandBehavior)"/>
@@ -191,7 +191,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteReader(behavior, command.NeedToCache(vars) ? command : null);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteReaderAsync(QueryBuilderCommand{DbCommand}, CommandBehavior, CancellationToken)"/>
@@ -199,7 +199,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteReaderAsync(behavior, command.NeedToCache(vars) ? command : null, ct);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteMultiReader(QueryBuilderCommand{DbCommand}, CommandBehavior)"/>
@@ -207,7 +207,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.ExecuteMultiReaderAsync(QueryBuilderCommand{DbCommand}, CommandBehavior, CancellationToken)"/>
@@ -215,7 +215,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
         }
         /// <inheritdoc cref="QueryBuilderCommandExtensions.Query{T}(QueryBuilderCommand{DbCommand})"/>
@@ -223,7 +223,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             if (command.TryGetCachedParser<T>(vars, out var parser))
                 return parser.Query(cmd, false);
             else if (parser is not null)
@@ -235,7 +235,7 @@ public static class QueryBuilderCommandExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = builder.Command;
-            cmd.CommandText = command.QueryText.Parse(vars);
+            command.SetText(cmd, command.QueryText.Parse(vars));
             if (command.TryGetCachedParser<T>(vars, out var parser))
                 return parser.QueryAsync(cmd, false, ct);
             else if (parser is not null)

@@ -139,12 +139,55 @@ public sealed class UseWithTests {
         Assert.Same(idParameter, cmd.BoundParameters[1]);
     }
 
+    [Fact]
+    public void Bound_UseWith_does_not_reset_unchanged_command_text() {
+        var cmd = new CountingCommand { Connection = new FakeConnection() };
+        var builder = new QueryCommand("UPDATE Users SET Name = @Name WHERE Id = @Id")
+            .StartBuilder((DbCommand)cmd);
+
+        builder.UseWith(new BatchItem(1, "first"));
+        builder.Execute();
+        builder.UseWith(new BatchItem(2, "second"));
+        builder.Execute();
+
+        Assert.Equal(1, cmd.CommandTextSetCount);
+    }
+
+    [Fact]
+    public void Bound_UseWith_resets_command_text_when_the_query_shape_changes() {
+        var cmd = new CountingCommand { Connection = new FakeConnection() };
+        var builder = new QueryCommand("SELECT * FROM Users WHERE Id = ?@Id")
+            .StartBuilder((DbCommand)cmd);
+
+        builder.UseWith(new ConditionalBatchItem(1));
+        builder.UseWith(new ConditionalBatchItem(2));
+        Assert.Equal(1, cmd.CommandTextSetCount);
+
+        builder.UseWith(new ConditionalBatchItem(null));
+
+        Assert.Equal(2, cmd.CommandTextSetCount);
+        Assert.Equal("SELECT * FROM Users", cmd.CommandText);
+    }
+
     private sealed record Filter(int? Active, string? Status, [property: ForBoolCond] bool ShowEmail);
     private readonly record struct StructFilter(int Id);
     private sealed record SpreadFilter(int[] Ids);
     private sealed record BoundFilter(int[] Ids, string? Name);
     private sealed record BatchItem(int Id, string Name);
+    private sealed record ConditionalBatchItem(int? Id);
     private sealed record DbNullFilter([property: UseDbNull] string? Name);
     [UseDbNull]
     private sealed record TypeDbNullFilter(string? Name, [property: NotNullOrWhitespace] string? Status);
+
+    private sealed class CountingCommand : FakeCommand {
+        private string? _commandText;
+        public int CommandTextSetCount { get; private set; }
+        public override string? CommandText {
+            get => _commandText;
+            set {
+                CommandTextSetCount++;
+                _commandText = value;
+            }
+        }
+    }
 }

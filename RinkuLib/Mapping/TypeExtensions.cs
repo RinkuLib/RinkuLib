@@ -3,29 +3,16 @@ using System.Reflection;
 using System.Reflection.Emit;
 
 namespace Rinku.Mapping;
-/// <summary>
-/// Provides utilities for IL generation, specifically for debugging the evaluation stack 
-/// and handling database-specific method resolution.
-/// </summary>
-public static class TypeExtensions {
+internal static class TypeExtensions {
     #region Debug
-    /// <inheritdoc/>
-    public static readonly MethodInfo WriteLine = typeof(Console).GetMethod("WriteLine", [typeof(object)])!;
-    /// <summary>
-    /// Emits IL to print the current value at the top of the stack to the Console.
-    /// Automatically boxes value types to ensure compatibility with <see cref="Console.WriteLine(object)"/>.
-    /// </summary>
-    public static void EmitWriteLineStackTop(this Type type, ILGenerator il) {
+    internal static readonly MethodInfo WriteLine = typeof(Console).GetMethod("WriteLine", [typeof(object)])!;
+    internal static void EmitWriteLineStackTop(this Type type, ILGenerator il) {
         il.Emit(OpCodes.Dup);
         if (type.IsValueType)
             il.Emit(OpCodes.Box, type);
         il.Emit(OpCodes.Call, WriteLine);
     }
-    /// <summary>
-    /// Inspects and prints multiple items from the stack by temporarily storing them in locals.
-    /// Useful for verifying stack state during complex multi-parameter object construction.
-    /// </summary>
-    public static void EmitWriteLineStack(this ILGenerator il, params Type[] types) {
+    internal static void EmitWriteLineStack(this ILGenerator il, params Type[] types) {
         if (types == null || types.Length == 0)
             return;
         var locals = new LocalBuilder[types.Length];
@@ -77,7 +64,6 @@ public static class TypeExtensions {
     internal static readonly ConstructorInfo _NdecCtor = typeof(decimal?).GetConstructor([typeof(decimal)])!;
     internal static readonly ConstructorInfo _NguidCtor = typeof(Guid?).GetConstructor([typeof(Guid)])!;
     #endregion
-    /// <summary>Get a human readable type name with generic</summary>
     public static string ShortName(this Type? t) {
         if (t is null)
             return "void";
@@ -88,9 +74,6 @@ public static class TypeExtensions {
         string name = t.Name.Split('`')[0];
         return $"{name}<{args}>";
     }
-    /// <summary>
-    /// Check if the type has a related method in <see cref="DbDataReader"/>.
-    /// </summary>
     public static bool IsBaseType(this Type type) {
         return type == typeof(int) || type == typeof(string) || type == typeof(DateTime)
             || type == typeof(bool) || type == typeof(long) || type == typeof(decimal)
@@ -100,18 +83,8 @@ public static class TypeExtensions {
             || type == typeof(TimeSpan) || type == typeof(DateTimeOffset)
             || type == typeof(DateOnly) || type == typeof(TimeOnly);
     }
-    /// <summary>
-    /// Check if the type can hold a <see langword="null"/> value
-    /// </summary>
     public static bool IsNullable(this Type type)
         => !type.IsValueType || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>));
-    /// <summary>
-    /// Get the <see cref="DbDataReader"/> method for a given Type.
-    /// </summary>
-    /// <remarks>
-    /// If a specialized method (like GetInt32) does not exist for the type, 
-    /// it falls back to the generic <see cref="DbDataReader.GetFieldValue{T}"/>.
-    /// </remarks>
     public static MethodInfo GetDbMethod(this Type type) {
         var method = type switch {
             _ when type == typeof(int) => _i32,
@@ -137,9 +110,6 @@ public static class TypeExtensions {
         Type nullableType = type.IsValueType ? typeof(Nullable<>).MakeGenericType(type) : type;
         return _getMeth.MakeGenericMethod(nullableType);
     }
-    /// <summary>
-    /// Retrieves the constructor for <see cref="Nullable{T}"/> for the given value type.
-    /// </summary>
     public static ConstructorInfo GetNullableConstructor(this Type type) {
         if (!type.IsValueType)
             throw new ArgumentException($"{type} must be a value type to have a Nullable<> constructor", nameof(type));
@@ -162,12 +132,6 @@ public static class TypeExtensions {
         return typeof(Nullable<>).MakeGenericType(type).GetConstructor([type])
                 ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Could not find Nullable constructor for {type.Name}");
     }
-    /// <summary>
-    /// Determines if two types share the same representation on the CIL evaluation stack.
-    /// </summary>
-    /// <example>
-    /// <c>int</c> and <c>DayOfWeek</c> (Enum) are stack equivalent as both occupy an int32 slot.
-    /// </example>
     public static bool IsStackEquivalent(this Type source, Type target) {
         if (source == target)
             return true;
@@ -201,10 +165,6 @@ public static class TypeExtensions {
                 return null;
         }
     }
-    /// <summary>
-    /// Maps a member (Field, Property, Ctor) from an open generic definition 
-    /// to its equivalent on a specific closed generic type.
-    /// </summary>
     public static MemberInfo GetClosedMember(this MemberInfo member, Type closedType) {
         closedType = Nullable.GetUnderlyingType(closedType) ?? closedType;
         if (!closedType.IsGenericType)
@@ -221,24 +181,12 @@ public static class TypeExtensions {
             return mi.MakeGenericMethod(closedType.GetGenericArguments());
         return MethodBase.GetMethodFromHandle(mi.MethodHandle, closedType.TypeHandle)!;
     }
-    /// <summary>
-    /// Replaces generic placeholders (T, TKey) with actual types from the parent closed type.
-    /// </summary>
-    /// <param name="type">The member type that might be open (e.g., <see cref="List{T}"/>)</param>
-    /// <param name="closedParent">The closed provider (e.g., <see cref="KeyValuePair{Int32, String}"/>)</param>
     public static Type CloseType(this Type type, Type closedParent) {
         if (!type.ContainsGenericParameters)
             return type;
         Type[] parentArgs = closedParent.GetGenericArguments();
         return Resolve(type, parentArgs);
     }
-    /// <summary>
-    /// Resolves generic placeholders (T, TKey) within a type using the 
-    /// generic arguments provided by a parent context.
-    /// </summary>
-    /// <param name="type">The type containing open parameters.</param>
-    /// <param name="parentTypeArguments">The actual types to substitute.</param>
-    /// <returns>A fully closed, executable <see cref="Type"/>.</returns>
     public static Type CloseType(this Type type, Type[] parentTypeArguments) {
         if (!type.ContainsGenericParameters)
             return type;
@@ -288,7 +236,6 @@ public static class TypeExtensions {
 
         return target;
     }
-    /// <summary>Determines whether the parameter has a default value and that value is <see langword="default"/>.</summary>
     public static bool IsTypeDefault(this ParameterInfo p) {
         if (!p.HasDefaultValue)
             return false;

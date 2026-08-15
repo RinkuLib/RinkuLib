@@ -129,8 +129,7 @@ sealed class PostgresIntArrayPlan(Type parentType, string parameterName, INullCo
     : ScalarDbItemPlan<int[]>(parentType, parameterName, nullHandler, ordinal) {
     private static readonly MethodInfo ReadMethod = typeof(DbDataReader).GetMethod(nameof(DbDataReader.GetFieldValue))!.MakeGenericMethod(typeof(int[]));
 
-    protected override void EmitValue(ColumnInfo column, Generator generator, out object? targetObject) {
-        targetObject = null;
+    protected override void EmitValue(ColumnInfo column, Generator generator) {
         generator.Emit(OpCodes.Ldarg_1);
         generator.Emit(OpCodes.Ldc_I4, ColumnOrdinal);
         generator.Emit(OpCodes.Callvirt, ReadMethod);

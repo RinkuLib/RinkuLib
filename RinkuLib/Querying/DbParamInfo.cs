@@ -17,17 +17,17 @@ public interface IDbParameterDefaults {
     /// <summary>Builds a binding strategy from the metadata exposed by a live database parameter.</summary>
     DbParamInfo MakeInfo(IDbDataParameter parameter);
 }
-/// <summary>The implementation-neutral slot for the library's parameter-binding defaults.</summary>
+/// <summary>Provides the application wide defaults used to create database parameter settings.</summary>
 public static class DbParameterDefaults {
     private static IDbParameterDefaults? _current;
-    /// <summary>The currently installed defaults.</summary>
+    /// <summary>Gets or sets the parameter defaults used across the application.</summary>
     public static IDbParameterDefaults Current {
         get => _current ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "No default database-parameter services have been installed");
         set => _current = value ?? throw new ArgumentNullException(nameof(value));
     }
     /// <summary>
-    /// Installs initial parameter defaults once. The shipped implementation uses this during bootstrap
-    /// without coupling the parameter ledger to that implementation.
+    /// Installs the initial database parameter defaults.
+    /// Call this once during startup when replacing the supplied default.
     /// </summary>
     public static bool TryInstall(IDbParameterDefaults defaults)
         => Interlocked.CompareExchange(ref _current, defaults ?? throw new ArgumentNullException(nameof(defaults)), null) is null;

@@ -1,118 +1,127 @@
-# Name matching
+# Adapt names
 
-A slot matches a column by name, case-insensitive. A nested slot carries a prefix built from the path that reached it, so its columns read as `prefix + name`. Names are matched from the right, one segment at a time.
+Names match without regard to case.
+
+```csharp
+public record Customer(int Id, string Name);
+
+Customer customer = GetCustomer.Query<Customer>(cnn);
+// ID | name -> Customer.Id | Customer.Name
+```
+
+A nested value adds its member name to the names inside it.
 
 ```csharp
 public record Address(int Zip, string City) : IDbReadable;
 public record Person(int Id, Address Home);
 
-// Columns: Id | HomeZip | HomeCity
-// Home is nested, so its columns take the "Home" prefix:
-//   Zip  matches HomeZip
-//   City matches HomeCity
+Person person = GetPerson.Query<Person>(cnn);
+// Id | HomeZip | HomeCity
 ```
 
-The attributes below adjust which names a slot accepts.
-
-## `[Alt]`, another accepted name
+When the code cannot change, adapt the SQL.
 
 ```csharp
-public record Person(int Id, [Alt("Name")] string Username);
-// Columns: Id | Username   -> fills Username
-// Columns: Id | Name       -> fills Username
+public record Customer(int Id, string Name);
 ```
 
-Repeat it for more names:
+```sql
+SELECT customer_id AS Id, display_name AS Name
+FROM customers
+```
+
+When the SQL cannot change, add accepted names to the code.
 
 ```csharp
-public record Product(int Id, [Alt("Title")][Alt("Label")] string Name);
-// a Name, Title, or Label column all fill Name
+public record Customer([Alt("customer_id")] int Id, [Alt("display_name")] string Name);
 ```
 
-The prefix still applies to an alt on a nested slot:
+```sql
+SELECT customer_id, display_name
+FROM customers
+```
+
+`Alt` keeps the declared name as well as the additional name.
+
+```csharp
+static readonly QueryCommand GetCustomerWithAliases = new("""
+    SELECT customer_id AS Id, display_name AS Name
+    FROM customers
+    """);
+
+static readonly QueryCommand GetCustomerWithDatabaseNames = new("""
+    SELECT customer_id, display_name
+    FROM customers
+    """);
+
+Customer first = GetCustomerWithAliases.Query<Customer>(cnn);
+Customer second = GetCustomerWithDatabaseNames.Query<Customer>(cnn);
+```
+
+An alternate name on a nested value still includes the outer prefix.
 
 ```csharp
 public record Address([Alt("Postal")] int Zip, string City) : IDbReadable;
 public record Person(int Id, Address Home);
-// Columns: Id | HomePostal | HomeCity   -> HomePostal fills Zip
+
+Person person = GetPerson.Query<Person>(cnn);
+// HomeZip or HomePostal can fill person.Home.Zip.
 ```
 
-## `[AltSkippingSegments]`, match higher up by count
+## Skip prefix parts
 
-A nested slot can also match a column that drops some of its inner prefix segments. The count is how many segments the name spans: 1 is the normal full prefix, 2 drops the innermost one, and so on.
+`[AltSkippingSegments]` removes a fixed number of inner prefix parts for its alternate name.
 
 ```csharp
 public record Inner([AltSkippingSegments("Code", 2)] int Code) : IDbReadable;
 public record Middle(Inner Sub) : IDbReadable;
 public record Outer(int Id, Middle Mid);
 
-// Code nests as Mid.Sub, so its full prefix is "MidSub".
-// Columns: Id | MidSubCode   -> matches on the full prefix, always available
-// Columns: Id | MidCode      -> a span of 2 drops the innermost segment, Sub
+Outer value = GetOuter.Query<Outer>(cnn);
+// MidSubCode uses the full name.
+// MidCode uses the alternate name after skipping Sub.
 ```
 
-A span of 3 drops both segments, so a bare `Code` column matches too:
-
-```csharp
-public record Inner([AltSkippingSegments("Code", 3)] int Code) : IDbReadable;
-public record Middle(Inner Sub) : IDbReadable;
-public record Outer(int Id, Middle Mid);
-
-// Columns: Id | Code   -> fills Mid.Sub.Code, both segments dropped
-```
-
-## `[AltUpTo]`, match higher up by name
-
-Same idea, but you name the segment to climb back to instead of counting.
+`[AltUpTo]` removes prefix parts through a named part of the path.
 
 ```csharp
 public record LayerOne(int First, LayerTwo Two);
 public record LayerTwo([AltUpTo("NotTooDeep", "Two")] int Second, LayerThree Three) : IDbReadable;
-public record LayerThree([AltUpTo("SuperDeep", "Two")] int Third, [AltUpTo("SemiDeep", "Three")] int Deep) : IDbReadable;
+public record LayerThree([AltUpTo("SuperDeep", "Two")] int Third) : IDbReadable;
 
-// Columns: First | NotTooDeep | SuperDeep | TwoSemiDeep
-// Second climbs up to "Two"   and matches NotTooDeep   (prefix cleared)
-// Third  climbs up to "Two"   and matches SuperDeep    (prefix cleared)
-// Deep   climbs up to "Three" and matches TwoSemiDeep  (prefix left at "Two")
+LayerOne value = GetLayers.Query<LayerOne>(cnn);
+// First | NotTooDeep | SuperDeep
 ```
 
-## `[NoName]`, position and type only
+## Ignore the name
 
-Drops name matching. The slot takes the next column that fits by type, whatever its name.
+`[NoName]` takes the next compatible column without requiring a name match.
 
 ```csharp
-public readonly struct Boxed<T>([NoName] T value) { public readonly T Value = value; }
-// value fills the next column of type T, name ignored
+public readonly record struct Boxed<T>([NoName] T Value);
+
+Boxed<int> value = GetNumber.Query<Boxed<int>>(cnn);
+// Any available integer column can fill Value.
 ```
 
-The [result shape](../running-queries/result-shapes.md) wrappers use `[NoName]` on their inner value for this reason. `Optional<Track>` matches the same columns as a bare `Track`, because the wrapper adds no name of its own to prefix them.
-
-## The runtime form
-
-For a type you cannot annotate, edit the names on its info. `UpdateAltName` visits every slot, and whatever `INameComparer` you return becomes that slot's names, so every attribute above has a runtime form. Return `null` to leave a slot untouched.
+When neither the SQL nor the type should carry the rule, configure it at startup.
 
 ```csharp
-var info = TypeParsingInfo.GetOrAdd<Customer>();
-
-// [Alt("PostalCode")]
-info.UpdateAltName(nc => nc.GetDefaultName() == "Zip" ? nc.AddAltName("PostalCode") : null);
-
-// [AltSkippingSegments("Code", 2)]
-info.UpdateAltName(nc => nc.GetDefaultName() == "Code" ? nc.AddComparer(new NameMultiSpan("Code", 2)) : null);
-
-// [AltUpTo("SemiDeep", "Three")]
-info.UpdateAltName(nc => nc.GetDefaultName() == "Deep" ? nc.AddComparer(new NameMultiSpanKey("SemiDeep", "Three")) : null);
-
-// [NoName]
-info.UpdateAltName(nc => nc.GetDefaultName() == "Value" ? NoNameComparer.Instance : null);
+TypeParsingInfo.GetOrAdd<Customer>().UpdateAltName(names =>
+    names.GetDefaultName() switch {
+        "Id" => new NameComparer("customer_id"),
+        "Name" => new NameComparer("display_name"),
+        _ => null
+    });
 ```
 
-`AddAltName` and `AddComparer` add to a slot's current names. Returning a comparer on its own (like `NoNameComparer.Instance` above) replaces them. `RemoveName` and `RemoveComparer` take one back out.
+The mapping can now read the fixed SQL into the unchanged type.
 
 ```csharp
-// undo the [Alt("PostalCode")] above
-info.UpdateAltName(nc => nc.GetDefaultName() == "Zip" ? nc.RemoveName("PostalCode") : null);
-
-// undo the [AltUpTo("SemiDeep", "Three")] above
-info.UpdateAltName(nc => nc.GetDefaultName() == "Deep" ? nc.RemoveComparer(new NameMultiSpanKey("SemiDeep", "Three")) : null);
+Customer customer = GetCustomer.Query<Customer>(cnn);
+// customer_id | display_name -> Customer.Id | Customer.Name
 ```
+
+See [mapping slot rules](../customization/slot-rules.md) for more ways to change names at runtime.
+
+Continue with [tuple mapping](tuples.md).

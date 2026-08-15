@@ -4,21 +4,9 @@ using System.Runtime.CompilerServices;
 
 namespace Rinku.Querying;
 /// <summary>
-/// A memory-efficient dictionary optimized for mapping Latin letters to values.
+/// Maps ASCII letters to values without treating case as different. Other characters are not supported.
+/// Enumeration follows alphabetical order.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Case Insensitivity:</b> This map treats 'A'-'Z' and 'a'-'z' as identical keys.
-/// </para>
-/// <para>
-/// <b>Key Constraints:</b> Only standard Latin alphabet characters are supported. 
-/// Using any other character (numbers, symbols, or extended characters) will result in an error.
-/// </para>
-/// <para>
-/// <b>Iteration:</b> When iterating or accessing keys/values, the data is always 
-/// returned in alphabetical order, regardless of the order in which items were added.
-/// </para>
-/// </remarks>
 public class LetterMap<T> : IDictionary<char, T> {
     uint _mask;
     T[] _values = [];
@@ -27,10 +15,10 @@ public class LetterMap<T> : IDictionary<char, T> {
     /// Bit 0 corresponds to 'a', bit 25 to 'z'.
     /// </summary>
     public uint PresenceMap => _mask;
-    /// <summary>Initialize a new instance of the <see cref="LetterMap{T}"/> class</summary>
+    /// <summary>Creates an empty letter map.</summary>
     public LetterMap() {}
     /// <summary>
-    /// Initializes the map with a collection of character-value pairs.
+    /// Creates a map from the supplied letter and value pairs.
     /// </summary>
     /// <param name="items">The initial items to populate the map.</param>
     public LetterMap(
@@ -40,7 +28,7 @@ public class LetterMap<T> : IDictionary<char, T> {
         ReadOnlySpan<ValueTuple<char, T>> items)
         => ResetWith(items);
     /// <summary>
-    /// Clears the map and populates it with the provided items.
+    /// Replaces the map contents with the supplied items.
     /// </summary>
     /// <param name="items">A span of character-value pairs to initialize the map.</param>
     /// <remarks>
@@ -137,7 +125,7 @@ public class LetterMap<T> : IDictionary<char, T> {
     /// <inheritdoc/>
     public bool IsReadOnly => false;
     /// <summary>
-    /// Add or set a specific letter with its value in the map (case-insensitive).
+    /// Adds a letter and value. Throws when the letter already exists.
     /// </summary>
     public void Add(char key, T value) {
         if (ContainsKey(key))
@@ -148,12 +136,12 @@ public class LetterMap<T> : IDictionary<char, T> {
     public void Add(KeyValuePair<char, T> item)
         => Add(item.Key, item.Value);
     /// <summary>
-    /// Check to see if a specific letter is present in the map (case-insensitive).
+    /// Returns whether the ASCII letter exists in the map.
     /// </summary>
     public bool ContainsKey(char key)
         => (_mask & (1u << Idx(key))) != 0;
     /// <summary>
-    /// Attempts to retrieve a value. Does not throw if the key is missing or invalid.
+    /// Tries to get the value for an ASCII letter. Returns <see langword="false"/> when it is missing.
     /// </summary>
     public bool TryGetValue(char key, out T value) {
         int i = Idx(key);

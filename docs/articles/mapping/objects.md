@@ -1,183 +1,238 @@
-# Objects and nesting
+# Map rows to objects
 
-The engine builds an object by finding a construction path the columns can satisfy, a constructor or a static factory, optionally followed by filling settable members.
+This page covers default object mapping through `TypeParsingInfo` and construction paths. You can change one rule, replace a type registration, or use another result parser.
 
-## What it can use
-
-With no annotations:
-
-- Public constructors, parameters matched by name and type against the columns.
-- Public static factory methods on the type that return the type itself.
-- Public settable fields and properties, filled after construction (when [below](#post-construction-members)). `init`-only properties are not settable this way, they can only run during construction, so make them constructor parameters instead.
+## Constructor
 
 ```csharp
-public record Track(int Id, string Name, decimal UnitPrice);   // constructor
+public record Album(int Id, string Title);
 
-public class Playlist {                                         // parameterless constructor
+static readonly QueryCommand GetAlbum = new("""
+    SELECT AlbumId AS Id, Title
+    FROM albums
+    WHERE AlbumId = @albumId
+    """);
+
+Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
+```
+
+An `init` member cannot be filled after a parameterless construction.
+
+```csharp
+public sealed class Album {
+    public int Id { get; init; }
+    public string? Title { get; init; }
+}
+
+Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
+// RINKU3001. Use constructor parameters for the init members.
+```
+
+## Writable members
+
+```csharp
+public sealed class Album {
     public int Id { get; set; }
-    public string? Name { get; set; }                           // both settable, filled after
+    public string? Title { get; set; }
 }
+
+Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
 ```
 
-Private members stay out of automatic discovery unless the default parsing info opts in:
+A usable parameterized constructor is preferred when both forms exist.
 
 ```csharp
-public class ExternalRow : IDbReadable
-{
-    private int Id { get; set; }
-    public int ReadId() => Id;
+public sealed class Album {
+    public Album() { }
+
+    public Album(int id, string title) {
+        Id = id;
+        Title = title;
+    }
+
+    public int Id { get; }
+    public string Title { get; } = "";
 }
 
-var info = (DefaultTypeParsingInfo)TypeParsingInfo.GetOrAdd<ExternalRow>();
-info.UsePrivateMembers = true;
-// The Id column now fills the private setter.
+Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
 ```
 
-The flag affects the default implementation only. A custom `TypeParsingInfo` remains free to choose its
-own member rules, and an individual member can always be registered explicitly.
+## Static factory
 
-A column matches a slot when the name matches (case-insensitive) and the type is convertible. Among the viable paths, the engine takes the first one the columns fully satisfy. Paths are kept most-specific first, so that first match is usually correct. The exact ordering is on [construction paths](construction-paths.md).
+```csharp
+public interface IShape {
+    public static IShape FromCircle(double radius) => new Circle(radius);
+}
 
-## Exact scalar types
+public record Circle(double Radius) : IShape;
 
-Conversion is the default:
+static readonly QueryCommand GetShape = new("""
+    SELECT Radius
+    FROM shapes
+    WHERE ShapeId = @shapeId
+    """);
+
+IShape shape = GetShape.Query<IShape>(cnn, new { shapeId = 1 });
+// shape is a Circle
+```
+
+Several factories can provide different implementations.
+
+```csharp
+public interface IShape {
+    public static IShape FromCircle(double radius) => new Circle(radius);
+
+    public static IShape FromRectangle(double width, double height) => new Rectangle(width, height);
+}
+
+public record Circle(double Radius) : IShape;
+public record Rectangle(double Width, double Height) : IShape;
+
+IShape circle = GetCircle.Query<IShape>(cnn);
+// Radius -> Circle
+
+IShape rectangle = GetRectangle.Query<IShape>(cnn);
+// Width | Height -> Rectangle
+```
+
+The first factory or constructor that can use the returned columns wins. See [construction paths](construction-paths.md) for the full selection and configuration rules.
+
+## More than one row shape
+
+A type can accept a shorter or longer result.
+
+```csharp
+public record Album(int Id, string Title, string? Notes = null);
+
+Album shortRow = GetAlbum.Query<Album>(cnn);
+// Id | Title -> Album(Id, Title, null)
+
+Album fullRow = GetAlbumWithNotes.Query<Album>(cnn);
+// Id | Title | Notes -> Album(Id, Title, Notes)
+```
+
+This covers the same two shapes as two constructors.
+
+```csharp
+public sealed class Album {
+    public Album(int id, string title) { }
+    public Album(int id, string title, string? notes) { }
+}
+```
+
+Only the runtime type’s default value provides this fallback.
+
+```csharp
+public record RatedAlbum(int Id, int Rating = 5);
+
+RatedAlbum album = GetAlbumIdOnly.Query<RatedAlbum>(cnn);
+// RINKU3001. The missing Rating does not become 5.
+```
+
+The [construction path options](construction-paths.md) show how to set custom fallback values.
+
+## Require the exact column type
+
+By default, a compatible database value may be converted to the requested CLR type.
 
 ```csharp
 public record Amount(int Value);
 
-// Value is int, the column is long: the path is still valid
+Amount amount = GetLongValue.Query<Amount>(cnn);
+// A long column can fill Value through conversion.
 ```
 
-Use `[ExactType]` when a parameter or member must receive the same type as the column:
+`[ExactType]` requires the column type to match the slot type.
 
 ```csharp
-public record StrictAmount([ExactType] int Value);
+public record Amount([ExactType] int Value);
 
-public class StrictRow : IDbReadable {
-    [ExactType]
-    public int Value { get; set; }
+Amount amount = GetLongValue.Query<Amount>(cnn);
+// RINKU3001. A long column cannot fill the exact int slot.
+```
+
+Nullable value types compare their underlying type.
+
+```csharp
+public record Amount([ExactType] int? Value);
+// An int column is valid. A long column is not.
+```
+
+## Fill members after construction
+
+A parameterized constructor consumes its parameters only.
+
+```csharp
+public sealed class Album {
+    public Album(int id) => Id = id;
+
+    public int Id { get; }
+    public string? Title { get; set; }
 }
 
-// StrictAmount with an int column: valid
-// StrictAmount with a long column: no matching path
-// StrictRow with a long column: no matching path
+Album album = GetAlbum.Query<Album>(cnn);
+// Id fills the constructor. Title remains unset.
 ```
 
-The runtime form uses the extended slot matcher:
+`[CanCompleteWithMembers]` lets remaining columns fill writable members.
 
 ```csharp
-var path = TypeParsingInfo.GetOrAdd<StrictAmount>()
-    .GetConstruction(typeof(int));
-var slot = path.Parameters[0] as ParamInfoPlus
-    ?? new ParamInfoPlus(path.Parameters[0].Type, path.Parameters[0].NullColHandler,
-        path.Parameters[0].NameComparer, IColModifier.Nothing, IFallbackParserGetter.Nothing);
-slot.RequireExactType = true;
-path.Parameters[0] = slot;
-```
+public sealed class Album {
+    [CanCompleteWithMembers]
+    public Album(int id) => Id = id;
 
-Nullable targets still compare their underlying type. `[ExactType] int?` accepts an `int` column that may contain `NULL`, but not a `long` column.
-
-## Default values
-
-A parameter with a default value is optional to the negotiation. When nothing satisfies it, no matching column for a simple type, no satisfiable construction for a complex one, the slot falls back to its default instead of failing the path. One constructor with defaults covers what several arities would. `(int, string, string?)` below also stands in for `(int, string)`.
-
-```csharp
-public record Track(int Id, string Name, string? Composer = null);
-// Columns: Id | Name            -> builds, Composer stays null
-// Columns: Id | Name | Composer -> builds with all three
-```
-
-The fallback emits the type's default, so it applies when the declared default is exactly that (`= null`, `= 0`, `= false`). A parameter with `= 5` is not optional, the engine will not fabricate the value. Post-construction members need none of this, they are optional by nature and stay unset when nothing matches.
-
-The runtime form is an `IFallbackParserGetter` on the slot, carried by a `ParamInfoPlus` on the [construction path](construction-paths.md#replacing-the-set). `DefaultValueFallback.Instance` is the type-default fallback a compiler default produces, so attaching it makes a slot optional even when its parameter declares nothing:
-
-```csharp
-public record Track(int Id, string Name, int Code);   // Code is required, no = default
-
-if (TypeParsingInfo.GetOrAdd<Track>() is ICanProvideConstructions info) {
-    var slots = info.PossibleConstructors[0].Parameters;
-    var s = slots[2];                                  // Code
-    slots[2] = new ParamInfoPlus(s.Type, s.NullColHandler, s.NameComparer,
-        IColModifier.Nothing, DefaultValueFallback.Instance);
-    // a schema without a Code column now builds, Code falling back to 0
+    public int Id { get; }
+    public string? Title { get; set; }
 }
+
+Album album = GetAlbum.Query<Album>(cnn);
+// Id fills the constructor. Title fills the property.
 ```
 
-Going runtime reaches past what a declared default can say. A default only fires when it equals the type default, so `= 5` is ignored. Your own `IFallbackParserGetter` returns any parser for the missing slot, so it can supply a non-default constant, a computed value, or a whole alternative construction.
-
-## Alternative names
-
-`[Alt]` adds an accepted name to a slot.
+A member does not overwrite a column already consumed by the constructor.
 
 ```csharp
-public record Person(int Id, [Alt("Name")] string Username);
-// matches a "Username" column or a "Name" column
+public sealed class Album {
+    [CanCompleteWithMembers]
+    public Album(int id) => Id = id;
+
+    public int Id { get; set; }
+    public string? Title { get; set; }
+}
+// Id remains the constructor value. Title can use the remaining column.
 ```
 
-Names go further, skipping prefix segments or matching by position alone. The full rules are on [names](names.md).
+Use `[MayReuseCol]` when a member must read an already-consumed column.
 
-## Nesting
+## Recursive objects
 
-A slot whose type is complex recurses. Its columns are matched with a name prefix built from the path.
-
-```csharp
-public record Artist(int Id, string Name) : IDbReadable;
-public record Album(int Id, string Title, Artist Artist);
-
-// Columns: Id | Title | ArtistId | ArtistName
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
-```
-
-`Artist.Id` matches `ArtistId`, `Artist.Name` matches `ArtistName`. The prefix grows with depth, which keeps two nested objects of the same shape from taking each other's columns.
-
-Nested custom types must be registered. `IDbReadable` on the nested type is the usual way (see [registration](registration.md)).
-
-## Recursion
-
-The same negotiation runs at every depth, a self-referencing type included. Each level consumes its own columns, and the descent goes exactly as deep as the columns reach.
+A self-referencing type reads as many levels as the columns provide.
 
 ```csharp
 public record User(int Id, string Name, [Alt("Boss")] User? Supervisor = null);
 
-// Columns: Id | Name | SupervisorId | SupervisorName | SupervisorBossId | SupervisorBossName
-User u = GetUser.Query<User>(cnn, new { id = 3 });
-// two levels of Supervisor columns, so u.Supervisor.Supervisor is filled,
-// and its own Supervisor finds no columns and stays null
+User user = GetUser.Query<User>(cnn);
+// Id | Name | SupervisorId | SupervisorName | SupervisorBossId | SupervisorBossName
 ```
 
-A level that consumes no new column stops instead of descending into the same type again, so the recursion ends once the columns run out. The `= null` [default](#default-values) is what lets it end cleanly. At the deepest level no `Supervisor` columns remain, so the slot falls back to its default and the path still builds. Without it, every level would require a `Supervisor` and the negotiation could never resolve.
+```text
+user
+└─ Supervisor
+   └─ Supervisor
+      └─ Supervisor = null
+```
 
-## Factories and polymorphism
+The default `= null` lets the final level finish when no more supervisor columns remain.
 
-A factory can return a derived type, so an interface-typed slot can produce different implementations depending on which columns are present.
+## Unused columns
+
+Columns that the selected path does not need can remain unused.
 
 ```csharp
-public interface IPayment : IDbReadable {
-    public static IPayment CreateCard(string cardNumber) => new Card(cardNumber);
-    public static IPayment CreateTransfer(string iban, string bic) => new Transfer(iban, bic);
-}
-public record Card(string CardNumber) : IPayment;
-public record Transfer(string Iban, string Bic) : IPayment;
+public record Album(int Id, string Title);
 
-public record Order(int Id, IPayment Payment);
-
-// Columns: Id | PaymentIban | PaymentBic      -> Payment is a Transfer
-// Columns: Id | PaymentCardNumber             -> Payment is a Card
+Album album = GetAlbumAndArtistName.Query<Album>(cnn);
+// Id | Title | ArtistName -> Album uses Id and Title.
 ```
 
-The columns decide which factory is satisfiable, and the first fully-satisfied path builds the object.
-
-## Post-construction members
-
-After a construction path is chosen, the columns it did not consume can fill the type's public settable fields and properties. This completion runs automatically only for the parameterless constructor. To enable it after any other constructor or factory, mark that path `[CanCompleteWithMembers]`.
-
-```csharp
-[method: CanCompleteWithMembers]
-public class Metadata(string value) {
-    public string Value { get; set; } = value;   // settable, but the constructor already consumed "Value"
-    public string? Source { get; set; }           // member: fills the leftover "Source" column
-}
-// Columns: Value | Source  ->  the constructor takes Value and completion leaves it untouched, Source fills from the rest
-```
-
-Members negotiate over the columns the constructor left behind, by the same name and type matching used everywhere. A settable member is not an override. One whose name matches a consumed column finds it already taken, looks among the remaining columns, and is left as construction set it when none fit. To let a member read a column a parameter already used, mark it `[MayReuseCol]`, one of the [reading-order](reading-order.md) flags.
+[Map a nested object](nesting.md).

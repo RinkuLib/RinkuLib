@@ -161,7 +161,6 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         val = value;
         return true;
     }
-    /// <inheritdoc/>
     void IQueryBuilder.Use(int variableIndex, object? value) => Use(variableIndex, value);
     /// <inheritdoc/>
     public readonly object? this[string condition] {
@@ -180,8 +179,8 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         => QueryCommand.QueryText.Parse(Variables);
 
     /// <summary>
-    /// Replaces the current values from an object and immediately synchronizes the live command.
-    /// Special handlers process the raw values during synchronization.
+    /// Replaces the current values from an object and updates the live command.
+    /// Special handlers receive the supplied values before they are written.
     /// </summary>
     public void UseWith(object parameterObj) {
         Type type = parameterObj.GetType();

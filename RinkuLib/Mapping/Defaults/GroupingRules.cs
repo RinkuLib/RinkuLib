@@ -4,9 +4,8 @@ using Rinku.Internal;
 namespace Rinku.Mapping;
 
 /// <summary>
-/// A key of one or more marked sources, each a member (property or field) or a construction parameter, negotiated
-/// to its own column with reuse and compared by its own equality. Several sources compose a composite key. It is
-/// the key of a marked member or, when a construction's marked parameters override the type, of those parameters.
+/// Groups rows by one or more members, construction parameters, or named columns. Each key part uses equality
+/// and may still be read by the mapped object.
 /// </summary>
 public sealed class EqualityGroupingRule : IGroupingRule {
     private readonly object[] Sources;
@@ -44,19 +43,16 @@ public sealed class EqualityGroupingRule : IGroupingRule {
             throw new RinkuConfigurationException(ErrorCodes.GroupKeyUnmapped, "an equality group key requires at least one source");
         return sources.Cast<object>().ToArray();
     }
-    /// <summary>Closes a member declared on a generic definition to the spanning type, so a key on a generic member reads its resolved type.</summary>
     private static MemberInfo Closed(Type spanningType, MemberInfo member) {
         if (member.DeclaringType is { IsGenericTypeDefinition: true } && spanningType.IsGenericType)
             return (MemberInfo?)spanningType.GetProperty(member.Name) ?? spanningType.GetField(member.Name) ?? member;
         return member;
     }
-    /// <summary>Closes a construction parameter declared on a generic definition to the spanning type, so a parameter key reads its resolved type.</summary>
     private static ParameterInfo Closed(Type spanningType, ParameterInfo p) {
         if (p.Member.DeclaringType is { IsGenericTypeDefinition: true } && spanningType.IsGenericType)
             return ((MethodBase)p.Member.GetClosedMember(spanningType)).GetParameters()[p.Position];
         return p;
     }
-    /// <summary>Resolves a column-name key to the column's own type, so the key reads it whatever that type is. Only the name is matched.</summary>
     private static (INameComparer, Type) ResolveColumn(string name, ColumnInfo[] columns) {
         for (int i = 0; i < columns.Length; i++)
             if (string.Equals(columns[i].Name, name, StringComparison.OrdinalIgnoreCase))
@@ -69,7 +65,7 @@ public sealed class EqualityGroupingRule : IGroupingRule {
 
 /// <summary>
 /// A boundary decided by a marked <c>static (bool, TKey) Method(TKey stored, ...params)</c>. The stored key is the
-/// first parameter; every parameter after it is negotiated like an ordinary reader, so the method's inputs carry
+/// first parameter. every parameter after it is negotiated like an ordinary reader, so the method's inputs carry
 /// alternates and nesting.
 /// </summary>
 public sealed class MethodGroupingRule : IGroupingRule {
@@ -104,15 +100,7 @@ public sealed class MethodGroupingRule : IGroupingRule {
     }
 }
 
-/// <summary>
-/// The default boundary of a construction with no marked key, read from its argument shape. The arguments before the
-/// first accumulator, each already negotiated for construction, become an equality key, reused so their columns still
-/// feed the arguments. With none before the first accumulator the group never changes (a whole tuple of collections),
-/// unless a non-accumulator argument follows an accumulator, which is ambiguous and throws <c>MissingGroupBoundary</c>.
-/// It is a rule like any other so the emit only ever calls <see cref="IGroupingRule.MakeBoundary"/>.
-/// </summary>
 internal sealed class InferredGroupingRule(IReadOnlyList<DbItemPlan> arguments, MethodBase construction, Type resultType) : IGroupingRule {
-    /// <inheritdoc/>
     public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
         int firstAccumulator = arguments.Count;
         for (int i = 0; i < arguments.Count; i++)

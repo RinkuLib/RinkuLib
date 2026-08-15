@@ -37,9 +37,6 @@ public interface IQuerySegmentHandler {
 /// </summary>
 /// <param name="Name">The marker name including its underscore and suffix letter, such as <c>Order_N</c>.</param>
 public delegate T HandlerGetter<out T>(string Name) where T : IQuerySegmentHandler;
-/// <summary>
-/// The placeholder that throws if a handler spot is rendered before a real handler is bound.
-/// </summary>
 internal class NotSetHandler() : IQuerySegmentHandler {
     public void Handle(ref ValueStringBuilder sb, object? value)
         => throw new RinkuInternalException(ErrorCodes.InternalInvariant, "a handler spot was rendered before a real handler was bound to it");

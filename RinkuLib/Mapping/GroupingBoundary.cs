@@ -3,53 +3,52 @@ using System.Reflection.Emit;
 
 namespace Rinku.Mapping;
 
-/// <summary>The surface a rule lowers its negotiated readers through, turning them into emit handles on the state struct.</summary>
+/// <summary>Creates the readers and fields needed by a custom grouping rule.</summary>
 public interface IBoundaryBuild {
-    /// <summary>Compiles a negotiated reader into a handle whose <see cref="IBoundaryReader.EmitRead"/> reads the current row.</summary>
+    /// <summary>Creates a boundary reader from a mapped value.</summary>
     IBoundaryReader Reader(DbItemPlan reader, Type type);
-    /// <summary>Defines a per-instance state field of <paramref name="type"/> to store part of the key across rows.</summary>
+    /// <summary>Creates storage for one part of a key between rows.</summary>
     IBoundaryField Field(Type type);
 }
 
-/// <summary>A compiled key reader: emits reading its value from the current row.</summary>
+/// <summary>Reads one part of a grouping key from the current row.</summary>
 public interface IBoundaryReader {
     /// <summary>The value type this reader produces.</summary>
     Type Type { get; }
-    /// <summary>The column index when the reader is a single column, used to gate an absent left-joined sub level; otherwise <see langword="null"/>.</summary>
+    /// <summary>Gets the column used to detect a missing joined value when one is available.</summary>
     int? Column { get; }
-    /// <summary>The static field and its bound target when the reader carries one, wired after the state type is baked; otherwise <see langword="null"/>.</summary>
-    (FieldInfo Field, object Target)? Target { get; }
-    /// <summary>Emits reading the value from the current row and leaving it on the stack.</summary>
+    /// <summary>Gets the bound values needed by this reader.</summary>
+    (FieldInfo Field, object[] Targets) Targets { get; }
+    /// <summary>Writes the instructions that read the value from the current row.</summary>
     void EmitRead(Generator g);
 }
 
-/// <summary>A per-instance state field storing part of the key between rows.</summary>
+/// <summary>Stores one part of a grouping key between rows.</summary>
 public interface IBoundaryField {
-    /// <summary>Emits loading the state instance, so a value pushed after it can be stored with <see cref="EmitStore"/>.</summary>
+    /// <summary>Writes the instructions that load the value owner for <see cref="EmitStore"/>.</summary>
     void EmitThis(Generator g);
-    /// <summary>Emits loading the stored value onto the stack.</summary>
+    /// <summary>Writes the instructions that load the stored value.</summary>
     void EmitLoad(Generator g);
-    /// <summary>Emits storing the value on the stack into the field; expects the instance then the value beneath it.</summary>
+    /// <summary>Writes the instructions that store a value after <see cref="EmitThis"/>.</summary>
     void EmitStore(Generator g);
 }
 
 /// <summary>
-/// The negotiated group boundary of a spanning read, the IL emitter for the resolved key. It captures the group's
-/// first row and, on each later row, decides same-group or not with its own comparison, so a boundary that is not
-/// equality lives entirely here.
+/// Decides when rows belong to the same object in a spanning mapping.
+/// Derive from this type for a grouping rule that cannot use equality or a boundary method.
 /// </summary>
 public abstract class GroupingBoundary {
     /// <summary>The column whose <c>DBNull</c> marks the group absent for a left-joined sub level, or <see langword="null"/> when none.</summary>
     public virtual int? PresenceColumn => null;
-    /// <summary>Whether a later row can ever start a new group; <see langword="false"/> folds every row into one instance.</summary>
+    /// <summary>Whether a later row can ever start a new group. <see langword="false"/> folds every row into one instance.</summary>
     public abstract bool CanChange { get; }
     /// <summary>Whether the boundary stores state captured on the group's first row.</summary>
     public abstract bool Captures { get; }
-    /// <summary>The static fields and bound targets the boundary's readers carry, wired after the state type is baked.</summary>
-    public virtual IEnumerable<(FieldInfo Field, object Target)> Targets => [];
-    /// <summary>Emits reading and storing the current row's key, the group's first row.</summary>
+    /// <summary>Gets the bound values used by this boundary.</summary>
+    public virtual IEnumerable<(FieldInfo Field, object[] Targets)> Targets => [];
+    /// <summary>Writes the instructions that capture a key from the first row.</summary>
     public abstract void EmitCapture(Generator g);
-    /// <summary>Emits reading this row's key and comparing it; branch to <paramref name="changed"/> for a new group, else advance the stored key.</summary>
+    /// <summary>Writes the instructions that branch to <paramref name="changed"/> when a new group starts.</summary>
     public abstract void EmitCompare(Generator g, Label changed);
 }
 
@@ -66,8 +65,7 @@ public sealed class EqualityBoundary(IReadOnlyList<(IBoundaryReader Reader, IBou
     /// <inheritdoc/>
     public override int? PresenceColumn => Components[0].Reader.Column;
     /// <inheritdoc/>
-    public override IEnumerable<(FieldInfo, object)> Targets
-        => Components.Where(c => c.Reader.Target is not null).Select(c => c.Reader.Target!.Value);
+    public override IEnumerable<(FieldInfo, object[])> Targets => Components.Select(c => c.Reader.Targets);
     /// <inheritdoc/>
     public override void EmitCapture(Generator g) {
         foreach (var (reader, field) in Components) {
@@ -84,11 +82,6 @@ public sealed class EqualityBoundary(IReadOnlyList<(IBoundaryReader Reader, IBou
         }
     }
     private static readonly MethodInfo StringEquals = typeof(string).GetMethod("op_Equality", [typeof(string), typeof(string)])!;
-    /// <summary>
-    /// Emits the stored-versus-current equality of one component, leaving 1 when it still matches. An integer,
-    /// enum, or boolean key compares with a bare <c>ceq</c>, a string with the ordinal, null-safe <c>==</c>, and
-    /// anything else with <see cref="EqualityComparer{T}"/>, so the common keys carry no comparer fetch or virtual call.
-    /// </summary>
     private static void EmitEquals(Generator g, IBoundaryReader reader, IBoundaryField field) {
         var type = reader.Type;
         var underlying = type.IsEnum ? type.GetEnumUnderlyingType() : type;
@@ -117,10 +110,9 @@ public sealed class EqualityBoundary(IReadOnlyList<(IBoundaryReader Reader, IBou
 }
 
 /// <summary>
-/// A boundary whose same-group decision is a method, <c>static (bool same, TKey next) Method(TKey stored, ...)</c>.
-/// The first parameter is the stored key; the rest are negotiated readers, so a boundary that is not equality (a
-/// bucket, a tolerance, a running key) lives in the method and its inputs come through the same negotiation as any
-/// slot. The stored key advances to <c>next</c> on every row that stays in the group.
+/// Uses a static method to decide whether the current row stays in the group.
+/// The method receives the stored key followed by values from the current row.
+/// It returns whether the group stays open and the key to store for the next row.
 /// </summary>
 public sealed class MethodBoundary(MethodInfo method, Type keyType, IBoundaryField key, IReadOnlyList<IBoundaryReader> parameters) : GroupingBoundary {
     private readonly MethodInfo Method = method;
@@ -136,8 +128,7 @@ public sealed class MethodBoundary(MethodInfo method, Type keyType, IBoundaryFie
     /// <inheritdoc/>
     public override bool Captures => true;
     /// <inheritdoc/>
-    public override IEnumerable<(FieldInfo, object)> Targets
-        => Parameters.Where(p => p.Target is not null).Select(p => p.Target!.Value);
+    public override IEnumerable<(FieldInfo, object[])> Targets => Parameters.Select(p => p.Targets);
     /// <inheritdoc/>
     public override void EmitCapture(Generator g) {
         var tuple = g.DeclareLocal(Method.ReturnType);
@@ -169,7 +160,7 @@ public sealed class MethodBoundary(MethodInfo method, Type keyType, IBoundaryFie
     }
 }
 
-/// <summary>A boundary that never changes: every row folds into the one instance, so the read runs until the rows end.</summary>
+/// <summary>Places every row in one group.</summary>
 public sealed class AlwaysGroupedBoundary : GroupingBoundary {
     /// <summary>The single instance.</summary>
     public static readonly AlwaysGroupedBoundary Instance = new();

@@ -125,7 +125,7 @@ public class MethodConditionEmitter : AccessorEmitterBase {
 
 /// <summary>
 /// The base for an attribute that changes how a parameter object's member is read, its presence rule, its
-/// value, or both. The seam behind attributes like <see cref="ForBoolCondAttribute"/> and
+/// value, or both. Attributes like <see cref="ForBoolCondAttribute"/> and
 /// <see cref="NotNullOrWhitespaceAttribute"/>, subclass it to define a custom rule of your own.
 /// </summary>
 public abstract class AccessorEmitterHandler : Attribute {

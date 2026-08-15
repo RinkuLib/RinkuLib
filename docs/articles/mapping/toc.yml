@@ -1,22 +1,22 @@
-- name: Mapping
-  href: index.md
-- name: Objects and Nesting
+- name: Map rows to objects
   href: objects.md
-- name: Nullability
-  href: nullability.md
-- name: Grouping
+- name: Construction paths
+  href: construction-paths.md
+- name: Nested objects
+  href: nesting.md
+- name: Collections from joins
+  href: collections.md
+- name: Group rows into results
   href: grouping.md
-- name: Custom Multi-Row Types
-  href: custom-multi-row-types.md
-- name: DynaObject
-  href: dynaobject.md
+- name: Adapt names
+  href: names.md
+- name: Tuples
+  href: tuples.md
+- name: Reading order
+  href: reading-order.md
+- name: Dynamic rows
+  href: dynamic-rows.md
+- name: Database NULL
+  href: nulls.md
 - name: Registration
   href: registration.md
-- name: Construction Paths
-  href: construction-paths.md
-- name: Names
-  href: names.md
-- name: Reading Order
-  href: reading-order.md
-- name: Parsers
-  href: parsers.md

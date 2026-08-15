@@ -3,7 +3,7 @@ using Rinku.Querying.Parameters;
 
 namespace Rinku.Querying.Defaults;
 
-/// <summary>Connects the shipped query implementations to their implementation-neutral registries.</summary>
+/// <summary>Registers the query defaults supplied by Rinku.</summary>
 public static class DefaultQueryBootstrap {
     private static int Initialized;
 

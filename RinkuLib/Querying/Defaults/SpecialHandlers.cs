@@ -13,7 +13,7 @@ namespace Rinku.Querying.Parameters;
 /// <see cref="SpecialHandlerGetter"/> to add your own.
 /// </summary>
 /// <remarks>
-/// It works in two passes each run, and an implementation must respect the order. First the binding pass,
+/// A custom handler must support two calls in order. First the binding call,
 /// <see cref="Use(IDbCommand, ref object?)"/>, <see cref="SaveUse"/>, or <see cref="Update"/>, sets the command's
 /// parameters and may rewrite the value in place (a list, for instance, becomes its element count). Then the
 /// render pass, <see cref="Handle"/>, writes the SQL from that rewritten value, so it never re-reads the
@@ -54,19 +54,9 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// </summary>
     public bool IsCached;
     /// <summary>
-    /// Whether the handler can render anything from the value it was handed, asked once a value has reached
-    /// it and answered by the handler alone. What decides whether a value gets this far is a separate matter
-    /// settled earlier, a <see langword="null"/> slot, a member the parameter object does not count as
-    /// supplied, or a <c>Use</c> the caller never called. None of those are the handler being overruled, they
-    /// are a value never arriving. Once one does, this is the last word on it, and answering
-    /// <see langword="false"/> prunes the footprint the way an unsupplied variable's would.
+    /// Checks whether this handler can use the supplied value. The handler may replace the value with data
+    /// needed by the binding and rendering calls.
     /// </summary>
-    /// <remarks>
-    /// Nothing upstream is a guarantee. A value reaches this from a <c>Use</c>, from a member the parameter
-    /// object counted as supplied, or from a presence rule the caller wrote, and none of them owe the handler
-    /// a shape. The complete job belongs here, including walking a sequence that will not answer any other
-    /// way. The slot is the handler's to rewrite for that, so what the walk cost can be handed to the bind.
-    /// </remarks>
     /// <param name="value">
     /// The value, never <see langword="null"/> on the way in, in a slot the handler may rewrite.
     /// </param>
@@ -81,8 +71,7 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// <param name="member">The member holding this handler's variable.</param>
     public virtual Action<ILGenerator>? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member) => null;
     /// <summary>
-    /// Re-binds for a new run from the rewritten value a previous <see cref="SaveUse"/> left, adding, changing,
-    /// or dropping parameters to match, and keeping the bound-command road warm.
+    /// Updates parameters for a reused command from the value left by <see cref="SaveUse"/>.
     /// </summary>
     /// <param name="cmd">The command to update.</param>
     /// <param name="currentValue">The rewritten value from the previous <see cref="SaveUse"/>.</param>
@@ -99,7 +88,7 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     public abstract bool SaveUse(IDbCommand cmd, ref object? value);
     /// <summary>
     /// Binds the value's parameters for a single run, without keeping the state a later <see cref="Update"/>
-    /// would need. When the value cannot report a count without being walked again, the implementation
+    /// would need. When the value cannot report a count without being walked again, the handler
     /// rewrites it to what the render pass needs, so a lazy sequence is enumerated exactly once.
     /// </summary>
     /// <param name="cmd">The command to bind onto.</param>
@@ -138,11 +127,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
     public static MultiVariableHandler Build(string Name)
         => new(Name);
 
-    /// <summary>
-    /// A spread writes one parameter per element, so a collection with no elements leaves it nothing to
-    /// write. A sequence is walked to find out, and the slot keeps what the walk took. A value that is not a
-    /// collection is left alone, a count among them.
-    /// </summary>
+    /// <summary>Returns whether the value contains at least one item when it is a sequence.</summary>
     public override bool CanHandle(ref object? value) => SpreadUsage.HasElement(ref value);
     /// <inheritdoc/>
     public override Action<ILGenerator>? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member)
@@ -254,7 +239,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
     }
     /// <summary>
     /// Binds the collection for a single pass. A collection that can report its count is left in place for
-    /// the render pass to count; a lazy sequence is walked only here, and <paramref name="value"/> becomes
+    /// the render pass to count. A lazy sequence is walked only here and <paramref name="value"/> becomes
     /// the <c>int</c> count of bound items instead.
     /// </summary>
     public override bool Use(IDbCommand cmd, ref object? value) {
@@ -318,9 +303,8 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             });
     }
     /// <summary>
-    /// Renders the SQL fragment (e.g., <c>@P_1, @P_2</c>). 
-    /// Requires <paramref name="value"/> to be the <c>int</c> or <c>object[].Length</c> 
-    /// produced during the synchronization phase.
+    /// Writes one parameter marker for each item such as <c>@P_1, @P_2</c>.
+    /// Pass the collection or its positive item count in <paramref name="value"/>.
     /// </summary>
     public override void Handle(ref ValueStringBuilder sb, object value) {
         if (value is not IEnumerable<object> enumerable || !enumerable.TryGetNonEnumeratedCount(out var nb)) {

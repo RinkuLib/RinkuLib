@@ -1,5 +1,5 @@
 namespace Rinku.Mapping;
-/// <summary>The seam behind the reading-order attributes, it adjusts how a member claims its columns.</summary>
+/// <summary>Applies a custom column reading order rule to a member or parameter.</summary>
 public interface IUsageFlagModifier {
     /// <summary>Adjusts the reading-order flags for the member this is on.</summary>
     public void UpdateFlags(object? param, ref UsageFlags usageFlag);
@@ -38,7 +38,7 @@ public sealed class MayReuseColAttribute : Attribute, IUsageFlagModifier {
         => usageFlag |= UsageFlags.CanReuse;
 }
 /// <summary>
-/// The subtree form of <see cref="CanLookAnywhereAttribute"/>: frees the complex slot's whole subtree to
+/// The subtree form of <see cref="CanLookAnywhereAttribute"/>. It allows the whole nested value to
 /// look anywhere, not just its first column.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
@@ -48,7 +48,7 @@ public sealed class CanLookAnywhereSubtreeAttribute : Attribute, IUsageFlagModif
         => usageFlag |= UsageFlags.RemoveSequentialRead | UsageFlags.Subtree;
 }
 /// <summary>
-/// The subtree form of <see cref="CanNotLookAnywhereAttribute"/>: constrains the complex slot's whole
+/// The subtree form of <see cref="CanNotLookAnywhereAttribute"/>. It requires the whole nested value to use
 /// subtree to sequential reading, not just its first column.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
@@ -58,7 +58,7 @@ public sealed class CanNotLookAnywhereSubtreeAttribute : Attribute, IUsageFlagMo
         => usageFlag |= UsageFlags.SequentialRead | UsageFlags.Subtree;
 }
 /// <summary>
-/// The subtree form of <see cref="MayReuseColAttribute"/>: makes every column claim in the complex slot's
+/// The subtree form of <see cref="MayReuseColAttribute"/>. It lets every column used by the nested value
 /// subtree reusable and non-consuming, not just its first claim.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]

@@ -13,40 +13,36 @@ using Rinku.Querying.Defaults;
 
 namespace Rinku;
 
-/// <summary>The parameter-binding roads whose generated accessors a command may cache.</summary>
+/// <summary>Selects parameter accessors held by a command.</summary>
 [Flags]
 public enum ParameterAccessorKinds : byte {
-    /// <summary>No accessor road.</summary>
+    /// <summary>Selects no accessors.</summary>
     None = 0,
-    /// <summary>The road that binds a parameter object directly to a database command.</summary>
+    /// <summary>Selects accessors used when a parameter object is passed to a query method.</summary>
     Direct = 1,
-    /// <summary>The road that copies a parameter object into a <see cref="QueryBuilder"/> through <c>UseWith</c>.</summary>
+    /// <summary>Selects accessors used by <c>UseWith</c> on a <see cref="QueryBuilder"/>.</summary>
     UseWith = 2,
-    /// <summary>Both parameter-binding roads.</summary>
+    /// <summary>Selects both kinds of parameter accessor.</summary>
     Both = Direct | UseWith
 }
 
-/// <summary>Where a parser invalidation started from a <see cref="QueryCommand"/> applies.</summary>
+/// <summary>Selects where parser invalidation applies.</summary>
 public enum QueryParserInvalidationScope : byte {
-    /// <summary>Remove only the parser references retained by this command.</summary>
+    /// <summary>Removes parsers only from this command.</summary>
     Local = 0,
-    /// <summary>Remove the exact parsers globally and force every subscribed cache to release them.</summary>
+    /// <summary>Removes the parsers from the global cache and from commands that use them.</summary>
     Global = 1,
-    /// <summary>Also remove an exact parser from the global cache when no other cache retains it.</summary>
+    /// <summary>Removes a parser from the global cache when no other command uses it.</summary>
     GlobalIfUnused = 2
 }
 
 /// <summary>
-/// A query defined once from a SQL template and reused for the life of the app. It holds no per-call state,
-/// so one instance is safe to share across threads, the values for each run travel in the call. Declare it
-/// in a <see langword="static readonly"/> field and run it with the execution methods (<c>Query</c>,
-/// <c>Execute</c>, and the rest), or open a <see cref="QueryBuilder"/> on it to set values from code.
+/// A reusable SQL query or stored procedure.
+/// Declare one in a <see langword="static readonly"/> field and call <c>Query</c> or <c>Execute</c> on it.
+/// Use <see cref="QueryBuilder"/> when values are supplied in several steps.
 /// </summary>
 /// <remarks>
-/// The template can mark parts optional, so the values a run supplies decide the final SQL. It also learns a
-/// provider's parameter metadata and a result's row parser on first use and reuses them, so a warm command
-/// runs without rediscovering either. Dispose a command whose lifetime ends; application-lifetime commands
-/// can remain alive until shutdown.
+/// One instance can be shared across threads. Dispose it when it has a shorter lifetime than the application.
 /// </remarks>
 public class QueryCommand : IQueryCommand, ICache, IDisposable {
     private bool _subscribedToParserDisposing;
@@ -57,29 +53,20 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     int IQueryCommand.StartBaseHandlers => StartBaseHandlers;
     int IQueryCommand.StartSpecialHandlers => StartSpecialHandlers;
     int IQueryCommand.StartBoolCond => StartBoolCond;
-    /// <summary> How each parameter is bound, and the learned provider metadata behind it. </summary>
+    /// <summary>Gets the parameter settings used by this command.</summary>
     public readonly QueryParameters Parameters;
-    /// <summary> The template, and the rendering of it down to the SQL a run sends. </summary>
+    /// <summary>Gets the SQL template used by this command.</summary>
     public readonly QueryText QueryText;
-    /// <summary> The row parsers learned so far, one per result shape seen, reused across runs. </summary>
-    public ParsingCacheItem[] ParsingCache = [];
-    // One entry exists for each source type. It starts as the one accessor the command actually used and is
-    // promoted to an AccessorPair only when that exact type later needs the other path too.
+    internal ParsingCacheItem[] ParsingCache = [];
     private (RuntimeTypeHandle Handle, object Accessor)[] _accessors = [];
-    /// <summary>
-    /// Guards the shared accessor cache while it learns how to read a new parameter object type.
-    /// </summary>
-    public static readonly
+    internal static readonly
 #if NET9_0_OR_GREATER
         Lock
 #else
         object
 #endif
         TypeAccessorSharedLock = new();
-    /// <summary>
-    /// Guards the shared parser cache while it learns the row parser for a new result shape.
-    /// </summary>
-    public static readonly
+    internal static readonly
 #if NET9_0_OR_GREATER
         Lock
 #else
@@ -99,13 +86,12 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// </summary>
     public readonly CommandType CommandType;
     private (string Name, DbParamInfo Info)? _returnValue;
-    /// <summary>
-    /// Puts the run's text on the command, and the reading it needs when that is not the provider's default.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetText(IDbCommand cmd, string text) {
-        cmd.CommandText = text;
-        if (CommandType != CommandType.Text)
+        var current = cmd.CommandText;
+        if (!ReferenceEquals(current, text) && !string.Equals(current, text, StringComparison.Ordinal))
+            cmd.CommandText = text;
+        if (CommandType != CommandType.Text && cmd.CommandType != CommandType)
             cmd.CommandType = CommandType;
     }
     internal void SetReturnValue(string name, DbParamInfo info)
@@ -124,22 +110,19 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         returnValue.Value.Info.Use(returnValue.Value.Name, cmd, value);
     }
     /// <summary>
-    /// Defines a command from a SQL template. The template is read once, here, and the command is then reused
-    /// for every run.
+    /// Defines a reusable command from a SQL template.
     /// </summary>
     /// <param name="query">The SQL, optionally carrying conditional markers.</param>
     /// <param name="variableChar">The character that marks a variable, <c>@</c> when left unset.</param>
     public QueryCommand(string query, char variableChar = default)
         : this(new QueryFactory(query, variableChar, SpecialHandler.SpecialHandlerGetter.PresenceMap)) { }
     /// <summary>
-    /// Defines a command whose parameters are named rather than read out of its text, and says how the
-    /// provider should read the text. A stored procedure is the case this exists for: the text is the
-    /// procedure's name, which carries no variables to find, so the parameters are given instead.
+    /// Defines a command with an explicit list of parameters.
+    /// Use this overload for a stored procedure or for SQL that binds parameters by position.
     /// </summary>
-    /// <param name="commandText">The text to send, used exactly as given, with no markers read from it.</param>
+    /// <param name="commandText">The SQL text or stored procedure name.</param>
     /// <param name="variableNames">
-    /// The parameters to bind, in order. Each is required, so a run supplies them all. A name may be written
-    /// with or without the variable character.
+    /// The parameter names in binding order. Each parameter is required.
     /// </param>
     /// <param name="commandType">How the provider reads the text.</param>
     /// <example>
@@ -153,14 +136,13 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     public QueryCommand(string commandText, IEnumerable<string> variableNames, CommandType commandType = CommandType.StoredProcedure)
         : this(new QueryFactory(commandText, variableNames), commandType) { }
 
-    /// <summary>Defines a command from an already-parsed template, the extension point a subclass builds on.</summary>
+    /// <summary>Defines a command from a custom <see cref="QueryFactory"/>.</summary>
     protected QueryCommand(QueryFactory factory) : this(factory, CommandType.Text) { }
     /// <summary>
-    /// Defines a command from an already-parsed template, saying how the provider should read the text.
+    /// Defines a command from a custom <see cref="QueryFactory"/> and command type.
     /// </summary>
     /// <param name="factory">
-    /// The template already read into its pieces. The command takes ownership of its mapper; do not build
-    /// multiple independently disposed commands from copies of the same factory.
+    /// The query factory to use. The command takes ownership of its mapper.
     /// </param>
     /// <param name="commandType">How the provider reads the text.</param>
     protected QueryCommand(QueryFactory factory, CommandType commandType) {
@@ -176,15 +158,13 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         Parameters = new(factory.NbNormalVar, specialHandlers);
     }
     /// <summary>
-    /// A command for a stored procedure, read from the database. What the procedure declares is what the
-    /// command binds, so the names, their types, their sizes and their directions all come from the one
-    /// place that knows them.
+    /// Creates a command for a stored procedure by reading its parameter details from the database.
     /// </summary>
     /// <param name="procedureName">The procedure to call.</param>
     /// <param name="connection">The connection to ask, opened for the question if it is not already.</param>
     /// <remarks>
-    /// Asking costs a round trip, so this belongs where a command is built, once, and not in a call. Without
-    /// a connection to ask, name the parameters yourself with
+    /// This call queries the database. Call it once when the command is declared.
+    /// To avoid that query, name the parameters with
     /// <see cref="QueryCommand(string, IEnumerable{string}, CommandType)"/>.
     /// </remarks>
     /// <example>
@@ -197,8 +177,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     public static QueryCommand FromProc(string procedureName, IDbConnection connection)
         => StoredProcedure.From(connection, procedureName);
     /// <summary>
-    /// Looks up the row parser already learned for this run's shape, so a warm command can read the result
-    /// without inspecting the columns again. Returns <see langword="false"/> when nothing is cached yet.
+    /// Gets a parser held for the supplied parameter usage and result set.
     /// </summary>
     public bool TryGetCachedParser<T>(Span<bool> usageMap, [MaybeNullWhen(false)] out ITypeParser<T> parser, int resultSetIndex = 0) {
         ref bool pUsage = ref MemoryMarshal.GetReference(usageMap);
@@ -227,8 +206,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         return false;
     }
     /// <summary>
-    /// Looks up the row parser already learned for this run's shape, so a warm command can read the result
-    /// without inspecting the columns again. Returns <see langword="false"/> when nothing is cached yet.
+    /// Gets a parser held for the supplied parameter values and result set.
     /// </summary>
     public bool TryGetCachedParser<T>(object?[] usageMap, [MaybeNullWhen(false)] out ITypeParser<T> parser, int resultSetIndex = 0) {
         ref object? usageBase = ref MemoryMarshal.GetArrayDataReference(usageMap);
@@ -261,7 +239,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         return false;
     }
     /// <summary>
-    /// Records the row parser learned for a result's columns so later runs of the same shape reuse it.
+    /// Stores a parser for the supplied parameter usage and result set.
     /// </summary>
     public void UpdateParseCache<T>(bool[] usageMap, ITypeParser<T> cache, int resultSetIndex = 0) {
         lock (TypeParser.TypeParserMakers) {
@@ -279,14 +257,13 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         }
     }
     /// <summary>
-    /// Invalidates every row parser learned by this command and removes an exact parser from the global cache
-    /// when no other cache retains it.
+    /// Removes every parser held by this command.
+    /// A parser is also removed from the global cache when nothing else uses it.
     /// </summary>
     /// <returns>The number of cache entries removed.</returns>
     public int InvalidateParsers() => InvalidateParsers(QueryParserInvalidationScope.GlobalIfUnused);
     /// <summary>
-    /// Invalidates every row parser learned by this command locally, conditionally from the global cache when
-    /// unused, or forcibly from the global cache and every subscribed owner.
+    /// Removes every parser held by this command using the selected scope.
     /// </summary>
     /// <returns>The number of cache entries this command held when invalidation began.</returns>
     public int InvalidateParsers(QueryParserInvalidationScope scope) {
@@ -297,15 +274,14 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         return count;
     }
     /// <summary>
-    /// Invalidates one exact parser retained by this command, removing every local cache entry that points to
-    /// it. By default the parser also leaves the global cache when no other subscribed cache retains it.
+    /// Removes one parser from this command.
+    /// It is also removed from the global cache when nothing else uses it.
     /// </summary>
     /// <returns>The number of this command's cache entries that referenced <paramref name="parser"/>.</returns>
     public int InvalidateParser(ITypeParser parser)
         => InvalidateParser(parser, QueryParserInvalidationScope.GlobalIfUnused);
     /// <summary>
-    /// Invalidates one exact parser retained by this command with the selected local or global ownership rule.
-    /// Other parsers retained by this command are untouched.
+    /// Removes one parser from this command using the selected scope.
     /// </summary>
     /// <returns>The number of this command's cache entries that referenced <paramref name="parser"/>.</returns>
     public int InvalidateParser(ITypeParser parser, QueryParserInvalidationScope scope) {
@@ -423,23 +399,25 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         return [.. parsers];
     }
     /// <summary>
-    /// Whether this run touches a parameter whose provider metadata has not been learned yet, the signal that
-    /// the command still has caching to do on this pass.
+    /// Checks whether any used parameter still needs database parameter details.
     /// </summary>
     /// <returns><see langword="false"/> when every used parameter is already cached.</returns>
     public bool NeedToCache(Span<bool> usageMap)
         => Parameters.NeedToCache(usageMap);
     /// <summary>
-    /// Whether this run touches a parameter whose provider metadata has not been learned yet, the signal that
-    /// the command still has caching to do on this pass.
+    /// Checks whether any supplied parameter still needs database parameter details.
     /// </summary>
     /// <returns><see langword="false"/> when every used parameter is already cached.</returns>
     public bool NeedToCache(object?[] variables)
         => Parameters.NeedToCache(variables);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool[] CreateUsageMap() {
+        var count = Mapper.Count;
+        return count == 0 ? Array.Empty<bool>() : new bool[count];
+    }
     /// <summary>
-    /// Learns how this command's parameters should be bound from a live command that has just run, so later
-    /// runs bind them the same way without the guesswork. Prefers a provider-specific reader when one is
-    /// registered in <see cref="IDbParamInfoGetter.ParamGetterMakers"/>, otherwise reads the parameters as-is.
+    /// Reads parameter details from <paramref name="cmd"/> and stores them for later runs.
+    /// Call this after execution when a custom command needs to teach this command its parameter details.
     /// </summary>
     public void UpdateCache(IDbCommand cmd) {
         var makers = CollectionsMarshal.AsSpan(IDbParamInfoGetter.ParamGetterMakers);
@@ -468,8 +446,8 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         return true;
     }
     /// <summary>
-    /// Sets how one parameter is bound by hand, in place of letting the command learn it from a run. Use this
-    /// to pin a type, size, or provider quirk the automatic path would get wrong.
+    /// Sets the database details for one parameter.
+    /// Use this when the required type or size cannot be inferred from a value.
     /// </summary>
     /// <returns><see langword="true"/> if <paramref name="paramName"/> names a bindable parameter.</returns>
     public bool UpdateParamCache(string paramName, DbParamInfo paramInfo) {
@@ -479,8 +457,8 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         return Parameters.UpdateCache(ind, paramInfo);
     }
     /// <summary>
-    /// Pins the binding strategy for a plain parameter by its zero-based variable index. This is useful when
-    /// the provider binds parameters by position and the slot names are only placeholders.
+    /// Sets the database details for one parameter by its zero based index.
+    /// Use this for parameters that are bound by position.
     /// </summary>
     /// <returns><see langword="true"/> if <paramref name="variableIndex"/> names a bindable parameter.</returns>
     public bool UpdateParamCache(int variableIndex, DbParamInfo paramInfo) {
@@ -631,15 +609,10 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
-    /// <summary>
-    /// A run that supplies nothing still has to answer for the handler spots the template keeps, so the slots
-    /// are there and empty rather than absent, and a spot that needed one is refused by name.
-    /// </summary>
     private Span<object?> EmptyHandlerValues()
         => QueryText.HandlerValuesLength <= 0 ? default : new object?[QueryText.HandlerValuesLength];
     /// <summary>
-    /// The cached plan for reading a parameter object of the given type, its members mapped to this command's
-    /// keys. Built on first sight of the type and reused after, so binding a familiar object type is cheap.
+    /// Gets the accessor used to bind the supplied parameter type directly to a database command.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public DirectAccessor GetDirectAccessor(IntPtr handle, Type type) {
@@ -676,7 +649,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         }
     }
 
-    /// <summary>Gets the independent accessor cache used by <c>UseWith</c>.</summary>
+    /// <summary>Gets the accessor used by <c>UseWith</c> for the supplied parameter type.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public UseWithAccessor GetUseWithAccessor(IntPtr handle, Type type) {
         var accessors = Volatile.Read(ref _accessors);
@@ -712,7 +685,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         }
     }
 
-    /// <summary>Returns a snapshot of the source types and accessor roads currently cached by this command.</summary>
+    /// <summary>Gets the parameter types and accessor kinds currently held by this command.</summary>
     public (Type ParameterType, ParameterAccessorKinds Accessors)[] GetCachedParameterAccessors() {
         var current = Volatile.Read(ref _accessors);
         var result = new (Type ParameterType, ParameterAccessorKinds Accessors)[current.Length];
@@ -722,9 +695,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
 
     /// <summary>
-    /// Invalidates the selected generated accessor roads for exactly <paramref name="parameterType"/>.
+    /// Removes the selected accessors for <paramref name="parameterType"/>.
     /// </summary>
-    /// <returns>The roads that were present and removed.</returns>
+    /// <returns>The accessor kinds that were present and removed.</returns>
     public ParameterAccessorKinds InvalidateParameterAccessor(Type parameterType, ParameterAccessorKinds accessors) {
         ArgumentNullException.ThrowIfNull(parameterType);
         if (accessors == ParameterAccessorKinds.None || (accessors & ~ParameterAccessorKinds.Both) != 0)
@@ -775,8 +748,8 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
 
     /// <summary>
-    /// Releases the parser and parameter-accessor caches owned by this command, unsubscribes it from parser
-    /// invalidation, and disposes its mapper. A disposed command must not be used again.
+    /// Releases resources used by this command.
+    /// The command cannot be used after disposal.
     /// </summary>
     public void Dispose() {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

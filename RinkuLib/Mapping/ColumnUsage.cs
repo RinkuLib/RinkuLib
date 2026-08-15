@@ -1,6 +1,6 @@
 namespace Rinku.Mapping;
 
-/// <summary>A simple struct used track the usage of the columns</summary>
+/// <summary>Tracks which result columns a mapping plan has claimed.</summary>
 public ref struct ColumnUsage(Span<bool> Span) {
     /// <summary>Gets the number of distinct columns consumed by ordinary slots.</summary>
     public readonly int NbUsed { get {
@@ -15,12 +15,12 @@ public ref struct ColumnUsage(Span<bool> Span) {
     /// </summary>
     public int NbClaims { get; private set; }
     private readonly Span<bool> Span = Span;
-    /// <summary>The index of the last column that was used</summary>
+    /// <summary>Gets the index of the last column claimed.</summary>
     public int LastIndexUsed { get; private set; } = -1;
-    /// <summary>The amount of columns</summary>
+    /// <summary>Gets the number of available columns.</summary>
     public readonly int Length => Span.Length;
     /// <summary>
-    /// Save a snapshot of the current usage into a checkpoint <see cref="Span{Boolean}" />
+    /// Copies the current usage into a checkpoint that can be passed to <see cref="Rollback"/>.
     /// </summary>
     public readonly void InitCheckpoint(Span<bool> checkpoint, out int lastUsed, out int nbClaims) {
         if (checkpoint.Length != Span.Length)
@@ -31,7 +31,7 @@ public ref struct ColumnUsage(Span<bool> Span) {
         nbClaims = NbClaims;
     }
     /// <summary>
-    /// Reset the column usage to the checkpoint state
+    /// Restores a checkpoint created by <see cref="InitCheckpoint"/>.
     /// </summary>
     public void Rollback(scoped Span<bool> checkpoint, int lastUsed, int nbClaims) {
         if (checkpoint.Length != Span.Length)
@@ -42,11 +42,11 @@ public ref struct ColumnUsage(Span<bool> Span) {
         NbClaims = nbClaims;
     }
     /// <summary>
-    /// Check if a column has been marked as used
+    /// Returns whether a column has been marked as used.
     /// </summary>
     public readonly bool IsUsed(int ind) => Span[ind];
     /// <summary>
-    /// Mark a column as used
+    /// Claims a column and prevents an ordinary later claim.
     /// </summary>
     public void Use(int ind) {
         Span[ind] = true;

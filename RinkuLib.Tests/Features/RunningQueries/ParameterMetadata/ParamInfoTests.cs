@@ -388,9 +388,17 @@ public class ParamInfoTests {
     }
 
     [Theory]
+    [InlineData(-1, -1)]
+    [InlineData(0, 100)]
     [InlineData(90, 100)]
+    [InlineData(100, 100)]
+    [InlineData(101, 500)]
     [InlineData(300, 500)]
+    [InlineData(500, 500)]
+    [InlineData(501, 4000)]
     [InlineData(3000, 4000)]
+    [InlineData(4000, 4000)]
+    [InlineData(4001, -1)]
     [InlineData(9000, -1)]
     public void DefaultParamCache_size_tiers(int size, int expected) {
         var cmd = Cmd();

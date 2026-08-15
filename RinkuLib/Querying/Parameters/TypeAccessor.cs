@@ -93,26 +93,18 @@ public sealed class UseWithAccessor<T> : UseWithAccessor {
     }
 }
 
-/// <summary>
-/// Creates the two intentionally separate accessors for the relationship between one parameter-object type and
-/// one query mapper. The generated methods contain no lookup, reflection, or attribute inspection.
-/// </summary>
-public static class ParameterAccessorGenerator {
-    /// <summary>Creates a direct accessor for a mapper without special handlers.</summary>
+internal static class ParameterAccessorGenerator {
     public static DirectAccessor CreateDirect(Type type, Mapper mapper)
         => CreateDirect(type, mapper, [], mapper.Count, mapper.Count);
 
-    /// <summary>Creates a direct command-binding accessor.</summary>
     public static DirectAccessor CreateDirect(Type type, Mapper mapper, SpecialHandler[] handlers,
         int specialHandlerStart, int boolConditionStart)
         => CreateDirectAccessor(type, EmitDirect(type, mapper, handlers, specialHandlerStart, boolConditionStart));
 
-    /// <summary>Creates a builder value-array accessor.</summary>
     public static UseWithAccessor CreateUseWith(Type type, Mapper mapper, SpecialHandler[] handlers,
         int specialHandlerStart, int boolConditionStart)
         => CreateUseWithAccessor(type, EmitUseWith(type, mapper, handlers, specialHandlerStart, boolConditionStart));
 
-    /// <summary>Creates a <c>UseWith</c> accessor for a mapper without special handlers.</summary>
     public static UseWithAccessor CreateUseWith(Type type, Mapper mapper)
         => CreateUseWith(type, mapper, [], mapper.Count, mapper.Count);
 
@@ -135,7 +127,6 @@ public static class ParameterAccessorGenerator {
                 typeof(Span<bool>).MakeByRefType()], type.Module, skipVisibility: true);
         var il = method.GetILGenerator();
 
-        // A result is complete, never a patch over a prior call's state.
         il.Emit(OpCodes.Ldarg_3);
         il.Emit(OpCodes.Call, typeof(Span<bool>).GetMethod(nameof(Span<bool>.Clear), Type.EmptyTypes)!);
 
@@ -193,10 +184,6 @@ public static class ParameterAccessorGenerator {
         return new AccessPlan(members, type.GetCustomAttributes<AccessorEmitterHandler>().ToArray(), variablePrefix);
     }
 
-    /// <summary>
-    /// Resolves one mapper slot once. The branch is taken while generating, never by the emitted delegate:
-    /// direct and builder delegates therefore remain specialized without duplicating rule resolution.
-    /// </summary>
     private static void EmitSlot(ILGenerator il, AccessPath path, AccessPlan plan, int index, Type type, Mapper mapper,
         SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart, LocalBuilder? handlerValues) {
         var member = plan.Members[index];
@@ -209,7 +196,6 @@ public static class ParameterAccessorGenerator {
                 return;
             }
 
-            // A type attribute supplies the member's default rule. A member attribute always wins.
             foreach (var handler in plan.TypeHandlers)
                 if (handler.GetMemberEmitter(plan.VariablePrefix, index, type, member, mapper) is { } typeEmitter) {
                     typeEmitter.Validate(type, member);
@@ -231,7 +217,6 @@ public static class ParameterAccessorGenerator {
                 return;
             }
 
-        // UseWith replaces every slot. A key with no source member is deliberately off.
         if (path == AccessPath.UseWith) {
             il.Emit(OpCodes.Ldarg_1);
             il.Emit(OpCodes.Ldc_I4, index);

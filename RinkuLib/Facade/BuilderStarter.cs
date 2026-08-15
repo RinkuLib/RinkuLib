@@ -5,19 +5,18 @@ using Rinku.Querying;
 namespace Rinku;
 
 /// <summary>
-/// Opens a builder over a <see cref="QueryCommand"/>. A builder lets code set the query's values and switch
-/// its conditional parts on or off across several steps before running, in place of passing one parameter
-/// object. Take this road when the values come from branching logic.
+/// Opens a builder for a <see cref="QueryCommand"/>. Use a builder when values are supplied in several steps
+/// or when code needs to choose which optional parts of the query are used.
 /// </summary>
 public static class BuilderStarter {
     /// <summary>
-    /// Opens a builder that holds its values in memory and builds a command only when it runs.
+    /// Opens a builder that collects values until the query runs.
     /// </summary>
     public static QueryBuilder StartBuilder(this QueryCommand command)
         => new(command);
     /// <summary>
-    /// Opens a builder bound to a <see cref="DbCommand"/> you own, so each value set flows onto that command
-    /// at once. Reuse the command to run the query many times without rebuilding it.
+    /// Opens a builder that writes values to a <see cref="DbCommand"/> supplied by the caller.
+    /// Use this overload when the same database command will run more than once.
     /// </summary>
     public static QueryBuilderCommand<DbCommand> StartBuilder(this QueryCommand command, DbCommand cmd) {
         command.EnsureReturnValueParameter(cmd);

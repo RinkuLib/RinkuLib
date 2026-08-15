@@ -4,17 +4,15 @@ using System.Runtime.CompilerServices;
 
 namespace Rinku.Mapping;
 /// <summary>
-/// Decides whether a column name matches a member. A member may go by more than one name, and for a nested
-/// object the match runs as a chain, each link consuming its part of the name, which is what lets a flattened
-/// column like <c>Address_City</c> reach a nested member. You usually shape this through the naming attributes
-/// rather than implementing it.
+/// Decides whether a column name matches a member or parameter.
+/// Implement this interface for a naming rule that cannot be expressed with the built in naming attributes.
 /// </summary>
 public interface INameComparer {
     private const string TargetAttributeName = "TrueNameAttribute";
 
     /// <summary>
-    /// Attempts to extract an override name from a provided attribute instance.
-    /// This is adaptive, it uses the first public string property found on the attribute.
+    /// Gets a name from an attribute named <c>TrueNameAttribute</c>.
+    /// The first public string property supplies the name.
     /// </summary>
     static bool TryGetTrueName(object attribute, [MaybeNullWhen(false)] out string trueName) {
         trueName = null;
@@ -34,45 +32,44 @@ public interface INameComparer {
     public string GetDefaultName();
 
     /// <summary>
-    /// Validates if the <paramref name="colName"/> matches this comparer's logic.
-    /// If successful, it consumes its portion of the name and continues the chain.
+    /// Checks whether <paramref name="colName"/> matches this comparer and its parent comparers.
     /// </summary>
     /// <param name="colName">The remaining portion of the column name to match.</param>
     /// <param name="nameComparers">The preceding chain of comparers to validate against.</param>
     /// <returns><c>true</c> if the full path matches, otherwise <c>false</c>.</returns>
     bool Match(ReadOnlySpan<char> colName, Span<INameComparer> nameComparers);
-    /// <summary>Checks if this comparer or its children contains the specified name.</summary>
+    /// <summary>Checks whether this comparer or a child contains the supplied name.</summary>
     public bool Contains(string name);
 }
-/// <summary>Defines the ability to incorporate a simple alternative name with span 1.</summary>
+/// <summary>Lets a name comparer add one alternative name.</summary>
 public interface INameComparerThatCanAdd : INameComparer {
     /// <summary>Attempts to add a standard alternative. Returns a new instance if successful, otherwise <c>null</c>.</summary>
     public INameComparer? TryAdd(string name);
 }
 
-/// <summary>Defines the ability to absorb another entire <see cref="INameComparer"/> into the current structure.</summary>
+/// <summary>Lets a name comparer add another comparer.</summary>
 public interface INameComparerThatCanAddAComparer : INameComparer {
     /// <summary>Attempts to merge another comparer. Returns the consolidated result if successful, otherwise <c>null</c>.</summary>
     public INameComparer? TryAdd(INameComparer other);
 }
-/// <summary>Defines the ability to remove a specific string identifier from the matching logic.</summary>
+/// <summary>Lets a name comparer remove one name.</summary>
 public interface INameComparerThatCanRemove : INameComparer {
     /// <summary>Attempts to remove a name. Returns the updated comparer if the name was removed, otherwise <c>null</c>.</summary>
     public INameComparer? TryRemove(string name);
 }
 
-/// <summary>Defines the ability to remove a specific comparer instance from a group or chain.</summary>
+/// <summary>Lets a name comparer remove another comparer.</summary>
 public interface INameComparerThatCanRemoveAComparer : INameComparer {
     /// <summary>Attempts to remove the target comparer. Returns the updated structure if found, otherwise <c>null</c>.</summary>
     public INameComparer? TryRemove(INameComparer other);
 }
-/// <summary>The mutating comparer, gathering the add, merge, and remove operations into one interface.</summary>
+/// <summary>Lets a name comparer add and remove names or other comparers.</summary>
 public interface IMutatableNameComparer :
     INameComparerThatCanAdd,
     INameComparerThatCanAddAComparer,
     INameComparerThatCanRemove,
     INameComparerThatCanRemoveAComparer { }
-/// <summary>Building and reshaping name matchers, adding or removing alternatives and combining them.</summary>
+/// <summary>Provides common operations for changing name comparers.</summary>
 public static class NameComparerHelper {
     /// <summary>Continues the match down the chain against the remaining name.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

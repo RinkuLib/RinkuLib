@@ -1,6 +1,8 @@
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using Rinku.Mapping.Parsers.Defaults;
+using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
 namespace RinkuLib.Tests.Internal.Architecture;
@@ -12,18 +14,19 @@ public sealed class DefaultCompositionCollection {
 
 [Collection(DefaultCompositionCollection.Name)]
 public class DefaultCompositionTests {
-    private sealed class FactoryOwned;
     private sealed class ParserOwned;
-
-    private sealed class ProbeInfo : TypeParsingInfo {
-        public override void ValidateCanUseType(Type targetType) {
-            if (targetType != typeof(FactoryOwned))
-                throw new InvalidOperationException();
-        }
-
-        public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo,
-            ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage,
-            MethodCtorInfo.AdditionalFlags callerFlags = default) => null;
+    private sealed record ListItem(int Value) : IDbReadable;
+    private sealed class RecursiveBag<T> {
+        public List<T> Items { get; } = [];
+        public void Add(T item) => Items.Add(item);
+    }
+    private struct ValueBag<T> {
+        public List<T> Items { get; } = [];
+        public ValueBag() { }
+        public void Add(T item) => Items.Add(item);
+    }
+    private static class ReadOnlyBag<T> {
+        public static IReadOnlyCollection<T> Finish(List<T> items) => items;
     }
 
     private sealed class RejectingListInfo : TypeParsingInfo {
@@ -39,17 +42,6 @@ public class DefaultCompositionTests {
             MethodCtorInfo.AdditionalFlags callerFlags = default) {
             Negotiations++;
             return null;
-        }
-    }
-
-    private sealed class ProbeInfoFactory(ITypeParsingInfoFactory inner) : ITypeParsingInfoFactory {
-        public int CreateCalls { get; private set; }
-        public TypeParsingInfo Scalar => inner.Scalar;
-        public TypeParsingInfo Array => inner.Array;
-        public TypeParsingInfo Created { get; } = new ProbeInfo();
-        public TypeParsingInfo Create(Type type) {
-            CreateCalls++;
-            return type == typeof(FactoryOwned) ? Created : inner.Create(type);
         }
     }
 
@@ -95,21 +87,6 @@ public class DefaultCompositionTests {
     }
 
     [Fact]
-    public void Type_registry_delegates_missing_entries_to_the_installed_factory() {
-        var original = TypeParsingInfo.DefaultFactory;
-        var probe = new ProbeInfoFactory(original);
-        try {
-            TypeParsingInfo.DefaultFactory = probe;
-            var resolved = TypeParsingInfo.ForceGet(typeof(FactoryOwned));
-            Assert.Same(probe.Created, resolved);
-            Assert.Equal(1, probe.CreateCalls);
-        }
-        finally {
-            TypeParsingInfo.DefaultFactory = original;
-        }
-    }
-
-    [Fact]
     public void Parser_cache_delegates_an_unclaimed_shape_to_the_installed_fallback() {
         var original = TypeParser.DefaultTypeParserMaker;
         var probe = new ProbeParserMaker();
@@ -136,6 +113,101 @@ public class DefaultCompositionTests {
         }
         finally {
             TypeParsingInfo.AddOrSet(typeof(List<>), original);
+        }
+    }
+
+    [Fact]
+    public void Shipped_simple_list_uses_the_generated_accumulator() {
+        ColumnInfo[] columns = [new("Value", typeof(int), false)];
+
+        var parser = TypeParser.GetTypeParser<List<ListItem>>(columns);
+
+        Assert.True(parser.GetType().IsGenericType);
+        Assert.Equal(typeof(MultiRowCollectionTypeParser<,>), parser.GetType().GetGenericTypeDefinition());
+    }
+
+    [Fact]
+    public void Nested_list_is_composed_from_accumulator_plans() {
+        ColumnInfo[] columns = [new("Value", typeof(int), false)];
+
+        var parser = TypeParser.GetTypeParser<List<List<ListItem>>>(columns);
+
+        Assert.True(parser.GetType().IsGenericType);
+        Assert.Equal(typeof(RecursiveAccumulatorTypeParser<,,,>), parser.GetType().GetGenericTypeDefinition());
+    }
+
+    [Fact]
+    public async Task Recursive_accumulator_composition_supports_lists_arrays_interfaces_and_custom_types() {
+        ColumnInfo[] columns = [new("Value", typeof(int), false)];
+
+        using (var listReader = Rows.Reader(columns, [1], [2], [3])) {
+            var parser = TypeParser.GetTypeParser<List<List<List<int>>>>(columns);
+            await listReader.ReadAsync(TestContext.Current.CancellationToken);
+            var result = (await parser.ParseAsync(listReader, TestContext.Current.CancellationToken)).Result;
+            Assert.Equal([1, 2, 3], Assert.Single(Assert.Single(result)));
+        }
+
+        using (var arrayReader = Rows.Reader(columns, [4], [5])) {
+            var parser = TypeParser.GetTypeParser<int[][]>(columns);
+            arrayReader.Read();
+            Assert.Equal([4, 5], Assert.Single(parser.Parse(arrayReader).Result));
+        }
+
+        var bagType = typeof(RecursiveBag<>);
+        var original = TypeParsingInfo.Get(bagType);
+        var bagInfo = new MultiRowTypeParsingInfo(bagType.GetConstructor(Type.EmptyTypes)!,
+            bagType.GetMethod(nameof(RecursiveBag<int>.Add))!, null);
+        try {
+            TypeParsingInfo.AddOrSet(bagType, bagInfo);
+            using var bagReader = Rows.Reader(columns, [6], [7]);
+            var parser = TypeParser.GetTypeParser<RecursiveBag<RecursiveBag<int>>>(columns);
+            bagReader.Read();
+            var outer = parser.Parse(bagReader).Result;
+            Assert.Equal([6, 7], Assert.Single(outer.Items).Items);
+        }
+        finally {
+            if (original is null)
+                TypeParsingInfo.TryRemove(bagType, out _);
+            else
+                TypeParsingInfo.AddOrSet(bagType, original);
+        }
+
+        var valueBagType = typeof(ValueBag<>);
+        original = TypeParsingInfo.Get(valueBagType);
+        var valueBagInfo = new MultiRowTypeParsingInfo(valueBagType.GetConstructor(Type.EmptyTypes)!,
+            valueBagType.GetMethod(nameof(ValueBag<int>.Add))!, null);
+        try {
+            TypeParsingInfo.AddOrSet(valueBagType, valueBagInfo);
+            using var bagReader = Rows.Reader(columns, [8], [9]);
+            var parser = TypeParser.GetTypeParser<ValueBag<ValueBag<int>>>(columns);
+            bagReader.Read();
+            var outer = parser.Parse(bagReader).Result;
+            Assert.Equal([8, 9], Assert.Single(outer.Items).Items);
+        }
+        finally {
+            if (original is null)
+                TypeParsingInfo.TryRemove(valueBagType, out _);
+            else
+                TypeParsingInfo.AddOrSet(valueBagType, original);
+        }
+
+        var interfaceType = typeof(IReadOnlyCollection<>);
+        original = TypeParsingInfo.Get(interfaceType);
+        var interfaceInfo = new MultiRowTypeParsingInfo(typeof(List<>).GetConstructor(Type.EmptyTypes)!,
+            typeof(List<>).GetMethod(nameof(List<int>.Add))!, typeof(ReadOnlyBag<>).GetMethod(nameof(ReadOnlyBag<int>.Finish))!);
+        try {
+            TypeParsingInfo.AddOrSet(interfaceType, interfaceInfo);
+            using var interfaceReader = Rows.Reader(columns, [10], [11]);
+            var parser = TypeParser.GetTypeParser<IReadOnlyCollection<IReadOnlyCollection<int>>>(columns);
+            interfaceReader.Read();
+            var outer = parser.Parse(interfaceReader).Result;
+            Assert.Equal([10, 11], Assert.Single(outer));
+        }
+        finally {
+            if (original is null)
+                TypeParsingInfo.TryRemove(interfaceType, out _);
+            else
+                TypeParsingInfo.AddOrSet(interfaceType, original);
         }
     }
 
@@ -176,7 +248,6 @@ public class DefaultCompositionTests {
 
     [Fact]
     public void Composition_slots_are_typed_as_contracts() {
-        Assert.Equal(typeof(ITypeParsingInfoFactory), typeof(TypeParsingInfo).GetProperty(nameof(TypeParsingInfo.DefaultFactory))!.PropertyType);
         Assert.Equal(typeof(ITypeParserMaker), typeof(TypeParser).GetProperty(nameof(TypeParser.DefaultTypeParserMaker))!.PropertyType);
         Assert.Equal(typeof(IDbParameterDefaults), typeof(DbParameterDefaults).GetProperty(nameof(DbParameterDefaults.Current))!.PropertyType);
     }

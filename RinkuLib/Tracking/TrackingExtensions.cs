@@ -12,7 +12,7 @@ internal static class DefaultFactoryCache<T> where T : class {
         }
     }
 }
-/// <summary>Wraps a sequence of reference-type items in a change-tracking list, <c>ToTrackingList()</c>, with optional validation and commit handling.</summary>
+/// <summary>Creates tracking lists from reference type sequences.</summary>
 public static class TrackingExtensions {
     /// <summary>
     /// Wraps a sequence in a tracking list driven by a custom edit processor.

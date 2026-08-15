@@ -10,6 +10,9 @@ namespace Rinku.Mapping.Parsers.Defaults;
 public abstract class BaseEnumerableTypeParser<T>(Func<DbDataReader, T>? rowParser = null) : ITypeParser<IEnumerable<T>>, IReaderHoldingParser<IEnumerable<T>> {
     bool ITypeParser<IEnumerable<T>>.InternalProtect => true;
     private readonly Func<DbDataReader, T>? RowParser = rowParser;
+    internal Func<DbDataReader, T>? DirectRowParser => RowParser;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal (bool CanContinue, T Result) ParseCurrent(DbDataReader reader) => ParseOne(reader);
     /// <summary>
     /// Used to parse a single item. Reports whether the reader is left on an untreated row
     /// </summary>
@@ -126,10 +129,9 @@ public abstract class BaseEnumerableTypeParser<T>(Func<DbDataReader, T>? rowPars
     }
     /// <inheritdoc/>
     /// <remarks>
-    /// The opening, the running and the first row are done while there is something to await, and the rows
-    /// are handed back over the reader that leaves open. Walking them out, or leaving the walk early, is
-    /// what closes it. The rows themselves come synchronously, which is what an
-    /// <see cref="IEnumerable{T}"/> is, <c>StreamQueryAsync</c> being the asynchronous stream.
+    /// Awaiting opens the reader and reads the first row asynchronously.
+    /// Enumeration reads the remaining rows synchronously and closes the reader when it ends.
+    /// Use <c>StreamQueryAsync</c> to read every row asynchronously.
     /// </remarks>
     public async Task<IEnumerable<T>> QueryAsync(DbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         var cnn = command.Connection ?? throw new RinkuNoConnectionException();
@@ -161,15 +163,14 @@ public abstract class BaseEnumerableTypeParser<T>(Func<DbDataReader, T>? rowPars
     }
     /// <inheritdoc cref="QueryAsync(DbCommand, bool, CancellationToken)"/>
     /// <remarks>
-    /// A command that is only an <see cref="IDbCommand"/> has no asynchronous road of its own, so there is
-    /// nothing here to await and the whole run waits for the walk.
+    /// An <see cref="IDbCommand"/> has no asynchronous reader methods.
+    /// Its query starts when the returned sequence is enumerated.
     /// </remarks>
     public Task<IEnumerable<T>> QueryAsync(IDbCommand command, bool disposeCommand = false, CancellationToken ct = default) {
         if (command is DbCommand c)
             return QueryAsync(c, disposeCommand, ct);
         return Task.FromResult(Query(command, disposeCommand));
     }
-    /// <summary>Hands back a reader no result took, and the command when this run owns it.</summary>
     private static void LetGo(DbDataReader reader, IDbCommand command, bool disposeCommand) {
         if (disposeCommand)
             new LetGoOfReaderAndCommand(command).Invoke(reader);
@@ -295,7 +296,7 @@ public sealed class EnumerableTypeParser<T>(ITypeParser<T> elementParser) : Base
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected override (bool CanContinue, T Result) ParseOne(DbDataReader reader) => ElementParser.Parse(reader);
 }
-/// <summary>The <see cref="EnumerableTypeParser{T}"/> fast path, for elements read by a plain row delegate.</summary>
+/// <summary>Streams rows through a delegate that does not advance the reader.</summary>
 public sealed class FastEnumerableTypeParser<T>(CommandBehavior behavior, Func<DbDataReader, T> parser, ITypeParser schemaParser) : BaseEnumerableTypeParser<T>(parser) {
     private readonly Func<DbDataReader, T> Parser = parser;
     private readonly ITypeParser SchemaParser = schemaParser;

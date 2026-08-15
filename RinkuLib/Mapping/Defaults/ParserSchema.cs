@@ -1,8 +1,5 @@
 namespace Rinku.Mapping.Defaults;
 
-/// <summary>
-/// An explicit schema compatibility rule used by directly constructed simple parsers.
-/// </summary>
 internal readonly struct ParserSchema(ColumnInfo[] columns) {
     private readonly ColumnInfo[] Columns = columns;
 

@@ -27,7 +27,7 @@ public record class MemberParser {
     /// Initializes a new instance of the <see cref="MemberParser"/> class.
     /// </summary>
     /// <param name="Member">The property, field, or method to map.</param>
-    /// <param name="Param">The matcher for database negotiation.</param>
+    /// <param name="Param">The column matching rules for the member.</param>
     /// <exception cref="Exception">Thrown if the member is static, read-only, or type-mismatched.</exception>
     public MemberParser(MemberInfo Member, ParamInfo Param) {
         var val = Validate(Member, Param, allowNonPublicSetter: false);
@@ -37,9 +37,6 @@ public record class MemberParser {
         this.Param = Param;
         this.TargetType = (Type)val;
     }
-    /// <summary>
-    /// Private constructor used by <see cref="TryNew"/> to bypass redundant validation.
-    /// </summary>
     private MemberParser(MemberInfo Member, ParamInfo Param, Type TargetType) {
         this.Member = Member;
         this.Param = Param;
@@ -62,13 +59,6 @@ public record class MemberParser {
         memberParser = new(member, param, t);
         return true;
     }
-    /// <summary>
-    /// Validates that a member is accessible, writable, and compatible with the provided matcher.
-    /// </summary>
-    /// <param name="member">The member to check.</param>
-    /// <param name="param">The matcher to compare against.</param>
-    /// <param name="allowNonPublicSetter">Whether a non-public property setter may be used.</param>
-    /// <returns>The <see cref="Type"/> of the declaring object if valid, otherwise an <see cref="Exception"/>.</returns>
     private static object Validate(MemberInfo member, ParamInfo param, bool allowNonPublicSetter) {
         bool isWriteable = false;
         Type? detectedMemberType = null;

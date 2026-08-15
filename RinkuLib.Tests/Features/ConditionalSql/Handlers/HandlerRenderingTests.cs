@@ -75,6 +75,15 @@ public class HandlerRenderingTests {
         Render.Expect(b3, "SELECT 3 AS X");
     }
 
+    private enum UnsignedEnum : ulong { Max = ulong.MaxValue }
+
+    [Fact]
+    public void Number_handler_writes_the_full_unsigned_enum_range() {
+        var b = Build("SELECT @V_N AS X");
+        b.Use("@V", UnsignedEnum.Max);
+        Render.Expect(b, "SELECT 18446744073709551615 AS X");
+    }
+
 
     [Fact]
     public void String_handler_quotes_the_value() {

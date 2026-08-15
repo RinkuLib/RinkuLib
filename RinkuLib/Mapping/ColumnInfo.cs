@@ -44,8 +44,7 @@ public sealed class ArrayContentComparer<T> : IEqualityComparer<T[]> where T : s
 /// <summary>Provides extensions for <see cref="ColumnInfo"/></summary>
 public static class Helper {
     /// <summary>
-    /// Extracts the schema from a <see cref="DbDataReader"/> and converts it into a 
-    /// <see cref="ColumnInfo"/> array for the Negotiation Phase.
+    /// Reads the column details from a <see cref="DbDataReader"/>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ColumnInfo[] GetColumns(this DbDataReader reader) { 
@@ -65,8 +64,7 @@ public static class Helper {
         return columns;
     }
     /// <summary>
-    /// Extracts the schema from a <see cref="DbDataReader"/> and converts it into a 
-    /// <see cref="ColumnInfo"/> array for the Negotiation Phase. (column will always be considered nullable)
+    /// Reads the column details from a <see cref="DbDataReader"/> and marks every column as nullable.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ColumnInfo[] GetColumnsFast(this DbDataReader reader) {

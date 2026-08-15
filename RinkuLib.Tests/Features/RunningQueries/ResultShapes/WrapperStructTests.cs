@@ -43,6 +43,43 @@ public class WrapperStructTests {
     }
 
     [Fact]
+    public void OptionalNullableStruct_flattens_missing_and_null() {
+        OptionalNullableStruct<int> some = 5;
+        Assert.True(some.HasValue);
+        Assert.Equal(5, (int?)some);
+        OptionalNullableStruct<int> none = (int?)null;
+        Assert.False(none.HasValue);
+        Assert.Null((int?)none);
+        Assert.Equal(6, OptionalNullableStruct<int>.Make(6).Value);
+    }
+
+    [Fact]
+    public void SingleOrDefault_wraps_and_unwraps_a_reference() {
+        SingleOrDefault<string> value = "x";
+        Assert.True(value.HasValue);
+        Assert.Equal("x", (string?)value);
+        Assert.False(default(SingleOrDefault<string>).HasValue);
+    }
+
+    [Fact]
+    public void SingleOrDefaultStruct_wraps_and_unwraps_a_value() {
+        SingleOrDefaultStruct<int> value = 5;
+        Assert.True(value.HasValue);
+        Assert.Equal(5, (int?)value);
+        Assert.False(default(SingleOrDefaultStruct<int>).HasValue);
+    }
+
+    [Fact]
+    public void nullable_SingleOrDefault_shapes_flatten_missing_and_null() {
+        SingleOrDefaultNullable<string> reference = (string?)null;
+        SingleOrDefaultNullableStruct<int> value = (int?)null;
+        Assert.False(reference.HasValue);
+        Assert.False(value.HasValue);
+        Assert.Null((string?)reference);
+        Assert.Null((int?)value);
+    }
+
+    [Fact]
     public void MaybeNull_carries_a_nullable_reference() {
         MaybeNull<string> some = "x";
         Assert.True(some.HasValue);

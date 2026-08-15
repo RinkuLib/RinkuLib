@@ -1,60 +1,130 @@
 # Multiple result sets
 
-A command with several selects returns several result sets. `ExecuteMultiReader` reads them in order, each mapped to its own type.
+A command can return several result sets, each with its own result shape.
 
 ```csharp
-static readonly QueryCommand Dashboard = new("SELECT * FROM artists WHERE ArtistId = @id; SELECT * FROM albums WHERE ArtistId = @id");
+public record Album(int Id, string Title) : IDbReadable;
+public record class ArtistWithAlbums(int Id, string Name) {
+    public List<Album> Albums { get; set; } = [];
+}
 
-using var multi = Dashboard.ExecuteMultiReader(cnn, new { id = 1 });
-Artist artist      = multi.Query<Artist>();       // first set
-List<Album> albums = multi.Query<List<Album>>();  // second set
+static readonly QueryCommand GetDashboard = new(
+    "SELECT ArtistId AS Id, Name FROM artists WHERE ArtistId = @artistId; SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+
+using MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 });
+
+ArtistWithAlbums artist = results.Query<ArtistWithAlbums>();
+artist.Albums = results.Query<List<Album>>();
 ```
 
-`Query<T>` works like everywhere else. `T` picks one row, `List<T>` all rows, `IEnumerable<T>` a stream. Each call advances to the next result set, and non-returning sets are skipped automatically.
-
-The `MultiReader` owns the command in this form. Use the `out DbCommand` overload when you need to read [output parameters](parameter-metadata.md#output-parameters), and dispose that command along with the reader.
+Each `Query<T>()` reads the current result set and advances to the next one.
 
 ```csharp
-using var multi = await Dashboard.ExecuteMultiReaderAsync(cnn, out DbCommand cmd, new { id = 1 }, ct: ct);
-using (cmd) {
-    var invoice = await multi.QueryAsync<Invoice>(ct: ct);
-    await foreach (var line in multi.StreamQueryAsync<InvoiceLine>(ct: ct))
-        Add(line);
+using MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 });
+
+Optional<Artist> artist = results.Query<Optional<Artist>>();
+// results now points to the albums result set.
+
+Album[] albums = results.Query<Album[]>();
+```
+
+This also advances when the selected shape only needs the first complete result. Get the current parser when application code needs control over advancement.
+
+```csharp
+using MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 });
+
+var parser = results.GetCurrentSetParser<Artist>();
+// Run the parser directly when Query<T>() advancing is not wanted.
+```
+
+`MultiReader` skips non-returning results while moving to the next readable set.
+
+```csharp
+static readonly QueryCommand UpdateAndRead = new(
+    "UPDATE artists SET LastViewed = @now WHERE ArtistId = @artistId; SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+
+using MultiReader results = UpdateAndRead.ExecuteMultiReader(cnn, new { artistId = 7, now = DateTime.UtcNow });
+
+List<Album> albums = results.Query<List<Album>>();
+```
+
+## Stream one result set
+
+A synchronous stream advances when its enumerator is disposed, including when enumeration stops early.
+
+```csharp
+using MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 });
+
+IEnumerable<Artist> artists = results.Query<IEnumerable<Artist>>();
+
+using (IEnumerator<Artist> iterator = artists.GetEnumerator()) {
+    if (iterator.MoveNext())
+        Show(iterator.Current);
+}
+
+// The artists result set was stopped early and results advanced.
+List<Album> albums = results.Query<List<Album>>();
+```
+
+`StreamQueryAsync<T>` follows the same rule.
+
+```csharp
+using MultiReader results = await GetDashboard.ExecuteMultiReaderAsync(cnn, new { artistId = 7 }, ct: cancellationToken);
+
+await foreach (Artist artist in results.StreamQueryAsync<Artist>(ct: cancellationToken)) {
+    Show(artist);
+    break;
+}
+
+// Disposing the async enumerator advanced to the albums result set.
+List<Album> albums = await results.QueryAsync<List<Album>>(ct: cancellationToken);
+```
+
+Set `goToNextResultSet` to `false` when application code advances the reader itself.
+
+```csharp
+using MultiReader results = await GetDashboard.ExecuteMultiReaderAsync(cnn, new { artistId = 7 }, ct: cancellationToken);
+
+await foreach (Artist artist in results.StreamQueryAsync<Artist>(goToNextResultSet: false, ct: cancellationToken)) {
+    Show(artist);
+}
+
+await results.NextResultAsync(cancellationToken);
+
+List<Album> albums = await results.QueryAsync<List<Album>>(ct: cancellationToken);
+```
+
+## Command ownership
+
+Without the `out` overload, disposing `MultiReader` disposes its generated command.
+
+```csharp
+using (MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 })) {
+    Artist artist = results.Query<Artist>();
+}
+// The reader and generated command are disposed.
+```
+
+Use `out DbCommand` when output parameters or the command itself are needed afterward.
+
+```csharp
+MultiReader results = GetDashboard.ExecuteMultiReader(cnn, out DbCommand command, new { artistId = 7 });
+
+using (command) {
+    using (results) {
+        Artist artist = results.Query<Artist>();
+        List<Album> albums = results.Query<List<Album>>();
+    }
 }
 ```
 
-## Methods
+Disposal closes a connection opened by Rinku. An initially open connection remains open.
 
-| Method | Purpose |
-| --- | --- |
-| `Query<T>()` | Parse the current set as `T`, then advance to the next set. |
-| `QueryAsync<T>(CancellationToken ct = default)` | Async form. |
-| `StreamQueryAsync<T>(bool goToNextResultSet = true, CancellationToken ct = default)` | Stream the current set's rows, advance when enumeration completes. |
-| `Get<T>()` | Parse starting at the current row, advancing the reader. `CanContinue` reports whether it is left on an untreated row. |
-| `GetAsync<T>(CancellationToken ct = default)` | Async form. |
-| `GetCurrentSetParser<T>()` | The current set's parser, to run yourself. `Parse` reads the next row (`CanContinue` reports whether it exists); an `IStepParser<T>` leaves the next `Read` to you. |
-
-## Mixing with manual reading
-
-`MultiReader` is itself a `DbDataReader`, so the raw reader surface (`Read`, `NextResult`, indexers) is available. `Query<T>` does the reading itself and always finishes the set, so parsing a set row by row belongs to `GetCurrentSetParser<T>` and `Get<T>`. Useful when the row's content decides how to parse it.
-
-Every parser starts on the row you are on; they differ on the next row. `GetCurrentSetParser<T>` hands you the parser to run yourself. A parser that takes one row at a time is an `IStepParser<T>`, which every plain row type is; test for it and call `ParseStep` to parse the current row without reading past it, so the next `Read` stays yours. That control is the reason to take the parser; when you do not need it, `Query<T>` reads for you.
+## Async
 
 ```csharp
-while (multi.Read()) {
-    if (multi.GetInt32(0) == (int)RowKind.Refund)
-        refunds.Add(((IStepParser<Refund>)multi.GetCurrentSetParser<Refund>()).ParseStep(multi)!);
-    else
-        payments.Add(((IStepParser<Payment>)multi.GetCurrentSetParser<Payment>()).ParseStep(multi)!);
-}
-```
+using MultiReader results = await GetDashboard.ExecuteMultiReaderAsync(cnn, new { artistId = 7 }, ct: cancellationToken);
 
-`Get<T>` runs the full parser from the row you are standing on. It reads the next row as it goes, so `CanContinue` reports its state afterwards, `true` when it sits on an untreated row, and the loop runs on that flag instead of calling `Read()` between rows.
-
-```csharp
-var reading = multi.Read();
-while (reading) {
-    (reading, var refund) = multi.Get<Refund>();
-    refunds.Add(refund!);
-}
+Artist artist = await results.QueryAsync<Artist>(ct: cancellationToken);
+List<Album> albums = await results.QueryAsync<List<Album>>(ct: cancellationToken);
 ```

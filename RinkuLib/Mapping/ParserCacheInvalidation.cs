@@ -6,9 +6,9 @@ namespace Rinku.Mapping;
 
 /// <summary>Controls how caches retaining a parser respond while that parser is being invalidated.</summary>
 public enum ParserInvalidationMode : byte {
-    /// <summary>Keep retained references and cancel disposal when the parser is still in use.</summary>
+    /// <summary>Keeps parser references and cancels disposal while the parser is used.</summary>
     CheckUsage,
-    /// <summary>Remove retained references so the invalidated parser can be disposed.</summary>
+    /// <summary>Removes parser references so the parser can be disposed.</summary>
     InvalidateReferences
 }
 
