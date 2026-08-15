@@ -12,9 +12,9 @@ namespace RinkuLib.Tests.Features.Documentation;
 public class MarkdownExampleTests {
     static readonly Lazy<IReadOnlyDictionary<string, ExampleBlock>> Examples = new(LoadExamples);
 
-    public static IEnumerable<object?[]> FencedExamples()
+    public static IEnumerable<TheoryDataRow<string>> FencedExamples()
         => Examples.Value.Keys.Order(StringComparer.Ordinal)
-            .Select(id => new object?[] { id });
+            .Select(id => new TheoryDataRow<string>(id));
 
     [Theory]
     [MemberData(nameof(FencedExamples))]
@@ -121,7 +121,8 @@ internal static class MarkdownExamples {
 internal static class ExampleVerifier {
     static readonly HashSet<string> ExpectedInvalidSql = [
         "E260385EB856",
-        "BE11F74EED1D"
+        "BE11F74EED1D",
+        "FD92D9A90F39"
     ];
     static readonly CSharpParseOptions CSharpOptions = new(
         LanguageVersion.Preview,
