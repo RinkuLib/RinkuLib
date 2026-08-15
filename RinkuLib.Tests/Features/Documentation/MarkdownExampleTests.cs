@@ -7,7 +7,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Rinku;
 using Xunit;
 
-namespace RinkuLib.Tests.Documentation;
+namespace RinkuLib.Tests.Features.Documentation;
 
 public class MarkdownExampleTests {
     static readonly Lazy<IReadOnlyDictionary<string, ExampleBlock>> Examples = new(LoadExamples);
@@ -31,7 +31,7 @@ public class MarkdownExampleTests {
         }
     }
 
-    static IReadOnlyDictionary<string, ExampleBlock> LoadExamples() {
+    private static IReadOnlyDictionary<string, ExampleBlock> LoadExamples() {
         string docsRoot = Path.Combine(FindRepositoryRoot().FullName, "docs");
         IReadOnlyList<ExampleBlock> blocks = MarkdownExamples.Read(docsRoot);
         ExampleCompiler.Configure(blocks);
@@ -208,12 +208,8 @@ internal static class ExampleVerifier {
         CompilationUnitSyntax root = CSharpSyntaxTree
             .ParseText(code, CSharpOptions)
             .GetCompilationUnitRoot();
-        MemberDeclarationSyntax[] statements = root.Members
-            .Where(member => member is GlobalStatementSyntax)
-            .ToArray();
-        MemberDeclarationSyntax[] declarations = root.Members
-            .Where(member => member is not GlobalStatementSyntax)
-            .ToArray();
+        MemberDeclarationSyntax[] statements = [.. root.Members.Where(member => member is GlobalStatementSyntax)];
+        MemberDeclarationSyntax[] declarations = [.. root.Members.Where(member => member is not GlobalStatementSyntax)];
 
         return root.WithMembers([
             .. statements,
@@ -432,9 +428,7 @@ internal static class ExampleCompiler {
             }
 
             if (declarationRoot is CompilationUnitSyntax compilationUnit) {
-                MemberDeclarationSyntax[] declarations = compilationUnit.Members
-                    .Where(member => member is not GlobalStatementSyntax)
-                    .ToArray();
+                MemberDeclarationSyntax[] declarations = [.. compilationUnit.Members.Where(member => member is not GlobalStatementSyntax)];
                 foreach (BaseTypeDeclarationSyntax declaration in declarations
                     .SelectMany(member => member.DescendantNodesAndSelf())
                     .OfType<BaseTypeDeclarationSyntax>()) {
@@ -527,9 +521,7 @@ internal static class ExampleCompiler {
                 nullableContextOptions: NullableContextOptions.Enable,
                 allowUnsafe: true));
 
-        return compilation.GetDiagnostics()
-            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .ToArray();
+        return [.. compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)];
     }
 
     static string? BuildFragmentSource(ExampleBlock block) {
@@ -615,7 +607,7 @@ internal static class ExampleCompiler {
             .OfType<BaseTypeDeclarationSyntax>()
             .Select(declaration => declaration.Identifier.ValueText)
             .ToHashSet(StringComparer.Ordinal);
-        PageDeclaration[] importedDeclarations = GetImportedDeclarations(block).ToArray();
+        PageDeclaration[] importedDeclarations = [.. GetImportedDeclarations(block)];
         string pageDeclarations = string.Join(
             Environment.NewLine,
             PageDeclarations
@@ -954,12 +946,11 @@ internal static class ExampleCompiler {
     static MetadataReference[] CreateReferences() {
         string[] platformAssemblies = ((string?)AppContext.GetData(
             "TRUSTED_PLATFORM_ASSEMBLIES"))?.Split(Path.PathSeparator) ?? [];
-        return platformAssemblies
+        return [.. platformAssemblies
             .Append(typeof(QueryCommand).Assembly.Location)
             .Append(typeof(Dapper.SqlMapper).Assembly.Location)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(path => MetadataReference.CreateFromFile(path))
-            .ToArray();
+            .Select(path => MetadataReference.CreateFromFile(path))];
     }
 
     sealed record PageDeclaration(

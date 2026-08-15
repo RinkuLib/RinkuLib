@@ -12,8 +12,8 @@ using Rinku.Mapping.Defaults;
 using Rinku.Querying;
 using Rinku.Querying.Defaults;
 using Rinku.Querying.Parameters;
-using RinkuLib.Tests.TestContainers;
 using Rinku.Mapping.Parsers;
+using RinkuLib.Testing;
 
 namespace RinkuLib.Benchmarks;
 
@@ -42,7 +42,7 @@ namespace RinkuLib.Benchmarks;
 public class EndToEndBenchmark : IAsyncDisposable {
     private const int RowCount = 5000;
 
-    private DBFixture<SqlConnection> _fixture = null!;
+    private SqlServerFixture _fixture = null!;
     private SqlConnection cnn = null!;
     private BatchUpdateArgs[] _batchItems = [];
     private DataTable _tableIds = null!;
@@ -138,7 +138,7 @@ public class EndToEndBenchmark : IAsyncDisposable {
         DbStringCmd.UpdateParamCache("@value", SizedDbParamCache.Get(DbType.AnsiString, 50));
         TableValuedParameterCmd.UpdateParamCache("@ids", SqlServerTableParamInfo.Instance);
 
-        _fixture = new DBFixture<SqlConnection>();
+        _fixture = new SqlServerFixture();
         await _fixture.InitializeAsync();
 
         await using (var seed = _fixture.GetConnection()) {

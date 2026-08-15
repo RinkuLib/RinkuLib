@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RinkuLib.Tests\RinkuLib.Tests.csproj" />
+    <ProjectReference Include="..\RinkuLib.Testing\RinkuLib.Testing.csproj" />
     <ProjectReference Include="..\RinkuLib\RinkuLib.csproj" />
   </ItemGroup>
 

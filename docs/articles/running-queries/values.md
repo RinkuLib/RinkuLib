@@ -56,7 +56,8 @@ Album album = GetAlbum.Query<Album, AlbumFilterStruct>(cnn, ref filter);
 A `null` member does not supply a database parameter.
 
 ```csharp
-SearchAlbums.Query<List<Album>>(cnn, new { title = null });
+string? title = null;
+SearchAlbums.Query<List<Album>>(cnn, new { title });
 // @title is absent.
 ```
 

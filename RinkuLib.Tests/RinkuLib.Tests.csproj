@@ -31,11 +31,11 @@
     <PackageReference Include="SQLitePCLRaw.core" Version="3.0.2" />
     <PackageReference Include="System.Data.SqlClient" Version="4.9.1" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
-    <PackageReference Include="Testcontainers.MariaDb" Version="4.10.0" />
-    <PackageReference Include="Testcontainers.MsSql" Version="4.10.0" />
-    <PackageReference Include="Testcontainers.MySql" Version="4.10.0" />
-    <PackageReference Include="Testcontainers.Oracle" Version="4.10.0" />
-    <PackageReference Include="Testcontainers.PostgreSql" Version="4.10.0" />
+    <PackageReference Include="Testcontainers.MariaDb" Version="4.14.0" />
+    <PackageReference Include="Testcontainers.MsSql" Version="4.14.0" />
+    <PackageReference Include="Testcontainers.MySql" Version="4.14.0" />
+    <PackageReference Include="Testcontainers.Oracle" Version="4.14.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
   </ItemGroup>
 

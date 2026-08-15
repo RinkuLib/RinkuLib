@@ -92,7 +92,7 @@ int affected = await RenameAlbum.ExecuteAsync(cnn, new { albumId = 1, title = "N
 
 ## Execute SQL directly from a connection
 
-The [SQL-string shortcuts](running-queries/sql-string.md) expose the same operations.
+The [SQL-string shortcuts](sql-string.md) expose the same operations.
 
 ```csharp
 int affected = cnn.Execute("UPDATE albums SET Title = @title WHERE AlbumId = @albumId", new { albumId = 1, title = "New title" });
