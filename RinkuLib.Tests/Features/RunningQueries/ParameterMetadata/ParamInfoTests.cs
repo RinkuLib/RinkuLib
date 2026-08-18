@@ -190,6 +190,32 @@ public class ParamInfoTests {
     }
 
     [Fact]
+    public void Output_direction_can_materialize_a_default_without_a_value() {
+        var info = new DirectionalDbParamCache(ParameterDirection.Output, DbType.Int32);
+        Assert.True(info.HasDefaultSet);
+        Assert.False(new DirectionalDbParamCache(ParameterDirection.InputOutput, DbType.Int32).HasDefaultSet);
+
+        var cmd = Cmd();
+        var state = info.SetDefault("@p", cmd);
+        Assert.IsAssignableFrom<IDbDataParameter>(state);
+        Assert.Single(cmd.Parameters);
+        Assert.Equal(ParameterDirection.Output, ((IDbDataParameter)cmd.Parameters[0]!).Direction);
+    }
+
+
+    [Fact]
+    public void Query_parameters_tracks_default_capable_replacements() {
+        var parameters = new QueryParameters(1, []);
+        Assert.False(parameters.HasDefaultSet);
+        Assert.True(parameters.UpdateCache(0, new DirectionalDbParamCache(ParameterDirection.Output, DbType.Int32)));
+        Assert.True(parameters.HasDefaultSet);
+        Assert.True(parameters.UpdateCache(0, new DirectionalDbParamCache(ParameterDirection.Output, DbType.Int32)));
+        Assert.True(parameters.HasDefaultSet);
+        Assert.True(parameters.UpdateCache(0, TypedDbParamCache.Get(DbType.Int32)));
+        Assert.False(parameters.HasDefaultSet);
+    }
+
+    [Fact]
     public void Typed_writes_the_type_and_shares_instances() {
         var info = TypedDbParamCache.Get(DbType.Int64);
         Assert.Same(info, TypedDbParamCache.Get(DbType.Int64));

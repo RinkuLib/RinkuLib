@@ -18,15 +18,11 @@ public static class BuilderStarter {
     /// Opens a builder that writes values to a <see cref="DbCommand"/> supplied by the caller.
     /// Use this overload when the same database command will run more than once.
     /// </summary>
-    public static QueryBuilderCommand<DbCommand> StartBuilder(this QueryCommand command, DbCommand cmd) {
-        command.EnsureReturnValueParameter(cmd);
-        return new(command, cmd);
-    }
+    public static QueryBuilderCommand<DbCommand> StartBuilder(this QueryCommand command, DbCommand cmd)
+        => new(command, cmd);
     /// <inheritdoc cref="StartBuilder(QueryCommand, DbCommand)"/>
-    public static QueryBuilderCommand<IDbCommand> StartBuilder(this QueryCommand command, IDbCommand cmd) {
-        command.EnsureReturnValueParameter(cmd);
-        return new(command, cmd);
-    }
+    public static QueryBuilderCommand<IDbCommand> StartBuilder(this QueryCommand command, IDbCommand cmd)
+        => new(command, cmd);
     /// <summary>
     /// Opens an in-memory builder already seeded with the given name and value pairs.
     /// </summary>
@@ -42,7 +38,6 @@ public static class BuilderStarter {
     /// Opens a builder bound to the given <see cref="DbCommand"/>, already seeded with the name and value pairs.
     /// </summary>
     public static QueryBuilderCommand<DbCommand> StartBuilder(this QueryCommand command, DbCommand cmd, params Span<(string, object)> values) {
-        command.EnsureReturnValueParameter(cmd);
         var builder = new QueryBuilderCommand<DbCommand>(command, cmd);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];
@@ -52,7 +47,6 @@ public static class BuilderStarter {
     }
     /// <inheritdoc cref="StartBuilder(QueryCommand, DbCommand, Span{ValueTuple{string, object}})"/>
     public static QueryBuilderCommand<IDbCommand> StartBuilder(this QueryCommand command, IDbCommand cmd, params Span<(string, object)> values) {
-        command.EnsureReturnValueParameter(cmd);
         var builder = new QueryBuilderCommand<IDbCommand>(command, cmd);
         for (int i = 0; i < values.Length; i++) {
             var (key, value) = values[i];

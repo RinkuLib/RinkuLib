@@ -7,6 +7,8 @@ namespace Rinku.Querying;
 /// </summary>
 public sealed class QueryParameters : IDbParamCache {
     internal DbParamInfo[] _variablesInfo;
+    private int _nbDefaultSet;
+    internal bool HasDefaultSet => Volatile.Read(ref _nbDefaultSet) != 0;
     /// <summary>The binding strategy learned for each plain parameter.</summary>
     public ReadOnlySpan<DbParamInfo> VariablesInfo => _variablesInfo;
     internal SpecialHandler[] _specialHandlers;
@@ -19,6 +21,9 @@ public sealed class QueryParameters : IDbParamCache {
         _variablesInfo = new DbParamInfo[NbNormalVariables];
         for (int i = 0; i < NbNormalVariables; i++)
             _variablesInfo[i] = DbParameterDefaults.Current.Inferred;
+        for (int i = 0; i < _variablesInfo.Length; i++)
+            if (_variablesInfo[i].HasDefaultSet)
+                _nbDefaultSet++;
         _specialHandlers = specialHandlers;
         var total = NbNormalVariables + specialHandlers.Length;
         _nonCachedIndexes = new int[total];
@@ -34,6 +39,8 @@ public sealed class QueryParameters : IDbParamCache {
         if (ind < 0 || ind >= _variablesInfo.Length)
             return false;
         ref var oldVal = ref _variablesInfo[ind];
+        if (oldVal.HasDefaultSet != info.HasDefaultSet)
+            _nbDefaultSet += info.HasDefaultSet ? 1 : -1;
         var isDifferentCached = oldVal.IsCached != info.IsCached;
         oldVal = info;
         if (!isDifferentCached)
@@ -51,6 +58,10 @@ public sealed class QueryParameters : IDbParamCache {
         var variables = new DbParamInfo[_variablesInfo.Length];
         Array.Fill(variables, inferred);
         Interlocked.Exchange(ref _variablesInfo, variables);
+        _nbDefaultSet = 0;
+        for (int i = 0; i < variables.Length; i++)
+            if (variables[i].HasDefaultSet)
+                _nbDefaultSet++;
         for (int i = 0; i < _specialHandlers.Length; i++)
             _specialHandlers[i].ResetCache(inferred);
         UpdateCachedIndexes();
@@ -114,10 +125,16 @@ public sealed class QueryParameters : IDbParamCache {
     /// </remarks>
     public bool NeedToCache(object?[] variables) {
         var pending = _nonCachedIndexes;
-        for (int i = 0; i < pending.Length; i++)
-            if (variables[pending[i]] is not null)
+        for (int i = 0; i < pending.Length; i++) {
+            int ind = pending[i];
+            if (variables[ind] is not null || (ind < _variablesInfo.Length && _variablesInfo[ind].HasDefaultSet))
                 return true;
+        }
         return false;
+    }
+    internal void FillUsageMap(object?[] variables, Span<bool> usageMap) {
+        for (int i = 0; i < variables.Length; i++)
+            usageMap[i] = variables[i] is not null || (i < _variablesInfo.Length && _variablesInfo[i].HasDefaultSet);
     }
     /// <inheritdoc cref="NeedToCache(object[])"/>
     public bool NeedToCache(Span<bool> usageMap) {

@@ -100,7 +100,7 @@ public class ExecuteTests(ExecuteTestsFixture fixture) : IClassFixture<ExecuteTe
         var proc = QueryCommand.FromProc("dbo.DescribeMe", cnn);
 
         Assert.Equal(CommandType.StoredProcedure, proc.CommandType);
-        Assert.Equal(["@name", "@amount", "@doubled"], proc.Mapper.Keys.ToArray());
+        Assert.Equal(["@RETURN_VALUE", "@name", "@amount", "@doubled"], proc.Mapper.Keys.ToArray());
 
         var name = await proc.QueryAsync<string>(cnn, out var cmd,
             new { name = "Kashmir", amount = 1.25m, doubled = 0m }, ct: ct);
@@ -125,7 +125,7 @@ public class ExecuteTests(ExecuteTestsFixture fixture) : IClassFixture<ExecuteTe
 
         try {
             using var proc = QueryCommand.FromProc("dbo.ReturnAndOutput", cnn);
-            Assert.Equal(["@a", "@moved"], proc.Mapper.Keys.ToArray());
+            Assert.Equal(["@RETURN_VALUE", "@a", "@moved"], proc.Mapper.Keys.ToArray());
 
             var total = await proc.QueryAsync<int>(
                 cnn,
@@ -136,12 +136,8 @@ public class ExecuteTests(ExecuteTestsFixture fixture) : IClassFixture<ExecuteTe
                 Assert.Equal(42, total);
                 Assert.Same(cmd.Parameters["@moved"], cmd.GetOutputParameter("@moved"));
                 Assert.Equal(42, cmd.GetOutputValue<int>("@moved"));
-                Assert.Same(cmd.Parameters["@RETURN_VALUE"], cmd.GetReturnParameter());
-                Assert.Equal(42, cmd.GetReturnValue<int>());
-                Assert.Throws<InvalidOperationException>(() => cmd.GetOutputValue<int>("@a"));
-                IDbCommand interfaceCommand = cmd;
-                Assert.Equal(42, interfaceCommand.GetOutputValue<int>("@moved"));
-                Assert.Equal(42, interfaceCommand.GetReturnValue<int>());
+                Assert.DoesNotContain(cmd.Parameters.Cast<object>(), p => p is IDbDataParameter dp && dp.Direction == ParameterDirection.ReturnValue);
+                Assert.Throws<InvalidOperationException>(() => { _ = cmd.GetOutputValue<int>("@a"); });
             }
         }
         finally {
@@ -160,7 +156,7 @@ public class ExecuteTests(ExecuteTestsFixture fixture) : IClassFixture<ExecuteTe
 
         var proc = await StoredProcedure.FromAsync(cnn, "dbo.AddNumbers", ct: ct);
 
-        Assert.Equal(["@a", "@b"], proc.Mapper.Keys.ToArray());
+        Assert.Equal(["@RETURN_VALUE", "@a", "@b"], proc.Mapper.Keys.ToArray());
         Assert.Equal(9, await proc.QueryAsync<int>(cnn, new { a = 4, b = 5 }, ct: ct));
     }
 

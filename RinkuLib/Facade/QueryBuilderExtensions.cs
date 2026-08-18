@@ -135,8 +135,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            command.SetText(cmd, command.QueryText.Parse(vars));
-            return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
+            return cmd.ExecuteMultiReader(command, command.CreateUsageMap(vars), false, behavior);
         }
         /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
@@ -151,8 +150,7 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            command.SetText(cmd, command.QueryText.Parse(vars));
-            return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
+            return cmd.ExecuteMultiReaderAsync(command, command.CreateUsageMap(vars), false, behavior, ct);
         }
         /// <summary>
         /// Executes a <see cref="DbCommand"/> and reads the result as <typeparamref name="T"/>. The requested type controls the result.
@@ -168,7 +166,7 @@ public static class QueryBuilderExtensions {
                 return parser.Query(cmd, true);
             else if (parser is not null)
                 return parser.Query(cmd, command, true);
-            return cmd.Query(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), true);
+            return cmd.Query(new LinkerQueryCommandWithParser<T>(command, command.CreateUsageMap(vars)), true);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and reads the result as <typeparamref name="T"/>. The requested type controls the result.
@@ -185,7 +183,7 @@ public static class QueryBuilderExtensions {
                 return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
                 return parser.QueryAsync(cmd, command, true, ct);
-            return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), true, ct);
+            return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, command.CreateUsageMap(vars)), true, ct);
         }
         /// <summary>
         /// Asynchronously executes a <see cref="DbCommand"/> and streams its rows as <typeparamref name="T"/>.
@@ -198,12 +196,11 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             var cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            command.SetText(cmd, command.QueryText.Parse(vars));
             if (command.TryGetCachedParser<T>(vars, out var parser))
                 return cmd.StreamQueryAsync(parser, null, false, ct);
             else if (parser is not null)
                 return cmd.StreamQueryAsync(parser, command, false, ct);
-            return cmd.StreamQueryAsync(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false, ct);
+            return cmd.StreamQueryAsync(new LinkerQueryCommandWithParser<T>(command, command.CreateUsageMap(vars)), false, ct);
         }
 
 
@@ -255,16 +252,14 @@ public static class QueryBuilderExtensions {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            command.SetText(cmd, command.QueryText.Parse(vars));
-            return cmd.ExecuteMultiReader(command, vars.ToBoolArr(), false, behavior);
+            return cmd.ExecuteMultiReader(command, command.CreateUsageMap(vars), false, behavior);
         }
         /// <inheritdoc cref="QueryBuilderExtensions.ExecuteMultiReaderAsync(QueryBuilder, DbConnection, out DbCommand, CommandBehavior, DbTransaction, int?, CancellationToken)"/>
         public Task<MultiReader> ExecuteMultiReaderAsync(IDbConnection cnn, out IDbCommand cmd, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
             var vars = builder.Variables;
             var command = builder.QueryCommand;
             cmd = GetCommand(command, vars, cnn, transaction, timeout);
-            command.SetText(cmd, command.QueryText.Parse(vars));
-            return cmd.ExecuteMultiReaderAsync(command, vars.ToBoolArr(), false, behavior, ct);
+            return cmd.ExecuteMultiReaderAsync(command, command.CreateUsageMap(vars), false, behavior, ct);
         }
         /// <inheritdoc cref="QueryBuilderExtensions.Query{T}(QueryBuilder, DbConnection, DbTransaction, int?)"/>
         public T Query<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null) {
@@ -275,7 +270,7 @@ public static class QueryBuilderExtensions {
                 return parser.Query(cmd, true);
             else if (parser is not null)
                 return parser.Query(cmd, command, true);
-            return cmd.Query(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), true);
+            return cmd.Query(new LinkerQueryCommandWithParser<T>(command, command.CreateUsageMap(vars)), true);
         }
         /// <inheritdoc cref="QueryBuilderExtensions.QueryAsync{T}(QueryBuilder, DbConnection, DbTransaction, int?, CancellationToken)"/>
         public Task<T> QueryAsync<T>(IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
@@ -286,7 +281,19 @@ public static class QueryBuilderExtensions {
                 return parser.QueryAsync(cmd, true, ct);
             else if (parser is not null)
                 return parser.QueryAsync(cmd, command, true, ct);
-            return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), true, ct);
+            return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, command.CreateUsageMap(vars)), true, ct);
         }
+        /// <summary>Runs the builder and reads the result in the shape selected by <paramref name="resultType"/>.</summary>
+        public object Query(Type resultType, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null)
+            => builder.QueryCommand.QueryRuntime(resultType, cnn, builder.Variables, transaction, timeout);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync(Type resultType, DbConnection cnn, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.QueryCommand.QueryRuntimeAsync(resultType, cnn, builder.Variables, transaction, timeout, ct);
+        /// <inheritdoc/>
+        public object Query(Type resultType, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null)
+            => builder.QueryCommand.QueryRuntime(resultType, cnn, builder.Variables, transaction, timeout);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync(Type resultType, IDbConnection cnn, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => builder.QueryCommand.QueryRuntimeAsync(resultType, cnn, builder.Variables, transaction, timeout, ct);
     }
 }

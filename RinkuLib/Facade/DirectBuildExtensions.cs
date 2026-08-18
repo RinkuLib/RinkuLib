@@ -1185,6 +1185,106 @@ public static class DirectBuildExtensions {
             command.SetCommand(cmd, ref parametersObj, usageMap);
             return QueryParseAsync<T>(command, cmd, usageMap, true, ct);
         }
+
+        /// <summary>Runs the command and reads the result in the shape selected by <paramref name="resultType"/>.</summary>
+        public object Query(Type resultType, DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null)
+            => command.QueryRuntime(resultType, cnn, parametersObj, transaction, timeout);
+        /// <inheritdoc/>
+        public object Query(Type resultType, DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null)
+            => command.QueryRuntime(resultType, cnn, out cmd, parametersObj, transaction, timeout);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync(Type resultType, DbConnection cnn, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => command.QueryRuntimeAsync(resultType, cnn, parametersObj, transaction, timeout, ct);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync(Type resultType, DbConnection cnn, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => command.QueryRuntimeAsync(resultType, cnn, out cmd, parametersObj, transaction, timeout, ct);
+        /// <inheritdoc/>
+        public object Query(Type resultType, IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null)
+            => command.QueryRuntime(resultType, cnn, parametersObj, transaction, timeout);
+        /// <inheritdoc/>
+        public object Query(Type resultType, IDbConnection cnn, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null)
+            => command.QueryRuntime(resultType, cnn, out cmd, parametersObj, transaction, timeout);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync(Type resultType, IDbConnection cnn, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => command.QueryRuntimeAsync(resultType, cnn, parametersObj, transaction, timeout, ct);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync(Type resultType, IDbConnection cnn, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default)
+            => command.QueryRuntimeAsync(resultType, cnn, out cmd, parametersObj, transaction, timeout, ct);
+        /// <inheritdoc/>
+        public object Query<TObj>(Type resultType, DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull
+            => command.QueryRuntime(resultType, cnn, parametersObj, transaction, timeout);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync<TObj>(Type resultType, DbConnection cnn, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull
+            => command.QueryRuntimeAsync(resultType, cnn, parametersObj, transaction, timeout, ct);
+        /// <inheritdoc/>
+        public object Query<TObj>(Type resultType, IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull
+            => command.QueryRuntime(resultType, cnn, parametersObj, transaction, timeout);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync<TObj>(Type resultType, IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull
+            => command.QueryRuntimeAsync(resultType, cnn, parametersObj, transaction, timeout, ct);
+        /// <inheritdoc/>
+        public object Query<TObj>(Type resultType, DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull
+            => command.QueryRuntime(resultType, cnn, ref parametersObj, transaction, timeout);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync<TObj>(Type resultType, DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull
+            => command.QueryRuntimeAsync(resultType, cnn, ref parametersObj, transaction, timeout, ct);
+        /// <inheritdoc/>
+        public object Query<TObj>(Type resultType, IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull
+            => command.QueryRuntime(resultType, cnn, ref parametersObj, transaction, timeout);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync<TObj>(Type resultType, IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull
+            => command.QueryRuntimeAsync(resultType, cnn, ref parametersObj, transaction, timeout, ct);
+
+        /// <summary>Reads multiple result sets and returns an owning reader that disposes the command.</summary>
+        public MultiReader ExecuteMultiReader(IDbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, parametersObj, usage);
+            return cmd.ExecuteMultiReader(command, usage, true, behavior);
+        }
+        /// <inheritdoc/>
+        public Task<MultiReader> ExecuteMultiReaderAsync(IDbConnection cnn, object? parametersObj = null, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, parametersObj, usage);
+            return cmd.ExecuteMultiReaderAsync(command, usage, true, behavior, ct);
+        }
+        /// <inheritdoc/>
+        public MultiReader ExecuteMultiReader<TObj>(DbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, parametersObj, usage);
+            return cmd.ExecuteMultiReader(command, usage, true, behavior);
+        }
+        /// <inheritdoc/>
+        public Task<MultiReader> ExecuteMultiReaderAsync<TObj>(DbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, parametersObj, usage);
+            return cmd.ExecuteMultiReaderAsync(command, usage, true, behavior, ct);
+        }
+        /// <inheritdoc/>
+        public MultiReader ExecuteMultiReader<TObj>(IDbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, parametersObj, usage);
+            return cmd.ExecuteMultiReader(command, usage, true, behavior);
+        }
+        /// <inheritdoc/>
+        public Task<MultiReader> ExecuteMultiReaderAsync<TObj>(IDbConnection cnn, TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, parametersObj, usage);
+            return cmd.ExecuteMultiReaderAsync(command, usage, true, behavior, ct);
+        }
+        /// <inheritdoc/>
+        public MultiReader ExecuteMultiReader<TObj>(DbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, ref parametersObj, usage);
+            return cmd.ExecuteMultiReader(command, usage, true, behavior);
+        }
+        /// <inheritdoc/>
+        public Task<MultiReader> ExecuteMultiReaderAsync<TObj>(DbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, ref parametersObj, usage);
+            return cmd.ExecuteMultiReaderAsync(command, usage, true, behavior, ct);
+        }
+        /// <inheritdoc/>
+        public MultiReader ExecuteMultiReader<TObj>(IDbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, ref parametersObj, usage);
+            return cmd.ExecuteMultiReader(command, usage, true, behavior);
+        }
+        /// <inheritdoc/>
+        public Task<MultiReader> ExecuteMultiReaderAsync<TObj>(IDbConnection cnn, ref TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull {
+            var cmd = cnn.GetCommand(transaction, timeout); var usage = command.CreateUsageMap(); command.SetCommand(cmd, ref parametersObj, usage);
+            return cmd.ExecuteMultiReaderAsync(command, usage, true, behavior, ct);
+        }
         #endregion
     }
 }

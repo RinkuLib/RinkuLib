@@ -103,12 +103,16 @@ public interface IDbParamCache {
 /// How one parameter is bound onto a command, add, set, update, remove. Subclass it to take over binding for
 /// a parameter, for a provider quirk or a custom type the default path handles wrong.
 /// </summary>
-public abstract class DbParamInfo(bool IsCached) {
+public abstract class DbParamInfo(bool IsCached, bool HasDefaultSet = false) {
     /// <summary>
     /// Whether this strategy is settled. While <see langword="false"/>, the command may still replace it with
     /// a more exact one learned from the provider.
     /// </summary>
     public bool IsCached = IsCached;
+    /// <summary>Whether this strategy can materialize a parameter when no value was supplied.</summary>
+    public readonly bool HasDefaultSet = HasDefaultSet;
+    /// <summary>Materializes the parameter's default state and returns the live state it created.</summary>
+    public virtual object? SetDefault(string paramName, IDbCommand cmd) => null;
     /// <summary>
     /// Changes an already-bound parameter's value. <paramref name="currentValue"/> is the parameter reference
     /// a previous <see cref="SaveUse"/> handed back.

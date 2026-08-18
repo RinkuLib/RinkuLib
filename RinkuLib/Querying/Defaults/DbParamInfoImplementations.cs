@@ -131,7 +131,7 @@ public sealed class ScaledDbParamCache(DbType type, byte precision, byte scale) 
 /// <summary>
 /// Represents metadata for directional fixed-precision numeric database parameters (Decimal, Currency).
 /// </summary>
-public sealed class DirectionalScaledDbParamCache(ParameterDirection direction, DbType type, byte precision, byte scale) : DbParamInfo(true) {
+public sealed class DirectionalScaledDbParamCache(ParameterDirection direction, DbType type, byte precision, byte scale) : DbParamInfo(true, direction == ParameterDirection.Output) {
     /// <inheritdoc/>
     public readonly DbType Type = type;
     /// <inheritdoc/>
@@ -140,6 +140,11 @@ public sealed class DirectionalScaledDbParamCache(ParameterDirection direction, 
     public readonly byte Scale = scale;
     /// <inheritdoc/>
     public readonly ParameterDirection Direction = direction;
+    /// <inheritdoc/>
+    public override object SetDefault(string paramName, IDbCommand cmd) {
+        var p = cmd.CreateParameter(); p.ParameterName = paramName; p.DbType = Type;
+        ScaledDbParamCache.SetPrecisionScale(p, Precision, Scale); p.Direction = Direction; cmd.Parameters.Add(p); return p;
+    }
 
     /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {
@@ -198,13 +203,17 @@ public sealed class DirectionalScaledDbParamCache(ParameterDirection direction, 
 /// <summary>
 /// Represents metadata for directional fixed-precision sized database parameters (e.g., Strings, Binary).
 /// </summary>
-public sealed class DirectionalSizedDbParamCache(ParameterDirection direction, DbType type, int size = -1) : DbParamInfo(true) {
+public sealed class DirectionalSizedDbParamCache(ParameterDirection direction, DbType type, int size = -1) : DbParamInfo(true, direction == ParameterDirection.Output) {
     /// <inheritdoc/>
     public readonly DbType Type = type;
     /// <inheritdoc/>
     public readonly int Size = size;
     /// <inheritdoc/>
     public readonly ParameterDirection Direction = direction;
+    /// <inheritdoc/>
+    public override object SetDefault(string paramName, IDbCommand cmd) {
+        var p = cmd.CreateParameter(); p.ParameterName = paramName; p.DbType = Type; p.Size = Size; p.Direction = Direction; cmd.Parameters.Add(p); return p;
+    }
 
     /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {
@@ -262,11 +271,15 @@ public sealed class DirectionalSizedDbParamCache(ParameterDirection direction, D
 /// <summary>
 /// Represents metadata for directional fixed-type database parameters (e.g., Integers, Booleans) 
 /// </summary>
-public sealed class DirectionalDbParamCache(ParameterDirection direction, DbType type) : DbParamInfo(true) {
+public sealed class DirectionalDbParamCache(ParameterDirection direction, DbType type) : DbParamInfo(true, direction == ParameterDirection.Output) {
     /// <inheritdoc/>
     public readonly DbType Type = type;
     /// <inheritdoc/>
     public readonly ParameterDirection Direction = direction;
+    /// <inheritdoc/>
+    public override object SetDefault(string paramName, IDbCommand cmd) {
+        var p = cmd.CreateParameter(); p.ParameterName = paramName; p.DbType = Type; p.Direction = Direction; cmd.Parameters.Add(p); return p;
+    }
 
     /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {

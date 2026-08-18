@@ -151,6 +151,10 @@ public static class QueryBuilderCommandExtensions {
                 return cmd.StreamQueryAsync(parser, command, false, ct);
             return cmd.StreamQueryAsync(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false, ct);
         }
+        /// <summary>Reads the managed command in the complete shape selected by <paramref name="resultType"/>.</summary>
+        public object Query(Type resultType) => builder.QueryCommand.QueryRuntime(resultType, builder.Command, builder.Variables, false);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync(Type resultType, CancellationToken ct = default) => builder.QueryCommand.QueryRuntimeAsync(resultType, builder.Command, builder.Variables, false, ct);
     }
 
     extension(QueryBuilderCommand<IDbCommand> builder) {
@@ -242,5 +246,9 @@ public static class QueryBuilderCommandExtensions {
                 return parser.QueryAsync(cmd, command, false, ct);
             return cmd.QueryAsync(new LinkerQueryCommandWithParser<T>(command, vars.ToBoolArray()), false, ct);
         }
+        /// <summary>Reads the managed command in the complete shape selected by <paramref name="resultType"/>.</summary>
+        public object Query(Type resultType) => builder.QueryCommand.QueryRuntime(resultType, builder.Command, builder.Variables, false);
+        /// <inheritdoc/>
+        public Task<object> QueryAsync(Type resultType, CancellationToken ct = default) => builder.QueryCommand.QueryRuntimeAsync(resultType, builder.Command, builder.Variables, false, ct);
     }
 }

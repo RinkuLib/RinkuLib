@@ -9,6 +9,33 @@ internal struct ParsingCacheItem(ITypeParser Parser, int[] CondStates, int Resul
     public int ResultSetIndex = ResultSetIndex;
 }
 internal static class ParsingCacheExtensions {
+    internal static ParsingCacheItem[] GetUpdatedCache(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ITypeParser cache, int resultSetIndex = 0) {
+        for (var i = 0; i < parsingCache.Length; i++) {
+            ref var item = ref parsingCache[i];
+            if (item.ResultSetIndex == resultSetIndex && ReferenceEquals(item.Parser, cache)) {
+                var currentLen = item.CondStates.Length;
+                var widened = GetUpdatedStates(usageMap, item.CondStates);
+                if (widened.Length == currentLen)
+                    return parsingCache;
+                var merged = (ParsingCacheItem[])parsingCache.Clone();
+                merged[i].CondStates = widened;
+                currentLen = widened.Length;
+                for (int j = i + 1; j < merged.Length; j++)
+                    if (merged[j].CondStates.Length > currentLen)
+                        (merged[j], merged[j - 1]) = (merged[j - 1], merged[j]);
+                return merged;
+            }
+        }
+        Span<int> condStates = stackalloc int[usageMap.Length];
+        var count = 0;
+        for (int i = 0; i < condStates.Length; i++)
+            if (qt.IsInCondition(i))
+                condStates[count++] = EncodeState(i, usageMap[i]);
+        var newCache = new ParsingCacheItem[parsingCache.Length + 1];
+        Array.Copy(parsingCache, 0, newCache, 1, parsingCache.Length);
+        newCache[0] = new(cache, condStates[..count].ToArray(), resultSetIndex);
+        return newCache;
+    }
     internal static ParsingCacheItem[] GetUpdatedCache<T>(this ParsingCacheItem[] parsingCache, IQueryText qt, bool[] usageMap, ITypeParser<T> cache, int resultSetIndex = 0) {
         for (var i = 0; i < parsingCache.Length; i++) {
             ref var item = ref parsingCache[i];

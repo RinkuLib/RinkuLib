@@ -47,6 +47,24 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             }
         }
     }
+    /// <summary>Explicitly materializes missing default-capable parameters on the live command.</summary>
+    public readonly void SetDefaults() {
+        if (!QueryCommand.Parameters.HasDefaultSet)
+            return;
+        var infos = QueryCommand.Parameters._variablesInfo;
+        ref object? pVar = ref MemoryMarshal.GetArrayDataReference(Variables);
+        ref string pKeys = ref QueryCommand.Mapper.KeysStartPtr;
+        bool changed = false;
+        for (int i = 0; i < infos.Length; i++) {
+            ref var current = ref Unsafe.Add(ref pVar, i);
+            if (current is null && infos[i].HasDefaultSet) {
+                current = infos[i].SetDefault(Unsafe.Add(ref pKeys, i), Command);
+                changed = true;
+            }
+        }
+        if (changed)
+            QueryCommand.SetText(Command, QueryCommand.QueryText.Parse(Variables));
+    }
     /// <inheritdoc/>
     public readonly void Remove(int ind) {
         if (ind < 0)

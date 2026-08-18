@@ -64,6 +64,22 @@ public interface ITypeParserMaker {
         result = null;
         return false;
     }
+    public bool TryColdStart(Type type, DbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result) {
+        result = null;
+        return false;
+    }
+    public bool TryColdStart(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result) {
+        result = null;
+        return false;
+    }
+    public bool TryColdStartAsync(Type type, DbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result) {
+        result = null;
+        return false;
+    }
+    public bool TryColdStartAsync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result) {
+        result = null;
+        return false;
+    }
 }
 
 /// <summary>

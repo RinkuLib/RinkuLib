@@ -34,6 +34,19 @@ public sealed class CachedTypeParser : IDisposable {
             return parser;
         }
     }
+    private sealed class RuntimeCacheBridge(CachedTypeParser owner, Type type, ICache? userCache = null) : ICacheGivingParser {
+        public CommandBehavior Behavior => owner.HasSchema ? owner.Get(type).Behavior : CommandBehavior.SingleResult;
+        public ITypeParser UpdateCache(IDbCommand cmd, DbDataReader reader) {
+            var parser = owner.Learn(type, reader);
+            userCache?.UpdateCache(cmd);
+            return parser;
+        }
+        public async ValueTask<ITypeParser> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default) {
+            var parser = owner.Learn(type, reader);
+            if (userCache is not null) await userCache.UpdateCacheAsync(cmd, ct).ConfigureAwait(false);
+            return parser;
+        }
+    }
 
     private ColumnInfo[]? _schema;
     private readonly Dictionary<ParserKey, ITypeParser> _parsers = [];
@@ -88,6 +101,31 @@ public sealed class CachedTypeParser : IDisposable {
         }
     }
 
+    /// <summary>Gets the parser for a runtime result type over this cache's fixed schema.</summary>
+    public ITypeParser Get(Type type, INullColHandler? nullColHandler = null) {
+        ArgumentNullException.ThrowIfNull(type);
+        var schema = Volatile.Read(ref _schema)
+            ?? throw new InvalidOperationException("The schema is not known until this CachedTypeParser runs its first query.");
+        nullColHandler ??= TypeParser.GetDefaultNullColHandler(type);
+        var key = new ParserKey(type, nullColHandler);
+        lock (TypeParser.TypeParserMakers) {
+            lock (this) {
+                if (Volatile.Read(ref _disposed) != 0)
+                    throw new ObjectDisposedException(nameof(CachedTypeParser));
+                if (_parsers.TryGetValue(key, out var existing))
+                    return existing;
+
+                var parser = TypeParser.GetTypeParser(type, schema, nullColHandler);
+                if (!_subscribedToParserDisposing) {
+                    TypeParser.ParserDisposing += OnParserDisposing;
+                    _subscribedToParserDisposing = true;
+                }
+                _parsers.Add(key, parser);
+                return parser;
+            }
+        }
+    }
+
     /// <summary>Queries <paramref name="cmd"/> as <typeparamref name="T"/> and learns the fixed schema when needed.</summary>
     public T Query<T>(DbCommand cmd, bool disposeCommand = false)
         => HasSchema ? Get<T>().Query(cmd, disposeCommand) : cmd.Query(new CacheBridge<T>(this), disposeCommand);
@@ -112,6 +150,14 @@ public sealed class CachedTypeParser : IDisposable {
     /// <summary>Asynchronously queries <paramref name="cmd"/> while updating <paramref name="cache"/>.</summary>
     public Task<T> QueryAsync<T>(IDbCommand cmd, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
         => HasSchema ? Get<T>().QueryAsync(cmd, cache, disposeCommand, ct) : cmd.QueryAsync(new CacheBridge<T>(this, cache), disposeCommand, ct);
+    public object? Query(Type type, DbCommand cmd, bool disposeCommand = false)
+        => HasSchema ? Get(type).QueryObject(cmd, null, disposeCommand) : cmd.Query(type, new RuntimeCacheBridge(this, type), disposeCommand);
+    public Task<object?> QueryAsync(Type type, DbCommand cmd, bool disposeCommand = false, CancellationToken ct = default)
+        => HasSchema ? Get(type).QueryObjectAsync(cmd, null, disposeCommand, ct) : cmd.QueryAsync(type, new RuntimeCacheBridge(this, type), disposeCommand, ct);
+    public object? Query(Type type, IDbCommand cmd, bool disposeCommand = false)
+        => HasSchema ? Get(type).QueryObject(cmd, null, disposeCommand) : cmd.Query(type, new RuntimeCacheBridge(this, type), disposeCommand);
+    public Task<object?> QueryAsync(Type type, IDbCommand cmd, bool disposeCommand = false, CancellationToken ct = default)
+        => HasSchema ? Get(type).QueryObjectAsync(cmd, null, disposeCommand, ct) : cmd.QueryAsync(type, new RuntimeCacheBridge(this, type), disposeCommand, ct);
     /// <summary>Streams rows from <paramref name="cmd"/> as <typeparamref name="T"/> over this cache's fixed schema.</summary>
     public IAsyncEnumerable<T> StreamQueryAsync<T>(DbCommand cmd, bool disposeCommand = false, CancellationToken ct = default)
         => HasSchema
@@ -130,6 +176,17 @@ public sealed class CachedTypeParser : IDisposable {
             }
         }
         return Get<T>();
+    }
+    private ITypeParser Learn(Type type, DbDataReader reader) {
+        if (!HasSchema) {
+            var discoveredSchema = reader.GetColumnsFast();
+            lock (this) {
+                if (Volatile.Read(ref _disposed) != 0)
+                    throw new ObjectDisposedException(nameof(CachedTypeParser));
+                _schema ??= [.. discoveredSchema];
+            }
+        }
+        return Get(type);
     }
 
     /// <summary>Forgets the parser for <typeparamref name="T"/> held by this cache.</summary>

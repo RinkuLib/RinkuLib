@@ -88,24 +88,17 @@ public static class StoredProcedure {
         var parameters = command.Parameters;
         var names = new List<string>(parameters.Count);
         var infos = new List<DbParamInfo>(parameters.Count);
-        (string Name, DbParamInfo Info)? returnValue = null;
         for (int i = 0; i < parameters.Count; i++) {
             if (parameters[i] is not IDbDataParameter p)
                 throw new RinkuBindingException(ErrorCodes.InvalidParameterAtIndex,
                     $"there is no valid parameter at index {i}");
             var info = DefaultParamCache.MakeDeclaredInfo(p);
-            if (p.Direction == ParameterDirection.ReturnValue) {
-                returnValue = (p.ParameterName, info);
-                continue;
-            }
             names.Add(p.ParameterName);
             infos.Add(info);
         }
         var proc = new QueryCommand(command.CommandText, names, CommandType.StoredProcedure);
         for (int i = 0; i < names.Count; i++)
             proc.UpdateParamCache(names[i], infos[i]);
-        if (returnValue is { } value)
-            proc.SetReturnValue(value.Name, value.Info);
         return proc;
     }
     /// <summary>

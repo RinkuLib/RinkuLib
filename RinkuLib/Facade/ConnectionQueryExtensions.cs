@@ -275,5 +275,63 @@ public static class ConnectionQueryExtensions {
     public static Task<T> QueryAsync<T, TObj>(this IDbConnection cnn, string sql, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull =>
         GetOrCreateCommand(sql).QueryAsync<T, TObj>(cnn, ref parametersObj, transaction, timeout, ct);
 
+    /// <summary>Runs <paramref name="sql"/> and reads the result in the shape selected by <paramref name="resultType"/>.</summary>
+    public static object Query(this DbConnection cnn, Type resultType, string sql, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) => GetOrCreateCommand(sql).Query(resultType, cnn, parametersObj, transaction, timeout);
+    /// <inheritdoc/>
+    public static object Query(this DbConnection cnn, Type resultType, string sql, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null) => GetOrCreateCommand(sql).Query(resultType, cnn, out cmd, parametersObj, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<object> QueryAsync(this DbConnection cnn, Type resultType, string sql, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) => GetOrCreateCommand(sql).QueryAsync(resultType, cnn, parametersObj, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static Task<object> QueryAsync(this DbConnection cnn, Type resultType, string sql, out DbCommand cmd, object? parametersObj = null, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) => GetOrCreateCommand(sql).QueryAsync(resultType, cnn, out cmd, parametersObj, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static object Query(this IDbConnection cnn, Type resultType, string sql, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) => GetOrCreateCommand(sql).Query(resultType, cnn, parametersObj, transaction, timeout);
+    /// <inheritdoc/>
+    public static object Query(this IDbConnection cnn, Type resultType, string sql, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null) => GetOrCreateCommand(sql).Query(resultType, cnn, out cmd, parametersObj, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<object> QueryAsync(this IDbConnection cnn, Type resultType, string sql, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) => GetOrCreateCommand(sql).QueryAsync(resultType, cnn, parametersObj, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static Task<object> QueryAsync(this IDbConnection cnn, Type resultType, string sql, out IDbCommand cmd, object? parametersObj = null, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) => GetOrCreateCommand(sql).QueryAsync(resultType, cnn, out cmd, parametersObj, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static object Query<TObj>(this DbConnection cnn, Type resultType, string sql, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull => GetOrCreateCommand(sql).Query(resultType, cnn, parametersObj, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<object> QueryAsync<TObj>(this DbConnection cnn, Type resultType, string sql, TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull => GetOrCreateCommand(sql).QueryAsync(resultType, cnn, parametersObj, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static object Query<TObj>(this IDbConnection cnn, Type resultType, string sql, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull => GetOrCreateCommand(sql).Query(resultType, cnn, parametersObj, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<object> QueryAsync<TObj>(this IDbConnection cnn, Type resultType, string sql, TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull => GetOrCreateCommand(sql).QueryAsync(resultType, cnn, parametersObj, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static object Query<TObj>(this DbConnection cnn, Type resultType, string sql, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull => GetOrCreateCommand(sql).Query(resultType, cnn, ref parametersObj, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<object> QueryAsync<TObj>(this DbConnection cnn, Type resultType, string sql, ref TObj parametersObj, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull => GetOrCreateCommand(sql).QueryAsync(resultType, cnn, ref parametersObj, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static object Query<TObj>(this IDbConnection cnn, Type resultType, string sql, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull => GetOrCreateCommand(sql).Query(resultType, cnn, ref parametersObj, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<object> QueryAsync<TObj>(this IDbConnection cnn, Type resultType, string sql, ref TObj parametersObj, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull => GetOrCreateCommand(sql).QueryAsync(resultType, cnn, ref parametersObj, transaction, timeout, ct);
+
+    /// <summary>Runs <paramref name="sql"/> and returns an owning <see cref="MultiReader"/>.</summary>
+    public static MultiReader ExecuteMultiReader(this DbConnection cnn, string sql, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) => GetOrCreateCommand(sql).ExecuteMultiReader(cnn, parametersObj, behavior, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<MultiReader> ExecuteMultiReaderAsync(this DbConnection cnn, string sql, object? parametersObj = null, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) => GetOrCreateCommand(sql).ExecuteMultiReaderAsync(cnn, parametersObj, behavior, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static MultiReader ExecuteMultiReader(this IDbConnection cnn, string sql, object? parametersObj = null, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) => GetOrCreateCommand(sql).ExecuteMultiReader(cnn, parametersObj, behavior, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<MultiReader> ExecuteMultiReaderAsync(this IDbConnection cnn, string sql, object? parametersObj = null, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) => GetOrCreateCommand(sql).ExecuteMultiReaderAsync(cnn, parametersObj, behavior, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static MultiReader ExecuteMultiReader<TObj>(this DbConnection cnn, string sql, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull => GetOrCreateCommand(sql).ExecuteMultiReader(cnn, parametersObj, behavior, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<MultiReader> ExecuteMultiReaderAsync<TObj>(this DbConnection cnn, string sql, TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull => GetOrCreateCommand(sql).ExecuteMultiReaderAsync(cnn, parametersObj, behavior, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static MultiReader ExecuteMultiReader<TObj>(this IDbConnection cnn, string sql, TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull => GetOrCreateCommand(sql).ExecuteMultiReader(cnn, parametersObj, behavior, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<MultiReader> ExecuteMultiReaderAsync<TObj>(this IDbConnection cnn, string sql, TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull => GetOrCreateCommand(sql).ExecuteMultiReaderAsync(cnn, parametersObj, behavior, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static MultiReader ExecuteMultiReader<TObj>(this DbConnection cnn, string sql, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null) where TObj : notnull => GetOrCreateCommand(sql).ExecuteMultiReader(cnn, ref parametersObj, behavior, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<MultiReader> ExecuteMultiReaderAsync<TObj>(this DbConnection cnn, string sql, ref TObj parametersObj, CommandBehavior behavior = default, DbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull => GetOrCreateCommand(sql).ExecuteMultiReaderAsync(cnn, ref parametersObj, behavior, transaction, timeout, ct);
+    /// <inheritdoc/>
+    public static MultiReader ExecuteMultiReader<TObj>(this IDbConnection cnn, string sql, ref TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null) where TObj : notnull => GetOrCreateCommand(sql).ExecuteMultiReader(cnn, ref parametersObj, behavior, transaction, timeout);
+    /// <inheritdoc/>
+    public static Task<MultiReader> ExecuteMultiReaderAsync<TObj>(this IDbConnection cnn, string sql, ref TObj parametersObj, CommandBehavior behavior = default, IDbTransaction? transaction = null, int? timeout = null, CancellationToken ct = default) where TObj : notnull => GetOrCreateCommand(sql).ExecuteMultiReaderAsync(cnn, ref parametersObj, behavior, transaction, timeout, ct);
+
     #endregion
 }
