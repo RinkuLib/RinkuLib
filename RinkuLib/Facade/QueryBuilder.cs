@@ -124,23 +124,25 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(T parameterObj) where T : notnull {
-        var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType) {
-            accessor.Invoke(parameterObj!, Variables);
+            var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
+            accessor.Invoke(parameterObj, Variables);
             return;
         }
-        var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
+        var valueAccessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
+        var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref valueAccessor);
         typed.InvokeTyped(ref parameterObj, Variables);
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {
-        var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType) {
-            accessor.Invoke(parameterObj!, Variables);
+            var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
+            accessor.Invoke(parameterObj, Variables);
             return;
         }
-        var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
+        var valueAccessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
+        var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref valueAccessor);
         typed.InvokeTyped(ref parameterObj, Variables);
     }
 }

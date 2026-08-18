@@ -1,8 +1,5 @@
-using System.Data;
 using System.Reflection;
 using System.Reflection.Emit;
-using Rinku.Querying;
-using Rinku.Internal;
 
 namespace Rinku.Querying.Parameters;
 
@@ -18,60 +15,19 @@ public sealed class UseDbNullAttribute : AccessorEmitterHandler {
         => index < 0 ? null : UseDbNullEmitter.Instance;
 }
 
-internal sealed class UseDbNullEmitter : IAccessorEmitter {
+internal sealed class UseDbNullEmitter : PathAccessorEmitterBase {
     internal static readonly UseDbNullEmitter Instance = new();
-
-    private static readonly MethodInfo SpanItem = typeof(Span<bool>).GetProperty("Item")!.GetMethod!;
-    private static readonly MethodInfo DbParamUse = typeof(DbParamInfo).GetMethod(
-        nameof(DbParamInfo.Use), [typeof(string), typeof(IDbCommand), typeof(object)])!;
     private static readonly MethodInfo ToDbValueMethod = typeof(UseDbNullEmitter).GetMethod(
         nameof(ToDbValue), BindingFlags.Static | BindingFlags.NonPublic)!;
-    private static readonly FieldInfo UsageMarker = typeof(AccessorUsageMarker).GetField(
-        nameof(AccessorUsageMarker.Value), BindingFlags.Static | BindingFlags.NonPublic)!;
 
-    public void Validate(Type type, MemberInfo member) { }
+    protected override void EmitCondition(ILGenerator il, ParameterMemberAccess member)
+        => il.Emit(OpCodes.Ldc_I4_1);
 
-    public void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member,
-        LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue) {
-        il.Emit(OpCodes.Ldarg_3);
-        il.Emit(OpCodes.Ldc_I4, index);
-        il.Emit(OpCodes.Call, SpanItem);
-        il.Emit(OpCodes.Ldc_I4_1);
-        il.Emit(OpCodes.Stind_I1);
+    protected override void EmitValue(ILGenerator il, ParameterMemberAccess member)
+        => member.EmitLoad(il);
 
-        if (!bindValue)
-            return;
-
-        if (handlerValue) {
-            il.Emit(OpCodes.Ldloc, handlerValues!);
-            il.Emit(OpCodes.Ldc_I4, handlerIndex);
-            EmitDbValue(il, type, member);
-            il.Emit(OpCodes.Stelem_Ref);
-            return;
-        }
-
-        il.Emit(OpCodes.Ldarg_2);
-        il.Emit(OpCodes.Ldc_I4, index);
-        il.Emit(OpCodes.Ldelem_Ref);
-        il.Emit(OpCodes.Ldstr, key);
-        il.Emit(OpCodes.Ldarg_1);
-        EmitDbValue(il, type, member);
-        il.Emit(OpCodes.Callvirt, DbParamUse);
-        il.Emit(OpCodes.Pop);
-    }
-
-    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue) {
-        il.Emit(OpCodes.Ldarg_1);
-        il.Emit(OpCodes.Ldc_I4, index);
-        if (bindValue)
-            EmitDbValue(il, type, member);
-        else
-            il.Emit(OpCodes.Ldsfld, UsageMarker);
-        il.Emit(OpCodes.Stelem_Ref);
-    }
-
-    private static void EmitDbValue(ILGenerator il, Type type, MemberInfo member) {
-        AccessorEmitter.EmitMemberValue(il, type, member);
+    protected override void EmitParameterValue(ILGenerator il, ParameterMemberAccess member) {
+        member.EmitValue(il);
         il.Emit(OpCodes.Call, ToDbValueMethod);
     }
 

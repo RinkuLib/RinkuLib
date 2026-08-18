@@ -437,37 +437,12 @@ List<GetAlbumsByArtistResult> albums = AlbumParser.Query(sqlConnection.GetAlbums
 
 [Read about RinkuPowerTools](codegen/index.md).
 
-## Track removals
+## Track edits
 
-```csharp
-List<Playlist> playlists = LoadPlaylists();
-var tracked = playlists.ToTrackingList();
-
-tracked.RemoveAt(0);
-
-IReadOnlyList<Playlist> removed = tracked.Removed;
-```
-
-[Read about Rinku.Tracking](tracking/index.md).
-
-## Track an edit
-
-```csharp
-public sealed class Playlist {
-    public int Id { get; set; }
-    public string? Name { get; set; }
-}
-
-List<Playlist> playlists = LoadPlaylists();
-var tracked = playlists.ToTrackingList();
-
-tracked.EnsureEditing(0, out Playlist draft);
-draft.Name = "Renamed";
-tracked.CommitEdit(0);
-```
-
-[Read about editable items](tracking/items-and-lists.md).
+Rinku.Tracking wraps ordinary objects and collections for editable state,
+original-value access, validation, and structural changes. See the
+[tracking overview](tracking/index.md).
 
 ## Find details
 
-The [Dapper guide](reference/dapper.md) maps familiar operations to Rinku. The [performance notes](reference/performance.md), [error reference](reference/errors.md), and [FAQ](reference/faq.md) cover evaluation and troubleshooting. The generated [API reference](../api/index.md) lists public types and members.
+The [Dapper guide](reference/dapper.md) maps familiar operations to Rinku. The [performance notes](reference/performance.md), [error reference](reference/errors.md), and [FAQ](reference/faq.md) cover evaluation and troubleshooting. The generated API pages list public types and members.

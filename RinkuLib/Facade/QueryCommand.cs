@@ -567,10 +567,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(IDbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
         EnsureReturnValueParameter(cmd);
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var accessor = GetDirectAccessor(handle, typeof(T));
+        var accessor = GetDirectAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
@@ -579,10 +578,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(DbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
         EnsureReturnValueParameter(cmd);
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var accessor = GetDirectAccessor(handle, typeof(T));
+        var accessor = GetDirectAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
@@ -591,10 +589,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(IDbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
         EnsureReturnValueParameter(cmd);
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var accessor = GetDirectAccessor(handle, typeof(T));
+        var accessor = GetDirectAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
@@ -602,10 +599,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(DbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
         EnsureReturnValueParameter(cmd);
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var accessor = GetDirectAccessor(handle, typeof(T));
+        var accessor = GetDirectAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
