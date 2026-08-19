@@ -382,6 +382,7 @@ internal static class ExampleCompiler {
         using Rinku.Querying.Defaults;
         using Rinku.Querying.Parameters;
         using Rinku.Tracking;
+        using Rinku.Tracking.Runtime;
         """;
 
     static readonly CSharpParseOptions ParseOptions = new(

@@ -1,202 +1,1165 @@
 # Coming from Dapper
 
-The SQL and parameter objects remain familiar. Rinku uses the full `T` passed to `Query<T>` to choose a result parser. This also works with parsers added by the application.
+Comparisons use the [SQL-string shortcut](../running-queries/sql-string.md) to stay direct, which simply redirects to a `QueryCommand`. Differences are called out when the two APIs do not have identical semantics.
 
-## Run the first query
-
-The same query in Dapper uses the element type as its generic argument.
-
-```csharp
-IEnumerable<Album> albums = Dapper.SqlMapper.Query<Album>(cnn, "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
-```
-
-The SQL-string shortcut puts the full requested result type in that position.
+## Query<T>
+[Result shapes](../running-queries/result-shapes.md) and [Map rows to objects](../mapping/objects.md)
 
 ```csharp
-List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
+public record Album(int Id, string Title);
+
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId";
+object parameters = new { artistId = 7 };
+```
+```csharp
+using Dapper;
+
+// Dapper
+IEnumerable<Album> albums = cnn.Query<Album>(sql, parameters);
+```
+```csharp
+// Rinku
+List<Album> albums = cnn.Query<List<Album>>(sql, parameters);
+```
+```csharp
+// Result type selects the shape
+Album first = cnn.Query<Album>(sql, parameters);
+Album[] array = cnn.Query<Album[]>(sql, parameters);
+List<Album> buffered = cnn.Query<List<Album>>(sql, parameters);
+IEnumerable<Album> streamed = cnn.Query<IEnumerable<Album>>(sql, parameters);
 ```
 
-A reusable command keeps the SQL outside the execution call.
+
+## Runtime result Type
+[Result shapes](../running-queries/result-shapes.md) and [Complete-result parsers](../customization/result-parsers.md)
 
 ```csharp
-static readonly QueryCommand GetAlbumsByArtist = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
-
-List<Album> albums = GetAlbumsByArtist.Query<List<Album>>(cnn, new { artistId = 7 });
+Type albumType = typeof(Album);
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId";
+object parameters = new { artistId = 7 };
 ```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
-```
-
-The SQL-string call retrieves a globally cached `QueryCommand`. A declared command has an application-controlled identity and lifetime.
-
-## Choose a result shape
-
-This table shows common equivalents using the parsers included with Rinku.
 
 ```csharp
-Album first = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
-Optional<Album> maybe = GetAlbum.Query<Optional<Album>>(cnn, new { albumId = 12 });
-Single<Album> single = GetAlbum.Query<Single<Album>>(cnn, new { albumId = 12 });
-List<Album> buffered = GetAlbums.Query<List<Album>>(cnn);
-IEnumerable<Album> streamed = GetAlbums.Query<IEnumerable<Album>>(cnn);
+using Dapper;
+
+// Dapper
+IEnumerable<object> albums = cnn.Query(albumType, sql, parameters);
+object album = cnn.QuerySingle(albumType, sql, parameters);
 ```
 
-| Dapper | Rinku |
-| --- | --- |
-| `QueryFirst<T>` | `Query<T>` |
-| `QueryFirst<T?>` for a value type | `Query<T?>` |
-| `QueryFirst<T?>` for a reference type | `Query<MaybeNull<T>>` |
-| `QueryFirstOrDefault<T>` for a reference type | `Query<Optional<T>>` |
-| `QueryFirstOrDefault<T>` for a value type | `Query<OptionalStruct<T>>` |
-| `QueryFirstOrDefault<T?>` for a reference type | `Query<OptionalNullable<T>>` |
-| `QueryFirstOrDefault<T?>` for a value type | `Query<OptionalNullableStruct<T>>` |
-| `QuerySingle<T>` | `Query<Single<T>>` |
-| `QuerySingleOrDefault<T>` for a reference type | `Query<SingleOrDefault<T>>` |
-| `QuerySingleOrDefault<T>` for a value type | `Query<SingleOrDefaultStruct<T>>` |
-| buffered `Query<T>` | `Query<List<T>>` |
-| `Query<T>(buffered: false)` | `Query<IEnumerable<T>>` |
-| async row enumeration | `StreamQueryAsync<T>` |
-
-Database `NULL` and no result are separate choices. The [result-shape guide](../running-queries/result-shapes.md) covers the included wrappers and shows where to add custom parsers.
-
-## Supply parameters
-
-The same anonymous parameter object works.
-
 ```csharp
-List<Album> albums = GetAlbumsByArtist.Query<List<Album>>(cnn, new { ArtistID = 7 });
+// Rinku
+Type listType = typeof(List<>).MakeGenericType(albumType);
+Type singleType = typeof(Single<>).MakeGenericType(albumType);
+
+IEnumerable<object> albums = (IEnumerable<object>)cnn.Query(listType, sql, parameters);
+object album = cnn.Query(singleType, sql, parameters);
 ```
 
-Build the values incrementally when program logic decides which ones are present.
+
+## QueryFirst<T>
+[Result shapes](../running-queries/result-shapes.md)
 
 ```csharp
-static readonly QueryCommand ConditionalAlbumSearch = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title AND /*CurrentOnly*/IsArchived = 0");
-
-var values = ConditionalAlbumSearch.StartBuilder();
-if (artistId is int id)
-    values.Use("@artistId", id);
-if (!string.IsNullOrWhiteSpace(title))
-    values.Use("@title", title);
-if (!canSeeArchived)
-    values.Use("CurrentOnly");
-List<Album> albums = values.Query<List<Album>>(cnn);
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
+object parameters = new { albumId = 12 };
 ```
 
-The [supplying-values guide](../running-queries/values.md) covers parameter objects, builders, included value attributes, positional parameters, and custom member rules.
-
-## Execute a batch
-
-Dapper can execute once for every item in a sequence.
-
 ```csharp
-cnn.Execute("UPDATE albums SET Title = @title WHERE AlbumId = @albumId", albums);
+using Dapper;
+
+// Dapper
+Album album = cnn.QueryFirst<Album>(sql, parameters);
 ```
 
-Rinku binds one caller-owned command and replaces its values for each execution.
+```csharp
+// Rinku
+Album album = cnn.Query<Album>(sql, parameters);
+```
+
+
+## QueryFirstOrDefault<T>
+[Result shapes](../running-queries/result-shapes.md) and [Database NULL](../mapping/nulls.md)
 
 ```csharp
-static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+const string albumSql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
+const string yearSql = "SELECT ReleaseYear FROM albums WHERE AlbumId = @albumId";
+object parameters = new { albumId = 12 };
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+
+// class
+Album? album = cnn.QueryFirstOrDefault<Album>(albumSql, parameters);
+
+// struct
+int year = cnn.QueryFirstOrDefault<int>(yearSql, parameters);
+int? nullableYear = cnn.QueryFirstOrDefault<int?>(yearSql, parameters);
+```
+
+```csharp
+// Rinku, mapped NULL rejected
+
+// class
+Album? album = cnn.Query<Optional<Album>>(albumSql, parameters);
+
+// struct
+int? year = cnn.Query<OptionalStruct<int>>(yearSql, parameters); // int? instead of int
+```
+
+```csharp
+// Rinku, mapped NULL accepted
+
+// class
+Album? album = cnn.Query<OptionalNullable<Album>>(albumSql, parameters);
+
+// struct
+int? nullableYear = cnn.Query<OptionalNullableStruct<int>>(yearSql, parameters);
+```
+
+
+## QuerySingle<T>
+[Result shapes](../running-queries/result-shapes.md)
+
+```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
+object parameters = new { albumId = 12 };
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+Album album = cnn.QuerySingle<Album>(sql, parameters);
+```
+
+```csharp
+// Rinku
+Album album = cnn.Query<Single<Album>>(sql, parameters);
+```
+
+
+## QuerySingleOrDefault<T>
+[Result shapes](../running-queries/result-shapes.md) and [Database NULL](../mapping/nulls.md)
+
+```csharp
+const string albumSql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
+const string yearSql = "SELECT ReleaseYear FROM albums WHERE AlbumId = @albumId";
+object parameters = new { albumId = 12 };
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+
+// class
+Album? album = cnn.QuerySingleOrDefault<Album>(albumSql, parameters);
+
+// struct
+int year = cnn.QuerySingleOrDefault<int>(yearSql, parameters);
+int? nullableYear = cnn.QuerySingleOrDefault<int?>(yearSql, parameters);
+```
+
+```csharp
+// Rinku, mapped NULL rejected
+
+// class
+Album? album = cnn.Query<SingleOrDefault<Album>>(albumSql, parameters);
+
+// struct
+int? year = cnn.Query<SingleOrDefaultStruct<int>>(yearSql, parameters); // int? instead of int
+```
+
+```csharp
+// Rinku, mapped NULL accepted
+
+// class
+Album? album = cnn.Query<SingleOrDefaultNullable<Album>>(albumSql, parameters);
+
+// struct
+int? nullableYear = cnn.Query<SingleOrDefaultNullableStruct<int>>(yearSql, parameters);
+```
+
+
+## Buffered and unbuffered queries
+[Result shapes](../running-queries/result-shapes.md) and [Streaming](../running-queries/streaming.md)
+
+```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId";
+```
+```csharp
+using Dapper;
+
+// Dapper
+IEnumerable<Album> buffered = cnn.Query<Album>(sql);
+IEnumerable<Album> streamed = cnn.Query<Album>(sql, buffered: false);
+```
+```csharp
+// Rinku
+List<Album> buffered = cnn.Query<List<Album>>(sql);
+IEnumerable<Album> streamed = cnn.Query<IEnumerable<Album>>(sql);
+```
+
+### Async buffered query
+[Async execution](../running-queries/async.md) and [Result shapes](../running-queries/result-shapes.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+IEnumerable<Album> albums = await cnn.QueryAsync<Album>(sql);
+```
+```csharp
+// Rinku
+List<Album> albums = await cnn.QueryAsync<List<Album>>(sql, ct: cancellationToken);
+```
+
+
+### Async streaming
+[Async execution](../running-queries/async.md) and [Streaming](../running-queries/streaming.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+int count = 0;
+await foreach (Album album in cnn.QueryUnbufferedAsync<Album>(sql).WithCancellation(cancellationToken))
+    count++;
+```
+
+```csharp
+// Rinku
+int count = 0;
+await foreach (Album album in cnn.StreamQueryAsync<Album>(sql, ct: cancellationToken))
+    count++;
+```
+
+
+## Execute
+[Execute SQL](../running-queries/execution.md) and [Supplying values](../running-queries/values.md)
+
+```csharp
+const string sql = "UPDATE albums SET Title = @title WHERE AlbumId = @albumId";
+object parameters = new { albumId = 12, title = "Kind of Blue" };
+```
+```csharp
+using Dapper;
+
+// Dapper
+int affected = cnn.Execute(sql, parameters);
+```
+```csharp
+// Rinku
+int affected = cnn.Execute(sql, parameters);
+```
+
+
+## Execute a sequence
+[Execute SQL](../running-queries/execution.md), [Build from application logic](../running-queries/builders.md) and [Supplying values](../running-queries/values.md)
+
+```csharp
+public record AlbumUpdate(int Id, string Title);
+
+AlbumUpdate[] albums = [new(1, "Blue"), new(2, "Green")];
+const string sql = "UPDATE albums SET Title = @Title WHERE AlbumId = @Id";
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+cnn.Execute(sql, albums);
+```
+
+```csharp
+// Rinku
+QueryCommand updateAlbum = new(sql);
 
 using DbCommand command = cnn.CreateCommand();
-var batch = UpdateAlbum.StartBuilder(command);
+var batch = updateAlbum.StartBuilder(command);
 
-foreach (Album album in albums) {
+foreach (AlbumUpdate album in albums) {
     batch.UseWith(album);
     batch.Execute();
 }
 ```
 
-```sql
-UPDATE albums SET Title = @title WHERE AlbumId = @albumId
-```
 
-## Read several result sets
+## ExecuteScalar<T>
+[Execute SQL](../running-queries/execution.md) and [Result shapes](../running-queries/result-shapes.md)
 
 ```csharp
-public record Album(int Id, string Title) : IDbReadable;
-public record class ArtistWithAlbums(int Id, string Name) {
+const string sql = "INSERT INTO albums (ArtistId, Title) VALUES (@artistId, @title); SELECT CAST(SCOPE_IDENTITY() AS int);";
+object parameters = new { artistId = 7, title = "Blue" };
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+int albumId = cnn.ExecuteScalar<int>(sql, parameters);
+```
+
+```csharp
+// Rinku
+int albumId = cnn.ExecuteScalar<int>(sql, parameters);
+```
+
+
+## Parameters
+[Supplying values](../running-queries/values.md), [Parameter metadata](../running-queries/parameter-metadata.md) and [Parameter binding](../customization/parameters.md)
+
+### Anonymous objects and POCOs
+[Supplying values](../running-queries/values.md) and [Parameter members](../customization/parameter-members.md)
+
+```csharp
+public record AlbumSearch(int ArtistId, string Title);
+
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @ArtistId AND Title = @Title";
+var parameters = new AlbumSearch(7, "Blue");
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+IEnumerable<Album> albums = cnn.Query<Album>(sql, parameters);
+```
+
+```csharp
+// Rinku
+List<Album> albums = cnn.Query<List<Album>>(sql, parameters);
+```
+
+
+### Dictionaries
+[Supplying values](../running-queries/values.md) and [Parameter binding](../customization/parameters.md)
+
+```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId";
+var parameters = new Dictionary<string, object> { ["artistId"] = 7 };
+```
+```csharp
+using Dapper;
+
+// Dapper
+IEnumerable<Album> albums = cnn.Query<Album>(sql, parameters);
+```
+```csharp
+// Rinku
+List<Album> albums = cnn.Query<List<Album>>(sql, parameters);
+```
+
+
+### DynamicParameters / combining parameter sources
+[Supplying values](../running-queries/values.md) and [Build from application logic](../running-queries/builders.md)
+
+```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND Title = @title";
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+var parameters = new DynamicParameters(new { artistId = 7 });
+parameters.AddDynamicParams(new { title = "Blue" });
+
+IEnumerable<Album> albums = cnn.Query<Album>(sql, parameters);
+```
+
+
+```csharp
+// Rinku
+QueryCommand searchAlbums = new(sql);
+var builder = searchAlbums.StartBuilder();
+
+builder.UseWith(new { artistId = 7 });
+builder.UseWith(new { title = "Blue" });
+
+List<Album> albums = builder.Query<List<Album>>(cnn);
+```
+
+
+### Explicit parameter metadata
+[Parameter metadata](../running-queries/parameter-metadata.md) and [Parameter binding](../customization/parameters.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+const string sql = "UPDATE albums SET Price = @price WHERE AlbumId = @albumId";
+
+DynamicParameters parameters = new();
+parameters.Add("price", 12.50m, DbType.Decimal, precision: 18, scale: 2);
+parameters.Add("albumId", 12);
+
+cnn.Execute(sql, parameters);
+```
+
+```csharp
+// Rinku
+static readonly QueryCommand UpdateAlbumPrice = CreateUpdateAlbumPrice();
+
+static QueryCommand CreateUpdateAlbumPrice() {
+    QueryCommand command = new("UPDATE albums SET Price = @price WHERE AlbumId = @albumId");
+    command.UpdateParamCache("@price", new ScaledDbParamCache(DbType.Decimal, 18, 2));
+    return command;
+}
+
+UpdateAlbumPrice.Execute(cnn, new { albumId = 12, price = 12.50m });
+```
+
+
+### DbString
+[Parameter metadata](../running-queries/parameter-metadata.md) and [Parameter binding](../customization/parameters.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+const string sql = "UPDATE albums SET Title = @title WHERE AlbumId = @albumId";
+
+var title = new DbString { Value = "Blue", IsAnsi = true, Length = 100 };
+cnn.Execute(sql, new { albumId = 12, title });
+```
+
+```csharp
+// Rinku
+static readonly QueryCommand UpdateAlbum = CreateUpdateAlbum();
+
+static QueryCommand CreateUpdateAlbum() {
+    QueryCommand command = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+    command.UpdateParamCache("@title", TypedDbParamCache.Get(DbType.AnsiString, 100));
+    return command;
+}
+
+UpdateAlbum.Execute(cnn, new { albumId = 12, title = "Blue" });
+```
+
+
+### null and database NULL
+[Supplying values](../running-queries/values.md), [Parameter members](../customization/parameter-members.md) and [Conditional SQL cheat sheet](../conditional-sql/cheatsheet.md)
+
+```csharp
+const string sql = "UPDATE albums SET Title = @title WHERE AlbumId = @albumId";
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+cnn.Execute(sql, new { albumId = 12, title = (string?)null });
+```
+
+```csharp
+// Rinku
+cnn.Execute(sql, new { albumId = 12, title = DBNull.Value });
+```
+
+```csharp
+using Dapper;
+
+// Dapper - keep the nullable member
+public record AlbumTitleUpdate(int AlbumId, string? Title);
+
+var parameters = new AlbumTitleUpdate(12, null);
+const string typedSql = "UPDATE albums SET Title = @Title WHERE AlbumId = @AlbumId";
+
+cnn.Execute(typedSql, parameters);
+```
+
+```csharp
+// Rinku - keep the nullable member
+public record AlbumTitleUpdate(int AlbumId, [property: UseDbNull] string? Title);
+
+var parameters = new AlbumTitleUpdate(12, null);
+const string typedSql = "UPDATE albums SET Title = @Title WHERE AlbumId = @AlbumId";
+
+cnn.Execute(typedSql, parameters);
+```
+
+
+## IN / collection expansion
+[Supplying values](../running-queries/values.md) and [Collection expansion](../conditional-sql/collections.md)
+
+```csharp
+int[] albumIds = [2, 5];
+```
+```csharp
+using Dapper;
+
+// Dapper
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN @albumIds";
+IEnumerable<Album> albums = cnn.Query<Album>(sql, new { albumIds });
+```
+```csharp
+// Rinku
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@albumIds_X)";
+List<Album> albums = cnn.Query<List<Album>>(sql, new { albumIds });
+```
+
+
+## Literal replacement
+[Conditional SQL cheat sheet](../conditional-sql/cheatsheet.md) and [Supplying values](../running-queries/values.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE Status = {=status}";
+IEnumerable<Album> albums = cnn.Query<Album>(sql, new { status = 1 });
+```
+
+
+```csharp
+// Rinku
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE Status = @status_N";
+List<Album> albums = cnn.Query<List<Album>>(sql, new { status = 1 });
+```
+
+
+## Output parameters
+[Stored procedures and output values](../running-queries/stored-procedures.md) and [Parameter metadata](../running-queries/parameter-metadata.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+var parameters = new DynamicParameters();
+parameters.Add("albumId", 12);
+parameters.Add("moved", dbType: DbType.Int32, direction: ParameterDirection.Output);
+
+cnn.Execute("RenumberAlbums", parameters, commandType: CommandType.StoredProcedure);
+
+int moved = parameters.Get<int>("moved");
+```
+
+```csharp
+// Rinku
+// Output parameter metadata is discovered by FromProc
+QueryCommand renumberAlbums = QueryCommand.FromProc("RenumberAlbums", cnn);
+
+renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
+
+using (command) {
+    int moved = command.GetOutputValue<int>("@moved");
+}
+```
+
+
+### Automatic output write-back
+[Stored procedures and output values](../running-queries/stored-procedures.md) and [Parameter binding](../customization/parameters.md)
+
+```csharp
+public sealed class RenumberArgs {
+    public int AlbumId { get; set; }
+    public int Moved { get; set; }
+}
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+RenumberArgs args = new() { AlbumId = 12 };
+DynamicParameters parameters = new(args);
+parameters.Output(args, (RenumberArgs x) => x.Moved, DbType.Int32);
+
+cnn.Execute("RenumberAlbums", parameters, commandType: CommandType.StoredProcedure);
+
+int moved = args.Moved;
+```
+
+```csharp
+// Rinku
+var args = new RenumberArgs { AlbumId = 12 };
+QueryCommand renumberAlbums = QueryCommand.FromProc("RenumberAlbums", cnn);
+
+renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = args.AlbumId });
+
+using (command) {
+    args.Moved = command.GetOutputValue<int>("@moved");
+}
+```
+
+
+## Dynamic rows
+[Dynamic rows](../mapping/dynamic-rows.md) and [Map rows to objects](../mapping/objects.md)
+
+```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
+object parameters = new { albumId = 12 };
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+dynamic album = cnn.QuerySingle(sql, parameters);
+string title = album.Title;
+
+IDictionary<string, object> values = (IDictionary<string, object>)album;
+object value = values["Title"];
+```
+
+```csharp
+// Rinku
+DynaObject album = cnn.Query<DynaObject>(sql, parameters);
+string title = album.Get<string>("Title");
+
+IReadOnlyDictionary<string, object?> values = album;
+object? value = values["Title"];
+```
+
+
+## Constructor mapping
+[Construction paths](../mapping/construction-paths.md) and [Reading order](../mapping/reading-order.md)
+
+```csharp
+public sealed class Customer {
+    public int Id { get; }
+    public string Name { get; }
+
+    public Customer(int customerId, string displayName) {
+        Id = customerId;
+        Name = displayName;
+    }
+}
+
+const string sql = "SELECT CustomerId, DisplayName FROM customers";
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+IEnumerable<Customer> customers = cnn.Query<Customer>(sql);
+```
+
+```csharp
+// Rinku
+List<Customer> customers = cnn.Query<List<Customer>>(sql);
+```
+
+
+## Custom column names / CustomPropertyTypeMap
+[Adapt names](../mapping/names.md) and [Type registrations and defaults](../customization/type-registration.md)
+
+```csharp
+const string sql = "SELECT customer_id, display_name FROM customers";
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+public sealed class Customer {
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+}
+
+global::Dapper.SqlMapper.SetTypeMap(typeof(Customer), new global::Dapper.CustomPropertyTypeMap(typeof(Customer), (Type type, string column) => column switch {
+    "customer_id" => type.GetProperty(nameof(Customer.Id)),
+    "display_name" => type.GetProperty(nameof(Customer.Name)),
+    _ => null
+}));
+
+IEnumerable<Customer> customers = cnn.Query<Customer>(sql);
+```
+
+```csharp
+// Rinku
+public record Customer([Alt("customer_id")] int Id, [Alt("display_name")] string Name);
+
+List<Customer> customers = cnn.Query<List<Customer>>(sql);
+```
+
+```csharp
+// Or configure the type externally
+public record ExternalCustomer(int Id, string Name);
+
+TypeParsingInfo.GetOrAdd<ExternalCustomer>().UpdateAltName(names => names.GetDefaultName() switch {
+    "Id" => new NameComparer("customer_id"),
+    "Name" => new NameComparer("display_name"),
+    _ => null
+});
+
+List<ExternalCustomer> customers = cnn.Query<List<ExternalCustomer>>(sql);
+```
+
+### MatchNamesWithUnderscores
+
+[Adapt names](../mapping/names.md)
+
+```csharp
+const string sql = "SELECT customer_id, display_name FROM customers";
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+public record CustomerByConvention(int CustomerId, string DisplayName);
+
+DefaultTypeMap.MatchNamesWithUnderscores = true;
+IEnumerable<CustomerByConvention> customers = cnn.Query<CustomerByConvention>(sql);
+```
+
+```csharp
+// Rinku
+public record CustomerByConvention([Alt("customer_id")] int CustomerId, [Alt("display_name")] string DisplayName);
+
+List<CustomerByConvention> customers = cnn.Query<List<CustomerByConvention>>(sql);
+```
+
+
+## Multi-mapping / nested objects
+[Nested objects](../mapping/nesting.md), [Adapt names](../mapping/names.md) and [Construction paths](../mapping/construction-paths.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+public record User(int Id, string Name);
+
+public sealed class Post {
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public User Owner { get; set; } = null!;
+}
+
+const string sql = "SELECT p.Id, p.Title, u.Id, u.Name FROM Posts p INNER JOIN Users u ON u.Id = p.UserId";
+
+IEnumerable<Post> posts = cnn.Query<Post, User, Post>(sql, (post, owner) => {
+    post.Owner = owner;
+    return post;
+}, splitOn: "Id");
+```
+
+```csharp
+// Rinku - keep the type
+TypeParsingInfo.GetOrAdd<User>();
+
+const string sql = "SELECT p.Id, p.Title, u.Id AS OwnerId, u.Name AS OwnerName FROM Posts p INNER JOIN Users u ON u.Id = p.UserId";
+
+List<Post> posts = cnn.Query<List<Post>>(sql);
+```
+
+```csharp
+// Or keep the SQL
+public record User(int Id, string Name) : IDbReadable;
+public record Post(int Id, string Title, [NoName] User Owner);
+
+List<Post> posts = cnn.Query<List<Post>>(sql);
+```
+
+```csharp
+// Or keep both
+TypeParsingInfo.GetOrAdd<User>();
+TypeParsingInfo.GetOrAdd<Post>().UpdateAltName(names =>
+    names.GetDefaultName() == "Owner" ? NoNameComparer.Instance : null);
+
+List<Post> posts = cnn.Query<List<Post>>(sql);
+```
+
+
+## One-to-many mapping
+[Collections from database results](../mapping/collections.md), [Group rows into results](../mapping/grouping.md) and [Nested objects](../mapping/nesting.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+public record Album(int Id, string Title);
+
+public sealed class ArtistWithAlbums {
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
     public List<Album> Albums { get; set; } = [];
 }
 
-using MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 });
+const string sql = "SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS Id, al.Title FROM artists ar INNER JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId";
 
-ArtistWithAlbums artist = results.Query<ArtistWithAlbums>();
-artist.Albums = results.Query<List<Album>>();
+List<ArtistWithAlbums> artists = [];
+ArtistWithAlbums? current = null;
+
+cnn.Query<ArtistWithAlbums, Album, ArtistWithAlbums>(sql, (artist, album) => {
+    if (current is null || current.Id != artist.Id) {
+        current = artist;
+        artists.Add(current);
+    }
+
+    current.Albums.Add(album);
+    return current;
+}, splitOn: "Id");
 ```
-
-`ExecuteMultiReader` corresponds to Dapper's `QueryMultiple`. Each read selects a Rinku result parser in the same way as `Query<T>`.
-
-## Expand an IN value
-
-In Dapper, a sequence expands directly inside the parameter placeholder.
 
 ```csharp
-IEnumerable<Album> albums = Dapper.SqlMapper.Query<Album>(cnn, "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN @albumIds", new { albumIds = new[] { 2, 5 } });
+// Rinku
+public record Album(int Id, string Title) : IDbReadable;
+public record ArtistWithAlbums(int Id, string Name, [Alt("Album")] List<Album> Albums);
+
+const string sql = "SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumId, al.Title AS AlbumTitle FROM artists ar INNER JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId";
+
+List<ArtistWithAlbums> artists = cnn.Query<List<ArtistWithAlbums>>(sql);
 ```
 
-In Rinku, the `_X` handler expands the sequence into numbered parameters.
+
+## GetRowParser / runtime concrete types
+[Construction paths](../mapping/construction-paths.md) and [Complete-result parsers](../customization/result-parsers.md)
 
 ```csharp
-List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@albumIds_X)", new { albumIds = new[] { 2, 5 } });
+const string sql = "SELECT Type, Radius, Width, Height FROM Shapes";
 ```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@albumIds_1, @albumIds_2)
-```
-
-## Build conditional SQL
 
 ```csharp
-static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND AlbumId IN (?@albumIds_X)");
+using Dapper;
 
-List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+// Dapper
+public interface IShape { }
+
+public sealed class Circle : IShape {
+    public double Radius { get; set; }
+}
+
+public sealed class Rectangle : IShape {
+    public double Width { get; set; }
+    public double Height { get; set; }
+}
+
+using IDataReader reader = cnn.ExecuteReader(sql);
+
+Func<IDataReader, IShape> circleParser = reader.GetRowParser<IShape>(typeof(Circle));
+Func<IDataReader, IShape> rectangleParser = reader.GetRowParser<IShape>(typeof(Rectangle));
+
+int typeOrdinal = reader.GetOrdinal("Type");
+List<IShape> shapes = [];
+
+while (reader.Read()) {
+    IShape shape = reader.GetString(typeOrdinal) switch {
+        "Circle" => circleParser(reader),
+        "Rectangle" => rectangleParser(reader),
+        _ => throw new InvalidOperationException()
+    };
+
+    shapes.Add(shape);
+}
 ```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
-```
-
-Conditional markers replace the common `SqlBuilder` role. The included value handlers add collection spreading, numeric text, quoted text, and trusted raw fragments. You can add other suffixes.
-
-## Map nested values
-
-Dapper commonly uses multi-mapping with `splitOn`. Rinku maps nested objects from registrations, constructors, factories, naming rules, and the returned columns.
 
 ```csharp
-public record Artist(int Id, string Name) : IDbReadable;
-public record Album(int Id, string Title, Artist Artist);
+// Rinku
+public interface IShape : IDbReadable {
+    public static IShape Create(string type, double? radius, double? width, double? height) => type switch {
+        "Circle" => new Circle { Radius = radius ?? throw new InvalidOperationException() },
+        "Rectangle" => new Rectangle {
+            Width = width ?? throw new InvalidOperationException(),
+            Height = height ?? throw new InvalidOperationException()
+        },
+        _ => throw new InvalidOperationException()
+    };
+}
 
-static readonly QueryCommand GetAlbum = new(
-    "SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId WHERE al.AlbumId = @albumId");
+public sealed class Circle : IShape {
+    public double Radius { get; set; }
+}
 
-Album album = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
+public sealed class Rectangle : IShape {
+    public double Width { get; set; }
+    public double Height { get; set; }
+}
+
+List<IShape> shapes = cnn.Query<List<IShape>>(sql);
 ```
 
-```sql
-SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId WHERE al.AlbumId = @albumId
+
+## TypeHandler<T>
+[Parameter binding](../customization/parameters.md), [Type registrations and defaults](../customization/type-registration.md) and [Construction paths](../mapping/construction-paths.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+public readonly record struct Money(decimal Value);
+
+public sealed class MoneyHandler : global::Dapper.SqlMapper.TypeHandler<Money> {
+    public override Money Parse(object value) => new(Convert.ToDecimal(value));
+
+    public override void SetValue(IDbDataParameter parameter, Money value) {
+        parameter.DbType = DbType.Decimal;
+        parameter.Value = value.Value;
+    }
+}
+
+global::Dapper.SqlMapper.AddTypeHandler(new MoneyHandler());
 ```
 
-## Find the matching entry point
+```csharp
+// Rinku read
+public readonly record struct Money([NoName] decimal Value) : IDbReadable;
+public record Invoice(int Id, Money Total);
 
-| Dapper capability | Rinku entry point |
-| --- | --- |
-| `Execute` | `QueryCommand.Execute` or builder `Execute` |
-| `ExecuteScalar<T>` | `QueryCommand.ExecuteScalar<T>` |
-| `ExecuteReader` | `QueryCommand.ExecuteReader` |
-| stored procedure | `CommandType.StoredProcedure` or `QueryCommand.FromProc` |
-| output and return values | directional `DbParamInfo` and `DbCommand` value helpers |
-| `DynamicParameters` | builder, parameter type, or `DbParamInfo` |
-| `SqlBuilder` | conditional SQL and value handlers |
-| `QueryMultiple` | `ExecuteMultiReader` and `MultiReader` |
-| `GetRowParser<T>` | `TypeParser.GetTypeParser<T>` |
-| per-row type switching | `GetCurrentSetParser<T>` or a caller-selected parser |
-| multi-mapping | nested types, tuples, grouping, or a construction path |
-| custom mapped value | `TypeParsingInfo` |
-| custom complete-result behavior | `ITypeParserMaker` |
-| custom parameter handler | `ConvertedDbParamInfo<T>` or another `DbParamInfo` |
-| `DbString` | pinned `DbParamInfo` type and size |
-| literal replacement | `_N`, `_S`, `_R`, or a custom SQL handler |
-| dynamic row | `DynaObject` or `Dictionary<string, object>` |
-| buffered and streamed results | `List<T>`, arrays, `IEnumerable<T>`, `StreamQueryAsync<T>` |
-| transaction, timeout, cancellation | matching execution arguments |
+const string sql = "SELECT InvoiceId AS Id, Total FROM invoices";
+List<Invoice> invoices = cnn.Query<List<Invoice>>(sql);
+```
+
+```csharp
+// Rinku write
+sealed class MoneyParamInfo : ConvertedDbParamInfo<Money> {
+    protected override object ConvertValue(Money value) => value.Value;
+    protected override void ConfigureParameter(IDbDataParameter parameter) => parameter.DbType = DbType.Decimal;
+}
+
+static readonly QueryCommand SaveInvoice = CreateSaveInvoice();
+
+static QueryCommand CreateSaveInvoice() {
+    QueryCommand command = new("INSERT INTO invoices (Total) VALUES (@total)");
+    command.UpdateParamCache("@total", new MoneyParamInfo());
+    return command;
+}
+
+SaveInvoice.Execute(cnn, new { total = new Money(12.50m) });
+```
+
+
+## ICustomQueryParameter / TVP
+[Parameter binding](../customization/parameters.md) and [Parameter metadata](../running-queries/parameter-metadata.md)
+
+```csharp
+DataTable ids = new();
+ids.Columns.Add("Id", typeof(int));
+ids.Rows.Add(1);
+ids.Rows.Add(2);
+ids.Rows.Add(3);
+
+const string sql = "SELECT a.AlbumId AS Id, a.Title FROM albums a INNER JOIN @ids i ON i.Id = a.AlbumId";
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+IEnumerable<Album> albums = cnn.Query<Album>(sql, new { ids = ids.AsTableValuedParameter("dbo.IntIds") });
+```
+
+```csharp
+// Rinku
+sealed class SqlServerTableParamInfo(string typeName) : ConvertedDbParamInfo<DataTable> {
+    protected override object ConvertValue(DataTable value) => value;
+
+    protected override void ConfigureParameter(IDbDataParameter parameter) {
+        SqlParameter sqlParameter = (SqlParameter)parameter;
+        sqlParameter.SqlDbType = SqlDbType.Structured;
+        sqlParameter.TypeName = typeName;
+    }
+}
+
+static readonly QueryCommand AlbumsByIds = CreateAlbumsByIds();
+
+static QueryCommand CreateAlbumsByIds() {
+    QueryCommand command = new("SELECT a.AlbumId AS Id, a.Title FROM albums a INNER JOIN @ids i ON i.Id = a.AlbumId");
+    command.UpdateParamCache("@ids", new SqlServerTableParamInfo("dbo.IntIds"));
+    return command;
+}
+
+List<Album> albums = AlbumsByIds.Query<List<Album>>(cnn, new { ids });
+```
+
+
+## QueryMultiple / GridReader
+[Multiple result sets](../running-queries/multiple-results.md) and [Result shapes](../running-queries/result-shapes.md)
+
+```csharp
+const string sql = "SELECT ArtistId AS Id, Name FROM artists WHERE ArtistId = @artistId; SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId";
+object parameters = new { artistId = 7 };
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+using GridReader results = cnn.QueryMultiple(sql, parameters);
+
+Artist artist = results.ReadSingle<Artist>();
+List<Album> albums = results.Read<Album>().AsList();
+```
+
+```csharp
+// Rinku
+using MultiReader results = cnn.ExecuteMultiReader(sql, parameters);
+
+Artist artist = results.Query<Single<Artist>>();
+List<Album> albums = results.Query<List<Album>>();
+```
+
+### Runtime result Type
+[Multiple result sets](../running-queries/multiple-results.md) and [Result shapes](../running-queries/result-shapes.md)
+
+```csharp
+Type artistType = typeof(Artist);
+```
+
+```csharp
+using Dapper;
+
+// Dapper
+using GridReader results = cnn.QueryMultiple(sql, parameters);
+IEnumerable<object> artists = results.Read(artistType);
+```
+
+```csharp
+// Rinku
+Type listType = typeof(List<>).MakeGenericType(artistType);
+
+using MultiReader results = cnn.ExecuteMultiReader(sql, parameters);
+IEnumerable<object> artists = (IEnumerable<object>)results.Query(listType);
+```
+
+
+## Stored procedures
+[Stored procedures and output values](../running-queries/stored-procedures.md) and [Parameter metadata](../running-queries/parameter-metadata.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+IEnumerable<Album> albums = cnn.Query<Album>("GetAlbumsForArtist", new { artistId = 7 }, commandType: CommandType.StoredProcedure);
+```
+
+```csharp
+// Rinku - declare the parameter names
+static readonly QueryCommand GetAlbumsForArtist = new("GetAlbumsForArtist", ["artistId"]);
+
+List<Album> albums = GetAlbumsForArtist.Query<List<Album>>(cnn, new { artistId = 7 });
+```
+
+```csharp
+// Or discover the full parameter metadata once
+QueryCommand getAlbumsForArtist = QueryCommand.FromProc("GetAlbumsForArtist", cnn);
+
+List<Album> albums = getAlbumsForArtist.Query<List<Album>>(cnn, new { artistId = 7 });
+```
+
+
+## Transactions, timeouts, command type, and cancellation
+[Transactions, timeouts, and cancellation](../running-queries/execution-context.md) and [Async execution](../running-queries/async.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+CommandDefinition command = new(sql, parameters, transaction, commandTimeout: 30, commandType: CommandType.Text, cancellationToken: cancellationToken);
+IEnumerable<Album> albums = await cnn.QueryAsync<Album>(command);
+```
+
+
+```csharp
+// Rinku
+List<Album> albums = await cnn.QueryAsync<List<Album>>(sql, parameters, transaction: transaction, timeout: 30, ct: cancellationToken);
+```
+
+
+## Raw DbDataReader
+[Raw readers](../running-queries/readers.md) and [Existing DbCommand](../running-queries/dbcommand.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+using IDataReader reader = cnn.ExecuteReader(sql, parameters);
+```
+
+
+```csharp
+// Rinku
+DbDataReader reader = cnn.ExecuteReader(sql, out DbCommand command, parameters);
+
+using (command)
+using (reader) {
+    while (reader.Read()) {
+        int id = reader.GetInt32(0);
+        string title = reader.GetString(1);
+    }
+}
+```
+
+
+## Query cache / CommandFlags.NoCache
+[Cache ownership](../customization/caches.md) and [Complete-result parsers](../customization/result-parsers.md)
+
+```csharp
+using Dapper;
+
+// Dapper
+CommandDefinition command = new(sql, parameters, flags: CommandFlags.NoCache);
+IEnumerable<Album> albums = cnn.Query<Album>(command);
+```
+
+```csharp
+// Rinku
+QueryCommand getAlbums = ConnectionQueryExtensions.GetOrCreateCommand(sql);
+
+List<Album> albums = getAlbums.Query<List<Album>>(cnn, parameters);
+getAlbums.InvalidateParsers(); // closest equivalent, invalidates parsers after execution
+```
+
+
+## Dapper.SqlBuilder
+[Conditional SQL cheat sheet](../conditional-sql/cheatsheet.md) and [Build from application logic](../running-queries/builders.md)
+
+### Optional WHERE clauses
+[Conditional variables](../conditional-sql/variables.md) and [Conditional markers](../conditional-sql/markers.md)
+
+```csharp
+int? artistId = 7;
+string? title = "Blue";
+```
+
+```csharp
+using Dapper;
+
+// Dapper.SqlBuilder
+var builder = new SqlBuilder();
+var template = builder.AddTemplate("SELECT AlbumId AS Id, Title FROM albums /**where**/");
+
+if (artistId is not null)
+    builder.Where("ArtistId = @artistId", new { artistId });
+
+if (title is not null)
+    builder.Where("Title LIKE @title", new { title });
+
+IEnumerable<Album> albums = cnn.Query<Album>(template.RawSql, template.Parameters);
+```
+
+
+```csharp
+// Rinku
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title");
+
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7, title = "Blue" });
+// SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND Title LIKE @title
+
+albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7, title = (string?)null });
+// SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+
+albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = (int?)null, title = (string?)null });
+// SELECT AlbumId AS Id, Title FROM albums
+```
+
+```csharp
+// Or build the values incrementally
+var builder = SearchAlbums.StartBuilder();
+builder.Use("@artistId", 7);
+builder.Use("@title", "Blue");
+
+List<Album> albums = builder.Query<List<Album>>(cnn);
+// SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND Title LIKE @title
+
+builder.Reset();
+albums = builder.Query<List<Album>>(cnn);
+// SELECT AlbumId AS Id, Title FROM albums
+```

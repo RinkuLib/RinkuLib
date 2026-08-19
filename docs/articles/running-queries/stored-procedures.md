@@ -44,7 +44,7 @@ static QueryCommand CreateRenumberAlbums() {
 }
 ```
 
-Discovery copies the procedure name, command type, parameter names, and parameter metadata into the returned `QueryCommand`.
+Discovery copies the procedure name, command type, parameter names, and parameter metadata into the returned `QueryCommand`. Provider-derived `InputOutput` parameters may be omitted by default, which covers providers that expose an output parameter as `InputOutput`.
 
 ```text
 Copied: names, types, sizes, directions, return-value metadata
@@ -66,24 +66,28 @@ The temporary provider command is disposed. When discovery fails, a connection o
 
 ## Read an output parameter
 
-Supply a placeholder so the named output parameter is included in the execution command.
+`FromProc` already copied the parameter's direction and database metadata, so a default-capable output does not need a placeholder.
 
 ```csharp
-RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12, moved = 0 });
+RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
 
 using (command) {
     int moved = command.GetOutputValue<int>("@moved");
 }
 ```
 
-`FromProc` already copied the parameter's output direction and database metadata.
+When a discovered `InputOutput` parameter really requires an incoming value, create the command with `inputOutputHasDefault: false`.
+
+```csharp
+QueryCommand command = QueryCommand.FromProc("UpdateAndReturn", cnn, inputOutputHasDefault: false);
+```
 
 ## Read the return value
 
 The discovered return-value parameter is added automatically and does not need a placeholder.
 
 ```csharp
-RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12, moved = 0 });
+RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
 
 using (command) {
     int moved = command.GetOutputValue<int>("@moved");

@@ -89,7 +89,9 @@ await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancell
 Use an overload that returns the `DbCommand` when output values are needed.
 
 ```csharp
-IEnumerable<Album> albums = ReadAndCountAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command, new { moved = 0 });
+static readonly QueryCommand ReadAndCountAlbums = QueryCommand.FromProc("ReadAndCountAlbums", setupConnection);
+
+IEnumerable<Album> albums = ReadAndCountAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command);
 
 using (command) {
     using (IEnumerator<Album> iterator = albums.GetEnumerator()) {

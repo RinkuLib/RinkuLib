@@ -131,7 +131,7 @@ The stored-procedure return value is declared command metadata, not a bindable `
 ```csharp
 RenumberAlbums.Parameters.Reset();
 
-RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12, moved = 0 });
+RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
 
 using (command) {
     int returnValue = command.GetReturnValue<int>();

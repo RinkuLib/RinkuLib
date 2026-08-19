@@ -200,13 +200,33 @@ bool wrongKind = search.Use("CurrentOnly", true); // false (used like a paramete
 bool missing = search.Use("@Unknown", 1);          // false
 ```
 
-Calling `UseWith` again replaces those copied values. A member that is no longer usable clears its earlier value.
+Calling `UseWith` again replaces the values controlled by that source. A member represented by the source clears its earlier value when it is no longer usable, while unrelated values stay unchanged.
 
 ```csharp
 var search = FindAlbums.StartBuilder();
 search.UseWith(new AlbumSearchFilter { ArtistId = 7, Title = "Blue" });
 search.UseWith(new AlbumSearchFilter { ArtistId = 12 });
+// @ArtistId = 12
 // @Title is now absent.
+```
+
+Different source shapes can build the values in steps.
+
+```csharp
+var search = FindAlbums.StartBuilder();
+search.UseWith(new { ArtistId = 7 });
+search.UseWith(new { Title = "Blue" });
+// Both values are present.
+```
+
+Dictionaries affect only keys present in that call. A present key with an unusable value clears that key, while a missing key leaves the previous value alone.
+
+```csharp
+var search = FindAlbums.StartBuilder();
+search.UseWith(new Dictionary<string, object?> { ["ArtistId"] = 7, ["Title"] = "Blue" });
+search.UseWith(new Dictionary<string, object?> { ["ArtistId"] = 12 });
+// @ArtistId = 12
+// @Title = "Blue"
 ```
 
 Builder values remain available until removed or reset.
