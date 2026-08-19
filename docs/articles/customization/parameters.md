@@ -151,3 +151,30 @@ parameter reset afterward    -> uses AppParameterDefaults.Inferred
 already learned strategy     -> unchanged
 manually pinned strategy     -> unchanged
 ```
+
+## Shape a parameter source
+
+Use Core attributes to control the names and members exposed by a parameter object.
+
+```csharp
+public sealed class EmployeeArgs {
+    [ParameterName("EmployeeName")]
+    [ParameterAlias("NameForSearch")]
+    public string? Name { get; init; }
+
+    [ParameterIgnore]
+    public string? DebugNote { get; init; }
+}
+```
+
+Explicitly flatten nested values when the query expects a flat parameter surface.
+
+```csharp
+public sealed class UpdateArgs {
+    [NestedParameters("Employee")]
+    public EmployeeArgs Employee { get; init; } = new();
+}
+```
+
+Structured members take precedence over dictionary fallbacks. Equal-priority collisions can use
+`[ParameterConflict(ParameterConflictBehavior.TakeOne)]` when either winner is acceptable.

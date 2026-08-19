@@ -238,8 +238,7 @@ internal static class ExampleVerifier {
             {
                 {{declarations}}
 
-                void Run()
-                {
+                void Run() {
                     {{statements}}
                 }
             }
@@ -383,6 +382,7 @@ internal static class ExampleCompiler {
         using Rinku.Querying.Defaults;
         using Rinku.Querying.Parameters;
         using Rinku.Tracking;
+        using Rinku.Tracking.Runtime;
         """;
 
     static readonly CSharpParseOptions ParseOptions = new(
@@ -561,8 +561,7 @@ internal static class ExampleCompiler {
                 {
                     ITypeParser<object>? retainedParser;
 
-                    void Register()
-                    {
+                    void Register() {
                         {{block.Content}}
                     }
                 }
@@ -587,6 +586,7 @@ internal static class ExampleCompiler {
             "static readonly ",
             "",
             StringComparison.Ordinal);
+        bool isDapperExample = block.Content.Contains("using Dapper;", StringComparison.Ordinal);
         CompilationUnitSyntax root = CSharpSyntaxTree
             .ParseText(normalized, ParseOptions)
             .GetCompilationUnitRoot();
@@ -613,6 +613,7 @@ internal static class ExampleCompiler {
             Environment.NewLine,
             PageDeclarations
                 .Where(declaration =>
+                    !isDapperExample &&
                     declaration.RelativePath == block.RelativePath &&
                     declaration.Ordinal < block.Ordinal &&
                     !currentTypeNames.Contains(declaration.Name) &&
@@ -622,11 +623,14 @@ internal static class ExampleCompiler {
                 .Concat(importedDeclarations
                     .Where(declaration => !currentTypeNames.Contains(declaration.Name))
                     .Select(declaration => declaration.Source)));
-        HashSet<string> availableTypeNames = PageDeclarations
-            .Where(declaration =>
-                declaration.RelativePath == block.RelativePath &&
-                declaration.Ordinal < block.Ordinal)
-            .Select(declaration => declaration.Name)
+        IEnumerable<string> priorTypeNames = isDapperExample
+            ? []
+            : PageDeclarations
+                .Where(declaration =>
+                    declaration.RelativePath == block.RelativePath &&
+                    declaration.Ordinal < block.Ordinal)
+                .Select(declaration => declaration.Name);
+        HashSet<string> availableTypeNames = priorTypeNames
             .Concat(importedDeclarations.Select(declaration => declaration.Name))
             .Concat(currentTypeNames)
             .ToHashSet(StringComparer.Ordinal);
@@ -660,12 +664,21 @@ internal static class ExampleCompiler {
             unknownFields.Concat(precedingFields).Select(pair =>
                 $"protected static {pair.Value} {Escape(pair.Key)} = default!;"));
         string stubs = BuildTypeStubs(block.RelativePath, unknownTypes, availableTypeNames);
+        string sourceUsings = isDapperExample
+            ? Usings
+                .Replace("using Rinku;", "", StringComparison.Ordinal)
+                .Replace("using Rinku.Querying;", "", StringComparison.Ordinal)
+                .Replace("using Rinku.Querying.Defaults;", "", StringComparison.Ordinal)
+                .Replace("using Rinku.Querying.Parameters;", "", StringComparison.Ordinal)
+                + Environment.NewLine + "using Dapper;"
+            : Usings;
+        string connectionType = "DbConnection";
         string tryPrefix = statements.TrimStart().StartsWith("catch", StringComparison.Ordinal)
             ? "try { }"
             : "";
 
         return $$"""
-            {{Usings}}
+            {{sourceUsings}}
 
             namespace DocumentationExample
             {
@@ -686,7 +699,7 @@ internal static class ExampleCompiler {
 
                 public abstract class DocumentationContext
                 {
-                    protected DbConnection cnn = null!;
+                    protected {{connectionType}} cnn = null!;
                     protected DbTransaction transaction = null!;
                     protected dynamic command = null!;
                     protected CancellationToken cancellationToken;
@@ -711,8 +724,7 @@ internal static class ExampleCompiler {
                     {{pageDeclarations}}
                     {{declarations}}
 
-                    public async Task<dynamic> Run()
-                    {
+                    public async Task<dynamic> Run() {
                         {{tryPrefix}}
                         {{statements}}
                         return null!;

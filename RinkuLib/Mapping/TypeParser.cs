@@ -1,9 +1,4 @@
-using System.Data;
 using System.Reflection;
-using System.Reflection.Emit;
-using Rinku;
-using Rinku.Internal;
-using Rinku.Mapping.Parsers;
 
 namespace Rinku.Mapping;
 
@@ -227,6 +222,34 @@ public static class TypeParser {
             updated[^1] = (nullColHandler, unusual);
             ReadingInfos = updated;
             return unusual;
+        }
+    }
+    /// <summary>Gets the cached parser for a runtime result type and schema.</summary>
+    public static ITypeParser GetTypeParser(Type type, ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
+        ArgumentNullException.ThrowIfNull(type);
+        ArgumentNullException.ThrowIfNull(cols);
+        nullColHandler ??= GetDefaultNullColHandler(type);
+        var readingInfos = ReadingInfos;
+        for (int i = 0; i < readingInfos.Length; i++) {
+            var (nullCol, parser) = readingInfos[i];
+            if (parser is ITypeParser p && p.Type == type && nullCol == nullColHandler && p.CanParse(cols))
+                return p;
+        }
+        lock (TypeParserMakers) {
+            var current = ReadingInfos;
+            for (int i = 0; i < current.Length; i++) {
+                var (nullCol, parser) = current[i];
+                if (parser is ITypeParser p && p.Type == type && nullCol == nullColHandler && p.CanParse(cols))
+                    return p;
+            }
+            var maker = typeof(TypeParser).GetMethod(nameof(MakeParser), BindingFlags.NonPublic | BindingFlags.Static)!
+                .MakeGenericMethod(type);
+            var created = (ITypeParser)maker.Invoke(null, [cols, nullColHandler])!;
+            var updated = new (INullColHandler, object)[current.Length + 1];
+            current.CopyTo(updated, 0);
+            updated[^1] = (nullColHandler, created);
+            ReadingInfos = updated;
+            return created;
         }
     }
     private static ITypeParser<T> MakeParser<T>(ColumnInfo[] cols, INullColHandler nullColHandler) {

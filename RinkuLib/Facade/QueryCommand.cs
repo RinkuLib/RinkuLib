@@ -85,7 +85,6 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// text names a procedure.
     /// </summary>
     public readonly CommandType CommandType;
-    private (string Name, DbParamInfo Info)? _returnValue;
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetText(IDbCommand cmd, string text) {
         var current = cmd.CommandText;
@@ -93,21 +92,6 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
             cmd.CommandText = text;
         if (CommandType != CommandType.Text && cmd.CommandType != CommandType)
             cmd.CommandType = CommandType;
-    }
-    internal void SetReturnValue(string name, DbParamInfo info)
-        => _returnValue = (name, info);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void EnsureReturnValueParameter(IDbCommand cmd) {
-        var returnValue = _returnValue;
-        if (returnValue is null)
-            return;
-        var parameters = cmd.Parameters;
-        for (int i = 0; i < parameters.Count; i++)
-            if (parameters[i] is IDbDataParameter parameter && parameter.Direction == ParameterDirection.ReturnValue)
-                return;
-        object value = DBNull.Value;
-        returnValue.Value.Info.Use(returnValue.Value.Name, cmd, value);
     }
     /// <summary>
     /// Defines a reusable command from a SQL template.
@@ -171,11 +155,12 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// <code>
     /// static readonly QueryCommand Renumber = QueryCommand.FromProc("dbo.RenumberTracks", cnn);
     ///
-    /// Renumber.Execute(cnn, new { albumId = 1, moved = 0 });
+    /// Renumber.Execute(cnn, new { albumId = 1 });
     /// </code>
     /// </example>
-    public static QueryCommand FromProc(string procedureName, IDbConnection connection)
-        => StoredProcedure.From(connection, procedureName);
+    /// <param name="inputOutputHasDefault">Whether provider-derived input/output parameters may be omitted.</param>
+    public static QueryCommand FromProc(string procedureName, IDbConnection connection, bool inputOutputHasDefault = true)
+        => StoredProcedure.From(connection, procedureName, inputOutputHasDefault);
     /// <summary>
     /// Gets a parser held for the supplied parameter usage and result set.
     /// </summary>
@@ -209,6 +194,29 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// Gets a parser held for the supplied parameter values and result set.
     /// </summary>
     public bool TryGetCachedParser<T>(object?[] usageMap, [MaybeNullWhen(false)] out ITypeParser<T> parser, int resultSetIndex = 0) {
+        if (Parameters.HasDefaultSet) {
+            ref object? values = ref MemoryMarshal.GetArrayDataReference(usageMap);
+            var defaultCache = ParsingCache;
+            for (int i = 0; i < defaultCache.Length; i++) {
+                ref var entry = ref defaultCache[i];
+                if (entry.ResultSetIndex != resultSetIndex)
+                    continue;
+                var states = entry.CondStates;
+                for (int j = 0; j < states.Length; j++) {
+                    int packed = states[j];
+                    bool used = Unsafe.Add(ref values, packed >> 1) is not null
+                        || ((packed >> 1) < Parameters._variablesInfo.Length && Parameters._variablesInfo[packed >> 1].HasDefaultSet);
+                    if (used != ((packed & 1) != 0))
+                        goto NextDefaultEntry;
+                }
+                parser = entry.Parser as ITypeParser<T>;
+                if (parser is not null)
+                    return !NeedToCache(usageMap);
+            NextDefaultEntry:;
+            }
+            parser = default;
+            return false;
+        }
         ref object? usageBase = ref MemoryMarshal.GetArrayDataReference(usageMap);
 
         var cacheArray = ParsingCache;
@@ -238,10 +246,75 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         parser = default;
         return false;
     }
+    /// <summary>Gets a cached parser for a runtime result type and parameter usage.</summary>
+    public bool TryGetCachedParser(Type type, Span<bool> usageMap, [MaybeNullWhen(false)] out ITypeParser parser, int resultSetIndex = 0) {
+        ArgumentNullException.ThrowIfNull(type);
+        ref bool usage = ref MemoryMarshal.GetReference(usageMap);
+        var cache = ParsingCache;
+        for (int i = 0; i < cache.Length; i++) {
+            ref var entry = ref cache[i];
+            if (entry.ResultSetIndex != resultSetIndex)
+                continue;
+            var states = entry.CondStates;
+            for (int j = 0; j < states.Length; j++) {
+                int packed = states[j];
+                if (Unsafe.Add(ref usage, packed >> 1) != ((packed & 1) != 0))
+                    goto NextEntry;
+            }
+            parser = entry.Parser;
+            if (parser.Type == type)
+                return !NeedToCache(usageMap);
+        NextEntry:;
+        }
+        parser = default!;
+        return false;
+    }
+    /// <summary>Gets a cached parser for a runtime result type and parameter values.</summary>
+    public bool TryGetCachedParser(Type type, object?[] usageMap, [MaybeNullWhen(false)] out ITypeParser parser, int resultSetIndex = 0) {
+        if (Parameters.HasDefaultSet) {
+            var effective = CreateUsageMap(usageMap);
+            return TryGetCachedParser(type, effective.AsSpan(), out parser, resultSetIndex);
+        }
+        ref object? values = ref MemoryMarshal.GetArrayDataReference(usageMap);
+        var cache = ParsingCache;
+        for (int i = 0; i < cache.Length; i++) {
+            ref var entry = ref cache[i];
+            if (entry.ResultSetIndex != resultSetIndex)
+                continue;
+            var states = entry.CondStates;
+            for (int j = 0; j < states.Length; j++) {
+                int packed = states[j];
+                if ((Unsafe.Add(ref values, packed >> 1) is not null) != ((packed & 1) != 0))
+                    goto NextEntry;
+            }
+            parser = entry.Parser;
+            if (parser.Type == type)
+                return !NeedToCache(usageMap);
+        NextEntry:;
+        }
+        parser = default!;
+        return false;
+    }
     /// <summary>
     /// Stores a parser for the supplied parameter usage and result set.
     /// </summary>
     public void UpdateParseCache<T>(bool[] usageMap, ITypeParser<T> cache, int resultSetIndex = 0) {
+        lock (TypeParser.TypeParserMakers) {
+            if (!TypeParser.IsGloballyCached(cache))
+                return;
+            lock (ParsingCacheSharedLock) {
+                if (Volatile.Read(ref _disposed) != 0)
+                    return;
+                if (!_subscribedToParserDisposing) {
+                    TypeParser.ParserDisposing += OnParserDisposing;
+                    _subscribedToParserDisposing = true;
+                }
+                ParsingCache = ParsingCache.GetUpdatedCache(QueryText, usageMap, cache, resultSetIndex);
+            }
+        }
+    }
+    /// <summary>Stores a runtime parser in this command's existing parser cache.</summary>
+    public void UpdateParseCache(bool[] usageMap, ITypeParser cache, int resultSetIndex = 0) {
         lock (TypeParser.TypeParserMakers) {
             if (!TypeParser.IsGloballyCached(cache))
                 return;
@@ -415,6 +488,15 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         var count = Mapper.Count;
         return count == 0 ? Array.Empty<bool>() : new bool[count];
     }
+    internal bool[] CreateUsageMap(object?[] variables) {
+        var usage = CreateUsageMap();
+        if (Parameters.HasDefaultSet)
+            Parameters.FillUsageMap(variables, usage);
+        else
+            for (int i = 0; i < variables.Length; i++)
+                usage[i] = variables[i] is not null;
+        return usage;
+    }
     /// <summary>
     /// Reads parameter details from <paramref name="cmd"/> and stores them for later runs.
     /// Call this after execution when a custom command needs to teach this command its parameter details.
@@ -468,7 +550,6 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
     /// <inheritdoc/>
     public bool SetCommand(IDbCommand cmd, object?[] variables) {
-        EnsureReturnValueParameter(cmd);
         Debug.Assert(variables.Length == Mapper.Count);
         var varInfos = Parameters._variablesInfo;
         var handlers = Parameters._specialHandlers;
@@ -480,6 +561,8 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
             var currentVar = Unsafe.Add(ref pVar, i);
             if (currentVar is not null)
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, currentVar);
+            else if (Parameters.HasDefaultSet && varInfos[i].HasDefaultSet)
+                varInfos[i].SetDefault(Unsafe.Add(ref pKeys, i), cmd);
         }
 
         ref object? pSpecialVar = ref Unsafe.Add(ref pVar, varInfos.Length);
@@ -496,13 +579,17 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
             handler.Use(cmd, ref currentVar);
         }
 
-        SetText(cmd, QueryText.Parse(variables));
+        if (!Parameters.HasDefaultSet) {
+            SetText(cmd, QueryText.Parse(variables));
+        } else {
+            var usage = CreateUsageMap(variables);
+            SetText(cmd, QueryText.Parse(usage, variables.AsSpan(varInfos.Length, handlers.Length)));
+        }
 
         return true;
     }
     /// <inheritdoc/>
     public bool SetCommand(DbCommand cmd, object?[] variables) {
-        EnsureReturnValueParameter(cmd);
         Debug.Assert(variables.Length == Mapper.Count);
         var varInfos = Parameters._variablesInfo;
         var handlers = Parameters._specialHandlers;
@@ -514,6 +601,8 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
             var currentVar = Unsafe.Add(ref pVar, i);
             if (currentVar is not null)
                 varInfos[i].Use(Unsafe.Add(ref pKeys, i), cmd, currentVar);
+            else if (Parameters.HasDefaultSet && varInfos[i].HasDefaultSet)
+                varInfos[i].SetDefault(Unsafe.Add(ref pKeys, i), cmd);
         }
 
         ref object? pSpecialVar = ref Unsafe.Add(ref pVar, varInfos.Length);
@@ -530,16 +619,21 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
             handler.Use(cmd, ref currentVar);
         }
 
-        SetText(cmd, QueryText.Parse(variables));
+        if (!Parameters.HasDefaultSet) {
+            SetText(cmd, QueryText.Parse(variables));
+        } else {
+            var usage = CreateUsageMap(variables);
+            SetText(cmd, QueryText.Parse(usage, variables.AsSpan(varInfos.Length, handlers.Length)));
+        }
 
         return true;
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand(IDbCommand cmd, object? parameterObj, Span<bool> usageMap) {
-        EnsureReturnValueParameter(cmd);
         if (parameterObj is null) {
             usageMap.Clear();
+            ApplyDefaults(cmd, usageMap);
             SetText(cmd, QueryText.Parse(usageMap, EmptyHandlerValues()));
             return true;
         }
@@ -552,9 +646,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand(DbCommand cmd, object? parameterObj, Span<bool> usageMap) {
-        EnsureReturnValueParameter(cmd);
         if (parameterObj is null) {
             usageMap.Clear();
+            ApplyDefaults(cmd, usageMap);
             SetText(cmd, QueryText.Parse(usageMap, EmptyHandlerValues()));
             return true;
         }
@@ -566,11 +660,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(IDbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
-        EnsureReturnValueParameter(cmd);
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var accessor = GetDirectAccessor(handle, typeof(T));
+        var accessor = GetDirectAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
@@ -578,11 +670,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(DbCommand cmd, T parameterObj, Span<bool> usageMap) where T : notnull {
-        EnsureReturnValueParameter(cmd);
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var accessor = GetDirectAccessor(handle, typeof(T));
+        var accessor = GetDirectAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
@@ -590,22 +680,18 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(IDbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
-        EnsureReturnValueParameter(cmd);
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var accessor = GetDirectAccessor(handle, typeof(T));
+        var accessor = GetDirectAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetCommand<T>(DbCommand cmd, ref T parameterObj, Span<bool> usageMap) where T : notnull {
-        EnsureReturnValueParameter(cmd);
-        IntPtr handle = typeof(T).TypeHandle.Value;
-        var accessor = GetDirectAccessor(handle, typeof(T));
+        var accessor = GetDirectAccessor(typeof(T).TypeHandle.Value, typeof(T));
         if (!typeof(T).IsValueType)
-            return FinishSetCommand(cmd, accessor.Invoke(parameterObj!, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
+            return FinishSetCommand(cmd, accessor.Invoke(parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
         var typed = Unsafe.As<DirectAccessor, DirectAccessor<T>>(ref accessor);
         return FinishSetCommand(cmd, typed.InvokeTyped(ref parameterObj, cmd, Parameters._variablesInfo, ref usageMap), usageMap);
     }
@@ -747,6 +833,112 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
             Volatile.Write(ref _accessors, []);
     }
 
+    internal object QueryRuntime(Type type, DbConnection cnn, object? parametersObj, DbTransaction? transaction, int? timeout) {
+        var cmd = cnn.GetCommand(transaction, timeout);
+        var usage = CreateUsageMap();
+        SetCommand(cmd, parametersObj, usage);
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+    }
+    internal object QueryRuntime(Type type, DbConnection cnn, out DbCommand cmd, object? parametersObj, DbTransaction? transaction, int? timeout) {
+        cmd = cnn.GetCommand(transaction, timeout);
+        var usage = CreateUsageMap();
+        SetCommand(cmd, parametersObj, usage);
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), false)!;
+    }
+    internal Task<object> QueryRuntimeAsync(Type type, DbConnection cnn, object? parametersObj, DbTransaction? transaction, int? timeout, CancellationToken ct) {
+        var cmd = cnn.GetCommand(transaction, timeout);
+        var usage = CreateUsageMap();
+        SetCommand(cmd, parametersObj, usage);
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), true, ct));
+    }
+    internal Task<object> QueryRuntimeAsync(Type type, DbConnection cnn, out DbCommand cmd, object? parametersObj, DbTransaction? transaction, int? timeout, CancellationToken ct) {
+        cmd = cnn.GetCommand(transaction, timeout);
+        var usage = CreateUsageMap();
+        SetCommand(cmd, parametersObj, usage);
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), false, ct));
+    }
+    internal object QueryRuntime(Type type, IDbConnection cnn, object? parametersObj, IDbTransaction? transaction, int? timeout) {
+        var cmd = cnn.GetCommand(transaction, timeout);
+        var usage = CreateUsageMap();
+        SetCommand(cmd, parametersObj, usage);
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+    }
+    internal object QueryRuntime(Type type, IDbConnection cnn, out IDbCommand cmd, object? parametersObj, IDbTransaction? transaction, int? timeout) {
+        cmd = cnn.GetCommand(transaction, timeout);
+        var usage = CreateUsageMap();
+        SetCommand(cmd, parametersObj, usage);
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), false)!;
+    }
+    internal Task<object> QueryRuntimeAsync(Type type, IDbConnection cnn, object? parametersObj, IDbTransaction? transaction, int? timeout, CancellationToken ct) {
+        var cmd = cnn.GetCommand(transaction, timeout);
+        var usage = CreateUsageMap();
+        SetCommand(cmd, parametersObj, usage);
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), true, ct));
+    }
+    internal Task<object> QueryRuntimeAsync(Type type, IDbConnection cnn, out IDbCommand cmd, object? parametersObj, IDbTransaction? transaction, int? timeout, CancellationToken ct) {
+        cmd = cnn.GetCommand(transaction, timeout);
+        var usage = CreateUsageMap();
+        SetCommand(cmd, parametersObj, usage);
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), false, ct));
+    }
+    private static async Task<object> BoxRuntime(Task<object?> result) => (object)(await result.ConfigureAwait(false))!;
+    internal object QueryRuntime<TObj>(Type type, DbConnection cnn, TObj parametersObj, DbTransaction? transaction, int? timeout) where TObj : notnull {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, parametersObj, usage);
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+    }
+    internal Task<object> QueryRuntimeAsync<TObj>(Type type, DbConnection cnn, TObj parametersObj, DbTransaction? transaction, int? timeout, CancellationToken ct) where TObj : notnull {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, parametersObj, usage);
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), true, ct));
+    }
+    internal object QueryRuntime<TObj>(Type type, IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction, int? timeout) where TObj : notnull {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, parametersObj, usage);
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+    }
+    internal Task<object> QueryRuntimeAsync<TObj>(Type type, IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction, int? timeout, CancellationToken ct) where TObj : notnull {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, parametersObj, usage);
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), true, ct));
+    }
+    internal object QueryRuntime<TObj>(Type type, DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction, int? timeout) where TObj : notnull {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, ref parametersObj, usage);
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+    }
+    internal Task<object> QueryRuntimeAsync<TObj>(Type type, DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction, int? timeout, CancellationToken ct) where TObj : notnull {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, ref parametersObj, usage);
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), true, ct));
+    }
+    internal object QueryRuntime<TObj>(Type type, IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction, int? timeout) where TObj : notnull {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, ref parametersObj, usage);
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+    }
+    internal Task<object> QueryRuntimeAsync<TObj>(Type type, IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction, int? timeout, CancellationToken ct) where TObj : notnull {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, ref parametersObj, usage);
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), true, ct));
+    }
+    internal object QueryRuntime(Type type, DbConnection cnn, object?[] variables, DbTransaction? transaction, int? timeout) {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = variables.ToBoolArray(); SetText(cmd, QueryText.Parse(variables));
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+    }
+    internal Task<object> QueryRuntimeAsync(Type type, DbConnection cnn, object?[] variables, DbTransaction? transaction, int? timeout, CancellationToken ct) {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = variables.ToBoolArray(); SetText(cmd, QueryText.Parse(variables));
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), true, ct));
+    }
+    internal object QueryRuntime(Type type, IDbConnection cnn, object?[] variables, IDbTransaction? transaction, int? timeout) {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = variables.ToBoolArray(); SetText(cmd, QueryText.Parse(variables));
+        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+    }
+    internal Task<object> QueryRuntimeAsync(Type type, IDbConnection cnn, object?[] variables, IDbTransaction? transaction, int? timeout, CancellationToken ct) {
+        var cmd = cnn.GetCommand(transaction, timeout); var usage = variables.ToBoolArray(); SetText(cmd, QueryText.Parse(variables));
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), true, ct));
+    }
+    internal object QueryRuntime(Type type, IDbCommand cmd, object?[] variables, bool disposeCommand) {
+        SetText(cmd, QueryText.Parse(variables));
+        return cmd.Query(type, new RuntimeParserLinker(this, type, variables.ToBoolArray()), disposeCommand)!;
+    }
+    internal Task<object> QueryRuntimeAsync(Type type, IDbCommand cmd, object?[] variables, bool disposeCommand, CancellationToken ct) {
+        SetText(cmd, QueryText.Parse(variables));
+        return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, variables.ToBoolArray()), disposeCommand, ct));
+    }
+
     /// <summary>
     /// Releases resources used by this command.
     /// The command cannot be used after disposal.
@@ -765,6 +957,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         internal readonly UseWithAccessor UseWith = useWith;
     }
     private bool FinishSetCommand(IDbCommand cmd, object?[] handlerValues, Span<bool> usageMap) {
+        ApplyDefaults(cmd, usageMap);
         var handlers = Parameters._specialHandlers;
         for (int i = StartSpecialHandlers; i < StartBaseHandlers; i++) {
             if (!usageMap[i])
@@ -779,6 +972,16 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         }
         SetText(cmd, QueryText.Parse(usageMap, handlerValues));
         return true;
+    }
+    private void ApplyDefaults(IDbCommand cmd, Span<bool> usageMap) {
+        if (!Parameters.HasDefaultSet)
+            return;
+        ref string pKeys = ref Mapper.KeysStartPtr;
+        for (int i = 0; i < Parameters._variablesInfo.Length; i++)
+            if (!usageMap[i] && Parameters._variablesInfo[i].HasDefaultSet) {
+                Parameters._variablesInfo[i].SetDefault(Unsafe.Add(ref pKeys, i), cmd);
+                usageMap[i] = true;
+            }
     }
 }
 

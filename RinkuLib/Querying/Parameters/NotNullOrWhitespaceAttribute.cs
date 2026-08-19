@@ -5,9 +5,7 @@ using Rinku.Internal;
 namespace Rinku.Querying.Parameters;
 
 /// <summary>
-/// On a parameter object, treats a <see cref="string"/> member as present only when it is not null or
-/// whitespace. A blank value then counts as absent, so its optional clause drops instead of filtering on an
-/// empty string. Valid only on <see cref="string"/> fields or properties.
+/// Treats a <see cref="string"/> member as present only when it is not null or whitespace.
 /// </summary>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class NotNullOrWhitespaceAttribute : AccessorEmitterHandler {
@@ -18,61 +16,58 @@ public sealed class NotNullOrWhitespaceAttribute : AccessorEmitterHandler {
     public override IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper) {
         if (!(member is PropertyInfo p && p.PropertyType == typeof(string)
             || member is FieldInfo f && f.FieldType == typeof(string)))
-            throw new RinkuConfigurationException(ErrorCodes.AttributeOnWrongMemberType, $"When using {typeof(NotNullOrWhitespaceAttribute)}, the type must be of type {typeof(string)}");
-        if (index < 0)
-            return null;
-        return Emitter;
+            throw new RinkuConfigurationException(ErrorCodes.AttributeOnWrongMemberType,
+                $"When using {typeof(NotNullOrWhitespaceAttribute)}, the member must be {typeof(string)}.");
+        return index < 0 ? null : Emitter;
     }
 }
-/// <summary>
-/// On a parameter object, treats a member as present only when it is not its type's default (zero, or
-/// <see langword="null"/>). A default value then counts as absent and its optional clause drops.
-/// </summary>
+
+/// <summary>Treats a member as present only when it is not its type's default value.</summary>
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class NotDefaultAttribute : AccessorEmitterHandler {
     /// <inheritdoc/>
-    public override IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper) {
-        if (index < 0)
-            return null;
-        return NotDefaultEmitter.Instance;
-    }
+    public override IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper)
+        => index < 0 ? null : NotDefaultEmitter.Instance;
 }
-internal sealed class NotDefaultEmitter : AccessorEmitterBase {
+
+internal sealed class NotDefaultEmitter : PathAccessorEmitterBase {
     internal static readonly NotDefaultEmitter Instance = new();
 
-    protected override void EmitCondition(ILGenerator il, Type type, MemberInfo member) {
-        var targetMember = member;
-        Type memberType = targetMember is FieldInfo f ? f.FieldType : ((PropertyInfo)targetMember).PropertyType;
-        AccessorEmitter.EmitMemberLoad(il, type, targetMember);
-        if (!memberType.IsValueType || (memberType.IsPrimitive && memberType != typeof(double) && memberType != typeof(float))) {
-            if (memberType.IsValueType)
-                il.Emit(OpCodes.Ldc_I4_0);
-            else
-                il.Emit(OpCodes.Ldnull);
-
-            il.Emit(OpCodes.Ceq);
-            il.Emit(OpCodes.Ldc_I4_0);
-            il.Emit(OpCodes.Ceq);
+    protected override void EmitCondition(ILGenerator il, ParameterMemberAccess member) {
+        Type memberType = member.MemberType;
+        if (!memberType.IsValueType) {
+            member.EmitLoad(il);
+            il.Emit(OpCodes.Ldnull);
+            il.Emit(OpCodes.Cgt_Un);
             return;
         }
-        var eqType = typeof(EqualityComparer<>).MakeGenericType(memberType);
-        var defaultProp = eqType.GetProperty(nameof(EqualityComparer<>.Default))!;
-        var equalsMethod = eqType.GetMethod(nameof(EqualityComparer<>.Equals), [memberType, memberType])!;
 
-        LocalBuilder value = il.DeclareLocal(memberType);
-        il.Emit(OpCodes.Stloc, value);
-        il.Emit(OpCodes.Call, defaultProp.GetGetMethod()!);
-        il.Emit(OpCodes.Ldloc, value);
-        LocalBuilder tempDefault = il.DeclareLocal(memberType);
-        il.Emit(OpCodes.Ldloca_S, tempDefault);
+        Type? nullableType = Nullable.GetUnderlyingType(memberType);
+        if (nullableType is not null) {
+            LocalBuilder value = il.DeclareLocal(memberType);
+            member.EmitLoad(il);
+            il.Emit(OpCodes.Stloc, value);
+            il.Emit(OpCodes.Ldloca, value);
+            il.Emit(OpCodes.Call, memberType.GetProperty(nameof(Nullable<int>.HasValue))!.GetMethod!);
+            return;
+        }
+
+        var comparerType = typeof(EqualityComparer<>).MakeGenericType(memberType);
+        MethodInfo equals = comparerType.GetMethod(nameof(EqualityComparer<int>.Equals), [memberType, memberType])!;
+        LocalBuilder current = il.DeclareLocal(memberType);
+        LocalBuilder defaultValue = il.DeclareLocal(memberType);
+        member.EmitLoad(il);
+        il.Emit(OpCodes.Stloc, current);
+        il.Emit(OpCodes.Ldloca, defaultValue);
         il.Emit(OpCodes.Initobj, memberType);
-        il.Emit(OpCodes.Ldloc, tempDefault);
-        il.Emit(OpCodes.Callvirt, equalsMethod);
-
+        il.Emit(OpCodes.Call, comparerType.GetProperty(nameof(EqualityComparer<int>.Default))!.GetMethod!);
+        il.Emit(OpCodes.Ldloc, current);
+        il.Emit(OpCodes.Ldloc, defaultValue);
+        il.Emit(OpCodes.Callvirt, equals);
         il.Emit(OpCodes.Ldc_I4_0);
         il.Emit(OpCodes.Ceq);
     }
 
-    protected override void EmitValue(ILGenerator il, Type type, MemberInfo member)
-        => AccessorEmitter.EmitMemberValue(il, type, member);
+    protected override void EmitValue(ILGenerator il, ParameterMemberAccess member)
+        => member.EmitLoad(il);
 }

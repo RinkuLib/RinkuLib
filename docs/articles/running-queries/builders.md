@@ -47,7 +47,14 @@ WHERE ArtistId = @ArtistId
   AND IsArchived = 0
 ```
 
-Put manual changes after `UseWith`. Calling `UseWith` again replaces the values copied by the earlier call.
+Put manual changes after `UseWith` when they should override that source. Another `UseWith` call changes only the values controlled by that invocation. Fixed members clear their own unusable values, unrelated sources stay unchanged, and dictionaries affect only keys that are present.
+
+```csharp
+var search = SearchAlbums.StartBuilder();
+search.UseWith(new { ArtistId = 7 });
+search.UseWith(new { Title = "Blue" });
+// Both values are present.
+```
 
 ## Build every choice in code
 
@@ -138,7 +145,7 @@ foreach (AlbumDraft album in drafts) {
 }
 ```
 
-Each `UseWith` replaces the values from the previous item while the builder keeps the same `DbCommand`.
+Each `AlbumDraft` has the same shape, so its `UseWith` call replaces the values from the previous item while the builder keeps the same `DbCommand`. Values outside that source are not reset.
 
 ## Use key indexes
 

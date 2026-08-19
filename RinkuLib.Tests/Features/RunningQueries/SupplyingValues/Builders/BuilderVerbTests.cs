@@ -238,13 +238,11 @@ public class BuilderVerbTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         Assert.Equal(2, await countBuilder.ExecuteScalarAsync<int>(TestContext.Current.CancellationToken));
         Assert.Equal(2, countBuilder.Query<int>());
         Assert.Equal(2, await countBuilder.QueryAsync<int>(TestContext.Current.CancellationToken));
-        using (var reader = countBuilder.ExecuteReader())
-        {
+        using (var reader = countBuilder.ExecuteReader()) {
             Assert.True(reader.Read());
             Assert.Equal(2L, reader.GetInt64(0));
         }
-        using (var reader = await countBuilder.ExecuteReaderAsync(ct: TestContext.Current.CancellationToken))
-        {
+        using (var reader = await countBuilder.ExecuteReaderAsync(ct: TestContext.Current.CancellationToken)) {
             Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
             Assert.Equal(2L, reader.GetInt64(0));
         }

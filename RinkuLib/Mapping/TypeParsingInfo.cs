@@ -1,9 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using Rinku.Internal;
 using Rinku.Mapping.Defaults;
-using Rinku.Mapping.Parsers;
 
 namespace Rinku.Mapping;
 

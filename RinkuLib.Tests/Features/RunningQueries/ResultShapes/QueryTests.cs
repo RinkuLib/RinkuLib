@@ -314,6 +314,37 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     }
 
     [Fact]
+    public async Task Runtime_result_type_uses_the_complete_generic_shape() {
+        using var cnn = Db.GetConnection();
+        Assert.Equal("John", OneName.Query(typeof(string), cnn));
+        var users = Assert.IsType<List<UserRow>>(AllUsers.Query(typeof(List<UserRow>), cnn));
+        Assert.Equal(3, users.Count);
+        var filter = new ActiveFilter(true);
+        var user = Assert.IsType<UserRow>(ActiveUsers.Query(typeof(UserRow), (System.Data.IDbConnection)cnn, ref filter));
+        Assert.Equal("John", user.Name);
+        var asyncUser = await OneName.QueryAsync(typeof(string), cnn, ct: TestContext.Current.CancellationToken);
+        Assert.Equal("John", asyncUser);
+    }
+
+    [Fact]
+    public void Runtime_result_type_supports_owning_multi_reader_and_sql_shortcut() {
+        using var cnn = Db.GetConnection();
+        using (var multi = new QueryCommand("SELECT 1; SELECT 2").ExecuteMultiReader(cnn)) {
+            Assert.Equal(1, multi.Query(typeof(int)));
+            Assert.Equal(2, multi.Query(typeof(int)));
+        }
+        using var sqlMulti = cnn.ExecuteMultiReader("SELECT 1; SELECT 2");
+        Assert.Equal(1, sqlMulti.Query<int>());
+        Assert.Equal(2, sqlMulti.Query(typeof(int)));
+    }
+
+    [Fact]
+    public void Runtime_result_type_rejects_null() {
+        using var cnn = Db.GetConnection();
+        Assert.Throws<ArgumentNullException>(() => OneName.Query((Type)null!, cnn));
+    }
+
+    [Fact]
     public void Builder_query_renders_the_conditional_sql() {
         var query = new QueryCommand("SELECT ID, Name, Email FROM Users WHERE IsActive = @Active");
         using var cnn = Db.GetConnection();

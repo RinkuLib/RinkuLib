@@ -47,6 +47,14 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         command.UpdateParseCache(usage, cache, nbResultSetPassedMinusOne);
         return cache;
     }
+    /// <summary>Returns the current result set parser for a runtime result type.</summary>
+    public ITypeParser GetCurrentSetParser(Type resultType) {
+        if (command.TryGetCachedParser(resultType, usage, out var cache, nbResultSetPassedMinusOne))
+            return cache;
+        cache = TypeParser.GetTypeParser(resultType, reader.GetColumns());
+        command.UpdateParseCache(usage, cache, nbResultSetPassedMinusOne);
+        return cache;
+    }
     /// <summary>
     /// Parses the current returning result set as <typeparamref name="T"/>, then moves to the next result set. Non-returning sets are skipped only when a query reaches them. The result shape defines zero-row and row-count behavior.
     /// To parse a set row by row and keep control of the reader, use <see cref="Get{T}"/> or <see cref="GetCurrentSetParser{T}"/>
@@ -71,6 +79,21 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         finally {
             if (goToNextResultSet && !reader.NextResult())
                 CompleteReader();
+        }
+    }
+    /// <summary>Parses the current result set in the complete shape selected by <paramref name="resultType"/>.</summary>
+    public object Query(Type resultType) {
+        if (!SkipNonReturningResultSets()) Refuse.NoRows();
+        nbResultSetPassedMinusOne++;
+        bool next = true;
+        try {
+            var cache = GetCurrentSetParser(resultType);
+            if (!reader.Read()) return cache.DefaultObject()!;
+            var result = cache.ParseObject(reader).Result!;
+            return result;
+        }
+        finally {
+            if (next && !reader.NextResult()) CompleteReader();
         }
     }
     /// <summary>
@@ -129,6 +152,19 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         finally {
             if (goToNextResultSet && !await reader.NextResultAsync(CancellationToken.None).ConfigureAwait(false))
                 await CompleteReaderAsync().ConfigureAwait(false);
+        }
+    }
+    /// <summary>Asynchronously parses the current result set in the complete shape selected by <paramref name="resultType"/>.</summary>
+    public async ValueTask<object> QueryAsync(Type resultType, CancellationToken ct = default) {
+        if (!await SkipNonReturningResultSetsAsync(ct).ConfigureAwait(false)) Refuse.NoRows();
+        nbResultSetPassedMinusOne++;
+        try {
+            var cache = GetCurrentSetParser(resultType);
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return cache.DefaultObject()!;
+            return (await cache.ParseObjectAsync(reader, ct).ConfigureAwait(false)).Result!;
+        }
+        finally {
+            if (!await reader.NextResultAsync(ct).ConfigureAwait(false)) await CompleteReaderAsync().ConfigureAwait(false);
         }
     }
     /// <inheritdoc/>

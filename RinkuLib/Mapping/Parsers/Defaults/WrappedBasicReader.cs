@@ -127,9 +127,7 @@ internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerato
 
     public override T GetFieldValue<T>(int ordinal) {
         var value = _reader.GetValue(ordinal);
-        if (value is DBNull) {
-            value = null;
-        }
+        if (value is DBNull) value = null;
         return (T)value!;
     }
     public override Task<T> GetFieldValueAsync<T>(int ordinal, CancellationToken cancellationToken) {

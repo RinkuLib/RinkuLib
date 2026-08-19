@@ -129,9 +129,7 @@ public ref partial struct ValueStringBuilder {
     /// <param name="value">The character to insert.</param>
     /// <param name="count">The number of times to insert the character.</param>
     public void Insert(int index, char value, int count) {
-        if (_pos > _chars.Length - count) {
-            Grow(count);
-        }
+        if (_pos > _chars.Length - count) Grow(count);
 
         int remaining = _pos - index;
         _chars.Slice(index, remaining).CopyTo(_chars[(index + count)..]);
@@ -140,15 +138,11 @@ public ref partial struct ValueStringBuilder {
     }
     /// <summary>Inserts a string at the specified index, shifting existing content to the right.</summary>
     public void Insert(int index, string? s) {
-        if (s == null) {
-            return;
-        }
+        if (s == null) return;
 
         int count = s.Length;
 
-        if (_pos > (_chars.Length - count)) {
-            Grow(count);
-        }
+        if (_pos > (_chars.Length - count)) Grow(count);
 
         int remaining = _pos - index;
         _chars.Slice(index, remaining).CopyTo(_chars[(index + count)..]);
@@ -166,34 +160,27 @@ public ref partial struct ValueStringBuilder {
         if ((uint)pos < (uint)_chars.Length) {
             _chars[pos] = c;
             _pos = pos + 1;
-        }
-        else {
+        } else {
             GrowAndAppend(c);
         }
     }
     /// <summary>Appends a string. If the string is null, the builder remains unchanged.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Append(string? s) {
-        if (s == null) {
-            return;
-        }
+        if (s == null) return;
 
         int pos = _pos;
-        if (s.Length == 1 && (uint)pos < (uint)_chars.Length)
-        {
+        if (s.Length == 1 && (uint)pos < (uint)_chars.Length) {
             _chars[pos] = s[0];
             _pos = pos + 1;
-        }
-        else {
+        } else {
             AppendSlow(s);
         }
     }
 
     private void AppendSlow(string s) {
         int pos = _pos;
-        if (pos > _chars.Length - s.Length) {
-            Grow(s.Length);
-        }
+        if (pos > _chars.Length - s.Length) Grow(s.Length);
 
         s
 #if !NET6_0_OR_GREATER
@@ -208,9 +195,7 @@ public ref partial struct ValueStringBuilder {
     /// <param name="c">The character to append.</param>
     /// <param name="count">The number of times to append the character.</param>
     public void Append(char c, int count) {
-        if (_pos > _chars.Length - count) {
-            Grow(count);
-        }
+        if (_pos > _chars.Length - count) Grow(count);
 
         Span<char> dst = _chars.Slice(_pos, count);
         for (int i = 0; i < dst.Length; i++) {
@@ -221,9 +206,7 @@ public ref partial struct ValueStringBuilder {
     /// <summary>Appends a specified number of characters from a pointer.</summary>
     public unsafe void Append(char* value, int length) {
         int pos = _pos;
-        if (pos > _chars.Length - length) {
-            Grow(length);
-        }
+        if (pos > _chars.Length - length) Grow(length);
 
         Span<char> dst = _chars.Slice(_pos, length);
         for (int i = 0; i < dst.Length; i++) {
@@ -237,9 +220,7 @@ public ref partial struct ValueStringBuilder {
     /// <param name="value">The span of characters to append.</param>
     public void Append(ReadOnlySpan<char> value) {
         int pos = _pos;
-        if (pos > _chars.Length - value.Length) {
-            Grow(value.Length);
-        }
+        if (pos > _chars.Length - value.Length) Grow(value.Length);
 
         value.CopyTo(_chars[_pos..]);
         _pos += value.Length;
@@ -248,9 +229,7 @@ public ref partial struct ValueStringBuilder {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<char> AppendSpan(int length) {
         int origPos = _pos;
-        if (origPos > _chars.Length - length) {
-            Grow(length);
-        }
+        if (origPos > _chars.Length - length) Grow(length);
 
         _pos = origPos + length;
         return _chars.Slice(origPos, length);
@@ -273,18 +252,14 @@ public ref partial struct ValueStringBuilder {
 
         char[]? toReturn = _arrayToReturnToPool;
         _chars = _arrayToReturnToPool = poolArray;
-        if (toReturn != null) {
-            ArrayPool<char>.Shared.Return(toReturn);
-        }
+        if (toReturn != null) ArrayPool<char>.Shared.Return(toReturn);
     }
     /// <summary>Returns any rented buffers to the <see cref="ArrayPool{Char}"/>. The instance becomes unusable.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Dispose() {
         char[]? toReturn = _arrayToReturnToPool;
         this = default;
-        if (toReturn != null) {
-            ArrayPool<char>.Shared.Return(toReturn);
-        }
+        if (toReturn != null) ArrayPool<char>.Shared.Return(toReturn);
     }
     /// <summary>Appends the string representation of an integer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -27,8 +27,8 @@ internal sealed class AlwaysOnConditionEmitter : TypeAccessorEmitterBase {
     protected override void EmitCondition(ILGenerator il, Type type)
         => il.Emit(OpCodes.Ldc_I4_1);
 
-    protected override void EmitValue(ILGenerator il, Type type) {
-        il.Emit(OpCodes.Ldc_I4_1);
-        il.Emit(OpCodes.Box, typeof(bool));
-    }
+    protected override void EmitValue(ILGenerator il, Type type)
+        => il.Emit(OpCodes.Ldc_I4_1);
+
+    protected override Type GetValueType(Type type) => typeof(bool);
 }

@@ -14,18 +14,45 @@ public interface ICache {
     Task UpdateCacheAsync(IDbCommand cmd, CancellationToken ct = default);
 }
 /// <summary>Records parameter settings and gets a parser that accepts the reader columns.</summary>
-public interface ICacheGivingParser<T> {
+public interface ICacheGivingParser {
+    /// <summary>Gets the reader behavior required by the parser.</summary>
+    CommandBehavior Behavior { get; }
+    /// <summary>Updates the parser from a completed command and reader.</summary>
+    ITypeParser UpdateCache(IDbCommand cmd, DbDataReader reader);
+    /// <summary>Updates the parser asynchronously from a completed command and reader.</summary>
+    ValueTask<ITypeParser> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default);
+}
+/// <inheritdoc cref="ICacheGivingParser"/>
+public interface ICacheGivingParser<T> : ICacheGivingParser {
     /// <summary>
     /// Builds the parser for the reader's columns and records what the run taught about the command.
     /// </summary>
-    ITypeParser<T> UpdateCache(IDbCommand cmd, DbDataReader reader);
+    new ITypeParser<T> UpdateCache(IDbCommand cmd, DbDataReader reader);
     /// <inheritdoc cref="UpdateCache"/>
-    ValueTask<ITypeParser<T>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default);
+    new ValueTask<ITypeParser<T>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default);
     /// <summary>The reader behavior this parser wants when the command is executed.</summary>
-    CommandBehavior Behavior { get; }
+    new CommandBehavior Behavior { get; }
+    ITypeParser ICacheGivingParser.UpdateCache(IDbCommand cmd, DbDataReader reader) => UpdateCache(cmd, reader);
+    async ValueTask<ITypeParser> ICacheGivingParser.UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct) => await UpdateCacheAsync(cmd, reader, ct).ConfigureAwait(false);
 }
 /// <summary>Describes a parser that reads query rows. Use <see cref="ITypeParser{T}"/> for a typed result.</summary>
 public interface ITypeParser : IDisposable {
+    /// <summary>Gets the result type produced by this parser.</summary>
+    Type Type { get; }
+    /// <summary>Creates the result returned when no row is available.</summary>
+    object? DefaultObject();
+    /// <summary>Parses the current reader row.</summary>
+    (bool CanContinue, object? Result) ParseObject(DbDataReader reader);
+    /// <summary>Parses the current reader row asynchronously.</summary>
+    ValueTask<(bool CanContinue, object? Result)> ParseObjectAsync(DbDataReader reader, CancellationToken ct = default);
+    /// <summary>Executes a command and parses its result.</summary>
+    object? QueryObject(DbCommand command, ICache? cache = null, bool disposeCommand = false);
+    /// <summary>Executes a command and parses its result.</summary>
+    object? QueryObject(IDbCommand command, ICache? cache = null, bool disposeCommand = false);
+    /// <summary>Executes a command and parses its result asynchronously.</summary>
+    Task<object?> QueryObjectAsync(DbCommand command, ICache? cache = null, bool disposeCommand = false, CancellationToken ct = default);
+    /// <summary>Executes a command and parses its result asynchronously.</summary>
+    Task<object?> QueryObjectAsync(IDbCommand command, ICache? cache = null, bool disposeCommand = false, CancellationToken ct = default);
     /// <summary>Releases resources owned directly by this parser. Leave the default when it owns none.</summary>
     /// <remarks>
     /// This method must allow repeated calls. A wrapper must not dispose a child parser supplied to it.
@@ -68,6 +95,24 @@ public interface ISimpleParser<T> : ISimpleParser, IStepParser<T> {
 /// through <c>Query&lt;T&gt;</c>.
 /// </summary>
 public interface ITypeParser<T> : ITypeParser {
+    Type ITypeParser.Type => typeof(T);
+    object? ITypeParser.DefaultObject() => Default();
+    (bool CanContinue, object? Result) ITypeParser.ParseObject(DbDataReader reader) {
+        var result = Parse(reader);
+        return (result.CanContinue, result.Result);
+    }
+    async ValueTask<(bool CanContinue, object? Result)> ITypeParser.ParseObjectAsync(DbDataReader reader, CancellationToken ct) {
+        var result = await ParseAsync(reader, ct).ConfigureAwait(false);
+        return (result.CanContinue, result.Result);
+    }
+    object? ITypeParser.QueryObject(DbCommand command, ICache? cache, bool disposeCommand)
+        => cache is null ? Query(command, disposeCommand) : Query(command, cache, disposeCommand);
+    object? ITypeParser.QueryObject(IDbCommand command, ICache? cache, bool disposeCommand)
+        => cache is null ? Query(command, disposeCommand) : Query(command, cache, disposeCommand);
+    async Task<object?> ITypeParser.QueryObjectAsync(DbCommand command, ICache? cache, bool disposeCommand, CancellationToken ct)
+        => cache is null ? await QueryAsync(command, disposeCommand, ct).ConfigureAwait(false) : await QueryAsync(command, cache, disposeCommand, ct).ConfigureAwait(false);
+    async Task<object?> ITypeParser.QueryObjectAsync(IDbCommand command, ICache? cache, bool disposeCommand, CancellationToken ct)
+        => cache is null ? await QueryAsync(command, disposeCommand, ct).ConfigureAwait(false) : await QueryAsync(command, cache, disposeCommand, ct).ConfigureAwait(false);
     internal bool InternalProtect { get; }
     /// <summary>The value to return when the result has no row, an empty collection or optional, for instance.</summary>
     public T Default();

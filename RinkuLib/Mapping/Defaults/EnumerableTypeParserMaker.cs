@@ -37,6 +37,19 @@ public sealed class EnumerableTypeParserMaker() : ReusingBaseTypeParserMaker(
     public bool TryColdStartAsync<T>(IDbCommand cmd, ICacheGivingParser<T> cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<T> result)
         => TryAsync(cmd, cache, disposeCommand, ct, out result);
 
+    /// <inheritdoc/>
+    public bool TryColdStart(Type type, DbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result)
+        => TrySync(type, cmd, cache, disposeCommand, out result);
+    /// <inheritdoc/>
+    public bool TryColdStart(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result)
+        => TrySync(type, cmd, cache, disposeCommand, out result);
+    /// <inheritdoc/>
+    public bool TryColdStartAsync(Type type, DbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result)
+        => TryAsync(type, cmd, cache, disposeCommand, ct, out result);
+    /// <inheritdoc/>
+    public bool TryColdStartAsync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result)
+        => TryAsync(type, cmd, cache, disposeCommand, ct, out result);
+
     private bool TrySync<T>(IDbCommand cmd, ICacheGivingParser<T> cache, bool disposeCommand, [MaybeNullWhen(false)] out T result) {
         if (!CanHandle<T>()) {
             result = default;
@@ -54,6 +67,27 @@ public sealed class EnumerableTypeParserMaker() : ReusingBaseTypeParserMaker(
         result = (Task<T>)RowsAsync.MakeGenericMethod(typeof(T).GetGenericArguments()[0])
             .Invoke(null, [cmd, cache, disposeCommand, ct])!;
         return true;
+    }
+
+    private bool TrySync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result) {
+        if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(IEnumerable<>)) {
+            result = null;
+            return false;
+        }
+        result = Rows.MakeGenericMethod(type.GetGenericArguments()[0]).Invoke(null, [cmd, cache, disposeCommand]);
+        return true;
+    }
+    private bool TryAsync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result) {
+        if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(IEnumerable<>)) {
+            result = null;
+            return false;
+        }
+        result = ConvertTask(RowsAsync.MakeGenericMethod(type.GetGenericArguments()[0]).Invoke(null, [cmd, cache, disposeCommand, ct])!);
+        return true;
+    }
+    private static async Task<object?> ConvertTask(object task) {
+        await ((Task)task).ConfigureAwait(false);
+        return task.GetType().GetProperty("Result")!.GetValue(task);
     }
 
     private static IEnumerable<TItem> ColdRows<TItem>(IDbCommand cmd, ICacheGivingParser<IEnumerable<TItem>> cache, bool disposeCommand) {

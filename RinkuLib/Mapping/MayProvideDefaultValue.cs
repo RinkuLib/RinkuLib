@@ -44,9 +44,9 @@ public class FlagUpdater(UsageFlags Flags, bool Subtree = false) : IColModifier 
     public void UpdateColModifier(ref ColModifier mod) => mod.Flags |= Flags;
     /// <inheritdoc/>
     public void EnterSubtree(ref ColModifier mod, int nbClaims) {
-        if (Subtree)
+        if (Subtree) {
             mod.Flags |= Flags;
-        else {
+        } else {
             mod.SwapFirstAt = nbClaims;
             mod.SwapFirstFlags = Flags;
         }

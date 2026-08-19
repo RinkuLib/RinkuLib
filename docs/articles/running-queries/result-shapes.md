@@ -27,7 +27,12 @@ if (result.HasValue) {
 }
 ```
 
-`Optional<T>` takes the first result without checking for another one. Use `OptionalStruct<T>` when `T` is a value type.
+`Optional<T>` takes the first result without checking for another one.
+
+```csharp
+Album? album = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
+int? count = FindCount.Query<OptionalStruct<int>>(cnn); // value type uses the struct shape
+```
 
 ## Exactly one result
 
@@ -43,10 +48,11 @@ Album? album = FindAlbum.Query<SingleOrDefault<Album>>(cnn, new { albumId = 999 
 // No result becomes null. A second result raises RINKU4002.
 ```
 
-Use `SingleOrDefaultStruct<T>` for a value type.
+Reference and value types use parallel shapes.
 
 ```csharp
-SingleOrDefaultStruct<int> count = FindCount.Query<SingleOrDefaultStruct<int>>(cnn);
+Album? album = FindAlbum.Query<SingleOrDefault<Album>>(cnn, new { albumId = 999 });
+int? count = FindCount.Query<SingleOrDefaultStruct<int>>(cnn);
 ```
 
 ## Buffered results
@@ -124,11 +130,12 @@ Rinku includes these wrappers for result counts and database `NULL` values.
 
 | Required behavior | Reference-type shape | Value-type shape |
 | --- | --- | --- |
+| First result or none | `Optional<T>` | `OptionalStruct<T>` |
 | Present value, including `NULL` | `MaybeNull<T>` | `T?` |
-| No result or `NULL` | `OptionalNullable<T>` | `OptionalNullableStruct<T>` |
+| First result, none, or `NULL` | `OptionalNullable<T>` | `OptionalNullableStruct<T>` |
 | Exactly one result | `Single<T>` | `Single<T>` |
-| At most one result | `SingleOrDefault<T>` | `SingleOrDefaultStruct<T>` |
-| At most one result, including `NULL` | `SingleOrDefaultNullable<T>` | `SingleOrDefaultNullableStruct<T>` |
+| Zero or one result | `SingleOrDefault<T>` | `SingleOrDefaultStruct<T>` |
+| Zero or one result, including `NULL` | `SingleOrDefaultNullable<T>` | `SingleOrDefaultNullableStruct<T>` |
 
 An object that collapses through `[AbortOnNull]` reaches its containing result slot in the same way.
 

@@ -436,31 +436,15 @@ Set discovery-changing options during startup before the type is parsed.
 
 ### RINKU6001 no copy strategy
 
-The copier reached a type with no usable copy shape, such as a directly used interface, abstract type, type with no usable constructor, or multidimensional array. See [copying](../tracking/copying.md).
-
-```csharp
-public sealed class Grid {
-    [DeepCollection]
-    public int[,] Cells = new int[1, 1];
-}
-
-Grid snapshot = new Grid().Copy()!; // RINKU6001
-```
+The tracking materializer could not create a usable runtime shape for the requested
+item. Check the tracking contract and ensure every required member has a supported
+source or explicit runtime binding. See the [tracking overview](../tracking/index.md).
 
 ### RINKU6002 copy method not usable
 
-```csharp
-public class Report {
-    [CopyUsingMethod(nameof(CloneRow))]
-    public Row Value = new();
-
-    public Row CloneRow(int depth) => new();
-}
-
-public class Row { }
-```
-
-The named method must exist, take no parameters, and return the field type.
+The requested tracking member has a source method or property that does not match
+its declared value type. Bind a compatible member or provide a matching runtime
+capability.
 
 ### RINKU6003 no current value
 

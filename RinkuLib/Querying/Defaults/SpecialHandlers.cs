@@ -69,7 +69,7 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// </summary>
     /// <param name="targetType">The parameter object's type.</param>
     /// <param name="member">The member holding this handler's variable.</param>
-    public virtual Action<ILGenerator>? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member) => null;
+    public virtual Action<ILGenerator, int>? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member) => null;
     /// <summary>
     /// Updates parameters for a reused command from the value left by <see cref="SaveUse"/>.
     /// </summary>
@@ -130,7 +130,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
     /// <summary>Returns whether the value contains at least one item when it is a sequence.</summary>
     public override bool CanHandle(ref object? value) => SpreadUsage.HasElement(ref value);
     /// <inheritdoc/>
-    public override Action<ILGenerator>? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member)
+    public override Action<ILGenerator, int>? GetUsageEmitter(Type targetType, System.Reflection.MemberInfo member)
         => new SpreadUsageEmitter(targetType, member).Emit;
     /// <summary>
     /// Performs a differential update on the command. Adds, updates, or prunes 

@@ -130,7 +130,9 @@ See [grouping](../mapping/grouping.md) when the inferred boundary is not the int
 After the stream's enumerator is disposed, including when enumeration stops early.
 
 ```csharp
-IEnumerable<Album> albums = ReadAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command, new { moved = 0 });
+static readonly QueryCommand ReadAndCountAlbums = QueryCommand.FromProc("ReadAndCountAlbums", setupConnection);
+
+IEnumerable<Album> albums = ReadAndCountAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command);
 
 using (command) {
     using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
@@ -141,6 +143,14 @@ using (command) {
     int moved = command.GetOutputValue<int>("@moved");
 }
 ```
+
+## Where should a Dapper user start?
+
+Start with [Coming from Dapper](dapper.md), then follow the links for the operation or feature you need.
+
+## Does Tracking save changes to the database?
+
+No. Tracking keeps local original, edit, collection, validation, and metadata state. Persistence remains application code. See the [Tracking overview](../tracking/index.md).
 
 ## Which connection should be used with a transaction?
 

@@ -3,6 +3,7 @@ using System.Data;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Rinku.Querying;
+using Rinku.Querying.Parameters;
 using Rinku.Mapping.Parsers;
 
 namespace Rinku;
@@ -47,6 +48,24 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             }
         }
     }
+    /// <summary>Explicitly materializes missing default-capable parameters on the live command.</summary>
+    public readonly void SetDefaults() {
+        if (!QueryCommand.Parameters.HasDefaultSet)
+            return;
+        var infos = QueryCommand.Parameters._variablesInfo;
+        ref object? pVar = ref MemoryMarshal.GetArrayDataReference(Variables);
+        ref string pKeys = ref QueryCommand.Mapper.KeysStartPtr;
+        bool changed = false;
+        for (int i = 0; i < infos.Length; i++) {
+            ref var current = ref Unsafe.Add(ref pVar, i);
+            if (current is null && infos[i].HasDefaultSet) {
+                current = infos[i].SetDefault(Unsafe.Add(ref pKeys, i), Command);
+                changed = true;
+            }
+        }
+        if (changed)
+            QueryCommand.SetText(Command, QueryCommand.QueryText.Parse(Variables));
+    }
     /// <inheritdoc/>
     public readonly void Remove(int ind) {
         if (ind < 0)
@@ -66,7 +85,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
             QueryCommand.Parameters._specialHandlers[ind - QueryCommand.StartSpecialHandlers].Update(Command, ref val, null);
     }
     /// <inheritdoc/>
-    public readonly void Remove(string condition) 
+    public readonly void Remove(string condition)
         => Remove(QueryCommand.Mapper.GetIndex(condition));
     /// <inheritdoc/>
     public readonly void Remove(ReadOnlySpan<char> condition)
@@ -88,7 +107,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         return true;
     }
     /// <inheritdoc/>
-    public readonly void Use(int conditionIndex) 
+    public readonly void Use(int conditionIndex)
         => Variables[conditionIndex] = QueryBuilder.Used;
     /// <inheritdoc/>
     public bool UnUse(string condition) {
@@ -111,7 +130,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     public void UnUse(int conditionIndex)
         => Variables[conditionIndex] = null;
     /// <inheritdoc/>
-    public readonly bool Use(char charVariable, string variable, object? value) 
+    public readonly bool Use(char charVariable, string variable, object? value)
         => Use(QueryCommand.Mapper.GetIndex(charVariable, variable), value);
     /// <inheritdoc/>
     public readonly bool Use(string variable, object? value)
@@ -186,41 +205,50 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         Type type = parameterObj.GetType();
         var accessor = QueryCommand.GetUseWithAccessor(type.TypeHandle.Value, type);
         var values = RentUseWithValues();
+        bool[]? affected = null;
         try {
-            accessor.Invoke(parameterObj, values);
-            ApplyUseWithValues(values);
+            affected = accessor.InvokeObject(parameterObj, values, needTarget: true);
+            ApplyUseWithValues(values, affected);
         }
         finally { ReturnUseWithValues(values); }
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(T parameterObj) where T : notnull {
-        var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         var values = RentUseWithValues();
+        bool[]? affected = null;
         try {
-            if (!typeof(T).IsValueType)
-                accessor.Invoke(parameterObj!, values);
-            else {
-                var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
-                typed.InvokeTyped(ref parameterObj, values);
+            if (!typeof(T).IsValueType) {
+                var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
+                affected = accessor.InvokeObject(parameterObj, values, needTarget: true);
+                ApplyUseWithValues(values, affected);
             }
-            ApplyUseWithValues(values);
+            else {
+                var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
+                var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
+                affected = typed.InvokeTyped(ref parameterObj, values, needTarget: true);
+                ApplyUseWithValues(values, affected);
+            }
         }
         finally { ReturnUseWithValues(values); }
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {
-        var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         var values = RentUseWithValues();
+        bool[]? affected = null;
         try {
-            if (!typeof(T).IsValueType)
-                accessor.Invoke(parameterObj!, values);
-            else {
-                var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
-                typed.InvokeTyped(ref parameterObj, values);
+            if (!typeof(T).IsValueType) {
+                var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
+                affected = accessor.InvokeObject(parameterObj, values, needTarget: true);
+                ApplyUseWithValues(values, affected);
             }
-            ApplyUseWithValues(values);
+            else {
+                var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
+                var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
+                affected = typed.InvokeTyped(ref parameterObj, values, needTarget: true);
+                ApplyUseWithValues(values, affected);
+            }
         }
         finally { ReturnUseWithValues(values); }
     }
@@ -231,9 +259,10 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         return values;
     }
 
-    private readonly void ApplyUseWithValues(object?[] values) {
+    private readonly void ApplyUseWithValues(object?[] values, bool[] affected) {
         for (int i = 0; i < Variables.Length; i++)
-            Use(i, values[i]);
+            if (affected[i])
+                Use(i, values[i]);
         QueryCommand.SetText(Command, QueryCommand.QueryText.Parse(Variables));
     }
 

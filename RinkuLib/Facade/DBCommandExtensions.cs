@@ -357,6 +357,60 @@ public static class DBCommandExtensions {
                 }
             }
         }
+        /// <summary>Executes the command and maps its result to the supplied runtime type.</summary>
+        public object? Query(Type type, ICacheGivingParser cache, bool disposeCommand = true) {
+            ArgumentNullException.ThrowIfNull(type);
+            var makers = TypeParser.TypeParserMakers;
+            for (int i = 0; i < makers.Count; i++)
+                if (makers[i].TryColdStart(type, cmd, cache, disposeCommand, out var cold))
+                    return cold!;
+            var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = cache.Behavior;
+                if (wasClosed) { cnn.Open(); behavior |= CommandBehavior.CloseConnection; }
+                reader = cmd.ExecuteReader(behavior);
+                wasClosed = false;
+                var parser = cache.UpdateCache(cmd, reader);
+                var result = !reader.Read() ? parser.DefaultObject() : parser.ParseObject(reader).Result;
+                ResultSetDrainer.Drain(reader);
+                return result;
+            }
+            finally {
+                reader?.Dispose();
+                if (wasClosed && cnn.State != ConnectionState.Closed) cnn.Close();
+                if (disposeCommand) { cmd.Parameters.Clear(); cmd.Dispose(); }
+            }
+        }
+        /// <summary>Asynchronously executes the command and maps its result to the supplied runtime type.</summary>
+        public async Task<object?> QueryAsync(Type type, ICacheGivingParser cache, bool disposeCommand = true, CancellationToken ct = default) {
+            ArgumentNullException.ThrowIfNull(type);
+            var makers = TypeParser.TypeParserMakers;
+            for (int i = 0; i < makers.Count; i++)
+                if (makers[i].TryColdStartAsync(type, cmd, cache, disposeCommand, ct, out var cold))
+                    return await cold!.ConfigureAwait(false);
+            var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = cache.Behavior;
+                if (wasClosed) { await cnn.OpenAsync(ct).ConfigureAwait(false); behavior |= CommandBehavior.CloseConnection; }
+                reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                wasClosed = false;
+                var parser = await cache.UpdateCacheAsync(cmd, reader, ct).ConfigureAwait(false);
+                var result = !await reader.ReadAsync(ct).ConfigureAwait(false)
+                    ? parser.DefaultObject()
+                    : (await parser.ParseObjectAsync(reader, ct).ConfigureAwait(false)).Result;
+                await ResultSetDrainer.DrainAsync(reader, ct).ConfigureAwait(false);
+                return result;
+            }
+            finally {
+                reader?.Dispose();
+                if (wasClosed && cnn.State != ConnectionState.Closed) cnn.Close();
+                if (disposeCommand) { cmd.Parameters.Clear(); await cmd.DisposeAsync().ConfigureAwait(false); }
+            }
+        }
         /// <summary>
         /// Asynchronously executes the <see cref="DbCommand"/> and streams its rows as <typeparamref name="T"/>.
         /// </summary>
@@ -659,6 +713,40 @@ public static class DBCommandExtensions {
                 if (makers[i].TryColdStartAsync<T>(cmd, cache, disposeCommand, ct, out var cold))
                     return cold;
             return Task.FromResult(cmd.Query(cache, disposeCommand));
+        }
+        /// <summary>Executes the command and maps its result to the supplied runtime type.</summary>
+        public object? Query(Type type, ICacheGivingParser cache, bool disposeCommand = true) {
+            ArgumentNullException.ThrowIfNull(type);
+            var makers = TypeParser.TypeParserMakers;
+            for (int i = 0; i < makers.Count; i++)
+                if (makers[i].TryColdStart(type, cmd, cache, disposeCommand, out var cold))
+                    return cold!;
+            var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
+            var wasClosed = cnn.State != ConnectionState.Open;
+            DbDataReader? reader = null;
+            try {
+                var behavior = cache.Behavior;
+                if (wasClosed) { cnn.Open(); behavior |= CommandBehavior.CloseConnection; }
+                reader = WrappedBasicReader.Wrap(cmd.ExecuteReader(behavior));
+                wasClosed = false;
+                var parser = cache.UpdateCache(cmd, reader);
+                return !reader.Read() ? parser.DefaultObject() : parser.ParseObject(reader).Result;
+            }
+            finally {
+                reader?.Dispose();
+                if (wasClosed && cnn.State != ConnectionState.Closed) cnn.Close();
+                if (disposeCommand) { cmd.Parameters.Clear(); cmd.Dispose(); }
+            }
+        }
+        /// <summary>Asynchronously executes the command and maps its result to the supplied runtime type.</summary>
+        public Task<object?> QueryAsync(Type type, ICacheGivingParser cache, bool disposeCommand = true, CancellationToken ct = default) {
+            ArgumentNullException.ThrowIfNull(type);
+            if (cmd is DbCommand c) return c.QueryAsync(type, cache, disposeCommand, ct);
+            var makers = TypeParser.TypeParserMakers;
+            for (int i = 0; i < makers.Count; i++)
+                if (makers[i].TryColdStartAsync(type, cmd, cache, disposeCommand, ct, out var cold))
+                    return cold!;
+            return Task.FromResult(cmd.Query(type, cache, disposeCommand));
         }
     }
     /// <summary>Creates a command for the connection and applies the transaction and timeout.</summary>
