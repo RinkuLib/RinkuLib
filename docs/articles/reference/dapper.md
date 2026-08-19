@@ -31,7 +31,7 @@ IEnumerable<Album> streamed = cnn.Query<IEnumerable<Album>>(sql, parameters);
 
 
 ## Runtime result Type
-[Result shapes](../running-queries/result-shapes.md) and [Complete-result parsers](../customization/result-parsers.md)
+Compare runtime-type queries with the [result-shape rules](../running-queries/result-shapes.md) and [complete-result parsers](../customization/result-parsers.md).
 
 ```csharp
 Type albumType = typeof(Album);
@@ -58,7 +58,7 @@ object album = cnn.Query(singleType, sql, parameters);
 
 
 ## QueryFirst<T>
-[Result shapes](../running-queries/result-shapes.md)
+Use the [result-shape rules](../running-queries/result-shapes.md) to choose the corresponding Rinku result type.
 
 ```csharp
 const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
@@ -79,7 +79,7 @@ Album album = cnn.Query<Album>(sql, parameters);
 
 
 ## QueryFirstOrDefault<T>
-[Result shapes](../running-queries/result-shapes.md) and [Database NULL](../mapping/nulls.md)
+Use the [result-shape rules](../running-queries/result-shapes.md) and [database NULL guidance](../mapping/nulls.md) when choosing the equivalent Rinku shape.
 
 ```csharp
 const string albumSql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
@@ -122,7 +122,7 @@ int? nullableYear = cnn.Query<OptionalNullableStruct<int>>(yearSql, parameters);
 
 
 ## QuerySingle<T>
-[Result shapes](../running-queries/result-shapes.md)
+Use the [result-shape rules](../running-queries/result-shapes.md) to choose the corresponding Rinku result type.
 
 ```csharp
 const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
@@ -694,7 +694,7 @@ List<ExternalCustomer> customers = cnn.Query<List<ExternalCustomer>>(sql);
 
 ### MatchNamesWithUnderscores
 
-[Adapt names](../mapping/names.md)
+The [name adaptation guide](../mapping/names.md) covers the corresponding Rinku configuration.
 
 ```csharp
 const string sql = "SELECT customer_id, display_name FROM customers";
@@ -982,7 +982,7 @@ object parameters = new { artistId = 7 };
 using Dapper;
 
 // Dapper
-using GridReader results = cnn.QueryMultiple(sql, parameters);
+using var results = cnn.QueryMultiple(sql, parameters);
 
 Artist artist = results.ReadSingle<Artist>();
 List<Album> albums = results.Read<Album>().AsList();
@@ -1007,7 +1007,7 @@ Type artistType = typeof(Artist);
 using Dapper;
 
 // Dapper
-using GridReader results = cnn.QueryMultiple(sql, parameters);
+using var results = cnn.QueryMultiple(sql, parameters);
 IEnumerable<object> artists = results.Read(artistType);
 ```
 
