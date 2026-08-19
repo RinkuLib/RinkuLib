@@ -9,8 +9,7 @@ internal sealed class DictionaryParameterAccess {
     private readonly ParameterMemberAccess? _container;
     private readonly DictionaryShape _shape;
 
-    internal DictionaryParameterAccess(Type rootType, ParameterMemberAccess? container, DictionaryShape shape,
-        string key, string? fallbackKey, int depth) {
+    internal DictionaryParameterAccess(Type rootType, ParameterMemberAccess? container, DictionaryShape shape, string key, string? fallbackKey, int depth) {
         RootType = rootType;
         _container = container;
         _shape = shape;
@@ -26,15 +25,15 @@ internal sealed class DictionaryParameterAccess {
     internal Type ValueType => _shape.ValueType;
     internal bool IsNested => _container is not null;
 
-    internal LocalBuilder EmitTryGet(ILGenerator il, Label missing) {
+    internal LocalBuilder EmitTryGet(ILGenerator il, Label missing, int sourceArgument = 0) {
         if (_shape.TryGetValue is not null)
-            return EmitGenericTryGet(il, missing);
-        return EmitNonGenericTryGet(il, missing);
+            return EmitGenericTryGet(il, missing, sourceArgument);
+        return EmitNonGenericTryGet(il, missing, sourceArgument);
     }
 
-    private LocalBuilder EmitGenericTryGet(ILGenerator il, Label missing) {
+    private LocalBuilder EmitGenericTryGet(ILGenerator il, Label missing, int sourceArgument) {
         LocalBuilder dictionary = il.DeclareLocal(_shape.InterfaceType);
-        EmitDictionary(il, missing);
+        EmitDictionary(il, missing, sourceArgument);
         il.Emit(OpCodes.Castclass, _shape.InterfaceType);
         il.Emit(OpCodes.Stloc, dictionary);
 
@@ -42,9 +41,9 @@ internal sealed class DictionaryParameterAccess {
         Label found = il.DefineLabel();
         EmitGenericTryGet(il, dictionary, value, Key);
         il.Emit(OpCodes.Brtrue, found);
-        if (FallbackKey is null)
+        if (FallbackKey is null) {
             il.Emit(OpCodes.Br, missing);
-        else {
+        } else {
             EmitGenericTryGet(il, dictionary, value, FallbackKey);
             il.Emit(OpCodes.Brfalse, missing);
         }
@@ -59,18 +58,18 @@ internal sealed class DictionaryParameterAccess {
         il.Emit(OpCodes.Callvirt, _shape.TryGetValue!);
     }
 
-    private LocalBuilder EmitNonGenericTryGet(ILGenerator il, Label missing) {
+    private LocalBuilder EmitNonGenericTryGet(ILGenerator il, Label missing, int sourceArgument) {
         LocalBuilder dictionary = il.DeclareLocal(typeof(IDictionary));
-        EmitDictionary(il, missing);
+        EmitDictionary(il, missing, sourceArgument);
         il.Emit(OpCodes.Castclass, typeof(IDictionary));
         il.Emit(OpCodes.Stloc, dictionary);
 
         LocalBuilder value = il.DeclareLocal(typeof(object));
         Label found = il.DefineLabel();
         EmitNonGenericTryGet(il, dictionary, value, Key, found);
-        if (FallbackKey is null)
+        if (FallbackKey is null) {
             il.Emit(OpCodes.Br, missing);
-        else {
+        } else {
             EmitNonGenericTryGet(il, dictionary, value, FallbackKey, found);
             il.Emit(OpCodes.Br, missing);
         }
@@ -92,19 +91,20 @@ internal sealed class DictionaryParameterAccess {
         il.MarkLabel(next);
     }
 
-    private void EmitDictionary(ILGenerator il, Label missing) {
+    private void EmitDictionary(ILGenerator il, Label missing, int sourceArgument) {
         if (_container is null) {
             if (RootType.IsValueType) {
-                il.Emit(OpCodes.Ldarg_0);
+                AccessorEmitter.EmitSourceLoad(il, sourceArgument);
                 il.Emit(OpCodes.Ldobj, RootType);
                 il.Emit(OpCodes.Box, RootType);
             }
-            else
-                il.Emit(OpCodes.Ldarg_0);
+            else {
+                AccessorEmitter.EmitSourceLoad(il, sourceArgument);
+            }
             return;
         }
 
-        ParameterMemberAccess prepared = _container.Value.Prepare(il, missing);
+        ParameterMemberAccess prepared = _container.Value.Prepare(il, missing, sourceArgument);
         Type containerType = prepared.MemberType;
         prepared.EmitLoad(il);
 

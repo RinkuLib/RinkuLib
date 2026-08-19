@@ -95,9 +95,9 @@ public class DynaObjectArityTests {
         var dyna = Rows.ParseOne<DynaObject>(cols, row);
         for (int i = 0; i < arity; i++) {
             Assert.False(dyna.TryGet<Version>(i, out _));
-            if (i < 12)
+            if (i < 12) {
                 Assert.False(dyna.Set(i, new Version(1, 0)));
-            else {
+            } else {
                 Assert.True(dyna.Set(i, new Version(1, 0)));
                 Assert.Equal(new Version(1, 0), dyna.Get<Version>(i));
             }

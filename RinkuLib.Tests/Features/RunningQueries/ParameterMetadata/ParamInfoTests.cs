@@ -190,6 +190,24 @@ public class ParamInfoTests {
     }
 
     [Fact]
+    public void Directional_cache_identity_includes_default_policy() {
+        var simpleDefault = DirectionalDbParamCache.Get(ParameterDirection.InputOutput, DbType.Int32, true);
+        var simpleRequired = DirectionalDbParamCache.Get(ParameterDirection.InputOutput, DbType.Int32, false);
+        Assert.Same(simpleDefault, DirectionalDbParamCache.Get(ParameterDirection.InputOutput, DbType.Int32, true));
+        Assert.NotSame(simpleDefault, simpleRequired);
+
+        var sizedDefault = DirectionalSizedDbParamCache.Get(ParameterDirection.InputOutput, DbType.String, 40, true);
+        var sizedRequired = DirectionalSizedDbParamCache.Get(ParameterDirection.InputOutput, DbType.String, 40, false);
+        Assert.Same(sizedDefault, DirectionalSizedDbParamCache.Get(ParameterDirection.InputOutput, DbType.String, 40, true));
+        Assert.NotSame(sizedDefault, sizedRequired);
+
+        var scaledDefault = DirectionalScaledDbParamCache.Get(ParameterDirection.InputOutput, DbType.Decimal, 9, 2, true);
+        var scaledRequired = DirectionalScaledDbParamCache.Get(ParameterDirection.InputOutput, DbType.Decimal, 9, 2, false);
+        Assert.Same(scaledDefault, DirectionalScaledDbParamCache.Get(ParameterDirection.InputOutput, DbType.Decimal, 9, 2, true));
+        Assert.NotSame(scaledDefault, scaledRequired);
+    }
+
+    [Fact]
     public void Output_direction_can_materialize_a_default_without_a_value() {
         var info = new DirectionalDbParamCache(ParameterDirection.Output, DbType.Int32);
         Assert.True(info.HasDefaultSet);
@@ -315,7 +333,7 @@ public class ParamInfoTests {
         cmd.Parameters.Add("not a parameter");
         InferredDbParamCache.Instance.Use("@b", cmd, 2);
         Assert.True(DbParamInfo.RemoveSingle("@b", cmd));
-        Assert.False(DbParamInfo.RemoveSingle("@missing", cmd));  
+        Assert.False(DbParamInfo.RemoveSingle("@missing", cmd));
     }
 
     [Fact]
@@ -339,7 +357,7 @@ public class ParamInfoTests {
         var cache = new DefaultParamCache(cmd);
         Assert.Equal(["@a", "@b"], cache.EnumerateParameters().Select(kv => kv.Key));
         Refusals.Raises(ErrorCodes.InvalidParameterAtIndex, () => cache.MakeInfoAt(1));
-        Assert.True(cache.TryGetInfo("@b", out _));      
+        Assert.True(cache.TryGetInfo("@b", out _));
         Assert.False(cache.TryGetInfo("@nope", out _));
 
         var force = new ForceInferredParamCache(cmd);
@@ -381,11 +399,11 @@ public class ParamInfoTests {
         var cmd = Cmd();
         InferredDbParamCache.Instance.Use("@a", (IDbCommand)cmd, 1);
         InferredDbParamCache.Instance.Use("@b", (IDbCommand)cmd, 2);
-        Assert.True(DbParamInfo.RemoveSingle("@a", (IDbCommand)cmd));  
-        Assert.False(DbParamInfo.RemoveSingle("@a", (IDbCommand)cmd)); 
+        Assert.True(DbParamInfo.RemoveSingle("@a", (IDbCommand)cmd));
+        Assert.False(DbParamInfo.RemoveSingle("@a", (IDbCommand)cmd));
         InferredDbParamCache.Instance.Use("@c", (DbCommand)cmd, 3);
         Assert.True(DbParamInfo.RemoveSingle("@b", (DbCommand)cmd));
-        Assert.False(DbParamInfo.RemoveSingle("@zzz", (DbCommand)cmd)); 
+        Assert.False(DbParamInfo.RemoveSingle("@zzz", (DbCommand)cmd));
     }
 
     [Fact]

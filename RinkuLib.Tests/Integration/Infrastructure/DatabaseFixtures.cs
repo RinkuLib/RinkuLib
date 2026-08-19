@@ -73,12 +73,8 @@ public static class Connections {
             var c = GetMySQLContainer();
             return (c, c.GetConnectionString, (CnnMaker<T>)(object)new CnnMaker<MySql.Data.MySqlClient.MySqlConnection>(s => new MySql.Data.MySqlClient.MySqlConnection(s)));
         }
-        if (typeof(T) == typeof(SqliteConnection)) {
-            return (null, GetSQLiteConnectionString, (CnnMaker<T>)(object)new CnnMaker<SqliteConnection>(s => new SqliteConnection(s)));
-        }
-        if (typeof(T) == typeof(System.Data.SQLite.SQLiteConnection)) {
-            return (null, GetSQLiteConnectionString, (CnnMaker<T>)(object)new CnnMaker<System.Data.SQLite.SQLiteConnection>(s => new System.Data.SQLite.SQLiteConnection(s)));
-        }
+        if (typeof(T) == typeof(SqliteConnection)) return (null, GetSQLiteConnectionString, (CnnMaker<T>)(object)new CnnMaker<SqliteConnection>(s => new SqliteConnection(s)));
+        if (typeof(T) == typeof(System.Data.SQLite.SQLiteConnection)) return (null, GetSQLiteConnectionString, (CnnMaker<T>)(object)new CnnMaker<System.Data.SQLite.SQLiteConnection>(s => new System.Data.SQLite.SQLiteConnection(s)));
         if (typeof(T) == typeof(OracleConnection)) {
             var c = GetOracleContainer();
             return (c, c.GetConnectionString, (CnnMaker<T>)(object)new CnnMaker<OracleConnection>(s => new OracleConnection(s)));

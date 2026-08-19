@@ -67,7 +67,8 @@ public sealed class ReadWithAttribute : RuntimeTrackingMemberAttribute {
     /// <summary>Applies the read binding.</summary>
     public override void Apply(RuntimeTrackingMemberOptions member) {
         if (Type is null) member.ReadWith(MethodName);
-        else member.ReadWith(Type, MethodName);
+        else
+            member.ReadWith(Type, MethodName);
     }
 }
 
@@ -84,7 +85,8 @@ public sealed class WriteWithAttribute : RuntimeTrackingMemberAttribute {
     /// <summary>Applies the write binding.</summary>
     public override void Apply(RuntimeTrackingMemberOptions member) {
         if (Type is null) member.WriteWith(MethodName);
-        else member.WriteWith(Type, MethodName);
+        else
+            member.WriteWith(Type, MethodName);
     }
 }
 

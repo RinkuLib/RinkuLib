@@ -73,7 +73,8 @@ public sealed class RuntimeTrackingCapabilityBuilder {
         il.Emit(OpCodes.Ldfld, field);
         emitItem(il);
         if (propertyName is null) il.Emit(OpCodes.Ldnull);
-        else il.Emit(OpCodes.Ldstr, propertyName);
+        else
+            il.Emit(OpCodes.Ldstr, propertyName);
         il.Emit(OpCodes.Call, typeof(RuntimePropertyChangedHub).GetMethod(nameof(RuntimePropertyChangedHub.Raise))!);
     }
 

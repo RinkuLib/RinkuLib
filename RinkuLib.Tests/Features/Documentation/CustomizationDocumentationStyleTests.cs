@@ -37,8 +37,9 @@ public class CustomizationDocumentationStyleTests {
                     CheckParagraph(file, paragraph);
                     paragraph.Clear();
                 }
-                else
+                else {
                     paragraph.Add(line.Trim());
+                }
             }
             CheckParagraph(file, paragraph);
         }

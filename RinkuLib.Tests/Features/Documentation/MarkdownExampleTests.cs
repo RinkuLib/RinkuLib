@@ -238,8 +238,7 @@ internal static class ExampleVerifier {
             {
                 {{declarations}}
 
-                void Run()
-                {
+                void Run() {
                     {{statements}}
                 }
             }
@@ -561,8 +560,7 @@ internal static class ExampleCompiler {
                 {
                     ITypeParser<object>? retainedParser;
 
-                    void Register()
-                    {
+                    void Register() {
                         {{block.Content}}
                     }
                 }
@@ -711,8 +709,7 @@ internal static class ExampleCompiler {
                     {{pageDeclarations}}
                     {{declarations}}
 
-                    public async Task<dynamic> Run()
-                    {
+                    public async Task<dynamic> Run() {
                         {{tryPrefix}}
                         {{statements}}
                         return null!;

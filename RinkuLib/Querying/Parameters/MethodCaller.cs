@@ -179,8 +179,7 @@ public static class MethodCaller {
     private static Exception CreateMissingParameterException(string name)
         => new InvalidOperationException($"Mapped method parameter '{name}' is not currently usable from the supplied source.");
 
-    private static int[] ResolveCallerBindings(ParameterInfo[] delegateParameters, ParameterInfo[] targetParameters,
-        CallerParameter[] configurations) {
+    private static int[] ResolveCallerBindings(ParameterInfo[] delegateParameters, ParameterInfo[] targetParameters, CallerParameter[] configurations) {
         var targetBindings = new int[targetParameters.Length];
         Array.Fill(targetBindings, -1);
         int callerCount = delegateParameters.Length - 1;
@@ -238,8 +237,7 @@ public static class MethodCaller {
         return -1;
     }
 
-    private static void ValidateMappedBindings(ParameterAccessorGenerator.StackAccessor accessor,
-        ParameterInfo[] targetParameters, MethodArgumentBinding[] bindings, Type sourceType, MethodInfo method) {
+    private static void ValidateMappedBindings(ParameterAccessorGenerator.StackAccessor accessor, ParameterInfo[] targetParameters, MethodArgumentBinding[] bindings, Type sourceType, MethodInfo method) {
         for (int i = 0; i < bindings.Length; i++) {
             if (!bindings[i].IsMapped) continue;
             Type? valueType = accessor.GetValueType(bindings[i].Index);

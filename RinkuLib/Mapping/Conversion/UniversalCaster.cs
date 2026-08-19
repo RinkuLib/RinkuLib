@@ -211,8 +211,7 @@ internal static class CasterEmit {
         if (nullT is not null) {
             il.Emit(OpCodes.Newobj, nullT.GetConstructor([cT])!);
             il.Emit(OpCodes.Stobj, nullT);
-        }
-        else {
+        } else {
             Store(il, cT);
         }
     }
@@ -315,8 +314,7 @@ internal static class CasterEmit {
         il.Emit(OpCodes.Ldarg_1);
         if (type.IsValueType) {
             il.Emit(OpCodes.Initobj, type);
-        }
-        else {
+        } else {
             il.Emit(OpCodes.Ldnull);
             il.Emit(OpCodes.Stind_Ref);
         }

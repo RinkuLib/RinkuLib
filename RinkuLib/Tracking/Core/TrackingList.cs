@@ -148,7 +148,8 @@ public sealed class TrackingList<T> : IList<T>, IReadOnlyList<T>, IList, IBindin
         T item = _items[oldIndex];
         if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Move(oldIndex, newIndex, _count);
         if (oldIndex < newIndex) Array.Copy(_items, oldIndex + 1, _items, oldIndex, newIndex - oldIndex);
-        else Array.Copy(_items, newIndex, _items, newIndex + 1, oldIndex - newIndex);
+        else
+            Array.Copy(_items, newIndex, _items, newIndex + 1, oldIndex - newIndex);
         _items[newIndex] = item;
         UpdatePendingAfterMove(oldIndex, newIndex);
         _version++;

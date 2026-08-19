@@ -48,8 +48,8 @@ internal class SpreadUsageEmitter(Type targetType, MemberInfo member) {
     private static readonly MethodInfo HasElementMethod =
         typeof(SpreadUsage).GetMethod(nameof(SpreadUsage.HasElement), [typeof(object)])!;
 
-    public void Emit(ILGenerator il) {
-        AccessorEmitter.EmitMemberLoad(il, TargetType, _member);
+    public void Emit(ILGenerator il, int sourceArgument) {
+        AccessorEmitter.EmitMemberLoad(il, TargetType, _member, sourceArgument);
         Type mType = _member is FieldInfo f ? f.FieldType : ((PropertyInfo)_member).PropertyType;
         if (mType.IsValueType)
             il.Emit(OpCodes.Box, mType);

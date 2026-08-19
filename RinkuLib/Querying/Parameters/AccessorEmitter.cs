@@ -6,14 +6,27 @@ using Rinku.Querying;
 
 namespace Rinku.Querying.Parameters;
 
-/// <summary>Emits one direct parameter member through both parameter-object execution paths.</summary>
+/// <summary>Provides the generated argument and mask state needed by a <c>UseWith</c> emitter.</summary>
+public readonly struct UseWithEmissionContext(int sourceArgument, int valuesArgument, LocalBuilder affected, bool[] generationMask) {
+    /// <summary>Gets the generated method argument containing the source parameter object.</summary>
+    public int SourceArgument { get; } = sourceArgument;
+    /// <summary>Gets the generated method argument containing the destination values.</summary>
+    public int ValuesArgument { get; } = valuesArgument;
+    /// <summary>Gets the local containing the runtime affected mask.</summary>
+    public LocalBuilder Affected { get; } = affected;
+    /// <summary>Gets the generation-time mask that describes possible writes.</summary>
+    public bool[] GenerationMask { get; } = generationMask;
+}
+
+/// <summary>Emits custom access rules for individual parameter members.</summary>
 public interface IAccessorEmitter {
     /// <summary>Emits the direct parameter binding path.</summary>
     void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member,
         LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue);
 
     /// <summary>Emits the value-array path used by <c>UseWith</c>.</summary>
-    void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue);
+    void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue,
+        UseWithEmissionContext context);
 
     /// <summary>Emits whether the member is currently usable, leaving a <see cref="bool"/> on the IL stack.</summary>
     void EmitStackUsage(ILGenerator il, Type type, MemberInfo member)
@@ -41,7 +54,8 @@ public interface IPathAccessorEmitter {
         LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue);
 
     /// <summary>Emits the value-array path used by <c>UseWith</c>.</summary>
-    void EmitUseWith(ILGenerator il, int index, ParameterMemberAccess member, bool bindValue);
+    void EmitUseWith(ILGenerator il, int index, ParameterMemberAccess member, bool bindValue,
+        UseWithEmissionContext context);
 
     /// <summary>Emits whether the resolved value is currently usable, leaving a <see cref="bool"/> on the IL stack.</summary>
     void EmitStackUsage(ILGenerator il, ParameterMemberAccess member);
@@ -62,7 +76,8 @@ public interface ITypeAccessorEmitter {
     void Emit(ILGenerator il, int index, string key, Type type, LocalBuilder? handlerValues,
         int handlerIndex, bool handlerValue, bool bindValue);
     /// <summary>Emits the value-array path used by <c>UseWith</c>.</summary>
-    void EmitUseWith(ILGenerator il, int index, Type type, bool bindValue);
+    void EmitUseWith(ILGenerator il, int index, Type type, bool bindValue,
+        UseWithEmissionContext context);
     /// <summary>Emits whether the type-level value is currently usable, leaving a <see cref="bool"/> on the IL stack.</summary>
     void EmitStackUsage(ILGenerator il, Type type);
     /// <summary>Emits the raw typed type-level value directly onto the IL stack.</summary>
@@ -79,40 +94,39 @@ public abstract class AccessorEmitterBase : IAccessorEmitter {
     public virtual void Validate(Type type, MemberInfo member) { }
 
     /// <summary>Emits the condition that decides whether this key is usable.</summary>
-    protected abstract void EmitCondition(ILGenerator il, Type type, MemberInfo member);
+    protected abstract void EmitCondition(ILGenerator il, Type type, MemberInfo member, int sourceArgument);
 
     /// <summary>Emits the raw typed source value.</summary>
-    protected abstract void EmitValue(ILGenerator il, Type type, MemberInfo member);
+    protected abstract void EmitValue(ILGenerator il, Type type, MemberInfo member, int sourceArgument);
 
     /// <summary>The raw type emitted by <see cref="EmitValue"/>.</summary>
     protected virtual Type GetValueType(Type type, MemberInfo member) => ParameterMemberAccess.GetMemberType(member);
 
     /// <summary>Emits the object value consumed by command binding and <c>UseWith</c>.</summary>
-    protected virtual void EmitParameterValue(ILGenerator il, Type type, MemberInfo member) {
-        EmitValue(il, type, member);
+    protected virtual void EmitParameterValue(ILGenerator il, Type type, MemberInfo member, int sourceArgument) {
+        EmitValue(il, type, member, sourceArgument);
     }
 
     /// <inheritdoc/>
-    public void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member,
-        LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue) {
+    public void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member, LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue) {
         AccessorEmitter.EmitSlot(il, index, key, handlerValues, handlerIndex,
             handlerValue, bindValue,
-            x => EmitCondition(x, type, member),
-            x => EmitParameterValue(x, type, member));
+            x => EmitCondition(x, type, member, 0),
+            x => EmitParameterValue(x, type, member, 0));
     }
 
     /// <inheritdoc/>
-    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue) {
+    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue, UseWithEmissionContext context) {
         AccessorEmitter.EmitUseWithSlot(il, index, bindValue,
-            x => EmitCondition(x, type, member),
-            x => EmitParameterValue(x, type, member));
+            x => EmitCondition(x, type, member, context.SourceArgument),
+            x => EmitParameterValue(x, type, member, context.SourceArgument), context);
     }
 
     /// <inheritdoc/>
-    public void EmitStackUsage(ILGenerator il, Type type, MemberInfo member) => EmitCondition(il, type, member);
+    public void EmitStackUsage(ILGenerator il, Type type, MemberInfo member) => EmitCondition(il, type, member, 0);
 
     /// <inheritdoc/>
-    public void EmitStackValue(ILGenerator il, Type type, MemberInfo member) => EmitValue(il, type, member);
+    public void EmitStackValue(ILGenerator il, Type type, MemberInfo member) => EmitValue(il, type, member, 0);
 
     /// <inheritdoc/>
     public Type GetStackType(Type type, MemberInfo member) => GetValueType(type, member);
@@ -142,8 +156,7 @@ public abstract class PathAccessorEmitterBase : IAccessorEmitter, IPathAccessorE
     }
 
     /// <inheritdoc/>
-    public void Emit(ILGenerator il, int index, string key, ParameterMemberAccess member,
-        LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue) {
+    public void Emit(ILGenerator il, int index, string key, ParameterMemberAccess member, LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue) {
         AccessorEmitter.EmitSlot(il, index, key, member, handlerValues, handlerIndex,
             handlerValue, bindValue,
             static (self, x, m) => self.EmitCondition(x, m),
@@ -151,10 +164,10 @@ public abstract class PathAccessorEmitterBase : IAccessorEmitter, IPathAccessorE
     }
 
     /// <inheritdoc/>
-    public void EmitUseWith(ILGenerator il, int index, ParameterMemberAccess member, bool bindValue) {
+    public void EmitUseWith(ILGenerator il, int index, ParameterMemberAccess member, bool bindValue, UseWithEmissionContext context) {
         AccessorEmitter.EmitUseWithSlot(il, index, bindValue, member,
             static (self, x, m) => self.EmitCondition(x, m),
-            static (self, x, m) => self.EmitParameterValue(x, m), this);
+            static (self, x, m) => self.EmitParameterValue(x, m), this, context);
     }
 
     /// <inheritdoc/>
@@ -177,8 +190,8 @@ public abstract class PathAccessorEmitterBase : IAccessorEmitter, IPathAccessorE
             handlerIndex, handlerValue, bindValue);
 
     /// <inheritdoc/>
-    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue)
-        => EmitUseWith(il, index, new ParameterMemberAccess(type, [member]), bindValue);
+    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue, UseWithEmissionContext context)
+        => EmitUseWith(il, index, new ParameterMemberAccess(type, [member]), bindValue, context);
 
     /// <inheritdoc/>
     public void EmitStackUsage(ILGenerator il, Type type, MemberInfo member)
@@ -211,8 +224,7 @@ public abstract class TypeAccessorEmitterBase : ITypeAccessorEmitter {
     }
 
     /// <inheritdoc/>
-    public void Emit(ILGenerator il, int index, string key, Type type, LocalBuilder? handlerValues,
-        int handlerIndex, bool handlerValue, bool bindValue) {
+    public void Emit(ILGenerator il, int index, string key, Type type, LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue) {
         AccessorEmitter.EmitSlot(il, index, key, handlerValues, handlerIndex,
             handlerValue, bindValue,
             x => EmitCondition(x, type),
@@ -220,10 +232,10 @@ public abstract class TypeAccessorEmitterBase : ITypeAccessorEmitter {
     }
 
     /// <inheritdoc/>
-    public void EmitUseWith(ILGenerator il, int index, Type type, bool bindValue) {
+    public void EmitUseWith(ILGenerator il, int index, Type type, bool bindValue, UseWithEmissionContext context) {
         AccessorEmitter.EmitUseWithSlot(il, index, bindValue,
             x => EmitCondition(x, type),
-            x => EmitParameterValue(x, type));
+            x => EmitParameterValue(x, type), context);
     }
 
     /// <inheritdoc/>
@@ -332,26 +344,27 @@ public static class AccessorEmitter {
     }
 
     /// <summary>Emits one value-array binding slot.</summary>
-    public static void EmitUseWithSlot(ILGenerator il, int index, bool bindValue,
-        Action<ILGenerator> condition, Action<ILGenerator> value) {
-        ClearUseWithSlot(il, index);
+    public static void EmitUseWithSlot(ILGenerator il, int index, bool bindValue, Action<ILGenerator> condition, Action<ILGenerator> value, UseWithEmissionContext context) {
+        context.GenerationMask[index] = true;
+        ClearUseWithSlot(il, index, context);
         var skip = il.DefineLabel();
         condition(il);
         il.Emit(OpCodes.Brfalse, skip);
-        EmitUseWithValue(il, index, bindValue, value);
+        EmitUseWithValue(il, index, bindValue, value, context);
         il.MarkLabel(skip);
     }
 
     // Emits one nested/path-aware value-array binding slot.
     internal static void EmitUseWithSlot(ILGenerator il, int index, bool bindValue, ParameterMemberAccess member,
         Action<ILGenerator, ParameterMemberAccess> condition,
-        Action<ILGenerator, ParameterMemberAccess> value) {
-        ClearUseWithSlot(il, index);
+        Action<ILGenerator, ParameterMemberAccess> value, UseWithEmissionContext context) {
+        context.GenerationMask[index] = true;
+        ClearUseWithSlot(il, index, context);
         var skip = il.DefineLabel();
-        ParameterMemberAccess prepared = member.Prepare(il, skip);
+        ParameterMemberAccess prepared = member.Prepare(il, skip, context.SourceArgument);
         condition(il, prepared);
         il.Emit(OpCodes.Brfalse, skip);
-        EmitUseWithValue(il, index, bindValue, x => value(x, prepared));
+        EmitUseWithValue(il, index, bindValue, x => value(x, prepared), context);
         il.MarkLabel(skip);
     }
 
@@ -359,21 +372,32 @@ public static class AccessorEmitter {
     internal static void EmitUseWithSlot<TEmitter>(ILGenerator il, int index, bool bindValue,
         ParameterMemberAccess member,
         Action<TEmitter, ILGenerator, ParameterMemberAccess> condition,
-        Action<TEmitter, ILGenerator, ParameterMemberAccess> value, TEmitter emitter) {
-        ClearUseWithSlot(il, index);
+        Action<TEmitter, ILGenerator, ParameterMemberAccess> value, TEmitter emitter,
+        UseWithEmissionContext context) {
+        context.GenerationMask[index] = true;
+        ClearUseWithSlot(il, index, context);
         var skip = il.DefineLabel();
-        ParameterMemberAccess prepared = member.Prepare(il, skip);
+        ParameterMemberAccess prepared = member.Prepare(il, skip, context.SourceArgument);
         condition(emitter, il, prepared);
         il.Emit(OpCodes.Brfalse, skip);
-        EmitUseWithValue(il, index, bindValue, x => value(emitter, x, prepared));
+        EmitUseWithValue(il, index, bindValue, x => value(emitter, x, prepared), context);
         il.MarkLabel(skip);
     }
 
-    internal static void ClearUseWithSlot(ILGenerator il, int index) {
-        il.Emit(OpCodes.Ldarg_1);
+    internal static void ClearUseWithSlot(ILGenerator il, int index, UseWithEmissionContext context) {
+        il.Emit(OpCodes.Ldarg, context.ValuesArgument);
         il.Emit(OpCodes.Ldc_I4, index);
         il.Emit(OpCodes.Ldnull);
         il.Emit(OpCodes.Stelem_Ref);
+    }
+
+    /// <summary>Emits a dynamic affected-slot write and records that the generated accessor may write dynamically.</summary>
+    public static void MarkUseWithSlot(ILGenerator il, int index, UseWithEmissionContext context) {
+        context.GenerationMask[^1] = true;
+        il.Emit(OpCodes.Ldloc, context.Affected);
+        il.Emit(OpCodes.Ldc_I4, index);
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Stelem_I1);
     }
 
     internal static void EmitDirectValue(ILGenerator il, int index, string key,
@@ -403,11 +427,12 @@ public static class AccessorEmitter {
         il.Emit(OpCodes.Pop);
     }
 
-    internal static void EmitUseWithValue(ILGenerator il, int index, bool bindValue, Action<ILGenerator> value) {
-        il.Emit(OpCodes.Ldarg_1);
+    internal static void EmitUseWithValue(ILGenerator il, int index, bool bindValue, Action<ILGenerator> value, UseWithEmissionContext context) {
+        il.Emit(OpCodes.Ldarg, context.ValuesArgument);
         il.Emit(OpCodes.Ldc_I4, index);
         if (bindValue) value(il);
-        else il.Emit(OpCodes.Ldsfld, UsageMarker);
+        else
+            il.Emit(OpCodes.Ldsfld, UsageMarker);
         il.Emit(OpCodes.Stelem_Ref);
     }
 
@@ -415,12 +440,14 @@ public static class AccessorEmitter {
     /// Helper to load the instance and access the specific direct member.
     /// Handles the difference between value types and class references.
     /// </summary>
-    public static void EmitMemberLoad(ILGenerator il, Type targetType, MemberInfo member) {
+    public static void EmitMemberLoad(ILGenerator il, Type targetType, MemberInfo member, int sourceArgument = 0) {
         if (member is FieldInfo field) {
-            if (field.IsStatic)
+            if (field.IsStatic) {
                 il.Emit(OpCodes.Ldsfld, field);
-            else {
-                il.Emit(OpCodes.Ldarg_0);
+            } else {
+                il.Emit(OpCodes.Ldarg, sourceArgument);
+                if (!targetType.IsValueType && targetType != typeof(object))
+                    il.Emit(OpCodes.Castclass, targetType);
                 il.Emit(OpCodes.Ldfld, field);
             }
             return;
@@ -432,13 +459,18 @@ public static class AccessorEmitter {
         if (meth is null)
             throw new RinkuConfigurationException(ErrorCodes.UnusableMember,
                 "The member must be a readable field, property or method.");
-        if (meth.IsStatic)
+        if (meth.IsStatic) {
             il.Emit(OpCodes.Call, meth);
-        else {
-            il.Emit(OpCodes.Ldarg_0);
+        } else {
+            il.Emit(OpCodes.Ldarg, sourceArgument);
+            if (!targetType.IsValueType && targetType != typeof(object))
+                il.Emit(OpCodes.Castclass, targetType);
             il.Emit(targetType.IsValueType ? OpCodes.Call : OpCodes.Callvirt, meth);
         }
     }
+
+    internal static void EmitSourceLoad(ILGenerator il, int sourceArgument = 0)
+        => il.Emit(OpCodes.Ldarg, sourceArgument);
 
     internal static void EmitDefaultStackUsage(ILGenerator il, Type targetType, MemberInfo member) {
         Type memberType = ParameterMemberAccess.GetMemberType(member);
@@ -469,8 +501,8 @@ public static class AccessorEmitter {
     }
 
     /// <summary>Loads a direct member value and boxes it when the member type is a value type.</summary>
-    public static void EmitMemberValue(ILGenerator il, Type targetType, MemberInfo member) {
-        EmitMemberLoad(il, targetType, member);
+    public static void EmitMemberValue(ILGenerator il, Type targetType, MemberInfo member, int sourceArgument = 0) {
+        EmitMemberLoad(il, targetType, member, sourceArgument);
         BoxIfNeeded(il, ParameterMemberAccess.GetMemberType(member));
     }
 }

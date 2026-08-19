@@ -19,8 +19,7 @@ public static class TrackingExtensions {
         => TrackingItemMaterializer<TOriginal, TEdit>.Create(original);
 
     /// <summary>Creates a tracking list.</summary>
-    public static TrackingList<TEdit> ToTrackingList<TOriginal, TEdit>(this IEnumerable<TOriginal> originals,
-        int initialCapacity = 0, IEqualityComparer<TEdit>? comparer = null) {
+    public static TrackingList<TEdit> ToTrackingList<TOriginal, TEdit>(this IEnumerable<TOriginal> originals, int initialCapacity = 0, IEqualityComparer<TEdit>? comparer = null) {
         ArgumentNullException.ThrowIfNull(originals);
         int capacity = originals.TryGetNonEnumeratedCount(out int count) ? Math.Max(count, initialCapacity) : initialCapacity;
         Func<TOriginal, TEdit> create = TrackingItemMaterializer<TOriginal, TEdit>.Creator;
@@ -35,8 +34,7 @@ public static class TrackingExtensions {
     }
 
     /// <summary>Creates a tracking list with a selector.</summary>
-    public static TrackingList<TEdit> ToTrackingList<TOriginal, TEdit>(this IEnumerable<TOriginal> originals,
-        Func<TOriginal, TEdit> selector, int initialCapacity = 0, IEqualityComparer<TEdit>? comparer = null) {
+    public static TrackingList<TEdit> ToTrackingList<TOriginal, TEdit>(this IEnumerable<TOriginal> originals, Func<TOriginal, TEdit> selector, int initialCapacity = 0, IEqualityComparer<TEdit>? comparer = null) {
         ArgumentNullException.ThrowIfNull(originals);
         ArgumentNullException.ThrowIfNull(selector);
         int capacity = originals.TryGetNonEnumeratedCount(out int count) ? Math.Max(count, initialCapacity) : initialCapacity;

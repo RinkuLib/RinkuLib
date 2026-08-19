@@ -15,8 +15,11 @@ public interface ICache {
 }
 /// <summary>Records parameter settings and gets a parser that accepts the reader columns.</summary>
 public interface ICacheGivingParser {
+    /// <summary>Gets the reader behavior required by the parser.</summary>
     CommandBehavior Behavior { get; }
+    /// <summary>Updates the parser from a completed command and reader.</summary>
     ITypeParser UpdateCache(IDbCommand cmd, DbDataReader reader);
+    /// <summary>Updates the parser asynchronously from a completed command and reader.</summary>
     ValueTask<ITypeParser> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default);
 }
 /// <inheritdoc cref="ICacheGivingParser"/>
@@ -34,13 +37,21 @@ public interface ICacheGivingParser<T> : ICacheGivingParser {
 }
 /// <summary>Describes a parser that reads query rows. Use <see cref="ITypeParser{T}"/> for a typed result.</summary>
 public interface ITypeParser : IDisposable {
+    /// <summary>Gets the result type produced by this parser.</summary>
     Type Type { get; }
+    /// <summary>Creates the result returned when no row is available.</summary>
     object? DefaultObject();
+    /// <summary>Parses the current reader row.</summary>
     (bool CanContinue, object? Result) ParseObject(DbDataReader reader);
+    /// <summary>Parses the current reader row asynchronously.</summary>
     ValueTask<(bool CanContinue, object? Result)> ParseObjectAsync(DbDataReader reader, CancellationToken ct = default);
+    /// <summary>Executes a command and parses its result.</summary>
     object? QueryObject(DbCommand command, ICache? cache = null, bool disposeCommand = false);
+    /// <summary>Executes a command and parses its result.</summary>
     object? QueryObject(IDbCommand command, ICache? cache = null, bool disposeCommand = false);
+    /// <summary>Executes a command and parses its result asynchronously.</summary>
     Task<object?> QueryObjectAsync(DbCommand command, ICache? cache = null, bool disposeCommand = false, CancellationToken ct = default);
+    /// <summary>Executes a command and parses its result asynchronously.</summary>
     Task<object?> QueryObjectAsync(IDbCommand command, ICache? cache = null, bool disposeCommand = false, CancellationToken ct = default);
     /// <summary>Releases resources owned directly by this parser. Leave the default when it owns none.</summary>
     /// <remarks>

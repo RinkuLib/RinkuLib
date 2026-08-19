@@ -16,8 +16,7 @@ public sealed class RuntimeTrackingTypeDefinition<TOriginal> {
     private readonly List<IRuntimeTrackingMember> _members = [];
     private readonly List<IRuntimeTrackingCapability<TOriginal>> _capabilities = [];
 
-    internal RuntimeTrackingTypeDefinition(Type exposedContract, IEnumerable<IRuntimeTrackingMember> members,
-        IEnumerable<IRuntimeTrackingCapability<TOriginal>> capabilities, bool dynamicAccess, bool notifications) {
+    internal RuntimeTrackingTypeDefinition(Type exposedContract, IEnumerable<IRuntimeTrackingMember> members, IEnumerable<IRuntimeTrackingCapability<TOriginal>> capabilities, bool dynamicAccess, bool notifications) {
         ExposedContract = exposedContract;
         DynamicAccess = dynamicAccess;
         Notifications = notifications;

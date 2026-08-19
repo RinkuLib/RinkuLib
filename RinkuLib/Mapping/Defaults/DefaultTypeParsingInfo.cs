@@ -157,9 +157,9 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                     infoList.Add(mci);
             }
             if (memberParsers.Count > 0) {
-                if (Members.Length == 0)
+                if (Members.Length == 0) {
                     Members = [.. memberParsers];
-                else {
+                } else {
                     var mp = CollectionsMarshal.AsSpan(memberParsers);
                     var result = new MemberParser[Members.Length + mp.Length];
                     Array.Copy(Members, 0, result, 0, Members.Length);
@@ -169,9 +169,9 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             }
             if (infoList.Count > 0) {
                 var infos = CollectionsMarshal.AsSpan(infoList);
-                if (MCIs.Length == 0)
+                if (MCIs.Length == 0) {
                     MCIs = MethodCtorInfo.GetOrderedInfos(infos);
-                else {
+                } else {
                     var result = new MethodCtorInfo[MCIs.Length + infos.Length];
                     Array.Copy(MCIs, 0, result, 0, MCIs.Length);
                     infos.CopyTo(result.AsSpan(MCIs.Length));

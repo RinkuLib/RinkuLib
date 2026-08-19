@@ -143,7 +143,8 @@ internal struct StructuralOriginMap {
         ulong bit = 1UL << (index & 63);
         ref ulong word = ref _bits![index >> 6];
         if (value) word |= bit;
-        else word &= ~bit;
+        else
+            word &= ~bit;
     }
 
     private void InsertBit(int index, bool value, int oldCount) {
@@ -175,7 +176,8 @@ internal struct StructuralOriginMap {
                 ulong lowMask = offset == 0 ? 0 : (1UL << offset) - 1;
                 _bits[word] = (current & lowMask) | (shifted & ~lowMask);
             }
-            else _bits[word] = shifted;
+        else
+            _bits[word] = shifted;
         }
 
         ulong last = _bits![lastWord], lastShifted = last >> 1;
@@ -183,7 +185,8 @@ internal struct StructuralOriginMap {
             ulong lowMask = offset == 0 ? 0 : (1UL << offset) - 1;
             _bits[lastWord] = (last & lowMask) | (lastShifted & ~lowMask);
         }
-        else _bits[lastWord] = lastShifted;
+        else
+            _bits[lastWord] = lastShifted;
 
         ClearUnused(oldCount - 1);
         return removed;

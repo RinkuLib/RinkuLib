@@ -175,7 +175,8 @@ public sealed class RuntimeTrackingMemberOptions {
         EnsureOriginalBuilder();
         MemberInfo member = ResolveMember(memberName, readable: true);
         if (member is PropertyInfo property) _builder!.ReadFrom(property);
-        else _builder!.ReadFrom((FieldInfo)member);
+        else
+            _builder!.ReadFrom((FieldInfo)member);
         _runtimeValue = false;
         return this;
     }
@@ -187,7 +188,8 @@ public sealed class RuntimeTrackingMemberOptions {
         EnsureOriginalBuilder();
         MemberInfo member = ResolveMember(memberName, readable: false);
         if (member is PropertyInfo property) _builder!.WriteWith(property);
-        else _builder!.WriteWith((FieldInfo)member);
+        else
+            _builder!.WriteWith((FieldInfo)member);
         _runtimeValue = false;
         return this;
     }

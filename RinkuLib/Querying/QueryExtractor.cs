@@ -302,9 +302,7 @@ internal unsafe ref struct QueryExtractor {
         }
         UpdateConditionsEnd(BuilderInd, false, 1);
         UpdateCurrentStart(BuilderInd, 1);
-        if (SelectExtractionParMap == ParMap) {
-            Conditions.Add(CondInfo.NewSelect(BuilderInd, ParMap, 1));
-        }
+        if (SelectExtractionParMap == ParMap) Conditions.Add(CondInfo.NewSelect(BuilderInd, ParMap, 1));
     }
 
     private bool TryManageVariable(char variableChar) {
@@ -329,9 +327,9 @@ internal unsafe ref struct QueryExtractor {
             varLength -= 2;
         }
         var cond = new string(Builder, varIndex, varLength);
-        if (isRequired)
+        if (isRequired) {
             Conditions.Add(CondInfo.NewRequired(cond, type, varIndex));
-        else {
+        } else {
             var decal = GetDecalToSectionLevel(ParMap);
             Conditions.Add(CondInfo.NewOptional(cond, type, varIndex, CurrentStart[-decal], ParMap >> decal, CurrentExcess[-decal], false));
         }
@@ -384,11 +382,11 @@ internal unsafe ref struct QueryExtractor {
         CurrentChar += 2;
         SkipWhiteSpace();
         Debug.Assert(nbCond > 0, "the marker loop always collects at least one condition");
-        if (MatchSection(CurrentChar, out var secLen)) { }
-        else if (*CurrentChar == OptionalVariableIdentifier && IsSelect(CurrentChar + 1))
+        if (MatchSection(CurrentChar, out var secLen)) { } else if (*CurrentChar == OptionalVariableIdentifier && IsSelect(CurrentChar + 1)) {
             secLen = 6;
-        else
+        } else {
             return true;
+        }
         LastCondSectionLength = (uint)nbCond << 16 | (uint)secLen;
         ind = BuilderInd - 1;
         while (ind > 0 && char.IsWhiteSpace(Builder[ind - 1]) && char.IsWhiteSpace(Builder[ind]))

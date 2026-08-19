@@ -7,7 +7,7 @@ namespace Rinku.Querying.Defaults;
 
 /// <summary>
 /// Reads stored procedure parameter names, types, sizes, and directions from the database. Use
-/// <see cref="QueryCommand.FromProc(string, IDbConnection)"/> while creating a command.
+/// <see cref="QueryCommand.FromProc(string, IDbConnection, bool)"/> while creating a command.
 /// </summary>
 public static class StoredProcedure {
     /// <summary>
@@ -32,7 +32,8 @@ public static class StoredProcedure {
     /// </summary>
     /// <param name="connection">The connection to ask, opened for the question if it is not already.</param>
     /// <param name="procedureName">The procedure to call.</param>
-    public static QueryCommand From(IDbConnection connection, string procedureName) {
+    /// <param name="inputOutputHasDefault">Whether provider-derived input/output parameters may be omitted.</param>
+    public static QueryCommand From(IDbConnection connection, string procedureName, bool inputOutputHasDefault = true) {
         ArgumentNullException.ThrowIfNull(connection);
         bool opened = false;
         if (connection.State != ConnectionState.Open) {
@@ -44,7 +45,7 @@ public static class StoredProcedure {
             cmd.CommandText = procedureName;
             cmd.CommandType = CommandType.StoredProcedure;
             ParameterDeriver(cmd);
-            return FromCommand(cmd);
+            return FromCommand(cmd, inputOutputHasDefault);
         }
         finally {
             if (opened)
@@ -58,7 +59,9 @@ public static class StoredProcedure {
     /// <param name="connection">The connection to ask, opened for the question if it is not already.</param>
     /// <param name="procedureName">The procedure to call.</param>
     /// <param name="ct">The forwarded cancellation token.</param>
-    public static async Task<QueryCommand> FromAsync(DbConnection connection, string procedureName, CancellationToken ct = default) {
+    /// <param name="inputOutputHasDefault">Whether provider-derived input/output parameters may be omitted.</param>
+    public static async Task<QueryCommand> FromAsync(DbConnection connection, string procedureName, CancellationToken ct = default,
+        bool inputOutputHasDefault = true) {
         ArgumentNullException.ThrowIfNull(connection);
         bool opened = false;
         if (connection.State != ConnectionState.Open) {
@@ -70,7 +73,7 @@ public static class StoredProcedure {
             cmd.CommandText = procedureName;
             cmd.CommandType = CommandType.StoredProcedure;
             ParameterDeriver(cmd);
-            return FromCommand(cmd);
+            return FromCommand(cmd, inputOutputHasDefault);
         }
         finally {
             if (opened)
@@ -83,7 +86,8 @@ public static class StoredProcedure {
     /// one binds.
     /// </summary>
     /// <param name="command">A command naming the procedure, carrying its parameters.</param>
-    public static QueryCommand FromCommand(IDbCommand command) {
+    /// <param name="inputOutputHasDefault">Whether provider-derived input/output parameters may be omitted.</param>
+    public static QueryCommand FromCommand(IDbCommand command, bool inputOutputHasDefault = true) {
         ArgumentNullException.ThrowIfNull(command);
         var parameters = command.Parameters;
         var names = new List<string>(parameters.Count);
@@ -92,7 +96,7 @@ public static class StoredProcedure {
             if (parameters[i] is not IDbDataParameter p)
                 throw new RinkuBindingException(ErrorCodes.InvalidParameterAtIndex,
                     $"there is no valid parameter at index {i}");
-            var info = DefaultParamCache.MakeDeclaredInfo(p);
+            var info = DefaultParamCache.MakeDeclaredInfo(p, inputOutputHasDefault);
             names.Add(p.ParameterName);
             infos.Add(info);
         }

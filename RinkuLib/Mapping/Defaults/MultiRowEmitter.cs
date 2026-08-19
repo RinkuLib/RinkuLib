@@ -93,9 +93,7 @@ internal static class MultiRowEmitter {
         var bufferType = types[2];
         var method = tb.DefineMethod("Finish", InterfaceMethod, resultType, [bufferType]);
         var il = method.GetILGenerator();
-        if (finish is null) {
-            il.Emit(OpCodes.Ldarg_1);
-        }
+        if (finish is null) il.Emit(OpCodes.Ldarg_1);
         else if (finish is ConstructorInfo ctor) {
             il.Emit(OpCodes.Ldarg_1);
             il.Emit(OpCodes.Newobj, ctor);
@@ -278,9 +276,7 @@ internal static class MultiRowEmitter {
         foreach (var (member, plan) in node.PostMembers)
             level.MemberSlots.Add(ClassifySlot(plan, MemberValueType(member), member, tb, cols, level, $"{tag}_m{level.MemberSlots.Count}"));
 
-        if (hoistTo is not null) {
-            return level;
-        }
+        if (hoistTo is not null) return level;
 
         level.Boundary = BuildBoundary(node, tb, cols, tag);
         if (level.Simples.Count > 0 || level.Boundary.Captures)
@@ -514,9 +510,8 @@ internal static class MultiRowEmitter {
                     il.Emit(OpCodes.Call, level.CloseMethod!);
                 }
             }
-            else {
+            else
                 il.Emit(OpCodes.Br, afterCapture);
-            }
             il.MarkLabel(afterCompare);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldfld, level.Live);
@@ -550,9 +545,8 @@ internal static class MultiRowEmitter {
                 b.NullRule!.HandleNullForMultiRow(b.Field.FieldType, b.ElementType, "element", element, Wrap(il), new(done, 0));
                 il.MarkLabel(add);
             }
-            else {
+            else
                 il.Emit(OpCodes.Pop);
-            }
             EmitLoadBuffer(il, b.Field);
             il.Emit(OpCodes.Ldloc, element);
             EmitAdd(il, b.Add!);

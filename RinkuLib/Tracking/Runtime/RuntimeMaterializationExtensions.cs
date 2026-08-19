@@ -13,8 +13,7 @@ public static class RuntimeMaterializationExtensions {
         => RuntimeTrackingDefaultShapeCache<TOriginal>.Registration.Create(original);
 
     /// <summary>Creates a dynamic tracking item with options.</summary>
-    public static IRuntimeDynamicTrackingItem<TOriginal> ToTrackingItem<TOriginal>(this TOriginal original,
-        RuntimeTrackingOptions<TOriginal> options) {
+    public static IRuntimeDynamicTrackingItem<TOriginal> ToTrackingItem<TOriginal>(this TOriginal original, RuntimeTrackingOptions<TOriginal> options) {
         ArgumentNullException.ThrowIfNull(options);
         return options.GetRegistration<IRuntimeDynamicTrackingItem<TOriginal>>().Create(original);
     }
@@ -27,8 +26,7 @@ public static class RuntimeMaterializationExtensions {
     }
 
     /// <summary>Creates a typed tracking item with configuration.</summary>
-    public static TEdit ToTrackingItem<TOriginal, TEdit>(this TOriginal original,
-        Action<RuntimeTrackingOptions<TOriginal>> configure)
+    public static TEdit ToTrackingItem<TOriginal, TEdit>(this TOriginal original, Action<RuntimeTrackingOptions<TOriginal>> configure)
         where TEdit : class, IRuntimeTrackingItem<TOriginal> {
         ArgumentNullException.ThrowIfNull(configure);
         RuntimeTrackingOptions<TOriginal> options = RuntimeTrackingContract<TOriginal, TEdit>.BuildOptions();
@@ -54,8 +52,7 @@ public static class RuntimeMaterializationExtensions {
     }
 
     /// <summary>Creates a typed tracking list with options.</summary>
-    public static TrackingList<TEdit> ToTrackingList<TOriginal, TEdit>(this IEnumerable<TOriginal> originals,
-        RuntimeTrackingOptions<TOriginal> options, int initialCapacity = 0, IEqualityComparer<TEdit>? comparer = null)
+    public static TrackingList<TEdit> ToTrackingList<TOriginal, TEdit>(this IEnumerable<TOriginal> originals, RuntimeTrackingOptions<TOriginal> options, int initialCapacity = 0, IEqualityComparer<TEdit>? comparer = null)
         where TEdit : class, IRuntimeTrackingItem<TOriginal> {
         ArgumentNullException.ThrowIfNull(originals);
         ArgumentNullException.ThrowIfNull(options);
@@ -63,8 +60,7 @@ public static class RuntimeMaterializationExtensions {
     }
 
     /// <summary>Creates a typed tracking list with configuration.</summary>
-    public static TrackingList<TEdit> ToTrackingList<TOriginal, TEdit>(this IEnumerable<TOriginal> originals,
-        Action<RuntimeTrackingOptions<TOriginal>> configure, int initialCapacity = 0, IEqualityComparer<TEdit>? comparer = null)
+    public static TrackingList<TEdit> ToTrackingList<TOriginal, TEdit>(this IEnumerable<TOriginal> originals, Action<RuntimeTrackingOptions<TOriginal>> configure, int initialCapacity = 0, IEqualityComparer<TEdit>? comparer = null)
         where TEdit : class, IRuntimeTrackingItem<TOriginal> {
         ArgumentNullException.ThrowIfNull(originals);
         ArgumentNullException.ThrowIfNull(configure);

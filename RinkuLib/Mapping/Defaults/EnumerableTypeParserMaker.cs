@@ -37,12 +37,16 @@ public sealed class EnumerableTypeParserMaker() : ReusingBaseTypeParserMaker(
     public bool TryColdStartAsync<T>(IDbCommand cmd, ICacheGivingParser<T> cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<T> result)
         => TryAsync(cmd, cache, disposeCommand, ct, out result);
 
+    /// <inheritdoc/>
     public bool TryColdStart(Type type, DbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result)
         => TrySync(type, cmd, cache, disposeCommand, out result);
+    /// <inheritdoc/>
     public bool TryColdStart(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result)
         => TrySync(type, cmd, cache, disposeCommand, out result);
+    /// <inheritdoc/>
     public bool TryColdStartAsync(Type type, DbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result)
         => TryAsync(type, cmd, cache, disposeCommand, ct, out result);
+    /// <inheritdoc/>
     public bool TryColdStartAsync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result)
         => TryAsync(type, cmd, cache, disposeCommand, ct, out result);
 

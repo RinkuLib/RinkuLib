@@ -57,18 +57,21 @@ public struct DefaultParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     /// an output reaches the caller without being pinned by hand.
     /// </remarks>
     /// <param name="p">A parameter carrying the metadata that was declared for it.</param>
+    /// <param name="inputOutputHasDefault">Whether a discovered input/output parameter may be omitted.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static DbParamInfo MakeDeclaredInfo(IDbDataParameter p) {
+    public static DbParamInfo MakeDeclaredInfo(IDbDataParameter p, bool inputOutputHasDefault = true) {
         var type = p.DbType;
         bool directed = p.Direction != ParameterDirection.Input;
+        bool hasDefault = p.Direction == ParameterDirection.Output
+            || (p.Direction == ParameterDirection.InputOutput && inputOutputHasDefault);
         if (p.Precision != 0 || p.Scale != 0)
             return directed
-                ? new DirectionalScaledDbParamCache(p.Direction, type, p.Precision, p.Scale)
+                ? DirectionalScaledDbParamCache.Get(p.Direction, type, p.Precision, p.Scale, hasDefault)
                 : new ScaledDbParamCache(type, p.Precision, p.Scale);
         if (Unsafe.IsNullRef(ref SizedDbParamCache.GetCacheArray(type)))
-            return directed ? new DirectionalDbParamCache(p.Direction, type) : TypedDbParamCache.Get(type);
+            return directed ? DirectionalDbParamCache.Get(p.Direction, type, hasDefault) : TypedDbParamCache.Get(type);
         return directed
-            ? new DirectionalSizedDbParamCache(p.Direction, type, p.Size)
+            ? DirectionalSizedDbParamCache.Get(p.Direction, type, p.Size, hasDefault)
             : SizedDbParamCache.Get(type, p.Size);
     }
     /// <summary>
@@ -100,7 +103,7 @@ public struct ForceInferredParamCache(IDbCommand cmd) : IDbParamInfoGetter {
     public static bool GetInfoGetterMaker<T>(IDbCommand cmd, [MaybeNullWhen(false)] out IDbParamInfoGetter getter) where T : IDbCommand {
         if (cmd is not T) {
             getter = default;
-            return false; 
+            return false;
         }
         getter = new ForceInferredParamCache(cmd);
         return true;
@@ -148,7 +151,7 @@ public class TypedDbParamCache : DbParamInfo {
     public static TypedDbParamCache Get(DbType type) => CachedItems[(int)type];
     /// <summary>The <see cref="DbType"/> that will be used to create the parameter.</summary>
     public readonly DbType Type;
-    private TypedDbParamCache(DbType type) : base(true) { 
+    private TypedDbParamCache(DbType type) : base(true) {
         this.Type = type;
     }
     private static readonly TypedDbParamCache[] CachedItems;
@@ -170,7 +173,7 @@ public class TypedDbParamCache : DbParamInfo {
         return true;
     }
     /// <inheritdoc/>
-    public override void Remove(IDbCommand cmd, object? currentValue) 
+    public override void Remove(IDbCommand cmd, object? currentValue)
         => cmd.Parameters.Remove(currentValue);
     /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {
@@ -286,7 +289,7 @@ public class SizedDbParamCache : DbParamInfo {
         return true;
     }
     /// <inheritdoc/>
-    public override void Remove(IDbCommand cmd, object? currentValue) 
+    public override void Remove(IDbCommand cmd, object? currentValue)
         => cmd.Parameters.Remove(currentValue);
     /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {
@@ -343,7 +346,7 @@ public class InferredDbParamCache : DbParamInfo {
         return true;
     }
     /// <inheritdoc/>
-    public override void Remove(IDbCommand cmd, object currentValue) 
+    public override void Remove(IDbCommand cmd, object currentValue)
         => cmd.Parameters.Remove(currentValue);
     /// <inheritdoc/>
     public override bool Use(string paramName, IDbCommand cmd, object value) {

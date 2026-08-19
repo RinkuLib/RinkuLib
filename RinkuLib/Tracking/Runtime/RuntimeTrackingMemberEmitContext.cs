@@ -13,8 +13,7 @@ public sealed class RuntimeTrackingMemberEmitContext {
     private static readonly MethodInfo DynaSet = typeof(DynaObject).GetMethods(BindingFlags.Instance | BindingFlags.Public)
         .Single(x => x.Name == nameof(DynaObject.Set) && x.IsGenericMethodDefinition && x.GetParameters().Length == 2 && x.GetParameters()[0].ParameterType == typeof(int));
 
-    internal RuntimeTrackingMemberEmitContext(RuntimeTrackingCapabilityBuilder builder, Type originalType, FieldBuilder originalField,
-        FieldBuilder editField, MethodBuilder ensureEdit, int editIndex, string memberName) {
+    internal RuntimeTrackingMemberEmitContext(RuntimeTrackingCapabilityBuilder builder, Type originalType, FieldBuilder originalField, FieldBuilder editField, MethodBuilder ensureEdit, int editIndex, string memberName) {
         Builder = builder;
         OriginalType = originalType;
         OriginalField = originalField;

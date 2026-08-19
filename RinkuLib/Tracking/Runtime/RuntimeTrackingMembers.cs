@@ -5,8 +5,7 @@ using System.Reflection.Emit;
 
 namespace Rinku.Tracking.Runtime;
 
-internal abstract class RuntimeTrackingMemberBase(string name, Type valueType, bool canWrite,
-    bool includeInRuntimeAccess, bool includeInParameters, IReadOnlyList<string>? parameterNames, bool exposeProperty, IReadOnlyList<MemberInfo>? metadataSources) : IRuntimeTrackingMember {
+internal abstract class RuntimeTrackingMemberBase(string name, Type valueType, bool canWrite, bool includeInRuntimeAccess, bool includeInParameters, IReadOnlyList<string>? parameterNames, bool exposeProperty, IReadOnlyList<MemberInfo>? metadataSources) : IRuntimeTrackingMember {
     public string Name { get; } = name;
     public Type ValueType { get; } = valueType;
     public bool CanWrite { get; } = canWrite;
@@ -37,8 +36,7 @@ internal abstract class RuntimeTrackingMemberBase(string name, Type valueType, b
     }
 }
 
-internal sealed class OriginalReadableRuntimeTrackingMember(string name, Type valueType, IRuntimeOriginalReader reader,
-    bool includeInRuntimeAccess, bool includeInParameters, IReadOnlyList<string>? parameterNames, bool exposeProperty, IReadOnlyList<MemberInfo>? metadataSources)
+internal sealed class OriginalReadableRuntimeTrackingMember(string name, Type valueType, IRuntimeOriginalReader reader, bool includeInRuntimeAccess, bool includeInParameters, IReadOnlyList<string>? parameterNames, bool exposeProperty, IReadOnlyList<MemberInfo>? metadataSources)
     : RuntimeTrackingMemberBase(name, valueType, false, includeInRuntimeAccess, includeInParameters, parameterNames, exposeProperty, metadataSources) {
     public override void EmitGet(RuntimeTrackingMemberEmitContext context, ILGenerator il)
         => reader.EmitRead(il, context.EmitLoadOriginal);
@@ -46,8 +44,7 @@ internal sealed class OriginalReadableRuntimeTrackingMember(string name, Type va
         => throw new InvalidOperationException($"Runtime member '{Name}' is read-only.");
 }
 
-internal sealed class OriginalEditableRuntimeTrackingMember(string name, Type valueType, IRuntimeOriginalReader reader,
-    IRuntimeOriginalWriter writer, bool includeInRuntimeAccess, bool includeInParameters, IReadOnlyList<string>? parameterNames, bool exposeProperty, IReadOnlyList<MemberInfo>? metadataSources)
+internal sealed class OriginalEditableRuntimeTrackingMember(string name, Type valueType, IRuntimeOriginalReader reader, IRuntimeOriginalWriter writer, bool includeInRuntimeAccess, bool includeInParameters, IReadOnlyList<string>? parameterNames, bool exposeProperty, IReadOnlyList<MemberInfo>? metadataSources)
     : RuntimeTrackingMemberBase(name, valueType, true, includeInRuntimeAccess, includeInParameters, parameterNames, exposeProperty, metadataSources), IRuntimeEditableTrackingMember {
     public override void EmitGet(RuntimeTrackingMemberEmitContext context, ILGenerator il)
         => context.EmitTrackedGet(il, ValueType, e => reader.EmitRead(e, context.EmitLoadOriginal));
@@ -58,8 +55,7 @@ internal sealed class OriginalEditableRuntimeTrackingMember(string name, Type va
         => writer.EmitWrite(il, emitOriginal, emitValue);
 }
 
-internal sealed class RuntimeStoredTrackingMember(string name, Type valueType, bool writable = true, bool includeInRuntimeAccess = true,
-    bool includeInParameters = false, IReadOnlyList<string>? parameterNames = null, bool exposeProperty = true, IReadOnlyList<MemberInfo>? metadataSources = null)
+internal sealed class RuntimeStoredTrackingMember(string name, Type valueType, bool writable = true, bool includeInRuntimeAccess = true, bool includeInParameters = false, IReadOnlyList<string>? parameterNames = null, bool exposeProperty = true, IReadOnlyList<MemberInfo>? metadataSources = null)
     : RuntimeTrackingMemberBase(name, valueType, writable, includeInRuntimeAccess, includeInParameters, parameterNames, exposeProperty, metadataSources) {
     private string FieldKey => $"runtime-member:{Name}";
 
@@ -88,12 +84,10 @@ internal sealed class RuntimeStoredTrackingMember(string name, Type valueType, b
 /// <summary>Creates common generated tracking members.</summary>
 public static class RuntimeTrackingMembers {
     /// <summary>Creates a stored runtime member.</summary>
-    public static IRuntimeTrackingMember Stored<T>(string name, bool writable = true, bool includeInRuntimeAccess = true,
-        bool exposeProperty = true, bool includeInParameters = false) => new RuntimeStoredTrackingMember(name, typeof(T), writable, includeInRuntimeAccess, includeInParameters, null, exposeProperty);
+    public static IRuntimeTrackingMember Stored<T>(string name, bool writable = true, bool includeInRuntimeAccess = true, bool exposeProperty = true, bool includeInParameters = false) => new RuntimeStoredTrackingMember(name, typeof(T), writable, includeInRuntimeAccess, includeInParameters, null, exposeProperty);
 
     /// <summary>Creates a runtime member from a property.</summary>
-    public static IRuntimeTrackingMember From(PropertyInfo property, string? name = null, bool? editable = null,
-        bool includeInRuntimeAccess = true, bool exposeProperty = true, bool includeInParameters = true) {
+    public static IRuntimeTrackingMember From(PropertyInfo property, string? name = null, bool? editable = null, bool includeInRuntimeAccess = true, bool exposeProperty = true, bool includeInParameters = true) {
         ArgumentNullException.ThrowIfNull(property);
         var builder = new RuntimeTrackingMemberBuilder(property) {
             Name = name ?? property.Name,
@@ -106,8 +100,7 @@ public static class RuntimeTrackingMembers {
     }
 
     /// <summary>Creates a runtime member from a field.</summary>
-    public static IRuntimeTrackingMember From(FieldInfo field, string? name = null, bool? editable = null,
-        bool includeInRuntimeAccess = true, bool exposeProperty = true, bool includeInParameters = true) {
+    public static IRuntimeTrackingMember From(FieldInfo field, string? name = null, bool? editable = null, bool includeInRuntimeAccess = true, bool exposeProperty = true, bool includeInParameters = true) {
         ArgumentNullException.ThrowIfNull(field);
         var builder = new RuntimeTrackingMemberBuilder(field) {
             Name = name ?? field.Name,
@@ -120,8 +113,7 @@ public static class RuntimeTrackingMembers {
     }
 
     /// <summary>Creates a runtime member from getter and setter methods.</summary>
-    public static IRuntimeTrackingMember FromMethods<TOriginal, TValue>(string name, MethodInfo getter, MethodInfo? setter = null,
-        bool includeInRuntimeAccess = true, bool exposeProperty = true, bool includeInParameters = true) {
+    public static IRuntimeTrackingMember FromMethods<TOriginal, TValue>(string name, MethodInfo getter, MethodInfo? setter = null, bool includeInRuntimeAccess = true, bool exposeProperty = true, bool includeInParameters = true) {
         var builder = new RuntimeTrackingMemberBuilder(typeof(TOriginal), name, typeof(TValue));
         builder.ReadFrom(getter);
         if (setter is not null) builder.WriteWith(setter);

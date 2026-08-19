@@ -1,10 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Reflection.Emit;
-using Rinku.Mapping.Emission;
-using Rinku.Mapping.Parsers;
 using Rinku.Mapping.Parsers.Defaults;
-using Rinku.Querying;
 
 namespace Rinku.Mapping.Defaults;
 

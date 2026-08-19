@@ -155,11 +155,12 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     /// <code>
     /// static readonly QueryCommand Renumber = QueryCommand.FromProc("dbo.RenumberTracks", cnn);
     ///
-    /// Renumber.Execute(cnn, new { albumId = 1, moved = 0 });
+    /// Renumber.Execute(cnn, new { albumId = 1 });
     /// </code>
     /// </example>
-    public static QueryCommand FromProc(string procedureName, IDbConnection connection)
-        => StoredProcedure.From(connection, procedureName);
+    /// <param name="inputOutputHasDefault">Whether provider-derived input/output parameters may be omitted.</param>
+    public static QueryCommand FromProc(string procedureName, IDbConnection connection, bool inputOutputHasDefault = true)
+        => StoredProcedure.From(connection, procedureName, inputOutputHasDefault);
     /// <summary>
     /// Gets a parser held for the supplied parameter usage and result set.
     /// </summary>
@@ -578,9 +579,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
             handler.Use(cmd, ref currentVar);
         }
 
-        if (!Parameters.HasDefaultSet)
+        if (!Parameters.HasDefaultSet) {
             SetText(cmd, QueryText.Parse(variables));
-        else {
+        } else {
             var usage = CreateUsageMap(variables);
             SetText(cmd, QueryText.Parse(usage, variables.AsSpan(varInfos.Length, handlers.Length)));
         }
@@ -618,9 +619,9 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
             handler.Use(cmd, ref currentVar);
         }
 
-        if (!Parameters.HasDefaultSet)
+        if (!Parameters.HasDefaultSet) {
             SetText(cmd, QueryText.Parse(variables));
-        else {
+        } else {
             var usage = CreateUsageMap(variables);
             SetText(cmd, QueryText.Parse(usage, variables.AsSpan(varInfos.Length, handlers.Length)));
         }

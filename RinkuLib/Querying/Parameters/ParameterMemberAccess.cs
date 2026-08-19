@@ -10,11 +10,13 @@ namespace Rinku.Querying.Parameters;
 public readonly struct ParameterMemberAccess {
     private readonly MemberInfo[] _path;
     private readonly LocalBuilder? _preparedValue;
+    private readonly int _sourceArgument;
 
-    internal ParameterMemberAccess(Type rootType, MemberInfo[] path, LocalBuilder? preparedValue = null) {
+    internal ParameterMemberAccess(Type rootType, MemberInfo[] path, LocalBuilder? preparedValue = null, int sourceArgument = 0) {
         RootType = rootType;
         _path = path;
         _preparedValue = preparedValue;
+        _sourceArgument = sourceArgument;
     }
 
     /// <summary>The runtime parameter object's type.</summary>
@@ -40,7 +42,7 @@ public readonly struct ParameterMemberAccess {
         }
         if (_path.Length != 1)
             throw new InvalidOperationException("A nested parameter member must be prepared before its value is emitted.");
-        AccessorEmitter.EmitMemberLoad(il, RootType, _path[0]);
+        AccessorEmitter.EmitMemberLoad(il, RootType, _path[0], _sourceArgument);
     }
 
     /// <summary>Emits the final value and boxes value types.</summary>
@@ -51,9 +53,9 @@ public readonly struct ParameterMemberAccess {
             il.Emit(OpCodes.Box, valueType);
     }
 
-    internal ParameterMemberAccess Prepare(ILGenerator il, Label missing) {
+    internal ParameterMemberAccess Prepare(ILGenerator il, Label missing, int sourceArgument = 0) {
         if (_path.Length == 1)
-            return this;
+            return new ParameterMemberAccess(RootType, _path, _preparedValue, sourceArgument);
 
         Type ownerType = RootType;
         LocalBuilder? owner = null;
@@ -61,7 +63,7 @@ public readonly struct ParameterMemberAccess {
         for (int i = 0; i < _path.Length; i++) {
             MemberInfo member = _path[i];
             if (i == 0)
-                AccessorEmitter.EmitMemberLoad(il, RootType, member);
+                AccessorEmitter.EmitMemberLoad(il, RootType, member, sourceArgument);
             else
                 EmitMemberLoad(il, owner!, ownerType, member);
 
@@ -70,7 +72,7 @@ public readonly struct ParameterMemberAccess {
             il.Emit(OpCodes.Stloc, value);
 
             if (i == _path.Length - 1)
-                return new ParameterMemberAccess(RootType, _path, value);
+                return new ParameterMemberAccess(RootType, _path, value, sourceArgument);
 
             if (!valueType.IsValueType) {
                 il.Emit(OpCodes.Ldloc, value);

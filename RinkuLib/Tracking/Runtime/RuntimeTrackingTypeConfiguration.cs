@@ -51,8 +51,7 @@ public delegate void RuntimeTrackingContractMemberConvention<TOriginal>(RuntimeT
 
 /// <summary>Provides context while configuring a generated contract member.</summary>
 public sealed class RuntimeTrackingContractMemberContext<TOriginal> {
-    internal RuntimeTrackingContractMemberContext(RuntimeTrackingOptions<TOriginal> options, Type exposedContract,
-        RuntimeTrackingMemberOptions member, IReadOnlyList<PropertyInfo> declarations, bool requiresGetter, bool requiresSetter) {
+    internal RuntimeTrackingContractMemberContext(RuntimeTrackingOptions<TOriginal> options, Type exposedContract, RuntimeTrackingMemberOptions member, IReadOnlyList<PropertyInfo> declarations, bool requiresGetter, bool requiresSetter) {
         Options = options;
         ExposedContract = exposedContract;
         Member = member;

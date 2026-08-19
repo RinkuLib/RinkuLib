@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Rinku.Querying;
+using Rinku.Querying.Parameters;
 using Rinku.Mapping.Parsers;
 
 namespace Rinku;
@@ -79,7 +80,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     public void UnUse(int conditionIndex)
         => Variables[conditionIndex] = null;
     /// <inheritdoc/>
-    public readonly bool Use(char charVariable, string variable, object? value) 
+    public readonly bool Use(char charVariable, string variable, object? value)
         => Use(QueryCommand.Mapper.GetIndex(charVariable, variable), value);
     /// <inheritdoc/>
     public readonly bool Use(string variable, object? value)
@@ -119,30 +120,30 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     public void UseWith(object parameterObj) {
         Type type = parameterObj.GetType();
         var accessor = QueryCommand.GetUseWithAccessor(type.TypeHandle.Value, type);
-        accessor.Invoke(parameterObj, Variables);
+        accessor.InvokeObject(parameterObj, Variables, needTarget: false);
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(T parameterObj) where T : notnull {
         if (!typeof(T).IsValueType) {
             var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
-            accessor.Invoke(parameterObj, Variables);
+            accessor.InvokeObject(parameterObj, Variables, needTarget: false);
             return;
         }
         var valueAccessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref valueAccessor);
-        typed.InvokeTyped(ref parameterObj, Variables);
+        typed.InvokeTyped(ref parameterObj, Variables, needTarget: false);
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {
         if (!typeof(T).IsValueType) {
             var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
-            accessor.Invoke(parameterObj, Variables);
+            accessor.InvokeObject(parameterObj, Variables, needTarget: false);
             return;
         }
         var valueAccessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
         var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref valueAccessor);
-        typed.InvokeTyped(ref parameterObj, Variables);
+        typed.InvokeTyped(ref parameterObj, Variables, needTarget: false);
     }
 }

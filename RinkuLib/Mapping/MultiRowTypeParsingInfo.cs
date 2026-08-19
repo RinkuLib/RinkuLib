@@ -68,9 +68,9 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo, IMultiRowTypeParsingInfo
 
         bool isRoot = paramInfo.Type == ParamInfo.NoType;
         TypeParsingInfo elementInfo;
-        if (isRoot)
+        if (isRoot) {
             elementInfo = ForceGet(elementType);
-        else {
+        } else {
             if (!TryGetInfo(elementType, out var nestedElementInfo))
                 return null;
             elementInfo = nestedElementInfo;

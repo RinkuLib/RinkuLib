@@ -107,7 +107,8 @@ internal sealed class RuntimeDynaEditStorage<TOriginal> : IRuntimeEditStorage<TO
             if (slot == 0) { emit.Emit(OpCodes.Ldarg_2); return; }
             editable[slot - 1].EmitReadBaseline(emit, static e => {
                 if (typeof(TOriginal).IsValueType) e.Emit(OpCodes.Ldarga_S, (byte)1);
-                else e.Emit(OpCodes.Ldarg_1);
+                else
+                    e.Emit(OpCodes.Ldarg_1);
             });
         }
     }
@@ -122,7 +123,8 @@ internal sealed class RuntimeDynaEditStorage<TOriginal> : IRuntimeEditStorage<TO
             IRuntimeEditableTrackingMember member = editable[i];
             EmitSet(i + 1, member.ValueType, e => member.EmitReadBaseline(e, static load => {
                 if (typeof(TOriginal).IsValueType) load.Emit(OpCodes.Ldarga_S, (byte)2);
-                else load.Emit(OpCodes.Ldarg_2);
+                else
+                    load.Emit(OpCodes.Ldarg_2);
             }));
         }
         il.Emit(OpCodes.Ret);

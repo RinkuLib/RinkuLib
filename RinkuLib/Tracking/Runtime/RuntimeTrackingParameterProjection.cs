@@ -28,9 +28,10 @@ public sealed class RuntimeTrackingParameterSourceAttribute : AccessorEmitterHan
         // generated parameter shape directly against the declared contract member.
         if (type.IsInterface) return ResolveEmitter(trackingMember!, varChar, index, type, mapper);
 
-        // Let the normal Core member path run for generated CLR types. This preserves member-level
-        // AccessorEmitterHandler precedence ([UseDbNull], custom conditions, etc.).
-        return null;
+        // Generated runtime members are runtime-presence sources too. Route them through the adapter so
+        // the UseWith emitter can mark only members that are actually available on this instance while
+        // still preserving member-level AccessorEmitterHandler precedence.
+        return CreateMemberAdapter(trackingMember!, varChar, index, type, mapper);
     }
 
     /// <summary>Resolves a generated type parameter emitter.</summary>
@@ -90,7 +91,8 @@ internal sealed class RuntimeTrackingParameterShape {
             if (rename is not null) Add(rename.Name, info, conflictBehavior);
             else if (legacyNames is { Count: > 0 })
                 for (int n = 0; n < legacyNames.Count; n++) Add(legacyNames[n], info, conflictBehavior);
-            else Add(member.Name, info, conflictBehavior);
+            else
+                Add(member.Name, info, conflictBehavior);
 
             foreach (ParameterAliasAttribute alias in property.GetCustomAttributes<ParameterAliasAttribute>(inherit: true))
                 Add(alias.Name, info, conflictBehavior);
@@ -134,11 +136,10 @@ internal sealed class RuntimeTrackingParameterMember {
 
 internal sealed class RuntimeTrackingMemberEmitterAdapter(PropertyInfo source, IAccessorEmitter emitter) : IAccessorEmitter {
     public void Validate(Type type, MemberInfo member) => emitter.Validate(type, source);
-    public void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member, LocalBuilder? handlerValues,
-        int handlerIndex, bool handlerValue, bool bindValue)
+    public void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member, LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue)
         => emitter.Emit(il, index, key, type, source, handlerValues, handlerIndex, handlerValue, bindValue);
-    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue)
-        => emitter.EmitUseWith(il, index, type, source, bindValue);
+    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue, UseWithEmissionContext context)
+        => emitter.EmitUseWith(il, index, type, source, bindValue, context);
     public void EmitStackUsage(ILGenerator il, Type type, MemberInfo member)
         => emitter.EmitStackUsage(il, type, source);
     public void EmitStackValue(ILGenerator il, Type type, MemberInfo member)
@@ -149,11 +150,10 @@ internal sealed class RuntimeTrackingMemberEmitterAdapter(PropertyInfo source, I
 
 internal sealed class RuntimeTrackingTypeEmitterAdapter(PropertyInfo member, IAccessorEmitter emitter) : ITypeAccessorEmitter {
     public void Validate(Type type) => emitter.Validate(type, member);
-    public void Emit(ILGenerator il, int index, string key, Type type, LocalBuilder? handlerValues,
-        int handlerIndex, bool handlerValue, bool bindValue)
+    public void Emit(ILGenerator il, int index, string key, Type type, LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue)
         => emitter.Emit(il, index, key, type, member, handlerValues, handlerIndex, handlerValue, bindValue);
-    public void EmitUseWith(ILGenerator il, int index, Type type, bool bindValue)
-        => emitter.EmitUseWith(il, index, type, member, bindValue);
+    public void EmitUseWith(ILGenerator il, int index, Type type, bool bindValue, UseWithEmissionContext context)
+        => emitter.EmitUseWith(il, index, type, member, bindValue, context);
     public void EmitStackUsage(ILGenerator il, Type type)
         => emitter.EmitStackUsage(il, type, member);
     public void EmitStackValue(ILGenerator il, Type type)
@@ -167,14 +167,19 @@ internal sealed class RuntimeTrackingDefaultParameterEmitter : IAccessorEmitter 
 
     public void Validate(Type type, MemberInfo member) { }
 
-    public void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member,
-        LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue)
+    public void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member, LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue)
         => AccessorEmitter.EmitSlot(il, index, key, handlerValues, handlerIndex, handlerValue, bindValue,
             e => EmitUsage(e, type, member), e => AccessorEmitter.EmitMemberValue(e, type, member));
 
-    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue)
-        => AccessorEmitter.EmitUseWithSlot(il, index, bindValue,
-            e => EmitUsage(e, type, member), e => AccessorEmitter.EmitMemberValue(e, type, member));
+    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue, UseWithEmissionContext context) {
+        var skip = il.DefineLabel();
+        EmitUsage(il, type, member, context.SourceArgument);
+        il.Emit(OpCodes.Brfalse, skip);
+        AccessorEmitter.MarkUseWithSlot(il, index, context);
+        AccessorEmitter.EmitUseWithValue(il, index, bindValue,
+            e => AccessorEmitter.EmitMemberValue(e, type, member, context.SourceArgument), context);
+        il.MarkLabel(skip);
+    }
 
     public void EmitStackUsage(ILGenerator il, Type type, MemberInfo member)
         => EmitUsage(il, type, member);
@@ -185,16 +190,16 @@ internal sealed class RuntimeTrackingDefaultParameterEmitter : IAccessorEmitter 
     public Type GetStackType(Type type, MemberInfo member)
         => ParameterMemberAccess.GetMemberType(member);
 
-    private static void EmitUsage(ILGenerator il, Type type, MemberInfo member) {
+    private static void EmitUsage(ILGenerator il, Type type, MemberInfo member, int sourceArgument = 0) {
         Type memberType = member is FieldInfo field ? field.FieldType : ((PropertyInfo)member).PropertyType;
         if (!memberType.IsValueType) {
-            AccessorEmitter.EmitMemberLoad(il, type, member);
+            AccessorEmitter.EmitMemberLoad(il, type, member, sourceArgument);
             il.Emit(OpCodes.Ldnull);
             il.Emit(OpCodes.Cgt_Un);
             return;
         }
         if (Nullable.GetUnderlyingType(memberType) is not null) {
-            AccessorEmitter.EmitMemberLoad(il, type, member);
+            AccessorEmitter.EmitMemberLoad(il, type, member, sourceArgument);
             LocalBuilder value = il.DeclareLocal(memberType);
             il.Emit(OpCodes.Stloc, value);
             il.Emit(OpCodes.Ldloca, value);
@@ -215,12 +220,10 @@ internal sealed class RuntimeTrackingDisabledParameterEmitter : IAccessorEmitter
         // Direct access starts with a cleared usage span, so intentionally doing nothing disables the slot.
     }
 
-    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue) {
+    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue,
+        UseWithEmissionContext context) {
         // UseWith reuses the builder value array, therefore excluded members must actively clear their slot.
-        il.Emit(OpCodes.Ldarg_1);
-        il.Emit(OpCodes.Ldc_I4, index);
-        il.Emit(OpCodes.Ldnull);
-        il.Emit(OpCodes.Stelem_Ref);
+        AccessorEmitter.ClearUseWithSlot(il, index, context);
     }
 
     public void EmitStackUsage(ILGenerator il, Type type, MemberInfo member)

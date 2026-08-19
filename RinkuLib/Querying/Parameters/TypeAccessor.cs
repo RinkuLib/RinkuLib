@@ -15,13 +15,16 @@ public delegate object?[] DirectAccessorDelegate(object item, IDbCommand command
 public delegate object?[] DirectAccessorDelegate<T>(ref T item, IDbCommand command, DbParamInfo[] parameterInfos, ref Span<bool> usage);
 
 /// <summary>Copies one parameter object into a builder's value array.</summary>
-public delegate void UseWithAccessorDelegate(object item, object?[] values);
+public delegate bool[] UseWithAccessorDelegate(object item, object?[] values, bool needTarget);
 
 /// <summary>Copies one value-type parameter object into a builder's value array without boxing it.</summary>
-public delegate void UseWithAccessorDelegate<T>(ref T item, object?[] values);
+public delegate bool[] UseWithAccessorDelegate<T>(ref T item, object?[] values, bool needTarget);
 
-internal static class AccessorUsageMarker {
+/// <summary>Stores the shared scratch usage mask used by value-array accessors that do not need a result mask.</summary>
+public static class AccessorUsageMarker {
     internal static readonly object Value = new();
+    /// <summary>Shared scratch storage for accessors invoked without a result mask.</summary>
+    public static bool[] SharedMask = [];
 }
 
 /// <summary>The direct command-binding delegate for one source type and one query mapper.</summary>
@@ -63,13 +66,16 @@ public sealed class DirectAccessor<T> : DirectAccessor {
 /// <summary>The value-array delegate used by <c>UseWith</c> for one source type and query mapper.</summary>
 public class UseWithAccessor {
     /// <summary>Runs the accessor for a reference type or boxed value type.</summary>
-    public readonly UseWithAccessorDelegate Invoke;
+    public readonly UseWithAccessorDelegate? Invoke;
 
-    internal UseWithAccessor(DynamicMethod method)
-        => Invoke = method.CreateDelegate<UseWithAccessorDelegate>();
+    internal UseWithAccessor(DynamicMethod method, bool[] masterMask)
+        => Invoke = method.CreateDelegate<UseWithAccessorDelegate>(masterMask);
 
     /// <summary>Initializes the object-entry accessor used by a derived value-type accessor.</summary>
-    protected UseWithAccessor(UseWithAccessorDelegate invoke) => Invoke = invoke;
+    protected UseWithAccessor() { }
+
+    internal virtual bool[] InvokeObject(object item, object?[] values, bool needTarget)
+        => Invoke!(item, values, needTarget);
 }
 
 /// <summary>The value-array delegate used by <c>UseWith</c> for a value type.</summary>
@@ -77,19 +83,12 @@ public sealed class UseWithAccessor<T> : UseWithAccessor {
     /// <summary>Runs the accessor without boxing <typeparamref name="T"/>.</summary>
     public readonly UseWithAccessorDelegate<T> InvokeTyped;
 
-    internal UseWithAccessor(DynamicMethod method) : base(CreateBoxedWrapper(method))
-        => InvokeTyped = method.CreateDelegate<UseWithAccessorDelegate<T>>();
+    internal UseWithAccessor(DynamicMethod method, bool[] masterMask) : base()
+        => InvokeTyped = method.CreateDelegate<UseWithAccessorDelegate<T>>(masterMask);
 
-    private static UseWithAccessorDelegate CreateBoxedWrapper(DynamicMethod method) {
-        var wrapper = new DynamicMethod($"Boxed_{method.Name}", typeof(void),
-            [typeof(object), typeof(object[])], typeof(T).Module, skipVisibility: true);
-        var il = wrapper.GetILGenerator();
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Unbox, typeof(T));
-        il.Emit(OpCodes.Ldarg_1);
-        il.Emit(OpCodes.Call, method);
-        il.Emit(OpCodes.Ret);
-        return wrapper.CreateDelegate<UseWithAccessorDelegate>();
+    internal override bool[] InvokeObject(object item, object?[] values, bool needTarget) {
+        T typed = (T)item;
+        return InvokeTyped(ref typed, values, needTarget);
     }
 }
 
@@ -100,13 +99,11 @@ public static class ParameterAccessorGenerator {
         => CreateDirect(type, mapper, [], mapper.Count, mapper.Count);
 
     /// <summary>Creates a direct command-binding accessor with query handlers.</summary>
-    public static DirectAccessor CreateDirect(Type type, Mapper mapper, SpecialHandler[] handlers,
-        int specialHandlerStart, int boolConditionStart)
+    public static DirectAccessor CreateDirect(Type type, Mapper mapper, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart)
         => CreateDirectAccessor(type, EmitDirect(type, mapper, handlers, specialHandlerStart, boolConditionStart));
 
     /// <summary>Creates a builder value accessor with query handlers.</summary>
-    public static UseWithAccessor CreateUseWith(Type type, Mapper mapper, SpecialHandler[] handlers,
-        int specialHandlerStart, int boolConditionStart)
+    public static UseWithAccessor CreateUseWith(Type type, Mapper mapper, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart)
         => CreateUseWithAccessor(type, EmitUseWith(type, mapper, handlers, specialHandlerStart, boolConditionStart));
 
     /// <summary>Creates a builder value accessor.</summary>
@@ -114,8 +111,7 @@ public static class ParameterAccessorGenerator {
         => CreateUseWith(type, mapper, [], mapper.Count, mapper.Count);
 
     /// <summary>Creates an IL-emission accessor that can leave resolved values typed on the evaluation stack.</summary>
-    public static StackAccessor CreateStack(Type type, Mapper mapper, SpecialHandler[] handlers,
-        int specialHandlerStart, int boolConditionStart)
+    public static StackAccessor CreateStack(Type type, Mapper mapper, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart)
         => new(type, mapper, handlers, specialHandlerStart, boolConditionStart, CreatePlan(type, mapper));
 
     /// <summary>Creates a stack accessor without query-special handlers.</summary>
@@ -128,15 +124,14 @@ public static class ParameterAccessorGenerator {
                 BindingFlags.Instance | BindingFlags.NonPublic, binder: null, args: [method], culture: null)!
             : new DirectAccessor(method);
 
-    private static UseWithAccessor CreateUseWithAccessor(Type type, DynamicMethod method)
+    private static UseWithAccessor CreateUseWithAccessor(Type type, (DynamicMethod Method, bool[] MasterMask) generated)
         => type.IsValueType
             ? (UseWithAccessor)Activator.CreateInstance(typeof(UseWithAccessor<>).MakeGenericType(type),
-                BindingFlags.Instance | BindingFlags.NonPublic, binder: null, args: [method], culture: null)!
-            : new UseWithAccessor(method);
+                BindingFlags.Instance | BindingFlags.NonPublic, binder: null, args: [generated.Method, generated.MasterMask], culture: null)!
+            : new UseWithAccessor(generated.Method, generated.MasterMask);
 
     /// <summary>
-    /// Reuses the normal parameter-shape plan but emits raw typed values instead of binding them.
-    /// The source object is expected in argument 0 of the dynamic method being generated.
+    /// Reuses the normal parameter-shape plan and emits raw typed values instead of binding them.
     /// </summary>
     /// <summary>Describes typed parameter slots for IL generation.</summary>
     public sealed class StackAccessor {
@@ -147,8 +142,7 @@ public static class ParameterAccessorGenerator {
         internal readonly int BoolConditionStart;
         internal readonly AccessPlan Plan;
 
-        internal StackAccessor(Type type, Mapper mapper, SpecialHandler[] handlers,
-            int specialHandlerStart, int boolConditionStart, AccessPlan plan) {
+        internal StackAccessor(Type type, Mapper mapper, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart, AccessPlan plan) {
             Type = type;
             Mapper = mapper;
             Handlers = handlers;
@@ -209,8 +203,7 @@ public static class ParameterAccessorGenerator {
         internal LocalBuilder?[] DictionaryValues => _dictionaryValues;
     }
 
-    private static DynamicMethod EmitDirect(Type type, Mapper mapper, SpecialHandler[] handlers,
-        int specialHandlerStart, int boolConditionStart) {
+    private static DynamicMethod EmitDirect(Type type, Mapper mapper, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart) {
         var method = new DynamicMethod($"{type.Name}_DirectParameters", typeof(object[]),
             [type.IsValueType ? type.MakeByRefType() : typeof(object), typeof(IDbCommand), typeof(DbParamInfo[]),
                 typeof(Span<bool>).MakeByRefType()], type.Module, skipVisibility: true);
@@ -241,17 +234,54 @@ public static class ParameterAccessorGenerator {
         return method;
     }
 
-    private static DynamicMethod EmitUseWith(Type type, Mapper mapper, SpecialHandler[] handlers,
-        int specialHandlerStart, int boolConditionStart) {
-        var method = new DynamicMethod($"{type.Name}_UseWith", typeof(void),
-            [type.IsValueType ? type.MakeByRefType() : typeof(object), typeof(object[])], type.Module, skipVisibility: true);
-        var il = method.GetILGenerator();
+    private static (DynamicMethod Method, bool[] MasterMask) EmitUseWith(Type type, Mapper mapper, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart) {
         AccessPlan plan = CreatePlan(type, mapper);
+        if (AccessorUsageMarker.SharedMask.Length < mapper.Count + 1)
+            AccessorUsageMarker.SharedMask = new bool[mapper.Count + 1];
+        var masterMask = new bool[mapper.Count + 1];
+        var method = new DynamicMethod($"{type.Name}_UseWith", typeof(bool[]),
+            [typeof(bool[]), type.IsValueType ? type.MakeByRefType() : typeof(object), typeof(object[]), typeof(bool)], type.Module, skipVisibility: true);
+        var il = method.GetILGenerator();
+        var affected = il.DeclareLocal(typeof(bool[]));
+        var clone = il.DeclareLocal(typeof(bool[]));
+        var useMaster = il.DefineLabel();
+        var targetReady = il.DefineLabel();
+        il.Emit(OpCodes.Ldarg_3);
+        il.Emit(OpCodes.Brtrue, useMaster);
+        il.Emit(OpCodes.Ldsfld, typeof(AccessorUsageMarker).GetField(nameof(AccessorUsageMarker.SharedMask),
+            BindingFlags.Static | BindingFlags.Public)!);
+        il.Emit(OpCodes.Stloc, affected);
+        il.Emit(OpCodes.Br, targetReady);
+        il.MarkLabel(useMaster);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Stloc, affected);
+        var noClone = il.DefineLabel();
+        il.Emit(OpCodes.Ldloc, affected);
+        il.Emit(OpCodes.Ldc_I4, mapper.Count);
+        il.Emit(OpCodes.Ldelem_I1);
+        il.Emit(OpCodes.Brfalse, noClone);
+        il.Emit(OpCodes.Ldloc, affected);
+        il.Emit(OpCodes.Ldlen);
+        il.Emit(OpCodes.Conv_I4);
+        il.Emit(OpCodes.Newarr, typeof(bool));
+        il.Emit(OpCodes.Stloc, clone);
+        il.Emit(OpCodes.Ldloc, affected);
+        il.Emit(OpCodes.Ldloc, clone);
+        il.Emit(OpCodes.Ldloc, affected);
+        il.Emit(OpCodes.Ldlen);
+        il.Emit(OpCodes.Conv_I4);
+        il.Emit(OpCodes.Call, typeof(Array).GetMethod(nameof(Array.Copy), [typeof(Array), typeof(Array), typeof(int)])!);
+        il.Emit(OpCodes.Ldloc, clone);
+        il.Emit(OpCodes.Stloc, affected);
+        il.MarkLabel(noClone);
+        il.MarkLabel(targetReady);
+        var context = new UseWithEmissionContext(1, 2, affected, masterMask);
         for (int index = 0; index < mapper.Count; index++)
             EmitSlot(il, AccessPath.UseWith, plan, index, type, mapper, handlers, specialHandlerStart,
-                boolConditionStart, handlerValues: null);
+                boolConditionStart, handlerValues: null, context);
+        il.Emit(OpCodes.Ldloc, affected);
         il.Emit(OpCodes.Ret);
-        return method;
+        return (method, masterMask);
     }
 
     private static AccessPlan CreatePlan(Type type, Mapper mapper) {
@@ -333,8 +363,7 @@ public static class ParameterAccessorGenerator {
         }
     }
 
-    private static void AddNamedSource(string name, string prefix, MemberSource source, Mapper mapper,
-        char variablePrefix, ParameterSource?[] sources, ParameterConflictBehavior conflictBehavior) {
+    private static void AddNamedSource(string name, string prefix, MemberSource source, Mapper mapper, char variablePrefix, ParameterSource?[] sources, ParameterConflictBehavior conflictBehavior) {
         string logicalName = prefix + NormalizeName(name, variablePrefix);
         if (logicalName.Length == 0)
             return;
@@ -363,8 +392,7 @@ public static class ParameterAccessorGenerator {
         }
     }
 
-    private static void AddSource(ParameterSource?[] sources, int index, ParameterSource candidate, string key,
-        ParameterConflictBehavior conflictBehavior) {
+    private static void AddSource(ParameterSource?[] sources, int index, ParameterSource candidate, string key, ParameterConflictBehavior conflictBehavior) {
         if (index < 0)
             return;
         ParameterSource? existing = sources[index];
@@ -392,33 +420,29 @@ public static class ParameterAccessorGenerator {
             $"Parameter '{key}' is provided by both {existing.Description} and {candidate.Description} at the same nesting depth and priority.");
     }
 
-    private static void EmitSlot(ILGenerator il, AccessPath path, AccessPlan plan, int index, Type type, Mapper mapper,
-        SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart, LocalBuilder? handlerValues) {
+    private static void EmitSlot(ILGenerator il, AccessPath path, AccessPlan plan, int index, Type type, Mapper mapper, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart, LocalBuilder? handlerValues, UseWithEmissionContext? context = null) {
         ParameterSource? source = plan.Sources[index];
         if (source is MemberSource memberSource) {
             EmitMemberSlot(il, path, plan, index, type, mapper, memberSource.Access,
-                handlers, specialHandlerStart, boolConditionStart, handlerValues);
+                handlers, specialHandlerStart, boolConditionStart, handlerValues, context);
             return;
         }
         if (source is DictionarySource dictionarySource) {
             EmitDictionarySlot(il, path, index, mapper.Keys[index], dictionarySource.Access,
-                specialHandlerStart, boolConditionStart, handlerValues);
+                specialHandlerStart, boolConditionStart, handlerValues, context);
             return;
         }
 
         if (GetTypeEmitter(plan, index, type, mapper) is { } emitter) {
             emitter.Validate(type);
             EmitTypeCustom(path, emitter, il, index, mapper.Keys[index], type, handlerValues,
-                specialHandlerStart, boolConditionStart);
+                specialHandlerStart, boolConditionStart, context);
             return;
         }
 
-        if (path == AccessPath.UseWith)
-            AccessorEmitter.ClearUseWithSlot(il, index);
     }
 
-    private static IAccessorEmitter? GetMemberEmitter(AccessPlan plan, int index, Type type, Mapper mapper,
-        ParameterMemberAccess member) {
+    private static IAccessorEmitter? GetMemberEmitter(AccessPlan plan, int index, Type type, Mapper mapper, ParameterMemberAccess member) {
         IAccessorEmitter? emitter = member.Member.GetCustomAttribute<AccessorEmitterHandler>(inherit: true)
             ?.GetMemberEmitter(plan.VariablePrefix, index, type, member.Member, mapper);
         if (emitter is not null)
@@ -436,23 +460,20 @@ public static class ParameterAccessorGenerator {
         return null;
     }
 
-    private static void EmitMemberSlot(ILGenerator il, AccessPath path, AccessPlan plan, int index, Type type,
-        Mapper mapper, ParameterMemberAccess member, SpecialHandler[] handlers,
-        int specialHandlerStart, int boolConditionStart, LocalBuilder? handlerValues) {
+    private static void EmitMemberSlot(ILGenerator il, AccessPath path, AccessPlan plan, int index, Type type, Mapper mapper, ParameterMemberAccess member, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart, LocalBuilder? handlerValues, UseWithEmissionContext? context) {
         IAccessorEmitter? emitter = GetMemberEmitter(plan, index, type, mapper, member);
 
         if (emitter is not null) {
             EmitCustom(path, emitter, il, index, mapper.Keys[index], member, handlerValues,
-                specialHandlerStart, boolConditionStart);
+                specialHandlerStart, boolConditionStart, context);
             return;
         }
 
         EmitDefault(path, il, index, mapper.Keys[index], member, handlers,
-            specialHandlerStart, boolConditionStart, handlerValues);
+            specialHandlerStart, boolConditionStart, handlerValues, context);
     }
 
-    private static void EmitCustom(AccessPath path, IAccessorEmitter emitter, ILGenerator il, int index, string key,
-        ParameterMemberAccess member, LocalBuilder? handlerValues, int specialHandlerStart, int boolConditionStart) {
+    private static void EmitCustom(AccessPath path, IAccessorEmitter emitter, ILGenerator il, int index, string key, ParameterMemberAccess member, LocalBuilder? handlerValues, int specialHandlerStart, int boolConditionStart, UseWithEmissionContext? context) {
         if (member.IsNested) {
             if (emitter is not IPathAccessorEmitter pathEmitter)
                 throw new InvalidOperationException(
@@ -463,7 +484,7 @@ public static class ParameterAccessorGenerator {
                 pathEmitter.Emit(il, index, key, member, handlerValues, index - specialHandlerStart,
                     index >= specialHandlerStart && index < boolConditionStart, index < boolConditionStart);
             else
-                pathEmitter.EmitUseWith(il, index, member, index < boolConditionStart);
+                pathEmitter.EmitUseWith(il, index, member, index < boolConditionStart, context!.Value);
             return;
         }
 
@@ -472,26 +493,23 @@ public static class ParameterAccessorGenerator {
             emitter.Emit(il, index, key, member.RootType, member.Member, handlerValues, index - specialHandlerStart,
                 index >= specialHandlerStart && index < boolConditionStart, index < boolConditionStart);
         else
-            emitter.EmitUseWith(il, index, member.RootType, member.Member, index < boolConditionStart);
+            emitter.EmitUseWith(il, index, member.RootType, member.Member, index < boolConditionStart, context!.Value);
     }
 
-    private static void EmitTypeCustom(AccessPath path, ITypeAccessorEmitter emitter, ILGenerator il, int index,
-        string key, Type type, LocalBuilder? handlerValues, int specialHandlerStart, int boolConditionStart) {
+    private static void EmitTypeCustom(AccessPath path, ITypeAccessorEmitter emitter, ILGenerator il, int index, string key, Type type, LocalBuilder? handlerValues, int specialHandlerStart, int boolConditionStart, UseWithEmissionContext? context) {
         if (path == AccessPath.Direct)
             emitter.Emit(il, index, key, type, handlerValues, index - specialHandlerStart,
                 index >= specialHandlerStart && index < boolConditionStart, index < boolConditionStart);
         else
-            emitter.EmitUseWith(il, index, type, index < boolConditionStart);
+            emitter.EmitUseWith(il, index, type, index < boolConditionStart, context!.Value);
     }
 
-    private static void EmitDefault(AccessPath path, ILGenerator il, int index, string key,
-        ParameterMemberAccess member, SpecialHandler[] handlers, int specialHandlerStart,
-        int boolConditionStart, LocalBuilder? handlerValues) {
+    private static void EmitDefault(AccessPath path, ILGenerator il, int index, string key, ParameterMemberAccess member, SpecialHandler[] handlers, int specialHandlerStart, int boolConditionStart, LocalBuilder? handlerValues, UseWithEmissionContext? context) {
         int handlerIndex = index - specialHandlerStart;
         Action<ILGenerator, ParameterMemberAccess> condition;
         if (!member.IsNested && index >= specialHandlerStart && handlerIndex >= 0 && handlerIndex < handlers.Length
             && handlers[handlerIndex].GetUsageEmitter(member.RootType, member.Member) is { } specialUsage)
-            condition = (x, _) => specialUsage(x);
+            condition = (x, _) => specialUsage(x, context?.SourceArgument ?? 0);
         else
             condition = static (x, m) => EmitDefaultUsage(x, m);
 
@@ -501,19 +519,24 @@ public static class ParameterAccessorGenerator {
                 condition, static (x, m) => m.EmitValue(x));
         else
             AccessorEmitter.EmitUseWithSlot(il, index, index < boolConditionStart, member,
-                condition, static (x, m) => m.EmitValue(x));
+                condition, static (x, m) => m.EmitValue(x), context!.Value);
     }
 
     private static void EmitDictionarySlot(ILGenerator il, AccessPath path, int index, string key,
         DictionaryParameterAccess dictionary, int specialHandlerStart, int boolConditionStart,
-        LocalBuilder? handlerValues) {
-        if (path == AccessPath.UseWith)
-            AccessorEmitter.ClearUseWithSlot(il, index);
+        LocalBuilder? handlerValues, UseWithEmissionContext? context) {
 
         Label skip = il.DefineLabel();
-        LocalBuilder value = dictionary.EmitTryGet(il, skip);
+        LocalBuilder value = dictionary.EmitTryGet(il, skip, context?.SourceArgument ?? 0);
+        if (path == AccessPath.UseWith)
+            AccessorEmitter.MarkUseWithSlot(il, index, context!.Value);
         DictionaryParameterAccess.EmitDefaultUsage(il, value, dictionary.ValueType);
-        il.Emit(OpCodes.Brfalse, skip);
+        Label usable = il.DefineLabel();
+        il.Emit(OpCodes.Brtrue, usable);
+        if (path == AccessPath.UseWith)
+            AccessorEmitter.EmitUseWithValue(il, index, bindValue: true, static x => x.Emit(OpCodes.Ldnull), context!.Value);
+        il.Emit(OpCodes.Br, skip);
+        il.MarkLabel(usable);
 
         if (path == AccessPath.Direct)
             AccessorEmitter.EmitDirectValue(il, index, key, handlerValues, index - specialHandlerStart,
@@ -521,7 +544,7 @@ public static class ParameterAccessorGenerator {
                 x => DictionaryParameterAccess.EmitBoxedValue(x, value, dictionary.ValueType));
         else
             AccessorEmitter.EmitUseWithValue(il, index, index < boolConditionStart,
-                x => DictionaryParameterAccess.EmitBoxedValue(x, value, dictionary.ValueType));
+                x => DictionaryParameterAccess.EmitBoxedValue(x, value, dictionary.ValueType), context!.Value);
         il.MarkLabel(skip);
     }
 
@@ -565,7 +588,7 @@ public static class ParameterAccessorGenerator {
                 if (!member.IsNested && index >= accessor.SpecialHandlerStart && handlerIndex >= 0
                     && handlerIndex < accessor.Handlers.Length
                     && accessor.Handlers[handlerIndex].GetUsageEmitter(member.RootType, member.Member) is { } specialUsage)
-                    specialUsage(il);
+                    specialUsage(il, 0);
                 else
                     EmitDefaultUsage(il, prepared);
             }

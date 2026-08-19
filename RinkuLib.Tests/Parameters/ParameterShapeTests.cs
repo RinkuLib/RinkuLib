@@ -1,6 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
 using Rinku;
+using Rinku.Mapping;
+using Rinku.Mapping.Parsers;
+using RinkuLib.Tests.Infrastructure;
 using Rinku.Querying.Parameters;
 using Xunit;
 
@@ -104,7 +109,8 @@ public sealed class ParameterShapeTests {
         var command = new QueryCommand("SELECT @Value");
         var builder = new QueryBuilder(command);
         Assert.Throws<InvalidOperationException>(() => builder.UseWith(new AmbiguousWrapper {
-            A = new AmbiguousChildA { Value = 1 }, B = new AmbiguousChildB { Value = 2 }
+            A = new AmbiguousChildA { Value = 1 },
+            B = new AmbiguousChildB { Value = 2 }
         }));
     }
 
@@ -119,7 +125,8 @@ public sealed class ParameterShapeTests {
         var command = new QueryCommand("SELECT @Value");
         var builder = new QueryBuilder(command);
         builder.UseWith(new AmbiguousTakeOneWrapper {
-            A = new AmbiguousChildA { Value = 1 }, B = new AmbiguousChildB { Value = 2 }
+            A = new AmbiguousChildA { Value = 1 },
+            B = new AmbiguousChildB { Value = 2 }
         });
 
         Assert.Contains((int)builder["@Value"]!, new[] { 1, 2 });
@@ -150,9 +157,141 @@ public sealed class ParameterShapeTests {
         Assert.Equal(5, builder["@Id"]);
     }
 
+    [Fact]
+    public void DynaObject_sources_compose_by_their_actual_columns() {
+        var command = new QueryCommand("SELECT @ArtistId, @Title");
+        var builder = command.StartBuilder();
+        var artist = Rows.ParseOne<DynaObject>([new("ArtistId", typeof(int), false)], 7);
+        var title = Rows.ParseOne<DynaObject>([new("Title", typeof(string), false)], "Blue");
+
+        builder.UseWith(artist);
+        builder.UseWith(title);
+
+        Assert.Equal(7, builder["@ArtistId"]);
+        Assert.Equal("Blue", builder["@Title"]);
+    }
+
+    [Fact]
+    public void DynaObject_missing_column_does_not_clear_previous_value() {
+        var command = new QueryCommand("SELECT @ArtistId, @Title");
+        var builder = command.StartBuilder();
+        var both = Rows.ParseOne<DynaObject>([
+            new("ArtistId", typeof(int), false), new("Title", typeof(string), false)], 7, "Blue");
+        var artist = Rows.ParseOne<DynaObject>([new("ArtistId", typeof(int), false)], 12);
+
+        builder.UseWith(both);
+        builder.UseWith(artist);
+
+        Assert.Equal(12, builder["@ArtistId"]);
+        Assert.Equal("Blue", builder["@Title"]);
+    }
+
+    [Fact]
+    public void Fixed_accessors_reuse_the_master_mask_and_dynamic_accessors_clone_it() {
+        var fixedCommand = new QueryCommand("SELECT @Id");
+        var fixedAccessor = ParameterAccessorGenerator.CreateUseWith(typeof(FixedArgs), fixedCommand.Mapper);
+        bool[] fixedFirst = fixedAccessor.Invoke!(new FixedArgs { Id = 1 }, new object?[1], needTarget: true);
+        bool[] fixedSecond = fixedAccessor.Invoke!(new FixedArgs { Id = 2 }, new object?[1], needTarget: true);
+        Assert.Same(fixedFirst, fixedSecond);
+        Assert.True(fixedFirst[0]);
+
+        var dynamicCommand = new QueryCommand("SELECT @Id, @Name");
+        var dynamicAccessor = ParameterAccessorGenerator.CreateUseWith(
+            typeof(IReadOnlyDictionary<string, object?>), dynamicCommand.Mapper);
+        bool[] dynamicFirst = dynamicAccessor.Invoke!(
+            new Dictionary<string, object?> { ["Id"] = 1 }, new object?[2], needTarget: true);
+        bool[] dynamicSecond = dynamicAccessor.Invoke(
+            new Dictionary<string, object?> { ["Name"] = "A" }, new object?[2], needTarget: true);
+        Assert.NotSame(dynamicFirst, dynamicSecond);
+        Assert.True(dynamicFirst[0]);
+        Assert.False(dynamicFirst[1]);
+        Assert.False(dynamicSecond[0]);
+        Assert.True(dynamicSecond[1]);
+
+        bool[] scratchFirst = dynamicAccessor.Invoke(
+            new Dictionary<string, object?> { ["Id"] = 2 }, new object?[2], needTarget: false);
+        bool[] scratchSecond = dynamicAccessor.Invoke(
+            new Dictionary<string, object?> { ["Name"] = "B" }, new object?[2], needTarget: false);
+        Assert.Same(scratchFirst, scratchSecond);
+    }
+
+    [Fact]
+    public void Conditional_custom_emitters_mark_and_update_the_dynamic_mask_in_the_emitted_branch() {
+        var command = new QueryCommand("SELECT @Name");
+        var accessor = ParameterAccessorGenerator.CreateUseWith(typeof(ConditionalArgs), command.Mapper);
+
+        var absentValues = new object?[] { "previous" };
+        bool[] absent = accessor.Invoke!(new ConditionalArgs { Name = null }, absentValues, needTarget: true);
+        Assert.False(absent[0]);
+        Assert.Equal("previous", absentValues[0]);
+
+        var presentValues = new object?[] { "previous" };
+        bool[] present = accessor.Invoke(new ConditionalArgs { Name = "current" }, presentValues, needTarget: true);
+        Assert.True(present[0]);
+        Assert.Equal("current", presentValues[0]);
+        Assert.NotSame(absent, present);
+    }
+
+    [AttributeUsage(AttributeTargets.Property)]
+    private sealed class ConditionalDynamicAttribute : AccessorEmitterHandler {
+        private static readonly ConditionalDynamicEmitter Emitter = new();
+
+        public override IAccessorEmitter? GetMemberEmitter(
+            char varChar, int index, Type type, MemberInfo member, Mapper mapper)
+            => index < 0 ? null : Emitter;
+    }
+
+    private sealed class ConditionalDynamicEmitter : IAccessorEmitter {
+        private static readonly MethodInfo IsNullOrWhiteSpace = typeof(string)
+            .GetMethod(nameof(string.IsNullOrWhiteSpace), [typeof(string)])!;
+
+        public void Emit(ILGenerator il, int index, string key, Type type, MemberInfo member, LocalBuilder? handlerValues, int handlerIndex, bool handlerValue, bool bindValue)
+            => AccessorEmitter.EmitSlot(il, index, key, handlerValues, handlerIndex, handlerValue, bindValue,
+                condition => EmitCondition(condition, type, member),
+                value => AccessorEmitter.EmitMemberLoad(value, type, member));
+
+        public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue, UseWithEmissionContext context) {
+            var skip = il.DefineLabel();
+            EmitCondition(il, type, member, context.SourceArgument);
+            il.Emit(OpCodes.Brfalse, skip);
+            AccessorEmitter.MarkUseWithSlot(il, index, context);
+            AccessorEmitter.EmitUseWithValue(il, index, bindValue,
+                value => AccessorEmitter.EmitMemberLoad(value, type, member, context.SourceArgument), context);
+            il.MarkLabel(skip);
+        }
+
+        public void EmitStackUsage(ILGenerator il, Type type, MemberInfo member)
+            => EmitCondition(il, type, member);
+
+        public void EmitStackValue(ILGenerator il, Type type, MemberInfo member)
+            => AccessorEmitter.EmitMemberLoad(il, type, member);
+
+        public Type GetStackType(Type type, MemberInfo member) => typeof(string);
+
+        public void Validate(Type type, MemberInfo member) {
+            if (ParameterMemberAccess.GetMemberType(member) != typeof(string))
+                throw new InvalidOperationException("ConditionalDynamic requires a string member");
+        }
+
+        private static void EmitCondition(ILGenerator il, Type type, MemberInfo member, int sourceArgument = 0) {
+            AccessorEmitter.EmitMemberLoad(il, type, member, sourceArgument);
+            il.Emit(OpCodes.Call, IsNullOrWhiteSpace);
+            il.Emit(OpCodes.Ldc_I4_0);
+            il.Emit(OpCodes.Ceq);
+        }
+    }
+
     private sealed class DictionaryWrapper {
         public int Id { get; init; }
         [NestedParameters] public required IReadOnlyDictionary<string, object?> Extra { get; init; }
+    }
+
+    private sealed class FixedArgs {
+        public int Id { get; init; }
+    }
+
+    private sealed class ConditionalArgs {
+        [ConditionalDynamic] public string? Name { get; init; }
     }
 
     [Fact]

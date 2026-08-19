@@ -52,13 +52,13 @@ Pass `true` as the second `MethodConditionEmitter` constructor argument when the
 
 ```csharp
 sealed class PositiveNumberEmitter : AccessorEmitterBase {
-    protected override void EmitCondition(ILGenerator il, Type type, MemberInfo member) {
-        AccessorEmitter.EmitMemberLoad(il, type, member);
+    protected override void EmitCondition(ILGenerator il, Type type, MemberInfo member, int sourceArgument) {
+        AccessorEmitter.EmitMemberLoad(il, type, member, sourceArgument);
         il.Emit(OpCodes.Ldc_I4_0);
         il.Emit(OpCodes.Cgt);
     }
 
-    protected override void EmitValue(ILGenerator il, Type type, MemberInfo member) => AccessorEmitter.EmitMemberValue(il, type, member);
+    protected override void EmitValue(ILGenerator il, Type type, MemberInfo member, int sourceArgument) => AccessorEmitter.EmitMemberValue(il, type, member, sourceArgument);
 }
 
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
@@ -104,10 +104,10 @@ sealed class NullAsDbNullEmitter : IAccessorEmitter {
             handlerValue,
             bindValue,
             condition => condition.Emit(OpCodes.Ldc_I4_1),
-            value => EmitValue(value, type, member));
+            value => EmitValue(value, type, member, 0));
 
-    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue)
-        => AccessorEmitter.EmitUseWithSlot(il, index, bindValue, condition => condition.Emit(OpCodes.Ldc_I4_1), value => EmitValue(value, type, member));
+    public void EmitUseWith(ILGenerator il, int index, Type type, MemberInfo member, bool bindValue, UseWithEmissionContext context)
+        => AccessorEmitter.EmitUseWithSlot(il, index, bindValue, condition => condition.Emit(OpCodes.Ldc_I4_1), value => EmitValue(value, type, member, context.SourceArgument), context);
 
     public void Validate(Type type, MemberInfo member) {
         Type memberType = member is FieldInfo field
@@ -118,8 +118,8 @@ sealed class NullAsDbNullEmitter : IAccessorEmitter {
             throw new InvalidOperationException("NullAsDbNull requires a string member.");
     }
 
-    static void EmitValue(ILGenerator il, Type type, MemberInfo member) {
-        AccessorEmitter.EmitMemberLoad(il, type, member);
+    static void EmitValue(ILGenerator il, Type type, MemberInfo member, int sourceArgument) {
+        AccessorEmitter.EmitMemberLoad(il, type, member, sourceArgument);
         il.Emit(OpCodes.Call, ToDbValueMethod);
     }
 }

@@ -18,7 +18,8 @@ internal sealed class RuntimeNewOriginalCall<TOriginal> {
         if (constructor.GetParameters().Length != 0 || !typeof(TOriginal).IsAssignableFrom(type))
             throw new ArgumentException($"Constructor {constructor} must be parameterless and construct a {typeof(TOriginal)}.", nameof(constructor));
         if (constructor.IsPublic && type.IsVisible) _constructor = constructor;
-        else _call = new(BuildFactory(constructor));
+        else
+            _call = new(BuildFactory(constructor));
     }
 
     private RuntimeNewOriginalCall(bool defaultValue) => _defaultValue = defaultValue;

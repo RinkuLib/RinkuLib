@@ -47,6 +47,7 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         command.UpdateParseCache(usage, cache, nbResultSetPassedMinusOne);
         return cache;
     }
+    /// <summary>Returns the current result set parser for a runtime result type.</summary>
     public ITypeParser GetCurrentSetParser(Type resultType) {
         if (command.TryGetCachedParser(resultType, usage, out var cache, nbResultSetPassedMinusOne))
             return cache;

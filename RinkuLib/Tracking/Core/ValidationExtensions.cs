@@ -21,8 +21,7 @@ public static class ValidationExtensions {
     }
 
     /// <summary>Validates all supplied items asynchronously.</summary>
-    public static async ValueTask<bool> ValidateAllAsync(this IEnumerable<IAsyncValidatable> items,
-        CancellationToken cancellationToken = default) {
+    public static async ValueTask<bool> ValidateAllAsync(this IEnumerable<IAsyncValidatable> items, CancellationToken cancellationToken = default) {
         bool valid = true;
         foreach (IAsyncValidatable item in items)
             valid &= await item.ValidateAsync(cancellationToken).ConfigureAwait(false);
@@ -30,8 +29,7 @@ public static class ValidationExtensions {
     }
 
     /// <summary>Validates all supplied items with context asynchronously.</summary>
-    public static async ValueTask<bool> ValidateAllAsync<TContext>(this IEnumerable<IAsyncValidatable<TContext>> items,
-        TContext context, CancellationToken cancellationToken = default) {
+    public static async ValueTask<bool> ValidateAllAsync<TContext>(this IEnumerable<IAsyncValidatable<TContext>> items, TContext context, CancellationToken cancellationToken = default) {
         bool valid = true;
         foreach (IAsyncValidatable<TContext> item in items)
             valid &= await item.ValidateAsync(context, cancellationToken).ConfigureAwait(false);
@@ -46,8 +44,7 @@ public static class ValidationExtensions {
     }
 
     /// <summary>Validates an item with context and returns metadata.</summary>
-    public static bool Validate<TContext, TMetadata>(this IValidation<TContext, TMetadata> item,
-        TContext context, out TMetadata metadata) {
+    public static bool Validate<TContext, TMetadata>(this IValidation<TContext, TMetadata> item, TContext context, out TMetadata metadata) {
         bool valid = item.Validate(context);
         metadata = item.Metadata;
         return valid;

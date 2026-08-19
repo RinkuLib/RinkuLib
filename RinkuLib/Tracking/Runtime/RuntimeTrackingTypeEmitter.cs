@@ -210,8 +210,7 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit> where TEdit :
         return result;
     }
 
-    private static void BindCustomContractProperties(TypeBuilder type, RuntimeTrackingCapabilityBuilder capabilityBuilder,
-        PropertyMethods[] properties) {
+    private static void BindCustomContractProperties(TypeBuilder type, RuntimeTrackingCapabilityBuilder capabilityBuilder, PropertyMethods[] properties) {
         foreach (Type contractType in RuntimeTrackingContract<TOriginal, TEdit>.CustomContracts())
             foreach (PropertyInfo contract in contractType.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)) {
                 PropertyMethods? match = null;
@@ -520,9 +519,7 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit> where TEdit :
         for (int i = 0; i < members.Count; i++) {
             IRuntimeTrackingMember member = members[i];
             bool renamed = member.ParameterNames is { Count: > 0 };
-            if (member.ExposeProperty) {
-                if (!member.IncludeInParameters || renamed) return true;
-            }
+            if (member.ExposeProperty && (!member.IncludeInParameters || renamed)) return true;
             else if (member.IncludeInParameters) return true;
         }
         return false;

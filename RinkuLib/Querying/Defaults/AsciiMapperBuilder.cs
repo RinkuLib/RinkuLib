@@ -106,9 +106,9 @@ internal struct AsciiMapperBuilder {
         if (need256) {
             Reserve(new(128, bit256.A, bit256.B), 0);
             Reserve(new(128, bit256.C, bit256.D), 128);
-        }
-        else
+        } else {
             Reserve(best, 0);
+        }
         return mask;
     }
     private readonly unsafe int GetTerminalStepIndex(string key, out bool hasAlt, out int depth) {
@@ -179,11 +179,9 @@ private static readonly byte[] DeBruijnLookup64 = [
 #if NETCOREAPP3_0_OR_GREATER
             b = System.Numerics.BitOperations.TrailingZeroCount(bits);
 #else
-        if (bits == 0) {
-            b = 64;
-        } else {
+        if (bits == 0) b = 64;
+        else
             b = DeBruijnLookup64[((bits & ~(bits - 1)) * 0x03F79D71B4CB0A89UL) >> 58];
-        }
 #endif
             Steps[start + b] = MapperHelper.RESERVED;
             bits &= bits - 1;
@@ -334,11 +332,9 @@ private static readonly byte[] DeBruijnLookup64 = [
 #if NETCOREAPP3_0_OR_GREATER
                 b = System.Numerics.BitOperations.TrailingZeroCount(bits);
 #else
-                if (bits == 0) {
-                    b = 64;
-                } else {
+                if (bits == 0) b = 64;
+                else
                     b = DeBruijnLookup64[((bits & ~(bits - 1)) * 0x03F79D71B4CB0A89UL) >> 58];
-                }
 #endif
                 if (Steps[localStart + b] >= MapperHelper.RESERVED)
                     goto NEXT;

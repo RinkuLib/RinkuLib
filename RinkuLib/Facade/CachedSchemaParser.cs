@@ -150,12 +150,16 @@ public sealed class CachedTypeParser : IDisposable {
     /// <summary>Asynchronously queries <paramref name="cmd"/> while updating <paramref name="cache"/>.</summary>
     public Task<T> QueryAsync<T>(IDbCommand cmd, ICache cache, bool disposeCommand = false, CancellationToken ct = default)
         => HasSchema ? Get<T>().QueryAsync(cmd, cache, disposeCommand, ct) : cmd.QueryAsync(new CacheBridge<T>(this, cache), disposeCommand, ct);
+    /// <summary>Queries <paramref name="cmd"/> while mapping the result to a runtime type.</summary>
     public object? Query(Type type, DbCommand cmd, bool disposeCommand = false)
         => HasSchema ? Get(type).QueryObject(cmd, null, disposeCommand) : cmd.Query(type, new RuntimeCacheBridge(this, type), disposeCommand);
+    /// <summary>Asynchronously queries <paramref name="cmd"/> while mapping the result to a runtime type.</summary>
     public Task<object?> QueryAsync(Type type, DbCommand cmd, bool disposeCommand = false, CancellationToken ct = default)
         => HasSchema ? Get(type).QueryObjectAsync(cmd, null, disposeCommand, ct) : cmd.QueryAsync(type, new RuntimeCacheBridge(this, type), disposeCommand, ct);
+    /// <summary>Queries <paramref name="cmd"/> while mapping the result to a runtime type.</summary>
     public object? Query(Type type, IDbCommand cmd, bool disposeCommand = false)
         => HasSchema ? Get(type).QueryObject(cmd, null, disposeCommand) : cmd.Query(type, new RuntimeCacheBridge(this, type), disposeCommand);
+    /// <summary>Asynchronously queries <paramref name="cmd"/> while mapping the result to a runtime type.</summary>
     public Task<object?> QueryAsync(Type type, IDbCommand cmd, bool disposeCommand = false, CancellationToken ct = default)
         => HasSchema ? Get(type).QueryObjectAsync(cmd, null, disposeCommand, ct) : cmd.QueryAsync(type, new RuntimeCacheBridge(this, type), disposeCommand, ct);
     /// <summary>Streams rows from <paramref name="cmd"/> as <typeparamref name="T"/> over this cache's fixed schema.</summary>

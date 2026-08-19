@@ -449,6 +449,23 @@ public sealed class TrackingCapabilityTests {
     }
 
     [Fact]
+    public void UseWith_tracked_runtime_parameter_sources_compose_without_clearing_unrelated_members() {
+        IEmployeeEdit nameEdit = new Employee { Number = 1, Name = "A" }
+            .ToTrackingItem<Employee, IEmployeeEdit>();
+        IOverlayEmployeeEdit departmentEdit = new Employee { Number = 2, Department = "Old" }
+            .ToTrackingItem<Employee, IOverlayEmployeeEdit>();
+        Assert.True(departmentEdit.Set(nameof(Employee.Department), "Platform"));
+
+        var command = new QueryCommand("SELECT @Name, @Department");
+        var builder = command.StartBuilder();
+        builder.UseWith((object)nameEdit);
+        builder.UseWith((object)departmentEdit);
+
+        Assert.Equal("A", builder["@Name"]);
+        Assert.Equal("Platform", builder["@Department"]);
+    }
+
+    [Fact]
     public void UseWith_projection_can_rename_include_and_exclude_generated_members() {
         IParameterEmployeeEdit edit = new Employee { Name = "A", Number = 4 }.ToTrackingItem<Employee, IParameterEmployeeEdit>();
         edit.Name = "B";

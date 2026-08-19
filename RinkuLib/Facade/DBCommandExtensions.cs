@@ -357,6 +357,7 @@ public static class DBCommandExtensions {
                 }
             }
         }
+        /// <summary>Executes the command and maps its result to the supplied runtime type.</summary>
         public object? Query(Type type, ICacheGivingParser cache, bool disposeCommand = true) {
             ArgumentNullException.ThrowIfNull(type);
             var makers = TypeParser.TypeParserMakers;
@@ -382,6 +383,7 @@ public static class DBCommandExtensions {
                 if (disposeCommand) { cmd.Parameters.Clear(); cmd.Dispose(); }
             }
         }
+        /// <summary>Asynchronously executes the command and maps its result to the supplied runtime type.</summary>
         public async Task<object?> QueryAsync(Type type, ICacheGivingParser cache, bool disposeCommand = true, CancellationToken ct = default) {
             ArgumentNullException.ThrowIfNull(type);
             var makers = TypeParser.TypeParserMakers;
@@ -712,6 +714,7 @@ public static class DBCommandExtensions {
                     return cold;
             return Task.FromResult(cmd.Query(cache, disposeCommand));
         }
+        /// <summary>Executes the command and maps its result to the supplied runtime type.</summary>
         public object? Query(Type type, ICacheGivingParser cache, bool disposeCommand = true) {
             ArgumentNullException.ThrowIfNull(type);
             var makers = TypeParser.TypeParserMakers;
@@ -735,6 +738,7 @@ public static class DBCommandExtensions {
                 if (disposeCommand) { cmd.Parameters.Clear(); cmd.Dispose(); }
             }
         }
+        /// <summary>Asynchronously executes the command and maps its result to the supplied runtime type.</summary>
         public Task<object?> QueryAsync(Type type, ICacheGivingParser cache, bool disposeCommand = true, CancellationToken ct = default) {
             ArgumentNullException.ThrowIfNull(type);
             if (cmd is DbCommand c) return c.QueryAsync(type, cache, disposeCommand, ct);
