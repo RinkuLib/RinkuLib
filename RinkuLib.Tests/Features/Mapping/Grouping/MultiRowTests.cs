@@ -289,7 +289,7 @@ public class MultiRowTests {
     }
 
     [Fact]
-    public void A_key_member_matches_through_its_alt_name() {
+    public void A_member_key_on_a_parameterless_shape_matches_the_schema() {
         ColumnInfo[] cols = [
             new("PKey", typeof(int), false),
             new("Name", typeof(string), false),
@@ -629,7 +629,7 @@ public class MultiRowTests {
     }
 
     [Fact]
-    public void A_member_reached_collection_groups_the_same_as_a_constructor_argument() {
+    public void A_member_key_on_a_parameterless_member_shape_matches_the_schema() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<MemberParent>>(cols);
         using var reader = Rows.Reader(cols,

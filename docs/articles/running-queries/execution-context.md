@@ -79,7 +79,7 @@ List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellati
 
 ```csharp
 await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken)) {
-    Show(album);
+    Console.WriteLine(album.Title);
 }
 ```
 
@@ -90,7 +90,7 @@ Synchronous methods do not accept a cancellation token.
 Cancellation follows the normal cleanup rules.
 
 ```csharp
-using DbConnection cnn = GetConnection(); // closed
+using DbConnection cnn = new SqlConnection(connectionString); // closed
 
 await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);
 
@@ -98,7 +98,7 @@ await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);
 ```
 
 ```csharp
-using DbConnection cnn = GetConnection();
+using DbConnection cnn = new SqlConnection(connectionString);
 cnn.Open();
 
 await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);
@@ -115,7 +115,7 @@ IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn, new { artis
 
 using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
     while (iterator.MoveNext())
-        Show(iterator.Current);
+        Console.WriteLine(iterator.Current.Title);
 }
 ```
 
@@ -126,7 +126,7 @@ Disposing the enumerator releases the reader immediately, including after early 
 Cleanup follows the same rules after a provider error, mapping error, or cancellation.
 
 ```csharp
-using DbConnection cnn = GetConnection();
+using DbConnection cnn = new SqlConnection(connectionString);
 
 try {
     List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);

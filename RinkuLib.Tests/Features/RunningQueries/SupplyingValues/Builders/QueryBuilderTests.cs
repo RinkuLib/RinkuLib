@@ -1,6 +1,7 @@
 using Rinku;
 using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace RinkuLib.Tests.Building;
@@ -167,6 +168,7 @@ public class QueryBuilderTests {
     }
 
     [Fact]
+    [DocumentationExample("builders.md", "per-call-state")]
     public void Builders_from_one_command_do_not_share_state() {
         var query = new QueryCommand(Template);
         var first = query.StartBuilder();

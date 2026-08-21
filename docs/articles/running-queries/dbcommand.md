@@ -16,7 +16,7 @@ command.Parameters.Add(parameter);
 Album album = AlbumParser.Query(command);
 ```
 
-`CachedTypeParser<T>` remembers the parser selected from the first command schema and reuses it for later commands with that result shape.
+`CachedTypeParser<T>` remembers the parser selected from the first command schema and reuses it for later commands with that complete result shape. It stores reusable parser and schema information, not per-call parsing state, so one instance can be shared by concurrent calls. Use a separate cache for a different complete result shape.
 
 ```csharp
 using DbCommand firstCommand = cnn.CreateCommand();
@@ -28,8 +28,6 @@ secondCommand.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE Album
 Album first = AlbumParser.Query(firstCommand);
 Album second = AlbumParser.Query(secondCommand);
 ```
-
-Use a separate cache for a different complete result shape.
 
 ```csharp
 static readonly CachedTypeParser<List<Album>> AlbumListParser = new();
@@ -92,7 +90,7 @@ using var streamParser = new CachedTypeParser<IEnumerable<Album>>();
 IEnumerable<Album> albums = streamParser.Query(command, disposeCommand: true);
 
 foreach (Album album in albums)
-    Show(album);
+    Console.WriteLine(album.Title);
 
 // command is disposed when enumeration finishes.
 ```
@@ -104,7 +102,7 @@ Stopping early also disposes the enumerator and the owned command when the loop 
 Connection restoration is independent from command ownership.
 
 ```csharp
-using DbConnection cnn = GetConnection(); // closed
+using DbConnection cnn = new SqlConnection(connectionString); // closed
 using DbCommand command = cnn.CreateCommand();
 command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 1";
 
@@ -115,7 +113,7 @@ Album album = AlbumParser.Query(command, disposeCommand: false);
 ```
 
 ```csharp
-using DbConnection cnn = GetConnection();
+using DbConnection cnn = new SqlConnection(connectionString);
 cnn.Open();
 
 using DbCommand command = cnn.CreateCommand();
@@ -200,7 +198,7 @@ Album album = await AlbumParser.QueryAsync(command, disposeCommand: false, ct: c
 
 ```csharp
 await foreach (Album album in AlbumParser.StreamQueryAsync(command, disposeCommand: false, ct: cancellationToken)) {
-    Show(album);
+    Console.WriteLine(album.Title);
 }
 ```
 

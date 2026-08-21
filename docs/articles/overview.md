@@ -13,8 +13,6 @@ dotnet add package Rinku
 Declare a command for SQL that will be used more than once.
 
 ```csharp
-using Rinku;
-
 public record Album(int Id, string Title) : IDbReadable;
 
 static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums");
@@ -332,7 +330,7 @@ List<Album> albums = await cnn.QueryAsync<List<Album>>("SELECT AlbumId AS Id, Ti
 
 ```csharp
 await foreach (Album album in cnn.StreamQueryAsync<Album>("SELECT AlbumId AS Id, Title FROM albums", ct: cancellationToken))
-    Show(album);
+    Console.WriteLine(album.Title);
 ```
 
 [Read about streaming](running-queries/streaming.md).
@@ -359,14 +357,11 @@ List<Album> albums = GetAlbumsForArtist.Query<List<Album>>(cnn, new { artistId =
 ## Read a stored procedure output value
 
 ```csharp
-static readonly QueryCommand RenumberAlbums = CreateRenumberAlbums();
+static QueryCommand CreateRenumberAlbums(DbConnection setupConnection)
+    => QueryCommand.FromProc("RenumberAlbums", setupConnection);
 
-static QueryCommand CreateRenumberAlbums() {
-    using DbConnection setupConnection = GetConnection();
-    return QueryCommand.FromProc("RenumberAlbums", setupConnection);
-}
-
-RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
+QueryCommand renumberAlbums = CreateRenumberAlbums(setupConnection);
+renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
 
 using (command) {
     int moved = command.GetOutputValue<int>("@moved");
@@ -397,7 +392,7 @@ DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command);
 using (command)
 using (reader) {
     while (reader.Read())
-        Show(reader.GetInt32(0), reader.GetString(1));
+        Console.WriteLine($"{reader.GetInt32(0)}: {reader.GetString(1)}");
 }
 ```
 
@@ -406,8 +401,8 @@ using (reader) {
 ## Use IDbConnection
 
 ```csharp
-IDbConnection cnn = GetLegacyConnection();
-List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums");
+static List<Album> GetAlbums(IDbConnection cnn)
+    => cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums");
 ```
 
 [Read about IDbConnection support](running-queries/idbconnection.md).
@@ -448,7 +443,7 @@ using Rinku.Tracking.Runtime;
 public record Album(int Id, string Title);
 
 Album original = new(12, "Blue");
-IRuntimeDynamicTrackingItem<Album> album = original.ToTrackingItem();
+IRuntimeTrackingItem<Album> album = RuntimeTracking.Default<Album>().Create(original);
 
 album.Set(nameof(Album.Title), "Kind of Blue");
 bool changed = album.IsEditing;
@@ -461,10 +456,10 @@ using Rinku.Tracking;
 using Rinku.Tracking.Runtime;
 
 Album[] originals = [new(1, "Blue"), new(2, "Green")];
-TrackingList<IRuntimeDynamicTrackingItem<Album>> albums = originals.ToTrackingList();
+TrackingList<IRuntimeTrackingItem<Album>> albums = originals.ToTrackingList();
 
 albums.RemoveAt(0);
-bool changed = albums.HasChanges();
+bool changed = albums.HasChanges;
 ```
 
 Tracking does not persist anything by itself. Accept the local state only after the application has saved it successfully.

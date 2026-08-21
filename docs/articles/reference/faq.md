@@ -17,8 +17,8 @@ The template is parsed once. Per-call values remain outside the command.
 Yes. Sharing is the intended use. Per-call execution state comes from the parameter object or builder operation, while the command's reusable caches are guarded.
 
 ```csharp
-using DbConnection firstConnection = GetConnection();
-using DbConnection secondConnection = GetConnection();
+using DbConnection firstConnection = new SqlConnection(connectionString);
+using DbConnection secondConnection = new SqlConnection(connectionString);
 
 Album[] albums = await Task.WhenAll(
     GetAlbum.QueryAsync<Album>(firstConnection, new { albumId = 12 }),
@@ -137,7 +137,7 @@ IEnumerable<Album> albums = ReadAndCountAlbums.Query<IEnumerable<Album>>(cnn, ou
 using (command) {
     using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
         if (iterator.MoveNext())
-            Show(iterator.Current);
+            Console.WriteLine(iterator.Current.Title);
     }
 
     int moved = command.GetOutputValue<int>("@moved");

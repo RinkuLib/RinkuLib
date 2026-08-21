@@ -8,6 +8,37 @@ namespace RinkuLib.Tests.Mapping;
 
 [Collection("GlobalMappingConfiguration")]
 public class RegistrationInitializerTests {
+    private sealed record GlobalReadableParent(GlobalReadableChild Child);
+    private sealed record GlobalReadableChild(GlobalReadableGrandchild Grandchild);
+    private sealed record GlobalReadableGrandchild(int Value);
+
+    [Fact]
+    [DocumentationExample("type-registration.md", "demand-driven-registration")]
+    public void Type_initializer_can_enable_direct_readability_for_each_type_created_on_demand() {
+        var previous = TypeParsingInfo.RegistrationInitializer;
+        try {
+            TypeParsingInfo.RegistrationInitializer = (type, generated) => {
+                TypeParsingInfo configured = previous?.Invoke(type, generated) ?? generated;
+                if (configured is DefaultTypeParsingInfo defaults)
+                    defaults.Flags |= DefaultTypeParsingFlags.DirectTypesAreReadable;
+                return configured;
+            };
+
+            Assert.Null(TypeParsingInfo.Get(typeof(GlobalReadableChild)));
+            Assert.Null(TypeParsingInfo.Get(typeof(GlobalReadableGrandchild)));
+
+            ColumnInfo[] cols = [new("ChildGrandchildValue", typeof(int), false)];
+            GlobalReadableParent built = Rows.ParseOne<GlobalReadableParent>(cols, 11);
+
+            Assert.Equal(11, built.Child.Grandchild.Value);
+            Assert.NotNull(TypeParsingInfo.Get(typeof(GlobalReadableChild)));
+            Assert.NotNull(TypeParsingInfo.Get(typeof(GlobalReadableGrandchild)));
+        }
+        finally {
+            TypeParsingInfo.RegistrationInitializer = previous;
+        }
+    }
+
     [AttributeUsage(AttributeTargets.Property)]
     private sealed class CustomParamMakerAttribute : Attribute, IParamInfoMaker {
         public ParamInfo MakeMatcher(Type Type, INullColHandler NullColHandler, INameComparer NameComparer,
@@ -119,7 +150,75 @@ public class RegistrationInitializerTests {
     }
 
     private sealed record ConstructionGrouped(int Id, string Label, List<int> Values) : IDbReadable;
+    private sealed record ConventionGrouped(int Id, string Label, List<int> Values) : IDbReadable;
+    private sealed record ConventionWithoutId(string Label, List<int> Values) : IDbReadable;
     private sealed record ReplacedConstruction(int Id) : IDbReadable;
+
+    [Fact]
+    [DocumentationExample("type-registration.md", "global-id-convention")]
+    public void Registration_initializers_can_make_every_id_a_group_key_that_aborts_on_null() {
+        var type = typeof(ConventionGrouped);
+        var noIdType = typeof(ConventionWithoutId);
+        var previousParam = ParamInfo.RegistrationInitializer;
+        var previousType = TypeParsingInfo.RegistrationInitializer;
+        var idRule = new EqualityGroupingRule("Id");
+        ColumnInfo[] columns = [
+            new("Id", typeof(int), true),
+            new("Label", typeof(string), false),
+            new("Values", typeof(int), false),
+        ];
+        ColumnInfo[] noIdColumns = [new("Label", typeof(string), false), new("Values", typeof(int), false)];
+        TypeParsingInfo.TryRemove(type, out _);
+        TypeParsingInfo.TryRemove(noIdType, out _);
+        ParamInfo.RegistrationInitializer = slot => {
+            slot = previousParam?.Invoke(slot) ?? slot;
+            if (slot.NameComparer.Contains("Id"))
+                slot.SetAbortOnNull(true);
+            return slot;
+        };
+        TypeParsingInfo.RegistrationInitializer = (registeredType, generated) => {
+            var info = previousType?.Invoke(registeredType, generated) ?? generated;
+            if (info is ICanUpdateGroupKey grouping && grouping.GroupKey is null)
+                grouping.GroupKey = idRule;
+            return info;
+        };
+        try {
+            var parser = TypeParser.GetTypeParser<List<ConventionGrouped>>(columns);
+            using var reader = Rows.Reader(columns,
+                [1, "first", 10],
+                [1, "changed", 11],
+                [DBNull.Value, "missing", 99],
+                [2, "second", 20]);
+            reader.Read();
+            var result = parser.Parse(reader).Result;
+
+            Assert.Equal(2, result.Count);
+            Assert.Equal((1, "first"), (result[0].Id, result[0].Label));
+            Assert.Equal([10, 11], result[0].Values);
+            Assert.Equal((2, "second"), (result[1].Id, result[1].Label));
+            Assert.Equal([20], result[1].Values);
+
+            var noIdParser = TypeParser.GetTypeParser<List<ConventionWithoutId>>(noIdColumns);
+            using var noIdReader = Rows.Reader(noIdColumns,
+                ["same", 10],
+                ["same", 11],
+                ["other", 20]);
+            noIdReader.Read();
+            var noId = noIdParser.Parse(noIdReader).Result;
+
+            Assert.Equal(2, noId.Count);
+            Assert.Equal([10, 11], noId[0].Values);
+            Assert.Equal([20], noId[1].Values);
+        }
+        finally {
+            ParamInfo.RegistrationInitializer = previousParam;
+            TypeParsingInfo.RegistrationInitializer = previousType;
+            TypeParsingInfo.TryRemove(type, out _);
+            TypeParsingInfo.TryRemove(noIdType, out _);
+            TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(noIdColumns, ParserInvalidationMode.InvalidateReferences);
+        }
+    }
 
     [Fact]
     public void A_construction_initializer_can_return_a_replacement_path() {
@@ -145,7 +244,7 @@ public class RegistrationInitializerTests {
 
     [Fact]
     [DocumentationExample("registration.md", "path-registration-default")]
-    public void A_construction_initializer_can_replace_inferred_grouping_with_an_id_key() {
+    public void A_construction_initializer_can_put_an_id_key_before_inferred_grouping() {
         var type = typeof(ConstructionGrouped);
         var previous = MethodCtorInfo.RegistrationInitializer;
         ColumnInfo[] columns = [new("Id", typeof(int), false), new("Label", typeof(string), false), new("Values", typeof(int), false)];

@@ -3,16 +3,18 @@
 Every connection-based execution method has an `IDbConnection` overload. Use it when the application or provider exposes the older ADO.NET interface.
 
 ```csharp
-IDbConnection cnn = GetLegacyConnection();
-
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
-int affected = RenameAlbum.Execute(cnn, new { albumId = 1, title = "Blue" });
+static List<Album> LoadAlbums(IDbConnection cnn) {
+    List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+    RenameAlbum.Execute(cnn, new { albumId = 1, title = "Blue" });
+    return albums;
+}
 ```
 
 SQL-string shortcuts work through the same interface.
 
 ```csharp
-List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
+static List<Album> LoadAlbumsFromSql(IDbConnection cnn)
+    => cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
 ```
 
 ## Transactions use IDbTransaction
@@ -20,14 +22,15 @@ List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM al
 The transaction overload follows the connection abstraction.
 
 ```csharp
-IDbConnection cnn = GetLegacyConnection();
-cnn.Open();
+static void RenameInTransaction(IDbConnection cnn) {
+    cnn.Open();
 
-using IDbTransaction transaction = cnn.BeginTransaction();
+    using IDbTransaction transaction = cnn.BeginTransaction();
 
-RenameAlbum.Execute(cnn, new { albumId = 1, title = "Blue" }, transaction: transaction);
+    RenameAlbum.Execute(cnn, new { albumId = 1, title = "Blue" }, transaction: transaction);
 
-transaction.Commit();
+    transaction.Commit();
+}
 ```
 
 The transaction must come from the same connection passed to the execution method.
@@ -37,10 +40,11 @@ The transaction must come from the same connection passed to the execution metho
 An overload returning the generated command exposes `IDbCommand` when the connection is typed as `IDbConnection`.
 
 ```csharp
-RenameAlbum.Execute(cnn, out IDbCommand command, new { albumId = 1, title = "Blue" });
+static int RenameAndCountParameters(IDbConnection cnn) {
+    RenameAlbum.Execute(cnn, out IDbCommand command, new { albumId = 1, title = "Blue" });
 
-using (command) {
-    int parameterCount = command.Parameters.Count;
+    using (command)
+        return command.Parameters.Count;
 }
 ```
 
@@ -51,7 +55,7 @@ This form is used when output values or provider command details are needed afte
 If the runtime object is a `DbConnection`, the `IDbConnection` overload uses its real async methods.
 
 ```csharp
-IDbConnection cnn = GetConnection();
+IDbConnection cnn = new SqlConnection(connectionString);
 
 List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, new { artistId = 7 }, ct: cancellationToken);
 ```
@@ -59,9 +63,8 @@ List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, new { artistId
 If the runtime object implements only `IDbConnection`, Rinku runs the synchronous operation and returns its result through the async method.
 
 ```csharp
-IDbConnection cnn = GetLegacyConnection();
-
-List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, new { artistId = 7 }, ct: cancellationToken);
+static Task<List<Album>> LoadAlbumsAsync(IDbConnection cnn, CancellationToken cancellationToken)
+    => GetAlbums.QueryAsync<List<Album>>(cnn, new { artistId = 7 }, ct: cancellationToken);
 // The provider work was synchronous because cnn is not a DbConnection.
 ```
 
@@ -72,22 +75,25 @@ Cancellation cannot interrupt synchronous provider work on that fallback path.
 Rinku opens a closed connection for the operation and closes it afterward.
 
 ```csharp
-IDbConnection cnn = GetLegacyConnection();
+static List<Album> LoadFromClosedConnection(IDbConnection cnn) {
+    List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
 
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
-
-// cnn is closed again.
+    // cnn is closed again.
+    return albums;
+}
 ```
 
 An initially open connection remains open.
 
 ```csharp
-IDbConnection cnn = GetLegacyConnection();
-cnn.Open();
+static List<Album> LoadFromOpenConnection(IDbConnection cnn) {
+    cnn.Open();
 
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
+    List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
 
-// cnn remains open.
+    // cnn remains open.
+    return albums;
+}
 ```
 
 Streamed results keep a connection opened by Rinku in use until enumeration finishes or the enumerator is disposed.

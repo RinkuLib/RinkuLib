@@ -27,8 +27,8 @@ SQL-string calls share one global cache.
 ```csharp
 const string sql = "SELECT AlbumId AS Id, Title FROM albums";
 
-using DbConnection firstConnection = GetConnection();
-using DbConnection secondConnection = GetConnection();
+using DbConnection firstConnection = new SqlConnection(connectionString);
+using DbConnection secondConnection = new SqlConnection(connectionString);
 
 List<Album> first = firstConnection.Query<List<Album>>(sql);
 List<Album> second = secondConnection.Query<List<Album>>(sql);

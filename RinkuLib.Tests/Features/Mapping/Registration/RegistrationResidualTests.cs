@@ -67,6 +67,20 @@ public class RegistrationResidualTests {
         public ReadablePairHolder([NoName] KeyValuePair<DirectPairLeft, DirectPairRight> pair) => Pair = pair;
     }
 
+    [AreReadable]
+    public sealed record DirectReadableParent(int Id, DirectReadableChild Child);
+    public sealed record DirectReadableChild(int Value);
+
+    [AreReadable]
+    public sealed record DirectReadableListParent([NoName] List<DirectReadableListChild> Items);
+    public sealed record DirectReadableListChild([NoName] int Value);
+
+    [AreReadable]
+    public sealed class DirectReadableMemberParent {
+        public DirectReadableMemberChild Child { get; set; } = null!;
+    }
+    public sealed record DirectReadableMemberChild(int Value);
+
     [Fact]
     [DocumentationExample("registration.md", "readable-registration")]
     public void AreReadable_registers_a_parameter_type_that_was_not_registered() {
@@ -106,6 +120,44 @@ public class RegistrationResidualTests {
         Assert.Equal(7, built.Pair.Value.Value);
         Assert.NotNull(TypeParsingInfo.Get(typeof(DirectPairLeft)));
         Assert.NotNull(TypeParsingInfo.Get(typeof(DirectPairRight)));
+    }
+
+    [Fact]
+    [DocumentationExample("registration.md", "type-readable-registration")]
+    public void Type_level_AreReadable_registers_only_its_direct_constructor_parameter_types() {
+        Assert.Null(TypeParsingInfo.Get(typeof(DirectReadableParent)));
+        Assert.Null(TypeParsingInfo.Get(typeof(DirectReadableChild)));
+
+        ColumnInfo[] cols = [new("Id", typeof(int), false), new("ChildValue", typeof(int), false)];
+        DirectReadableParent built = Rows.ParseOne<DirectReadableParent>(cols, 1, 5);
+
+        Assert.Equal(1, built.Id);
+        Assert.Equal(5, built.Child.Value);
+        var childInfo = Assert.IsType<DefaultTypeParsingInfo>(TypeParsingInfo.Get(typeof(DirectReadableChild)));
+        Assert.False(childInfo.Flags.HasFlag(DefaultTypeParsingFlags.DirectTypesAreReadable));
+    }
+
+    [Fact]
+    public void Type_level_AreReadable_composes_with_generic_parameter_readability() {
+        Assert.Null(TypeParsingInfo.Get(typeof(DirectReadableListChild)));
+
+        ColumnInfo[] cols = [new("Value", typeof(int), false)];
+        DirectReadableListParent built = Rows.ParseOne<DirectReadableListParent>(cols, 6);
+
+        Assert.Equal(6, Assert.Single(built.Items).Value);
+        Assert.NotNull(TypeParsingInfo.Get(typeof(DirectReadableListChild)));
+    }
+
+    [Fact]
+    [DocumentationExample("registration.md", "type-readable-members")]
+    public void Type_level_AreReadable_applies_to_writable_member_types() {
+        Assert.Null(TypeParsingInfo.Get(typeof(DirectReadableMemberChild)));
+
+        ColumnInfo[] cols = [new("ChildValue", typeof(int), false)];
+        DirectReadableMemberParent built = Rows.ParseOne<DirectReadableMemberParent>(cols, 7);
+
+        Assert.Equal(7, built.Child.Value);
+        Assert.NotNull(TypeParsingInfo.Get(typeof(DirectReadableMemberChild)));
     }
 
     public class NothingMatches : IDbReadable {

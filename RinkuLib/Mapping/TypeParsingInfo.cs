@@ -219,7 +219,7 @@ public static class TypeParsingInfoHelper {
         editable.GroupKey = rule;
         return true;
     }
-    /// <summary>Clears the type or construction group boundary, returning false when the info does not expose one.</summary>
+    /// <summary>Clears an assigned group boundary so the mapping can use its discovered default, returning false when the info does not expose one.</summary>
     public static bool ClearGroupKey(this TypeParsingInfo info) {
         if (info is not ICanUpdateGroupKey editable)
             return false;
@@ -228,7 +228,7 @@ public static class TypeParsingInfoHelper {
     }
     /// <summary>Sets the type-level group boundary of <typeparamref name="T"/> to <paramref name="rule"/>.</summary>
     public static void SetGroupKey<T>(IGroupingRule rule) => SetOrThrow<T>(rule);
-    /// <summary>Clears the type-level group boundary of <typeparamref name="T"/> so inference applies.</summary>
+    /// <summary>Clears the assigned type-level group boundary of <typeparamref name="T"/> so its attribute default or inference applies.</summary>
     public static void ClearGroupKey<T>() => ClearOrThrow<T>();
     /// <summary>Gets the construction path with the specified parameter types.</summary>
     public static MethodCtorInfo GetConstruction(this TypeParsingInfo info, params Type[] constructionParameters) {
@@ -269,7 +269,7 @@ public static class TypeParsingInfoHelper {
                 return false;
         return true;
     }
-    /// <summary>Sets the group boundary of <typeparamref name="T"/> to an equality key over the named members.</summary>
+    /// <summary>Adds a type-level equality option over named members. An unmatched schema continues to inference.</summary>
     public static void SetGroupKey<T>(params string[] members) {
         var infos = new System.Reflection.MemberInfo[members.Length];
         for (int i = 0; i < members.Length; i++)

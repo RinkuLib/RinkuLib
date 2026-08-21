@@ -287,9 +287,17 @@ internal static class MultiRowEmitter {
         return level;
     }
 
-    private static GroupingBoundary BuildBoundary(ICompositeDbItemPlan node, TypeBuilder tb, ColumnInfo[] cols, string tag)
-        => (node.GroupKey ?? new InferredGroupingRule(node.ConstructorArguments, (MethodBase)node.Construction, node.ResultType))
-            .MakeBoundary(node.ResultType, cols, node.Context, new BoundaryBuild(tb, cols, tag));
+    private static GroupingBoundary BuildBoundary(ICompositeDbItemPlan node, TypeBuilder tb, ColumnInfo[] cols, string tag) {
+        var build = new BoundaryBuild(tb, cols, tag);
+        var rules = node.GroupingRules;
+        for (int i = 0; i < rules.Count; i++) {
+            var boundary = rules[i].MakeBoundary(node.ResultType, cols, node.Context, build);
+            if (boundary is not null)
+                return boundary;
+        }
+        return new InferredGroupingRule(node.ConstructorArguments, (MethodBase)node.Construction, node.ResultType)
+            .MakeBoundary(node.ResultType, cols, node.Context, build)!;
+    }
 
     private static Slot ClassifySlot(DbItemPlan plan, Type slotType, MemberInfo? member, TypeBuilder tb, ColumnInfo[] cols, Level level, string tag) {
         var into = level.CaptureInto;

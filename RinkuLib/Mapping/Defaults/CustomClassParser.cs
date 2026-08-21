@@ -22,13 +22,13 @@ public class CustomClassParser(Type ParentType, Type Type, string ParamName, INu
     internal IReadOnlyList<DbItemPlan> ConstructorArguments => Readers;
     internal IReadOnlyList<(MemberInfo Member, DbItemPlan Plan)> PostMembers => Members;
     internal Type ResultType => Type;
-    internal IGroupingRule? GroupKey { get; init; }
+    internal IReadOnlyList<IGroupingRule> GroupingRules { get; init; } = [];
     internal ColModifier Context { get; init; }
     Type ICompositeDbItemPlan.ResultType => Type;
     MethodBase ICompositeDbItemPlan.Construction => (MethodBase)MethodBase;
     IReadOnlyList<DbItemPlan> ICompositeDbItemPlan.ConstructorArguments => Readers;
     IReadOnlyList<(MemberInfo Member, DbItemPlan Plan)> ICompositeDbItemPlan.PostMembers => Members;
-    IGroupingRule? ICompositeDbItemPlan.GroupKey => GroupKey;
+    IReadOnlyList<IGroupingRule> ICompositeDbItemPlan.GroupingRules => GroupingRules;
     ColModifier ICompositeDbItemPlan.Context => Context;
     /// <inheritdoc/>
     public override bool NeedNullSetPoint(ColumnInfo[] cols) => NullColHandler.NeedNullJumpSetPoint(Type);

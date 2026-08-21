@@ -4,8 +4,8 @@ namespace Rinku.Mapping;
 
 /// <summary>
 /// Groups a spanning type by named columns directly, no member required. The boundary reads each named column as
-/// whatever type it carries, so nothing is stored for the key. It is the type's group key, the same as a marked
-/// member. Implement <see cref="IGroupingRuleMaker"/> when named columns are not enough.
+/// whatever type it carries, so nothing is stored for the key. This type-level rule applies to every construction.
+/// Implement <see cref="IGroupingRuleMaker"/> when named columns are not enough.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = false)]
 public sealed class GroupKeyColumnsAttribute(params string[] columns) : Attribute, IGroupingRuleMaker {

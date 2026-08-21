@@ -6,6 +6,7 @@ using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace RinkuLib.Tests.Execution;
@@ -162,6 +163,24 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         var coldAsyncBehavior = coldAsyncCache.Behavior;
         Assert.Equal([1, 2], await coldAsync.QueryAsync(coldAsyncCache, disposeCommand: false, ct: ct));
         Assert.Equal(coldAsyncBehavior, coldAsync.LastBehavior);
+    }
+
+    [Fact]
+    [DocumentationExample("dbcommand.md", "shared-cache")]
+    public async Task One_cached_type_parser_can_be_shared_by_concurrent_calls() {
+        var cache = new CachedTypeParser<List<int>>();
+        var ct = TestContext.Current.CancellationToken;
+
+        Task<List<int>>[] calls = Enumerable.Range(0, 8)
+            .Select(async _ => {
+                using var command = BehaviorCmd();
+                return await cache.QueryAsync(command, ct: ct);
+            })
+            .ToArray();
+
+        List<int>[] results = await Task.WhenAll(calls);
+
+        Assert.All(results, result => Assert.Equal([1, 2], result));
     }
 
     [Fact]

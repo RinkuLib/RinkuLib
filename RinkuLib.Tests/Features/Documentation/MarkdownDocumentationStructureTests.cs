@@ -128,7 +128,7 @@ public class MarkdownDocumentationStructureTests {
             "RINKU2001", "RINKU2002", "RINKU2003", "RINKU2004", "RINKU2005", "RINKU2006",
             "RINKU3001", "RINKU3002", "RINKU3003", "RINKU3004",
             "RINKU4001", "RINKU4002", "RINKU4003", "RINKU4004", "RINKU4005",
-            "RINKU5001", "RINKU5002", "RINKU5003", "RINKU5004", "RINKU5005", "RINKU5006", "RINKU5007", "RINKU5008",
+            "RINKU5001", "RINKU5002", "RINKU5003", "RINKU5004", "RINKU5005", "RINKU5006", "RINKU5007",
             "RINKU6001", "RINKU6002", "RINKU6003", "RINKU6004", "RINKU9001"
         ];
         foreach (string code in requiredCodes)

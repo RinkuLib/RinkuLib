@@ -320,6 +320,10 @@ public class MultiRowEdgeCasesTests {
     }
 
     public sealed record RuntimePathKeyed(int Ordinal, string Region, List<int> Codes) : IDbReadable;
+    [GroupKeyColumns("Region")]
+    public sealed record RuntimeConditionalPathKeyed(int Ordinal, string Region, List<int> Codes) : IDbReadable;
+    [GroupKeyColumns("MissingTypeKey")]
+    public sealed record RuntimeThreeRuleFallback(int Ordinal, string Region, List<int> Codes) : IDbReadable;
 
     [Fact]
     [DocumentationExample("grouping.md", "runtime-path-group-key")]
@@ -339,12 +343,42 @@ public class MultiRowEdgeCasesTests {
         Assert.Equal([20], result[1].Codes);
     }
 
+    [Fact]
+    public void A_construction_rule_that_does_not_match_falls_through_to_the_type_rule() {
+        TypeParsingInfo.GetOrAdd<RuntimeConditionalPathKeyed>()
+            .GetConstruction(typeof(int), typeof(string), typeof(List<int>)).GroupKey = new EqualityGroupingRule("Missing");
+        ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<RuntimeConditionalPathKeyed>>(cols);
+        using var reader = Rows.Reader(cols, [1, "West", 10], [2, "West", 11], [3, "East", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal([10, 11], result[0].Codes);
+        Assert.Equal([20], result[1].Codes);
+    }
+
+    [Fact]
+    public void Construction_and_type_rules_can_both_fall_through_to_inference() {
+        TypeParsingInfo.GetOrAdd<RuntimeThreeRuleFallback>()
+            .GetConstruction(typeof(int), typeof(string), typeof(List<int>)).GroupKey = new EqualityGroupingRule("MissingConstructionKey");
+        ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<RuntimeThreeRuleFallback>>(cols);
+        using var reader = Rows.Reader(cols, [1, "West", 10], [1, "West", 11], [2, "East", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal([10, 11], result[0].Codes);
+        Assert.Equal([20], result[1].Codes);
+    }
+
     [GroupKeyColumns("Region")]
     public sealed record RuntimeClearTypeKey(int Ordinal, string Region, List<int> Codes) : IDbReadable;
 
     [Fact]
     [DocumentationExample("grouping.md", "runtime-group-key")]
-    public void ClearGroupKey_removes_a_type_attribute_and_restores_inference() {
+    public void ClearGroupKey_restores_the_type_attribute_default() {
         TypeParsingInfoHelper.ClearGroupKey<RuntimeClearTypeKey>();
         ColumnInfo[] cols = [new("Ordinal", typeof(int), false), new("Region", typeof(string), false), new("Codes", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<List<RuntimeClearTypeKey>>(cols);
@@ -352,13 +386,11 @@ public class MultiRowEdgeCasesTests {
         reader.Read();
         var result = parser.Parse(reader).Result;
 
-        Assert.Equal(3, result.Count);
+        Assert.Equal(2, result.Count);
         Assert.Equal((1, "West"), (result[0].Ordinal, result[0].Region));
-        Assert.Equal([10], result[0].Codes);
-        Assert.Equal((2, "West"), (result[1].Ordinal, result[1].Region));
-        Assert.Equal([11], result[1].Codes);
-        Assert.Equal((1, "East"), (result[2].Ordinal, result[2].Region));
-        Assert.Equal([20], result[2].Codes);
+        Assert.Equal([10, 11], result[0].Codes);
+        Assert.Equal((1, "East"), (result[1].Ordinal, result[1].Region));
+        Assert.Equal([20], result[1].Codes);
     }
 
     [GroupKeyColumns("Region")]
@@ -789,16 +821,20 @@ public class MultiRowEdgeCasesTests {
         Refusals.Raises(ErrorCodes.NullNotAllowed, () => parser.Parse(reader));
     }
 
-    public sealed class KeyedWidget : IDbReadable {
-        [GroupKey] public int Key { get; set; }
-        public List<int> Values { get; set; } = [];
-    }
+    [GroupKeyColumns("Key")]
+    public sealed record KeyedWidget(string Label, List<int> Values) : IDbReadable;
 
     [Fact]
-    public void A_key_that_maps_no_column_throws_its_own_code() {
-        ColumnInfo[] cols = [new("Values", typeof(int), false)];
-        Refusals.Raises(ErrorCodes.GroupKeyUnmapped,
-            () => TypeParser.GetTypeParser<List<KeyedWidget>>(cols));
+    public void A_type_key_that_maps_no_column_falls_through_to_inference() {
+        ColumnInfo[] cols = [new("Label", typeof(string), false), new("Values", typeof(int), false)];
+        var parser = TypeParser.GetTypeParser<List<KeyedWidget>>(cols);
+        using var reader = Rows.Reader(cols, ["A", 10], ["A", 11], ["B", 20]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal([10, 11], result[0].Values);
+        Assert.Equal([20], result[1].Values);
     }
 
     [Fact]
@@ -983,7 +1019,7 @@ public class MultiRowEdgeCasesTests {
     public sealed record OverrideParent([GroupKey] int CtorKey, [property: GroupKey] int TypeKey, List<MultiRowTests.Child> Children) : IDbReadable;
 
     [Fact]
-    public void A_construction_parameter_key_overrides_the_type_level_member_key() {
+    public void A_construction_parameter_key_has_priority_over_the_type_level_member_key() {
         ColumnInfo[] cols = [
             new("CtorKey", typeof(int), false),
             new("TypeKey", typeof(int), false),
@@ -1031,6 +1067,21 @@ public class MultiRowEdgeCasesTests {
 
     public sealed record MemberKeyShape(int Leading, [property: GroupKey] int Actual, List<MultiRowTests.Child> Children) : IDbReadable;
 
+    public sealed class SoftMemberKey : IDbReadable {
+        [GroupKey, Alt("Key")]
+        public int Id { get; }
+        public string? Code { get; }
+        public List<MultiRowTests.Child> Children { get; }
+        public SoftMemberKey(int key, List<MultiRowTests.Child> children) {
+            Id = key;
+            Children = children;
+        }
+        public SoftMemberKey(string code, List<MultiRowTests.Child> children) {
+            Code = code;
+            Children = children;
+        }
+    }
+
     [Fact]
     public void A_member_key_groups_by_its_column_not_the_leading_shape() {
         ColumnInfo[] cols = [
@@ -1051,7 +1102,44 @@ public class MultiRowEdgeCasesTests {
         Assert.Equal([new MultiRowTests.Child(20, "c20")], result[1].Children);
     }
 
-    // --- a construction method override and same-level conflicts ------------------------------------------
+    [Fact]
+    [DocumentationExample("grouping.md", "soft-member-group-key")]
+    public void A_type_member_key_applies_when_its_name_comparer_matches_the_schema() {
+        ColumnInfo[] cols = [
+            new("Key", typeof(int), false),
+            new("ChildrenId", typeof(int), true),
+            new("ChildrenValue", typeof(string), true),
+        ];
+        var parser = TypeParser.GetTypeParser<List<SoftMemberKey>>(cols);
+        using var reader = Rows.Reader(cols, [1, 10, "c10"], [1, 11, "c11"], [2, 20, "c20"]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal([10, 11], result[0].Children.Select(child => child.Id));
+        Assert.Equal([20], result[1].Children.Select(child => child.Id));
+    }
+
+    [Fact]
+    public void A_type_member_key_yields_to_inference_when_the_schema_has_no_matching_column() {
+        ColumnInfo[] cols = [
+            new("Code", typeof(string), false),
+            new("ChildrenId", typeof(int), true),
+            new("ChildrenValue", typeof(string), true),
+        ];
+        var parser = TypeParser.GetTypeParser<List<SoftMemberKey>>(cols);
+        using var reader = Rows.Reader(cols, ["A", 10, "c10"], ["A", 11, "c11"], ["B", 20, "c20"]);
+        reader.Read();
+        var result = parser.Parse(reader).Result;
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("A", result[0].Code);
+        Assert.Equal([10, 11], result[0].Children.Select(child => child.Id));
+        Assert.Equal("B", result[1].Code);
+        Assert.Equal([20], result[1].Children.Select(child => child.Id));
+    }
+
+    // --- construction method priority and same-level conflicts ---------------------------------------------
 
     public sealed class CtorMethodKeyed : IDbReadable {
         [GroupKeyMethod(nameof(SameTens))]
@@ -1065,7 +1153,7 @@ public class MultiRowEdgeCasesTests {
     }
 
     [Fact]
-    public void A_construction_method_reference_overrides_the_default_shape() {
+    public void A_construction_method_reference_has_priority_over_the_default_shape() {
         ColumnInfo[] cols = [
             new("Value", typeof(int), false),
             new("ChildrenId", typeof(int), true),
@@ -1124,7 +1212,7 @@ public class MultiRowEdgeCasesTests {
     }
 
     [Fact]
-    public void A_group_key_on_a_member_outside_the_constructor_drives_grouping() {
+    public void A_group_key_on_a_member_outside_the_constructor_matches_the_schema() {
         ColumnInfo[] cols = [new("Track", typeof(int), false), new("Label", typeof(string), false), new("Marks", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<List<Timeline>>(cols);
         using var reader = Rows.Reader(cols, [1, "morning", 10], [1, "evening", 11], [2, "morning", 20]);
@@ -1133,8 +1221,10 @@ public class MultiRowEdgeCasesTests {
 
         Assert.Equal(2, result.Count);
         Assert.Equal(1, result[0].Track);
+        Assert.Equal("morning", result[0].Label);
         Assert.Equal([10, 11], result[0].Marks);
         Assert.Equal(2, result[1].Track);
+        Assert.Equal("morning", result[1].Label);
         Assert.Equal([20], result[1].Marks);
     }
 
@@ -1149,7 +1239,7 @@ public class MultiRowEdgeCasesTests {
     }
 
     [Fact]
-    public void A_get_only_member_key_never_set_still_groups() {
+    public void A_get_only_member_key_outside_the_constructor_matches_the_schema() {
         ColumnInfo[] cols = [new("Number", typeof(int), false), new("Holder", typeof(string), false), new("Entries", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<List<MemberKeyAccount>>(cols);
         using var reader = Rows.Reader(cols, [1, "Ada", 10], [1, "Ada", 11], [2, "Bo", 20]);
@@ -1329,7 +1419,7 @@ public class MultiRowEdgeCasesTests {
 
     [Fact]
     [DocumentationExample("grouping.md", "grouping-precedence")]
-    public void A_path_level_key_overrides_the_type_level_key() {
+    public void A_path_level_key_has_priority_over_the_type_level_key() {
         var d1 = new DateTime(2026, 7, 30);
         var d2 = new DateTime(2026, 7, 31);
         ColumnInfo[] cols = [new("Date", typeof(DateTime), false), new("Amounts", typeof(int), false)];

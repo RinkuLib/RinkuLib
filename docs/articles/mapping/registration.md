@@ -46,6 +46,37 @@ Invoice invoice = GetInvoice.Query<Invoice>(cnn);
 
 Another construction path does not make its own parameter types readable unless it carries the same declaration.
 
+## Register direct types from a type
+
+Place `[AreReadable]` on a type to apply the same rule to all of its immediate construction parameters and writable members.
+
+```csharp
+public record Customer(int Id, string Name);
+
+[AreReadable]
+public record Invoice(int Id, Customer Customer);
+
+Invoice invoice = GetInvoice.Query<Invoice>(cnn);
+```
+
+The attribute does not register `Invoice`; the root query does that. It keeps `Invoice`'s first-level paths available and permits their slot types, such as `Customer`, to be registered when parsing needs them. It does not copy the mark to the generated `Customer` registration.
+
+Writable members use the same rule:
+
+```csharp
+public sealed class ShippingAddress {
+    public string City { get; set; } = "";
+}
+
+[AreReadable]
+public sealed class Shipment {
+    public int Id { get; set; }
+    public ShippingAddress Address { get; set; } = new();
+}
+```
+
+To apply this convention to every default object mapping and continue it one type at a time, see [demand-driven registration](../customization/type-registration.md#enable-demand-driven-registration).
+
 ## Register manually during application setup
 
 `GetOrAdd` performs manual registration during application setup.
@@ -102,7 +133,7 @@ Id | ActorId | ActorName -> AuditEntry(Id, DbValue(Actor))
 
 Omit `[AreReadable]` when `T` must already be registered before the wrapper can use it.
 
-Positional wrappers, row-accumulating wrappers, and complete-result wrappers use different advanced registration paths.
+[Positional wrappers](../customization/type-registration.md#register-a-positional-wrapper), [row-accumulating wrappers](../customization/multi-row.md), and [complete-result wrappers](../customization/result-parsers.md) use different advanced registration paths.
 
 ## Supply another parsing implementation
 
@@ -112,4 +143,4 @@ Positional wrappers, row-accumulating wrappers, and complete-result wrappers use
 TypeParsingInfo.AddOrSet(typeof(LocalDate), new LocalDateTypeParsingInfo());
 ```
 
-See [type registrations and defaults](../customization/type-registration.md) for custom scalar reading, multi-row registrations, initializers, generic precedence, removal, and parser invalidation.
+See [type registrations and defaults](../customization/type-registration.md) for custom scalar reading, initializers, generic precedence, removal, and parser invalidation. See [custom multi-row types](../customization/multi-row.md) for row accumulation.

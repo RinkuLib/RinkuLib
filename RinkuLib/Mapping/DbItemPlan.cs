@@ -139,8 +139,8 @@ public interface ICompositeDbItemPlan {
     IReadOnlyList<DbItemPlan> ConstructorArguments { get; }
     /// <summary>The plans for values assigned after construction.</summary>
     IReadOnlyList<(MemberInfo Member, DbItemPlan Plan)> PostMembers { get; }
-    /// <summary>The explicit grouping rule or <see langword="null"/> to use the default rule.</summary>
-    IGroupingRule? GroupKey { get; }
+    /// <summary>The grouping rules to try in priority order before inferred grouping.</summary>
+    IReadOnlyList<IGroupingRule> GroupingRules { get; }
     /// <summary>The name matching settings used by this plan.</summary>
     ColModifier Context { get; }
 }

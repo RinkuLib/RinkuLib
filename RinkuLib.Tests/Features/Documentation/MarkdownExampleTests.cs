@@ -416,15 +416,18 @@ internal static class ExampleCompiler {
                 .GetRoot();
             foreach (VariableDeclarationSyntax declaration in root.DescendantNodes()
                 .OfType<VariableDeclarationSyntax>()) {
-                if (declaration.Type.IsVar)
-                    continue;
-
                 foreach (VariableDeclaratorSyntax variable in declaration.Variables) {
+                    string? typeSource = declaration.Type.IsVar
+                        ? InferVarType(variable.Initializer?.Value)
+                        : declaration.Type.ToString();
+                    if (typeSource is null)
+                        continue;
+
                     PageFields.Add(new PageField(
                         block.RelativePath,
                         block.Ordinal,
                         variable.Identifier.ValueText,
-                        declaration.Type.ToString()));
+                        typeSource));
                 }
             }
 
@@ -511,6 +514,16 @@ internal static class ExampleCompiler {
         throw new InvalidDataException($"C# does not compile: {message}");
     }
 
+    static string? InferVarType(ExpressionSyntax? expression)
+        => expression switch {
+            AnonymousObjectCreationExpressionSyntax => "object",
+            ObjectCreationExpressionSyntax creation => creation.Type.ToString(),
+            ImplicitArrayCreationExpressionSyntax => "object",
+            ArrayCreationExpressionSyntax array => array.Type.ToString(),
+            LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.StringLiteralExpression) => "string",
+            _ => null
+        };
+
     static Diagnostic[] Compile(string source, OutputKind outputKind) {
         SyntaxTree tree = CSharpSyntaxTree.ParseText(source, ParseOptions);
         CSharpCompilation compilation = CSharpCompilation.Create(
@@ -586,7 +599,7 @@ internal static class ExampleCompiler {
             "static readonly ",
             "",
             StringComparison.Ordinal);
-        bool isDapperExample = block.Content.Contains("using Dapper;", StringComparison.Ordinal);
+        bool isDapperExample = block.Content.Contains("// Dapper", StringComparison.Ordinal);
         CompilationUnitSyntax root = CSharpSyntaxTree
             .ParseText(normalized, ParseOptions)
             .GetCompilationUnitRoot();
@@ -609,11 +622,13 @@ internal static class ExampleCompiler {
             .Select(declaration => declaration.Identifier.ValueText)
             .ToHashSet(StringComparer.Ordinal);
         PageDeclaration[] importedDeclarations = [.. GetImportedDeclarations(block)];
+        bool isComparisonPage = block.RelativePath == "articles/reference/dapper.md";
         string pageDeclarations = string.Join(
             Environment.NewLine,
             PageDeclarations
                 .Where(declaration =>
                     !isDapperExample &&
+                    !isComparisonPage &&
                     declaration.RelativePath == block.RelativePath &&
                     declaration.Ordinal < block.Ordinal &&
                     !currentTypeNames.Contains(declaration.Name) &&
@@ -623,7 +638,7 @@ internal static class ExampleCompiler {
                 .Concat(importedDeclarations
                     .Where(declaration => !currentTypeNames.Contains(declaration.Name))
                     .Select(declaration => declaration.Source)));
-        IEnumerable<string> priorTypeNames = isDapperExample
+        IEnumerable<string> priorTypeNames = isDapperExample || isComparisonPage
             ? []
             : PageDeclarations
                 .Where(declaration =>

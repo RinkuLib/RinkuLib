@@ -2,6 +2,8 @@
 
 Use a builder when values and optional SQL are chosen by several branches. The code can start from an object, change individual values, turn conditions on, and then run the completed query.
 
+A builder is per-call state. It holds the mutable values and active conditions for one execution flow while referencing its reusable `QueryCommand`. Independent or concurrent calls should create separate builders; they can safely share the same command. Do not concurrently mutate one builder.
+
 ```csharp
 public sealed class AlbumSearch {
     public int? ArtistId { get; init; }
