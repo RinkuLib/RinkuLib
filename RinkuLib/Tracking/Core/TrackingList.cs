@@ -1,14 +1,63 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Reflection;
 
 namespace Rinku.Tracking;
 
-// Structural delta tracking only. Active items are stored once, in current list order.
-/// <summary>Tracks structural changes in a list.</summary>
-public sealed class TrackingList<T> : IList<T>, IReadOnlyList<T>, IList, IBindingList, ITypedList, ICancelAddNew {
+/// <summary>Identifies a structural list change.</summary>
+public enum TrackingListChangeKind : byte
+{
+    /// <summary>An item was added.</summary>
+    Add,
+    /// <summary>An item was removed.</summary>
+    Remove,
+    /// <summary>An item was replaced.</summary>
+    Replace,
+    /// <summary>An item was moved.</summary>
+    Move,
+    /// <summary>The list was reset.</summary>
+    Reset
+}
+
+/// <summary>Identifies a confirmed operation.</summary>
+public enum TrackingListConfirmationKind : byte
+{
+    /// <summary>An addition was confirmed.</summary>
+    Added,
+    /// <summary>An edit was confirmed.</summary>
+    Edit,
+    /// <summary>A deletion was confirmed.</summary>
+    Delete
+}
+
+/// <summary>Describes a structural list change.</summary>
+public readonly record struct TrackingListChange<T>
+{
+    /// <summary>Creates a list change description.</summary>
+    public TrackingListChange(TrackingListChangeKind kind, int index, int oldIndex, T? item, T? oldItem)
+    {
+        Kind = kind;
+        Index = index;
+        OldIndex = oldIndex;
+        Item = item;
+        OldItem = oldItem;
+    }
+
+    /// <summary>Gets the kind of change.</summary>
+    public TrackingListChangeKind Kind { get; }
+    /// <summary>Gets the current index.</summary>
+    public int Index { get; }
+    /// <summary>Gets the previous index.</summary>
+    public int OldIndex { get; }
+    /// <summary>Gets the current item.</summary>
+    public T? Item { get; }
+    /// <summary>Gets the previous item.</summary>
+    public T? OldItem { get; }
+}
+
+/// <summary>
+/// Tracks list membership, order, additions, and removals.
+/// </summary>
+public class TrackingList<T> : IList<T>, IReadOnlyList<T>
+{
     private T[] _items;
     private int _count;
     private T[] _removed = [];
@@ -16,148 +65,137 @@ public sealed class TrackingList<T> : IList<T>, IReadOnlyList<T>, IList, IBindin
     private int _version;
     private StructuralOriginMap _origins;
     private readonly IEqualityComparer<T>? _comparer;
-    private BindingState? _binding;
 
-    /// <inheritdoc/>
-    public TrackingList(int capacity = 0, IEqualityComparer<T>? comparer = null) {
+    /// <summary>Creates an empty tracking list.</summary>
+    public TrackingList(int capacity = 0, IEqualityComparer<T>? comparer = null, ITrackingListContext<T>? context = null)
+    {
         if (capacity < 0) throw new ArgumentOutOfRangeException(nameof(capacity));
-        _comparer = comparer is null || ReferenceEquals(comparer, EqualityComparer<T>.Default) ? null : comparer;
         _items = capacity == 0 ? [] : new T[capacity];
+        _comparer = comparer is null || ReferenceEquals(comparer, EqualityComparer<T>.Default) ? null : comparer;
+        Context = context ?? TrackingListContext<T>.Default;
     }
 
-    /// <inheritdoc/>
-    public TrackingList(IEqualityComparer<T> equalityComparer) : this(0, equalityComparer)
-        => ArgumentNullException.ThrowIfNull(equalityComparer);
-
-    /// <inheritdoc/>
-    public TrackingList(IEnumerable<T> items, int initialCapacity = 0, IEqualityComparer<T>? comparer = null) : this(initialCapacity, comparer) {
+    /// <summary>Creates a tracking list with baseline items.</summary>
+    public TrackingList(IEnumerable<T> items, int initialCapacity = 0, IEqualityComparer<T>? comparer = null, ITrackingListContext<T>? context = null)
+        : this(initialCapacity, comparer, context)
+    {
         ArgumentNullException.ThrowIfNull(items);
-        Materialize(items, initialCapacity);
+        if (items.TryGetNonEnumeratedCount(out int count) && count > _items.Length)
+            _items = new T[Math.Max(count, initialCapacity)];
+        foreach (T item in items) AddInitial(item);
     }
 
     /// <inheritdoc/>
-    public TrackingList(IEnumerable<T> items, IEqualityComparer<T> equalityComparer, int initialCapacity = 0) : this(items, initialCapacity, equalityComparer)
-        => ArgumentNullException.ThrowIfNull(equalityComparer);
-
-    /// <summary>Gets the number of active items.</summary>
     public int Count => _count;
-    /// <summary>Gets or sets the backing capacity.</summary>
-    public int Capacity {
+    /// <inheritdoc/>
+    public bool IsReadOnly => false;
+    /// <summary>Gets the item comparer.</summary>
+    public IEqualityComparer<T> Comparer => _comparer ?? EqualityComparer<T>.Default;
+    /// <summary>Gets the confirmation context.</summary>
+    public ITrackingListContext<T> Context { get; }
+    /// <summary>Gets whether a new item can be created.</summary>
+    public bool CanAddNew => Context.CanCreateNew;
+
+    /// <summary>Gets the number of active added items.</summary>
+    public int AddedCount => CountAdded();
+    /// <summary>Gets the number of removed items.</summary>
+    public int RemovedCount => _removedCount;
+    /// <summary>Gets whether structural changes exist.</summary>
+    public bool HasChanges => _removedCount != 0 || HasAdded();
+
+    /// <summary>Gets the active added items.</summary>
+    public AddedCollection Added => new(this);
+    /// <summary>Gets the removed items.</summary>
+    public RemovedCollection Removed => new(this);
+    /// <summary>Gets a span over the active items.</summary>
+    public ReadOnlySpan<T> AsSpan() => _items.AsSpan(0, _count);
+    /// <summary>Gets a span over the removed items.</summary>
+    public ReadOnlySpan<T> RemovedSpan => _removed.AsSpan(0, _removedCount);
+
+    /// <summary>Gets or sets the active item capacity.</summary>
+    public int Capacity
+    {
         get => _items.Length;
-        set {
+        set
+        {
             if (value < _count) throw new ArgumentOutOfRangeException(nameof(value));
             if (value != _items.Length) Array.Resize(ref _items, value);
         }
     }
-    /// <inheritdoc/>
-    public bool IsReadOnly => false;
-    /// <summary>Gets the comparer used by the list.</summary>
-    public IEqualityComparer<T> Comparer => _comparer ?? EqualityComparer<T>.Default;
-    /// <summary>Gets removed items.</summary>
-    public RemovedCollection Removed => new(this);
-    /// <summary>Gets added items.</summary>
-    public AddedCollection Added => new(this);
-    /// <summary>Gets the number of removed items.</summary>
-    public int RemovedCount => _removedCount;
-    /// <summary>Gets the number of added items.</summary>
-    public int AddedCount => CountAdded();
-    /// <summary>Gets whether structural changes are pending.</summary>
-    public bool HasStructuralChanges => _removedCount != 0 || AddedCount != 0;
-
-    /// <summary>Gets or sets whether bound edits are allowed.</summary>
-    public bool AllowEdit { get => _binding?.AllowEdit ?? true; set => Binding.AllowEdit = value; }
-    /// <summary>Gets whether new items can be created.</summary>
-    public bool CanAddNew => _binding?.AddingNew is not null || _binding?.Factory is not null || typeof(T).IsValueType || NewItemConstructorCache.Value is not null;
-    /// <summary>Gets or sets the new-item factory.</summary>
-    public Func<T>? NewItemFactory { get => _binding?.Factory; set { if (value is not null || _binding is not null) Binding.Factory = value; } }
-    /// <summary>Gets or sets the pending-new cancellation handler.</summary>
-    public Func<T, bool>? CancelNewHandler { get => _binding?.CancelNew; set { if (value is not null || _binding is not null) Binding.CancelNew = value; } }
-
-    /// <summary>Occurs when the list or one of its observed items changes.</summary>
-    public event ListChangedEventHandler? ListChanged {
-        add {
-            if (value is null) return;
-            BindingState state = Binding;
-            bool first = state.ListChanged is null;
-            state.ListChanged += value;
-            if (first) SubscribeInitial(state);
-        }
-        remove {
-            if (_binding is null || value is null) return;
-            _binding.ListChanged -= value;
-            if (_binding.ListChanged is null) UnsubscribeAll(_binding);
-        }
-    }
-
-    /// <summary>Occurs when a data-binding consumer requests a new item.</summary>
-    public event AddingNewEventHandler? AddingNew {
-        add { if (value is not null) Binding.AddingNew += value; }
-        remove { if (_binding is not null) _binding.AddingNew -= value; }
-    }
 
     /// <inheritdoc/>
-    public T this[int index] {
-        get {
+    public virtual T this[int index]
+    {
+        get
+        {
             if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
             return _items[index];
         }
         set => SetItem(index, value);
     }
 
-    /// <summary>Returns active items as a span.</summary>
-    public ReadOnlySpan<T> AsSpan() => _items.AsSpan(0, _count);
-    /// <summary>Gets removed items as a span.</summary>
-    public ReadOnlySpan<T> RemovedSpan => _removed.AsSpan(0, _removedCount);
-
-    /// <summary>Gets whether an item was added at an index.</summary>
-    public bool IsAddedAt(int index) {
+    /// <summary>Returns whether the item at an index is added.</summary>
+    public bool IsAddedAt(int index)
+    {
         if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
         return IsAddedUnchecked(index);
     }
 
-    private bool IsAddedUnchecked(int index)
-        => TrackingItemCapabilities<T>.HasOriginalCapability
-            ? !TrackingItemCapabilities<T>.HasOriginal(_items[index])
-            : _origins.IsAdded(index);
+    /// <inheritdoc/>
+    public virtual void Add(T item) => AddTrackedItem(_count, item);
 
-    private int CountAdded() {
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) return _origins.AddedCount(_count);
-        int count = 0;
-        for (int i = 0; i < _count; i++) if (!TrackingItemCapabilities<T>.HasOriginal(_items[i])) count++;
-        return count;
+    /// <summary>Creates and adds a new item.</summary>
+    public virtual T AddNew()
+    {
+        if (!Context.CanCreateNew)
+            throw new NotSupportedException($"The tracking-list context for {typeof(T)} cannot create a new item.");
+        T item = Context.CreateNew();
+        Add(item);
+        return item;
     }
 
     /// <inheritdoc/>
-    public void Add(T item) { EndPendingNew(); AddCore(item, out _); }
+    public virtual void Insert(int index, T item) => AddTrackedItem(index, item);
 
-    /// <inheritdoc/>
-    public void Insert(int index, T item) {
+    /// <summary>Adds an item and returns a token for cancellation.</summary>
+    protected AdditionToken AddTrackedItem(int index, T item)
+    {
         if ((uint)index > (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
-        EndPendingNew();
-        AddDelta delta = TrackAddition(item);
-        InsertCore(index, item, delta.IsAdded);
+        AddDelta delta = TrackAddition(ref item);
+        InsertCore(index, item, FallbackAdded(ref item, delta.Kind));
+        return new(delta);
     }
 
-    // Reorders the active row without changing its structural origin.
-    /// <inheritdoc/>
-    public void Move(int oldIndex, int newIndex) {
+    private protected void CancelTrackedAddition(int index, in AdditionToken token)
+    {
+        if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
+        UndoAddition(token.Delta);
+        T item = _items[index];
+        RemoveActiveAt(index);
+        OnChanged(new(TrackingListChangeKind.Remove, index, index, default, item));
+    }
+
+    /// <summary>Moves an active item.</summary>
+    public void Move(int oldIndex, int newIndex)
+    {
         if ((uint)oldIndex >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(oldIndex));
         if ((uint)newIndex >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(newIndex));
         if (oldIndex == newIndex) return;
 
         T item = _items[oldIndex];
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Move(oldIndex, newIndex, _count);
-        if (oldIndex < newIndex) Array.Copy(_items, oldIndex + 1, _items, oldIndex, newIndex - oldIndex);
+        _origins.Move(oldIndex, newIndex, _count);
+        if (oldIndex < newIndex)
+            Array.Copy(_items, oldIndex + 1, _items, oldIndex, newIndex - oldIndex);
         else
             Array.Copy(_items, newIndex, _items, newIndex + 1, oldIndex - newIndex);
         _items[newIndex] = item;
-        UpdatePendingAfterMove(oldIndex, newIndex);
         _version++;
-        RaiseListChanged(new(ListChangedType.ItemMoved, newIndex, oldIndex));
+        OnChanged(new(TrackingListChangeKind.Move, newIndex, oldIndex, item, item));
     }
 
     /// <inheritdoc/>
-    public bool Remove(T item) {
+    public virtual bool Remove(T item)
+    {
         int index = IndexOf(item);
         if (index < 0) return false;
         RemoveAt(index);
@@ -165,25 +203,29 @@ public sealed class TrackingList<T> : IList<T>, IReadOnlyList<T>, IList, IBindin
     }
 
     /// <inheritdoc/>
-    public void RemoveAt(int index) {
+    public virtual void RemoveAt(int index)
+    {
         if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
-        if (_binding?.Pending is PendingNew pending && pending.Index == index) { CancelPendingNewCore(pending); return; }
-        RemoveAtCore(index, true);
+        T item = _items[index];
+        if (!IsAddedUnchecked(index)) TrackRemoved(item);
+        RemoveActiveAt(index);
+        OnChanged(new(TrackingListChangeKind.Remove, index, index, default, item));
     }
 
-    /// <inheritdoc/>
-    public T RestoreAt(int removedIndex, int index = -1) {
+    /// <summary>Restores an observed removal as baseline membership.</summary>
+    public T RestoreAt(int removedIndex, int index = -1)
+    {
         if ((uint)removedIndex >= (uint)_removedCount) throw new ArgumentOutOfRangeException(nameof(removedIndex));
         if (index < 0) index = _count;
         if ((uint)index > (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
-        EndPendingNew();
         T item = RemoveRemovedAt(removedIndex);
         InsertCore(index, item, false);
         return item;
     }
 
-    /// <inheritdoc/>
-    public bool Restore(T item, int index = -1) {
+    /// <summary>Restores a removed item.</summary>
+    public bool Restore(T item, int index = -1)
+    {
         int removedIndex = IndexOfRemoved(item);
         if (removedIndex < 0) return false;
         RestoreAt(removedIndex, index);
@@ -191,67 +233,102 @@ public sealed class TrackingList<T> : IList<T>, IReadOnlyList<T>, IList, IBindin
     }
 
     /// <inheritdoc/>
-    public void Clear() {
+    public virtual void Clear()
+    {
         if (_count == 0) return;
-        if (_binding?.Pending is PendingNew pending) CancelPendingNewCore(pending, notify: false);
+        for (int i = 0; i < _count; i++)
+            if (!IsAddedUnchecked(i)) TrackRemoved(_items[i]);
 
-        for (int i = 0; i < _count; i++) {
-            T item = _items[i];
-            Unsubscribe(item);
-            if (!IsAddedUnchecked(i)) TrackRemoved(item);
-        }
         Array.Clear(_items, 0, _count);
         _count = 0;
         _origins.Reset();
-        _binding?.Subscriptions?.Clear();
         _version++;
-        RaiseListChanged(new(ListChangedType.Reset, -1));
+        OnChanged(new(TrackingListChangeKind.Reset, -1, -1, default, default));
     }
 
-    /// <inheritdoc/>
-    public void CommitRemoved() {
-        if (_removedCount == 0) return;
-        Array.Clear(_removed, 0, _removedCount);
-        _removedCount = 0;
-        _version++;
+    /// <summary>Confirms the row as Added or Edit according to its current structural state.</summary>
+    public bool ConfirmAt(int index)
+    {
+        if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
+        return IsAddedUnchecked(index) ? ConfirmAddedAt(index) : ConfirmEditAt(index);
     }
 
-    // Accepts structural changes that are owned by the list. For IHasOriginal rows, added/original
-    // state belongs to the item and is intentionally never duplicated or overwritten here.
-    /// <inheritdoc/>
-    public void CommitStructuralChanges() {
-        EndPendingNew();
-        bool changed = _removedCount != 0;
-        if (_removedCount != 0) { Array.Clear(_removed, 0, _removedCount); _removedCount = 0; }
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability && _origins.AddedCount(_count) != 0) {
-            _origins.Reset();
-            changed = true;
+    /// <summary>Confirms the active operation for an item.</summary>
+    public bool Confirm(T item)
+    {
+        int index = IndexOf(item);
+        return index >= 0 && ConfirmAt(index);
+    }
+
+    /// <summary>
+    /// Confirms an addition and clears list-owned added state on success.
+    /// </summary>
+    public bool ConfirmAddedAt(int index)
+    {
+        if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
+        ref T item = ref _items[index];
+        bool itemOwnsState = TrackingListNewStateAccess<T>.TryGet(ref item, out bool wasNew);
+        bool fallbackAdded = !itemOwnsState && _origins.IsAdded(index);
+        if (!(itemOwnsState ? wasNew : fallbackAdded)) return false;
+        if (!Context.ConfirmAdded(item)) return false;
+
+        if (fallbackAdded)
+        {
+            _origins.Replace(index, _count, false);
+            _version++;
         }
-        if (changed) _version++;
+        else if (TrackingListNewStateAccess<T>.TryGet(ref item, out bool isNew) && isNew != wasNew)
+        {
+            _version++;
+        }
+
+        OnConfirmed(TrackingListConfirmationKind.Added, index, item);
+        return true;
     }
 
-    // Commits item edits first, then accepts list-owned structural state. A generated new item
-    // acquires its original through CommitEdit(), so no extra "persisted" state is required.
-    /// <inheritdoc/>
-    public bool CommitChanges() {
-        EndPendingNew();
-        bool changed = false;
-        if (TrackingItemCapabilities<T>.IsEditable)
-            for (int i = 0; i < _count; i++) changed |= TrackingItemCapabilities<T>.CommitEdit(_items[i]);
-
-        bool structural = _removedCount != 0 || (!TrackingItemCapabilities<T>.HasOriginalCapability && _origins.AddedCount(_count) != 0);
-        if (_removedCount != 0) { Array.Clear(_removed, 0, _removedCount); _removedCount = 0; }
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Reset();
-        if (changed || structural) _version++;
-        return changed || structural;
+    /// <summary>Confirms the item's edit independently of whether the row is structurally Added.</summary>
+    public bool ConfirmEditAt(int index)
+    {
+        if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
+        T item = _items[index];
+        if (!Context.ConfirmEdit(item)) return false;
+        OnConfirmed(TrackingListConfirmationKind.Edit, index, item);
+        return true;
     }
 
-    /// <inheritdoc/>
-    public bool CancelEdits() {
-        bool changed = false;
-        if (TrackingItemCapabilities<T>.IsEditable)
-            for (int i = 0; i < _count; i++) changed |= TrackingItemCapabilities<T>.CancelEdit(_items[i]);
-        return changed;
+    /// <summary>Confirms deletion of a removed item.</summary>
+    public bool ConfirmDeleteAt(int removedIndex)
+    {
+        if ((uint)removedIndex >= (uint)_removedCount) throw new ArgumentOutOfRangeException(nameof(removedIndex));
+        T item = _removed[removedIndex];
+        if (!Context.ConfirmDelete(item)) return false;
+        RemoveRemovedAt(removedIndex);
+        _version++;
+        OnConfirmed(TrackingListConfirmationKind.Delete, removedIndex, item);
+        return true;
+    }
+
+    /// <summary>Confirms deletion of a removed item.</summary>
+    public bool ConfirmDelete(T item)
+    {
+        int index = IndexOfRemoved(item);
+        return index >= 0 && ConfirmDeleteAt(index);
+    }
+
+    /// <summary>
+    /// Confirms all observed operations independently.
+    /// </summary>
+    public bool ConfirmChanges()
+    {
+        bool success = true;
+
+        for (int i = _removedCount - 1; i >= 0; i--)
+            if (!ConfirmDeleteAt(i)) success = false;
+
+        for (int i = 0; i < _count; i++)
+            if (!ConfirmAt(i)) success = false;
+
+        return success;
     }
 
     /// <inheritdoc/>
@@ -260,24 +337,31 @@ public sealed class TrackingList<T> : IList<T>, IReadOnlyList<T>, IList, IBindin
     public bool Contains(T item) => IndexOf(item) >= 0;
 
     /// <inheritdoc/>
-    public void CopyTo(T[] array, int arrayIndex) {
+    public void CopyTo(T[] array, int arrayIndex)
+    {
         ArgumentNullException.ThrowIfNull(array);
-        if ((uint)arrayIndex > (uint)array.Length || array.Length - arrayIndex < _count) throw new ArgumentOutOfRangeException(nameof(arrayIndex));
+        if ((uint)arrayIndex > (uint)array.Length || array.Length - arrayIndex < _count)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex));
         Array.Copy(_items, 0, array, arrayIndex, _count);
     }
 
-    /// <inheritdoc/>
-    public int CopyAddedTo(Span<T> destination) {
-        int addedCount = AddedCount;
-        if (destination.Length < addedCount) throw new ArgumentException("Destination is too small.", nameof(destination));
-        if (addedCount == _count) { _items.AsSpan(0, _count).CopyTo(destination); return _count; }
+    /// <summary>Copies added items to a destination span.</summary>
+    public int CopyAddedTo(Span<T> destination)
+    {
         int count = 0;
-        for (int i = 0; i < _count; i++) if (IsAddedUnchecked(i)) destination[count++] = _items[i];
+        for (int i = 0; i < _count; i++)
+        {
+            if (!IsAddedUnchecked(i)) continue;
+            if ((uint)count >= (uint)destination.Length)
+                throw new ArgumentException("Destination is too small.", nameof(destination));
+            destination[count++] = _items[i];
+        }
         return count;
     }
 
-    /// <inheritdoc/>
-    public int EnsureCapacity(int capacity) {
+    /// <summary>Ensures capacity for active items.</summary>
+    public int EnsureCapacity(int capacity)
+    {
         if (capacity <= _items.Length) return _items.Length;
         int next = _items.Length == 0 ? 4 : _items.Length * 2;
         if ((uint)next > 0X7FEFFFFF) next = 0X7FEFFFFF;
@@ -286,192 +370,127 @@ public sealed class TrackingList<T> : IList<T>, IReadOnlyList<T>, IList, IBindin
         return next;
     }
 
-    /// <inheritdoc/>
-    public void TrimExcess() {
+    /// <summary>Trims unused active and removed storage.</summary>
+    public void TrimExcess()
+    {
         if (_count != _items.Length) Array.Resize(ref _items, _count);
         if (_removedCount != _removed.Length) Array.Resize(ref _removed, _removedCount);
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Trim(_count);
+        _origins.Trim(_count);
     }
 
-    /// <inheritdoc/>
-    public T AddNew() {
-        EndPendingNew();
-        BindingState state = Binding;
-        var args = new AddingNewEventArgs();
-        state.AddingNew?.Invoke(this, args);
-        T item = args.NewObject is null ? CreateNewItem(state) : Cast(args.NewObject);
-        AddCore(item, out AddDelta delta);
-        state.Pending = new(_count - 1, delta);
-        return item;
-    }
-
-    /// <inheritdoc/>
-    public void CancelNew(int itemIndex) {
-        if (_binding?.Pending is not PendingNew pending || pending.Index != itemIndex) return;
-        T item = _items[itemIndex];
-        if (_binding.CancelNew?.Invoke(item) == false) { _binding.Pending = null; return; }
-        CancelPendingNewCore(pending);
-    }
-
-    /// <inheritdoc/>
-    public void EndNew(int itemIndex) {
-        if (_binding?.Pending is PendingNew pending && pending.Index == itemIndex) _binding.Pending = null;
-    }
-
-    internal void AddInitial(T item) {
+    internal void AddInitial(T item)
+    {
         EnsureCapacity(_count + 1);
         _items[_count] = item;
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Insert(_count, _count, false);
+        _origins.Insert(_count, _count, false);
         _count++;
     }
 
-    internal void ConfigureBinding(Func<T>? newItemFactory = null, Func<PropertyDescriptorCollection>? propertiesFactory = null, string? listName = null) {
-        if (newItemFactory is null && propertiesFactory is null && listName is null) return;
-        BindingState state = Binding;
-        if (newItemFactory is not null) state.Factory = newItemFactory;
-        if (propertiesFactory is not null) state.PropertiesFactory = propertiesFactory;
-        if (listName is not null) state.ListName = listName;
-    }
+    /// <summary>Handles a structural change.</summary>
+    protected virtual void OnChanged(TrackingListChange<T> change) { }
+    /// <summary>Handles a confirmed operation.</summary>
+    protected virtual void OnConfirmed(TrackingListConfirmationKind kind, int index, T item) { }
 
-    private void Materialize(IEnumerable<T> items, int initialCapacity) {
-        if (items is ICollection<T> collection) {
-            int count = collection.Count;
-            if (count == 0) return;
-            int capacity = Math.Max(count, initialCapacity);
-            if (_items.Length != capacity) _items = new T[capacity];
-            collection.CopyTo(_items, 0);
-            _count = count;
-            return;
-        }
-        if (items.TryGetNonEnumeratedCount(out int knownCount) && knownCount > _items.Length) _items = new T[Math.Max(knownCount, initialCapacity)];
-        foreach (T item in items) AddInitial(item);
-    }
+    /// <summary>Replaces an item while tracking structural state.</summary>
+    protected void SetTrackedItem(int index, T item) => SetItem(index, item);
 
-    private void AddCore(T item, out AddDelta delta) {
-        delta = TrackAddition(item);
-        InsertCore(_count, item, delta.IsAdded);
-    }
-
-    private AddDelta TrackAddition(T item) {
-        if (TrackingItemCapabilities<T>.HasOriginalCapability) {
-            if (!TrackingItemCapabilities<T>.HasOriginal(item)) return AddDelta.Added;
-            int restored = IndexOfRemoved(item);
-            return restored < 0 ? AddDelta.Existing : AddDelta.Restored(RemoveRemovedAt(restored), restored);
-        }
-
-        int removedIndex = IndexOfRemoved(item);
-        return removedIndex < 0 ? AddDelta.Added : AddDelta.Restored(RemoveRemovedAt(removedIndex), removedIndex);
-    }
-
-    private void UndoAddition(in AddDelta delta) {
-        if (delta.IsRestored) InsertRemoved(Math.Min(delta.RemovedIndex, _removedCount), delta.RemovedItem);
-    }
-
-    private void SetItem(int index, T item) {
+    private void SetItem(int index, T item)
+    {
         if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
-        if (_binding?.Pending is PendingNew pending) {
-            if (pending.Index == index) { SetPendingItem(index, item, pending); return; }
-            EndPendingNew();
-        }
-
         T previous = _items[index];
         if (!typeof(T).IsValueType && ReferenceEquals(previous, item)) return;
-        bool previousAdded = IsAddedUnchecked(index);
 
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability && Equals(previous, item)) {
-            _origins.Replace(index, _count, previousAdded);
-            ReplaceItem(index, previous, item);
+        bool previousAdded = IsAddedUnchecked(index);
+        if (Comparer.Equals(previous, item))
+        {
+            bool fallback = FallbackAdded(ref item, previousAdded ? AdditionKind.Added : AdditionKind.Existing);
+            _items[index] = item;
+            _origins.Replace(index, _count, fallback);
+            _version++;
+            OnChanged(new(TrackingListChangeKind.Replace, index, index, item, previous));
             return;
         }
 
         if (!previousAdded) TrackRemoved(previous);
-        AddDelta delta = TrackAddition(item);
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Replace(index, _count, delta.IsAdded);
-        ReplaceItem(index, previous, item);
+        AddDelta delta = TrackAddition(ref item);
+        _items[index] = item;
+        _origins.Replace(index, _count, FallbackAdded(ref item, delta.Kind));
+        _version++;
+        OnChanged(new(TrackingListChangeKind.Replace, index, index, item, previous));
     }
 
-    private void SetPendingItem(int index, T item, PendingNew pending) {
-        T previous = _items[index];
-        if (!typeof(T).IsValueType && ReferenceEquals(previous, item)) return;
-
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability && Equals(previous, item)) {
-            _origins.Replace(index, _count, pending.Delta.IsAdded);
-            ReplaceItem(index, previous, item);
-            return;
+    private AddDelta TrackAddition(ref T item)
+    {
+        if (TrackingListNewStateAccess<T>.TryGet(ref item, out bool isNew))
+        {
+            if (isNew) return AddDelta.Added;
+            int acceptedRemoved = IndexOfRemoved(item);
+            return acceptedRemoved < 0
+                ? AddDelta.Existing
+                : AddDelta.Restored(RemoveRemovedAt(acceptedRemoved), acceptedRemoved);
         }
 
-        UndoAddition(pending.Delta);
-        pending.Delta = TrackAddition(item);
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Replace(index, _count, pending.Delta.IsAdded);
-        ReplaceItem(index, previous, item);
+        int removedIndex = IndexOfRemoved(item);
+        return removedIndex < 0
+            ? AddDelta.Added
+            : AddDelta.Restored(RemoveRemovedAt(removedIndex), removedIndex);
     }
 
-    private void ReplaceItem(int index, T previous, T item) {
-        Unsubscribe(previous);
-        _items[index] = item;
-        Subscribe(item);
-        _version++;
-        RaiseListChanged(new(ListChangedType.ItemChanged, index));
+    private static bool FallbackAdded(ref T item, AdditionKind kind)
+    {
+        if (TrackingListNewStateAccess<T>.TryGet(ref item, out _)) return false;
+        return kind == AdditionKind.Added;
     }
 
-    private void InsertCore(int index, T item, bool added) {
+    private void InsertCore(int index, T item, bool fallbackAdded)
+    {
         EnsureCapacity(_count + 1);
         if (index < _count) Array.Copy(_items, index, _items, index + 1, _count - index);
         _items[index] = item;
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Insert(index, _count, added);
+        _origins.Insert(index, _count, fallbackAdded);
         _count++;
-        if (_binding?.Pending is PendingNew pending && pending.Index >= index) pending.Index++;
         _version++;
-        Subscribe(item);
-        RaiseListChanged(new(ListChangedType.ItemAdded, index));
+        OnChanged(new(TrackingListChangeKind.Add, index, -1, item, default));
     }
 
-    private void RemoveAtCore(int index, bool trackRemoval, bool notify = true) {
-        T item = _items[index];
-        bool added = IsAddedUnchecked(index);
-        if (!added && trackRemoval) TrackRemoved(item);
-        Unsubscribe(item);
-        RemoveActiveAt(index);
-        if (notify) RaiseListChanged(new(ListChangedType.ItemDeleted, index));
-    }
-
-    private void RemoveActiveAt(int index) {
-        if (!TrackingItemCapabilities<T>.HasOriginalCapability) _origins.Remove(index, _count);
+    private void RemoveActiveAt(int index)
+    {
+        _origins.Remove(index, _count);
         _count--;
         if (index < _count) Array.Copy(_items, index + 1, _items, index, _count - index);
-        _items[_count] = default!;
-        if (_binding?.Pending is PendingNew pending) {
-            if (pending.Index == index) _binding.Pending = null;
-            else if (pending.Index > index) pending.Index--;
-        }
+        Array.Clear(_items, _count, 1);
         _version++;
     }
 
-    private void CancelPendingNewCore(PendingNew pending, bool notify = true) {
-        int index = pending.Index;
-        T item = _items[index];
-        UndoAddition(pending.Delta);
-        Unsubscribe(item);
-        _binding!.Pending = null;
-        RemoveActiveAt(index);
-        if (notify) RaiseListChanged(new(ListChangedType.ItemDeleted, index));
+    private bool IsAddedUnchecked(int index)
+    {
+        ref T item = ref _items[index];
+        return TrackingListNewStateAccess<T>.TryGet(ref item, out bool isNew) ? isNew : _origins.IsAdded(index);
     }
 
-    private void UpdatePendingAfterMove(int oldIndex, int newIndex) {
-        if (_binding?.Pending is not PendingNew pending) return;
-        if (pending.Index == oldIndex) pending.Index = newIndex;
-        else if (oldIndex < newIndex && pending.Index > oldIndex && pending.Index <= newIndex) pending.Index--;
-        else if (oldIndex > newIndex && pending.Index >= newIndex && pending.Index < oldIndex) pending.Index++;
+    private bool HasAdded()
+    {
+        for (int i = 0; i < _count; i++)
+            if (IsAddedUnchecked(i)) return true;
+        return false;
     }
 
-    private void EndPendingNew() { if (_binding is not null) _binding.Pending = null; }
+    private int CountAdded()
+    {
+        int count = 0;
+        for (int i = 0; i < _count; i++)
+            if (IsAddedUnchecked(i)) count++;
+        return count;
+    }
 
-    private void TrackRemoved(T item) {
+    private void TrackRemoved(T item)
+    {
         EnsureDeltaCapacity(ref _removed, _removedCount + 1);
         _removed[_removedCount++] = item;
     }
 
-    private void InsertRemoved(int index, T item) {
+    private void InsertRemoved(int index, T item)
+    {
         EnsureDeltaCapacity(ref _removed, _removedCount + 1);
         if (index < _removedCount) Array.Copy(_removed, index, _removed, index + 1, _removedCount - index);
         _removed[index] = item;
@@ -480,261 +499,208 @@ public sealed class TrackingList<T> : IList<T>, IReadOnlyList<T>, IList, IBindin
 
     private T RemoveRemovedAt(int index) => RemoveAt(_removed, ref _removedCount, index);
     private int IndexOfRemoved(T item) => IndexOf(_removed, _removedCount, item);
-    private bool Equals(T left, T right) => (_comparer ?? EqualityComparer<T>.Default).Equals(left, right);
 
-    private int IndexOf(T[] items, int count, T item) {
+    private int IndexOf(T[] items, int count, T item)
+    {
         IEqualityComparer<T> comparer = _comparer ?? EqualityComparer<T>.Default;
-        for (int i = 0; i < count; i++) if (comparer.Equals(item, items[i])) return i;
+        for (int i = 0; i < count; i++)
+            if (comparer.Equals(item, items[i])) return i;
         return -1;
     }
 
-    private static T RemoveAt(T[] items, ref int count, int index) {
+    private static T RemoveAt(T[] items, ref int count, int index)
+    {
         T item = items[index];
         count--;
         if (index < count) Array.Copy(items, index + 1, items, index, count - index);
-        items[count] = default!;
+        Array.Clear(items, count, 1);
         return item;
     }
 
-    private static void EnsureDeltaCapacity(ref T[] items, int capacity) {
+    private static void EnsureDeltaCapacity(ref T[] items, int capacity)
+    {
         if (capacity <= items.Length) return;
         int next = items.Length == 0 ? 4 : items.Length * 2;
         if (next < capacity) next = capacity;
         Array.Resize(ref items, next);
     }
 
-    private BindingState Binding => _binding ??= new();
-
-    private T CreateNewItem(BindingState state) {
-        if (state.Factory is Func<T> factory) return factory();
-        if (typeof(T).IsValueType) return default!;
-        ConstructorInfo? constructor = NewItemConstructorCache.Value;
-        if (constructor is null) throw new NotSupportedException($"{typeof(T)} has no public parameterless constructor and no new-item factory was supplied.");
-        return Cast(constructor.Invoke(null));
+    private void UndoAddition(in AddDelta delta)
+    {
+        if (delta.Kind == AdditionKind.Restored && delta.RemovedItem is T item)
+            InsertRemoved(Math.Min(delta.RemovedIndex, _removedCount), item);
     }
 
-    private static bool TryCast(object? value, out T item) {
-        if (value is T typed) { item = typed; return true; }
-        if (value is null && default(T) is null) { item = default!; return true; }
-        item = default!;
-        return false;
-    }
-
-    private static T Cast(object? value) {
-        if (TryCast(value, out T item)) return item;
-        throw new ArgumentException($"Expected an instance assignable to {typeof(T)}, got {(value is null ? "<null>" : value.GetType())}.");
-    }
-
-    private PropertyDescriptorCollection Properties {
-        get {
-            BindingState state = Binding;
-            return state.Properties ??= state.PropertiesFactory?.Invoke() ?? TypeDescriptor.GetProperties(typeof(T));
-        }
-    }
-
-    private void RaiseListChanged(ListChangedEventArgs args) => _binding?.ListChanged?.Invoke(this, args);
-    private void SubscribeInitial(BindingState state) { for (int i = 0; i < _count; i++) Subscribe(_items[i], state); }
-    private void Subscribe(T item) { if (_binding?.ListChanged is not null) Subscribe(item, _binding); }
-
-    private void Subscribe(T item, BindingState state) {
-        if (typeof(T).IsValueType || item is not INotifyPropertyChanged changed) return;
-        state.Subscriptions ??= new(ReferenceEqualityComparer.Instance);
-        if (state.Subscriptions.TryGetValue(changed, out int count)) { state.Subscriptions[changed] = count + 1; return; }
-        state.Subscriptions.Add(changed, 1);
-        changed.PropertyChanged += ItemPropertyChanged;
-    }
-
-    private void Unsubscribe(T item) {
-        BindingState? state = _binding;
-        if (state?.Subscriptions is null || item is not INotifyPropertyChanged changed || !state.Subscriptions.TryGetValue(changed, out int count)) return;
-        if (count > 1) { state.Subscriptions[changed] = count - 1; return; }
-        state.Subscriptions.Remove(changed);
-        changed.PropertyChanged -= ItemPropertyChanged;
-    }
-
-    private void UnsubscribeAll(BindingState state) {
-        if (state.Subscriptions is null) return;
-        foreach (INotifyPropertyChanged item in state.Subscriptions.Keys) item.PropertyChanged -= ItemPropertyChanged;
-        state.Subscriptions = null;
-    }
-
-    private void ItemPropertyChanged(object? sender, PropertyChangedEventArgs e) {
-        if (sender is null || _binding?.ListChanged is null) return;
-        PropertyDescriptor? descriptor = string.IsNullOrEmpty(e.PropertyName) ? null : Properties[e.PropertyName];
-        for (int i = 0; i < _count; i++) if (ReferenceEquals(sender, _items[i])) _binding.ListChanged(this, new(ListChangedType.ItemChanged, i, descriptor));
-    }
-
-    /// <inheritdoc/>
+    /// <summary>Gets an active item enumerator.</summary>
     public Enumerator GetEnumerator() => new(this);
-    IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    IEnumerator<T> IEnumerable<T>.GetEnumerator() => new Enumerator(this);
+    IEnumerator IEnumerable.GetEnumerator() => new Enumerator(this);
 
-    /// <summary>Enumerates active list items.</summary>
-    public struct Enumerator : IEnumerator<T> {
+    /// <summary>Enumerates active items.</summary>
+    public struct Enumerator : IEnumerator<T>
+    {
         private readonly TrackingList<T> _list;
         private readonly int _version;
         private int _index;
-        internal Enumerator(TrackingList<T> list) { _list = list; _version = list._version; _index = -1; }
+
+        internal Enumerator(TrackingList<T> list)
+        {
+            _list = list;
+            _version = list._version;
+            _index = -1;
+        }
+
         /// <inheritdoc/>
         public readonly T Current => _list._items[_index];
-        object IEnumerator.Current => Current!;
+        readonly object? IEnumerator.Current => Current;
+
         /// <inheritdoc/>
-        public bool MoveNext() {
+        public bool MoveNext()
+        {
             if (_version != _list._version) throw new InvalidOperationException("Collection was modified during enumeration.");
-            return ++_index < _list._count;
+            int next = _index + 1;
+            if (next >= _list._count) return false;
+            _index = next;
+            return true;
         }
+
         /// <inheritdoc/>
-        public void Reset() => throw new NotSupportedException();
+        public void Reset()
+        {
+            if (_version != _list._version) throw new InvalidOperationException("Collection was modified during enumeration.");
+            _index = -1;
+        }
+
         /// <inheritdoc/>
         public readonly void Dispose() { }
     }
 
-    /// <summary>Exposes items added after list creation.</summary>
-    public readonly struct AddedCollection : IReadOnlyList<T> {
+    /// <summary>Provides the active added items.</summary>
+    public readonly struct AddedCollection : IReadOnlyCollection<T>
+    {
         private readonly TrackingList<T> _list;
         internal AddedCollection(TrackingList<T> list) => _list = list;
         /// <inheritdoc/>
         public int Count => _list.AddedCount;
-        /// <inheritdoc/>
-        public T this[int index] {
-            get {
-                int count = _list.AddedCount;
-                if ((uint)index >= (uint)count) throw new ArgumentOutOfRangeException(nameof(index));
-                if (count == _list._count) return _list._items[index];
-                for (int i = 0; i < _list._count; i++) if (_list.IsAddedUnchecked(i) && index-- == 0) return _list._items[i];
-                throw new InvalidOperationException("Added provenance changed while the list was being read.");
-            }
-        }
-        /// <inheritdoc/>
+        /// <summary>Gets an added item enumerator.</summary>
         public AddedEnumerator GetEnumerator() => new(_list);
         IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
-    /// <summary>Enumerates added items.</summary>
-    public struct AddedEnumerator : IEnumerator<T> {
+    /// <summary>Enumerates active added items.</summary>
+    public struct AddedEnumerator : IEnumerator<T>
+    {
         private readonly TrackingList<T> _list;
         private readonly int _version;
         private int _index;
-        private T _current;
-        internal AddedEnumerator(TrackingList<T> list) { _list = list; _version = list._version; _index = -1; _current = default!; }
+
+        internal AddedEnumerator(TrackingList<T> list)
+        {
+            _list = list;
+            _version = list._version;
+            _index = -1;
+        }
+
         /// <inheritdoc/>
-        public readonly T Current => _current;
-        object IEnumerator.Current => Current!;
+        public readonly T Current => _list._items[_index];
+        readonly object? IEnumerator.Current => Current;
+
         /// <inheritdoc/>
-        public bool MoveNext() {
+        public bool MoveNext()
+        {
             if (_version != _list._version) throw new InvalidOperationException("Collection was modified during enumeration.");
             while (++_index < _list._count)
-                if (_list.IsAddedUnchecked(_index)) { _current = _list._items[_index]; return true; }
-            _current = default!;
+                if (_list.IsAddedUnchecked(_index)) return true;
             return false;
         }
+
         /// <inheritdoc/>
-        public void Reset() => throw new NotSupportedException();
+        public void Reset()
+        {
+            if (_version != _list._version) throw new InvalidOperationException("Collection was modified during enumeration.");
+            _index = -1;
+        }
+
         /// <inheritdoc/>
         public readonly void Dispose() { }
     }
 
-    /// <summary>Exposes items removed after list creation.</summary>
-    public readonly struct RemovedCollection : IReadOnlyList<T> {
+    /// <summary>Provides removed items.</summary>
+    public readonly struct RemovedCollection : IReadOnlyList<T>
+    {
         private readonly TrackingList<T> _list;
         internal RemovedCollection(TrackingList<T> list) => _list = list;
         /// <inheritdoc/>
         public int Count => _list._removedCount;
         /// <inheritdoc/>
-        public T this[int index] {
-            get {
-                if ((uint)index >= (uint)_list._removedCount) throw new ArgumentOutOfRangeException(nameof(index));
-                return _list._removed[index];
-            }
-        }
-        /// <inheritdoc/>
+        public T this[int index] => (uint)index < (uint)_list._removedCount
+            ? _list._removed[index]
+            : throw new ArgumentOutOfRangeException(nameof(index));
+        /// <summary>Gets a removed item enumerator.</summary>
         public RemovedEnumerator GetEnumerator() => new(_list);
         IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     /// <summary>Enumerates removed items.</summary>
-    public struct RemovedEnumerator : IEnumerator<T> {
+    public struct RemovedEnumerator : IEnumerator<T>
+    {
         private readonly TrackingList<T> _list;
         private readonly int _version;
         private int _index;
-        internal RemovedEnumerator(TrackingList<T> list) { _list = list; _version = list._version; _index = -1; }
+
+        internal RemovedEnumerator(TrackingList<T> list)
+        {
+            _list = list;
+            _version = list._version;
+            _index = -1;
+        }
+
         /// <inheritdoc/>
         public readonly T Current => _list._removed[_index];
-        object IEnumerator.Current => Current!;
+        readonly object? IEnumerator.Current => Current;
+
         /// <inheritdoc/>
-        public bool MoveNext() {
+        public bool MoveNext()
+        {
             if (_version != _list._version) throw new InvalidOperationException("Collection was modified during enumeration.");
             return ++_index < _list._removedCount;
         }
+
         /// <inheritdoc/>
-        public void Reset() => throw new NotSupportedException();
+        public void Reset()
+        {
+            if (_version != _list._version) throw new InvalidOperationException("Collection was modified during enumeration.");
+            _index = -1;
+        }
+
         /// <inheritdoc/>
         public readonly void Dispose() { }
     }
 
-    private static class NewItemConstructorCache {
-        internal static readonly ConstructorInfo? Value = typeof(T).IsValueType ? null : typeof(T).GetConstructor(Type.EmptyTypes);
+    protected readonly struct AdditionToken
+    {
+        internal readonly AddDelta Delta;
+        internal AdditionToken(AddDelta delta) => Delta = delta;
     }
 
-    private sealed class BindingState {
-        internal bool AllowEdit = true;
-        internal Func<T>? Factory;
-        internal Func<T, bool>? CancelNew;
-        internal AddingNewEventHandler? AddingNew;
-        internal ListChangedEventHandler? ListChanged;
-        internal Dictionary<INotifyPropertyChanged, int>? Subscriptions;
-        internal PropertyDescriptorCollection? Properties;
-        internal Func<PropertyDescriptorCollection>? PropertiesFactory;
-        internal string? ListName;
-        internal PendingNew? Pending;
+    protected enum AdditionKind : byte { Added, Existing, Restored }
+
+    protected readonly struct AddDelta
+    {
+        private AddDelta(AdditionKind kind, T? removedItem, int removedIndex)
+        {
+            Kind = kind;
+            RemovedItem = removedItem;
+            RemovedIndex = removedIndex;
+        }
+
+        internal AdditionKind Kind { get; }
+        internal T? RemovedItem { get; }
+        internal int RemovedIndex { get; }
+        internal static AddDelta Added => new(AdditionKind.Added, default, -1);
+        internal static AddDelta Existing => new(AdditionKind.Existing, default, -1);
+        internal static AddDelta Restored(T item, int index) => new(AdditionKind.Restored, item, index);
     }
-
-    private sealed class PendingNew(int index, AddDelta delta) {
-        internal int Index = index;
-        internal AddDelta Delta = delta;
-    }
-
-    private readonly struct AddDelta(byte kind, T removedItem, int removedIndex) {
-        private const byte ExistingKind = 0, AddedKind = 1, RestoredKind = 2;
-        internal readonly T RemovedItem = removedItem;
-        internal readonly int RemovedIndex = removedIndex;
-        internal bool IsAdded => kind == AddedKind;
-        internal bool IsRestored => kind == RestoredKind;
-        internal static AddDelta Existing => new(ExistingKind, default!, -1);
-        internal static AddDelta Added => new(AddedKind, default!, -1);
-        internal static AddDelta Restored(T item, int index) => new(RestoredKind, item, index);
-    }
-
-    PropertyDescriptorCollection ITypedList.GetItemProperties(PropertyDescriptor[]? listAccessors) => Properties;
-    string ITypedList.GetListName(PropertyDescriptor[]? listAccessors) => _binding?.ListName ?? typeof(T).Name;
-
-    bool IBindingList.AllowNew => CanAddNew;
-    bool IBindingList.AllowEdit => AllowEdit;
-    bool IBindingList.AllowRemove => true;
-    bool IBindingList.SupportsChangeNotification => true;
-    bool IBindingList.SupportsSearching => false;
-    bool IBindingList.SupportsSorting => false;
-    bool IBindingList.IsSorted => false;
-    PropertyDescriptor? IBindingList.SortProperty => null;
-    ListSortDirection IBindingList.SortDirection => ListSortDirection.Ascending;
-    object IBindingList.AddNew() => AddNew()!;
-    void IBindingList.AddIndex(PropertyDescriptor property) { }
-    void IBindingList.ApplySort(PropertyDescriptor property, ListSortDirection direction) => throw new NotSupportedException();
-    int IBindingList.Find(PropertyDescriptor property, object key) => throw new NotSupportedException();
-    void IBindingList.RemoveIndex(PropertyDescriptor property) { }
-    void IBindingList.RemoveSort() => throw new NotSupportedException();
-
-    bool IList.IsFixedSize => false;
-    bool IList.IsReadOnly => false;
-    bool ICollection.IsSynchronized => false;
-    object ICollection.SyncRoot => this;
-    object? IList.this[int index] { get => this[index]; set => this[index] = Cast(value); }
-    int IList.Add(object? value) { Add(Cast(value)); return _count - 1; }
-    bool IList.Contains(object? value) => TryCast(value, out T item) && Contains(item);
-    int IList.IndexOf(object? value) => TryCast(value, out T item) ? IndexOf(item) : -1;
-    void IList.Insert(int index, object? value) => Insert(index, Cast(value));
-    void IList.Remove(object? value) { if (TryCast(value, out T item)) Remove(item); }
-    void ICollection.CopyTo(Array array, int index) => Array.Copy(_items, 0, array, index, _count);
 }

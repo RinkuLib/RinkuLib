@@ -7,8 +7,6 @@ A micro-ORM for .NET built directly on ADO.NET. You keep control of the SQL, and
 Get the package from [NuGet](https://www.nuget.org/packages/Rinku/) and read the [documentation](https://rinkulib.github.io/RinkuLib/).
 
 ```csharp
-using Rinku;
-
 public record Album(int Id, string Title);
 
 // Create the command once (a static readonly field is ideal). The SQL template is parsed here.

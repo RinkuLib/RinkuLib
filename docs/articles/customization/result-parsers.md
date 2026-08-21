@@ -73,33 +73,33 @@ public sealed class AppResultParserMaker(ITypeParser<AppResult> appParser) : ITy
 
     public bool CanHandle<T>() => typeof(T) == typeof(AppResult);
 
-    public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] columns, out ITypeParser<T> parser) {
+    public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] columns, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
         if (appParser is ITypeParser<T> typed) {
             parser = typed;
             return true;
         }
 
-        parser = null!;
+        parser = null;
         return false;
     }
 
-    public bool TryColdStart<T>(DbCommand command, ICacheGivingParser<T> cache, bool disposeCommand, out T result) {
-        result = default!;
+    public bool TryColdStart<T>(DbCommand command, ICacheGivingParser<T> cache, bool disposeCommand, [MaybeNullWhen(false)] out T result) {
+        result = default;
         return false;
     }
 
-    public bool TryColdStart<T>(IDbCommand command, ICacheGivingParser<T> cache, bool disposeCommand, out T result) {
-        result = default!;
+    public bool TryColdStart<T>(IDbCommand command, ICacheGivingParser<T> cache, bool disposeCommand, [MaybeNullWhen(false)] out T result) {
+        result = default;
         return false;
     }
 
-    public bool TryColdStartAsync<T>(DbCommand command, ICacheGivingParser<T> cache, bool disposeCommand, CancellationToken ct, out Task<T> result) {
-        result = null!;
+    public bool TryColdStartAsync<T>(DbCommand command, ICacheGivingParser<T> cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<T> result) {
+        result = null;
         return false;
     }
 
-    public bool TryColdStartAsync<T>(IDbCommand command, ICacheGivingParser<T> cache, bool disposeCommand, CancellationToken ct, out Task<T> result) {
-        result = null!;
+    public bool TryColdStartAsync<T>(IDbCommand command, ICacheGivingParser<T> cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<T> result) {
+        result = null;
         return false;
     }
 }

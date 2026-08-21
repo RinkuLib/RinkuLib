@@ -10,11 +10,16 @@ namespace Rinku.Mapping;
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
 public class CanCompleteWithMembersAttribute : Attribute;
 /// <summary>
-/// Defines that all the parameters type should be registered if they aren't
+/// Allows unregistered types used by a construction path to be registered on demand.
+/// On a type, this applies to its immediate construction parameters and writable members.
+/// It does not register the attributed type itself.
 /// </summary>
-
-[AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor)]
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor |
+    AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface)]
 public sealed class AreReadableAttribute : Attribute;
+/// <summary>Allows default mapping to discover non-public construction paths and writable members.</summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
+public sealed class UsePrivateMembersAttribute : Attribute;
 /// <summary>
 /// A validated candidate for object instantiation, wrapping a
 /// A validated candidate for object instantiation, wrapping a
@@ -69,10 +74,8 @@ public class MethodCtorInfo {
     private IGroupingRule? _groupKey;
     private bool _groupKeyResolved;
     /// <summary>
-    /// The grouping rule this construction declares, its <see cref="GroupKeyAttribute"/> parameters or a
-    /// <see cref="GroupKeyMethodAttribute"/>, which overrides the type-level rule when this construction is chosen.
-    /// <see langword="null"/> when it declares none, so the type's rule (or the default) applies. Read once from the
-    /// attributes, or set directly to override a construction's boundary at registration time.
+    /// The first grouping rule tried for this construction. Returning no boundary allows the type rule or inference.
+    /// <see langword="null"/> starts with the type rule. Attribute rules are read once.
     /// </summary>
     public IGroupingRule? GroupKey {
         get {
@@ -243,6 +246,13 @@ public class MethodCtorInfo {
                 return null;
             ps[i] = p;
         }
+        return ps;
+    }
+    internal static ParamInfo[] MakeParameters(MethodBase methodBase) {
+        var parameters = methodBase.GetParameters();
+        var ps = new ParamInfo[parameters.Length];
+        for (int i = 0; i < parameters.Length; i++)
+            ps[i] = ParamInfo.Create(parameters[i]);
         return ps;
     }
     /// <summary>

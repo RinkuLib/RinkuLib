@@ -3,10 +3,8 @@ using System.Reflection;
 namespace Rinku.Mapping;
 
 /// <summary>
-/// Marks the value that separates objects in a spanning mapping.
-/// Apply it to several members or constructor parameters for a combined key.
-/// Apply it to a static boundary method for a custom comparison.
-/// A key on the selected constructor or factory takes priority over a key on the type.
+/// Marks a grouping value. Several declarations form a combined key.
+/// Construction keys are tried before type keys. A rule that returns no boundary allows the next option.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Parameter, AllowMultiple = false)]
 public sealed class GroupKeyAttribute : Attribute, IGroupingRuleMaker {

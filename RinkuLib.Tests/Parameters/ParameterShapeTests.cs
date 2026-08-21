@@ -7,6 +7,7 @@ using Rinku.Mapping;
 using Rinku.Mapping.Parsers;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Querying.Parameters;
+using RinkuLib.Tests.Documentation;
 using Xunit;
 
 namespace Rinku.Querying.Tests;
@@ -121,6 +122,7 @@ public sealed class ParameterShapeTests {
     }
 
     [Fact]
+    [DocumentationExample("parameters.md", "accept-an-equal-priority-conflict")]
     public void TakeOne_accepts_an_equal_priority_collision_without_defining_the_winner() {
         var command = new QueryCommand("SELECT @Value");
         var builder = new QueryBuilder(command);

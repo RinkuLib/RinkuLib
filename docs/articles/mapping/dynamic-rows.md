@@ -39,7 +39,7 @@ IEnumerable<DynaObject> stream = GetAlbums.Query<IEnumerable<DynaObject>>(cnn);
 
 ```csharp
 await foreach (DynaObject row in GetAlbums.StreamQueryAsync<DynaObject>(cnn, ct: cancellationToken))
-    Show(row.Get<int>("Id"), row.Get<string>("Title"));
+    Console.WriteLine($"{row.Get<int>("Id")}: {row.Get<string>("Title")}");
 ```
 
 Later duplicate names receive a suffix.

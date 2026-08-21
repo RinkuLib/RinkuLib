@@ -1,6 +1,6 @@
 # Tracking
 
-`Rinku.Tracking` keeps editable application state separate from persistence. It can wrap one object, track structural changes in a list, generate runtime edit types, expose original values, and attach validation or metadata capabilities.
+`Rinku.Tracking` separates editable application state from persistence. It provides a structural tracking list, cached runtime-generated edit types, source-aware confirmation, binding support, validation, and metadata capabilities.
 
 ## Start with one item
 
@@ -11,12 +11,13 @@ using Rinku.Tracking.Runtime;
 public record Album(int Id, string Title);
 
 Album original = new(12, "Blue");
-IRuntimeDynamicTrackingItem<Album> edit = original.ToTrackingItem();
+IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 
 edit.Set(nameof(Album.Title), "Kind of Blue");
+edit.ConfirmEdit();
 ```
 
-The default runtime shape provides edit state, original access, property-change notifications, and member access by name or index.
+The generated item exposes a real CLR property surface, lazy edit state, original access, change enumeration, and member access by name or index. Reading does not start an edit; the first write creates a separate snapshot.
 
 [Read about tracking items](items.md) and [runtime tracking](runtime.md).
 
@@ -24,22 +25,22 @@ The default runtime shape provides edit state, original access, property-change 
 
 ```csharp
 Album[] originals = [new(1, "Blue"), new(2, "Green")];
-TrackingList<IRuntimeDynamicTrackingItem<Album>> albums = originals.ToTrackingList();
+TrackingList<IRuntimeTrackingItem<Album>> albums = originals.ToTrackingList();
 
 albums.RemoveAt(0);
-bool changed = albums.HasChanges();
+bool changed = albums.HasChanges;
 ```
 
-A `TrackingList<T>` keeps current order, added items, removed items, and item edit state without mixing persistence into the collection.
+`TrackingList<T>` owns active membership, order, removed storage, and fallback Added provenance. Generated item capabilities compose through the list context rather than being built into the list.
 
 [Read about tracking lists](lists.md).
 
 ## Validation and metadata
 
-Tracking contracts keep validation and metadata independent. Items can expose synchronous validation, asynchronous validation, caller context, metadata reading, metadata writing, or useful combinations of those capabilities.
+Validation and metadata are optional generated capabilities. They remain independent of both `TrackingList<T>` and persistence.
 
 [Read about validation and metadata](validation.md).
 
 ## Persistence stays explicit
 
-Tracking does not execute database operations. Save through the application first, then call `CommitEdit`, `CommitChanges`, or the structural commit operation that matches what was persisted.
+Tracking never performs database work. After an external operation succeeds, call the matching confirmation method—such as `ConfirmEdit`, `ConfirmAddedAt`, `ConfirmDeleteAt`, or `ConfirmChanges`—so the owner of that state can advance it.

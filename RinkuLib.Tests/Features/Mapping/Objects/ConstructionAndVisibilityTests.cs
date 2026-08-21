@@ -2,6 +2,7 @@ using System.Data;
 using Rinku.Mapping.Defaults;
 using Rinku.Mapping;
 using Rinku.Querying;
+using RinkuLib.Tests.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
@@ -88,27 +89,26 @@ public class ConstructionAndVisibilityTests {
     [Fact]
     public void Private_members_require_the_default_info_opt_in() {
         var external = (DefaultTypeParsingInfo)TypeParsingInfo.GetOrAdd<ExternalRow>();
-        external.UsePrivateMembers = true;
+        external.Flags |= DefaultTypeParsingFlags.UsePrivateMembers;
         Assert.Equal(7, Rows.ParseOne<ExternalRow>([new("Id", typeof(int), false)], 7).ReadId());
     }
 
     [Fact]
     public void Private_member_opt_in_covers_internal_protected_and_private_storage() {
         var inherited = (DefaultTypeParsingInfo)TypeParsingInfo.GetOrAdd<PrivateInheritanceRow>();
-        inherited.UsePrivateMembers = true;
+        inherited.Flags |= DefaultTypeParsingFlags.UsePrivateMembers;
         var row = Rows.ParseOne<PrivateInheritanceRow>([
             new("Internal", typeof(int), false), new("Protected", typeof(int), false), new("Private", typeof(int), false), new("Public", typeof(int), false)], 1, 2, 3, 4);
         Assert.Equal((1, 2, 3, 4), (row.ReadInternal(), row.ReadProtected(), row.ReadPrivate(), row.Public));
     }
 
     [Fact]
-    public void Private_member_configuration_cannot_change_after_parser_creation() {
-        var info = (DefaultTypeParsingInfo)TypeParsingInfo.GetOrAdd<LatePrivateOption>();
-        ColumnInfo[] columns = [new("Name", typeof(string), false)];
-        _ = TypeParser.GetTypeParser<LatePrivateOption>(columns);
+    [DocumentationExample("construction-paths.md", "private-member-attribute")]
+    public void UsePrivateMembers_attribute_enables_private_construction_and_member_discovery() {
+        var row = Rows.ParseOne<AttributedPrivateRow>([
+            new("Id", typeof(int), false), new("Secret", typeof(string), false)], 7, "hidden");
 
-        var error = Assert.Throws<RinkuConfigurationException>(() => info.UsePrivateMembers = true);
-        Assert.Equal(ErrorCodes.ConfigurationAfterUse, error.Code);
+        Assert.Equal((7, "hidden"), row.Read());
     }
 
     [Fact]
@@ -162,4 +162,11 @@ public class ExternalRow : IDbReadable { private int Id { get; set; } public int
 public class PrivateByDefault { private int Id { get; set; } }
 public class PrivateInheritanceRow : PrivateInheritanceBase, IDbReadable { private int Private { get; set; } public int Public { get; set; } public int ReadPrivate() => Private; }
 public class PrivateInheritanceBase { internal int Internal { get; set; } protected int Protected { get; set; } public int ReadInternal() => Internal; public int ReadProtected() => Protected; }
-public class LatePrivateOption : IDbReadable { private int Id { get; set; } public string Name { get; set; } = null!; }
+[UsePrivateMembers]
+public class AttributedPrivateRow : IDbReadable {
+    [CanCompleteWithMembers]
+    private AttributedPrivateRow(int id) => Id = id;
+    private int Id { get; }
+    private string Secret { get; set; } = "";
+    public (int, string) Read() => (Id, Secret);
+}

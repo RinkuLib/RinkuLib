@@ -15,7 +15,7 @@ public sealed class ExactTypeAttribute : Attribute;
 public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer NameComparer) {
     private static Func<ParamInfo, ParamInfo>? _registrationInitializer;
     /// <summary>
-    /// Gets or sets the callback applied to every slot created by <see cref="Create"/>.
+    /// Gets or sets the callback applied to every slot created by <see cref="Create(Type, string, object[], object)"/>.
     /// Set it during application startup to apply a naming or null rule across the application.
     /// Return the received slot after changing it or return a replacement.
     /// Slots created directly do not call it.
@@ -98,15 +98,15 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// Creates a matcher for a constructor or method parameter if the type is usable.
     /// </summary>
     public static ParamInfo? TryNew(ParameterInfo p)
-        => !TypeParsingInfo.IsUsableType(p.ParameterType) ? null :
-            Create(p.ParameterType, p.Name, p.GetCustomAttributes(true), p);
+        => TypeParsingInfo.IsUsableType(p.ParameterType) ? Create(p) : null;
+    internal static ParamInfo Create(ParameterInfo p)
+        => Create(p.ParameterType, p.Name, p.GetCustomAttributes(true), p);
     /// <summary>
     /// Creates a matcher for a class property if the type is usable.
     /// </summary>
-    public static ParamInfo? TryNew(PropertyInfo p) {
-        if (!TypeParsingInfo.IsUsableType(p.PropertyType))
-            return null;
-
+    public static ParamInfo? TryNew(PropertyInfo p)
+        => TypeParsingInfo.IsUsableType(p.PropertyType) ? Create(p) : null;
+    internal static ParamInfo Create(PropertyInfo p) {
         object[] attributes = p.GetCustomAttributes(true);
         bool hasNotNull = false;
         for (int i = 0; i < attributes.Length; i++) {
@@ -128,8 +128,9 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// Creates a matcher for a class field if the type is usable.
     /// </summary>
     public static ParamInfo? TryNew(FieldInfo f)
-        => !TypeParsingInfo.IsUsableType(f.FieldType) ? null :
-            Create(f.FieldType, f.Name, f.GetCustomAttributes(true), f);
+        => TypeParsingInfo.IsUsableType(f.FieldType) ? Create(f) : null;
+    internal static ParamInfo Create(FieldInfo f)
+        => Create(f.FieldType, f.Name, f.GetCustomAttributes(true), f);
     /// <summary>
     /// Creates the slot rules for a member or parameter and applies its attributes.
     /// </summary>
@@ -185,7 +186,7 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// <summary>
     /// Resolves the nullability that a set of attributes declares, a custom
     /// <see cref="INullColHandlerMaker"/>, <see cref="NotNullAttribute"/>, <see cref="MaybeNullAttribute"/>,
-    /// composed with <see cref="AbortOnNullAttribute"/>. This is the resolution <see cref="Create"/> uses
+    /// composed with <see cref="AbortOnNullAttribute"/>. This is the resolution <see cref="Create(Type, string, object[], object)"/> uses
     /// before falling back to the type's own nullability.
     /// </summary>
     /// <returns>The declared handler, or <see langword="null"/> when nothing is declared.</returns>

@@ -1,4 +1,5 @@
 using Rinku.Mapping;
+using RinkuLib.Tests.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
@@ -26,6 +27,7 @@ public class TypeConversionTests {
     }
 
     [Fact]
+    [DocumentationExample("objects.md", "column-type-conversions")]
     public void Numeric_opcode_conversions_between_sizes() {
         ColumnInfo[] cols = [new("V", typeof(long), false)];
         Assert.Equal(300, Rows.ParseOne<int>(cols, 300L));
@@ -158,6 +160,13 @@ public class TypeConversionTests {
     public void A_source_side_implicit_operator_bridges_to_the_slot() {
         ColumnInfo[] cols = [new("V", typeof(WrappedInt), false)];
         Assert.Equal(9, Rows.ParseOne<int>(cols, new WrappedInt(9)));
+    }
+
+    [Fact]
+    [DocumentationExample("objects.md", "column-type-conversions")]
+    public void A_target_side_explicit_operator_bridges_to_the_slot() {
+        ColumnInfo[] cols = [new("V", typeof(double), false)];
+        Assert.Equal(9.5, Rows.ParseOne<ExplicitOnly>(cols, 9.5).Value);
     }
 
     [Fact]

@@ -73,7 +73,62 @@ ConstructorInfo constructor = typeof(ExternalPayment).GetConstructor([typeof(int
 TypeParsingInfo.GetOrAdd<IPayment>().AddPossibleConstruction(constructor);
 ```
 
-Private constructors and factories on another non-generic class can be added the same way.
+### Private constructor
+
+Use explicit binding flags when the constructor is not public.
+
+```csharp
+ConstructorInfo privateConstructor = typeof(PrivatePayment).GetConstructor(
+    BindingFlags.NonPublic | BindingFlags.Instance,
+    binder: null,
+    types: [typeof(int)],
+    modifiers: null) ?? throw new InvalidOperationException("Constructor was not found.");
+
+TypeParsingInfo.GetOrAdd<IPayment>().AddPossibleConstruction(privateConstructor);
+```
+
+### Discover private paths and members
+
+`[UsePrivateMembers]` includes non-public constructors, static factories, fields, properties, and setters in automatic discovery.
+
+```csharp
+[UsePrivateMembers]
+public sealed class PrivateInvoice {
+    [CanCompleteWithMembers]
+    private PrivateInvoice(int id) => Id = id;
+
+    public int Id { get; }
+    private string Note { get; set; } = "";
+
+    public string ReadNote() => Note;
+}
+
+PrivateInvoice invoice = GetPrivateInvoice.Query<PrivateInvoice>(cnn);
+```
+
+The attribute initializes the same flag that application setup can set directly.
+
+```csharp
+if (TypeParsingInfo.GetOrAdd<PrivateInvoice>() is DefaultTypeParsingInfo info)
+    info.Flags |= DefaultTypeParsingFlags.UsePrivateMembers;
+```
+
+Set discovery flags before the type is first parsed. Changing them later does not rebuild construction paths or members already discovered.
+
+### Factory on another class
+
+An external static factory can also be registered.
+
+```csharp
+MethodInfo factory = typeof(PaymentFactory).GetMethod(
+    nameof(PaymentFactory.Create),
+    BindingFlags.Public | BindingFlags.Static,
+    binder: null,
+    types: [typeof(string)],
+    modifiers: null) ?? throw new InvalidOperationException("Factory method was not found.");
+
+TypeParsingInfo.GetOrAdd<IPayment>().AddPossibleConstruction(factory);
+```
 
 ## Add an open generic factory
 
@@ -125,6 +180,63 @@ path.Parameters[1].SetAbortOnNull(true);
 
 Use `GetConstruction(factoryMethod)` when paths share the same parameter types.
 
+```csharp
+public interface IImportResult {
+    public static IImportResult Accepted(string message) => new AcceptedImport(message);
+    public static IImportResult Rejected(string message) => new RejectedImport(message);
+}
+
+public sealed record AcceptedImport(string Message) : IImportResult;
+public sealed record RejectedImport(string Message) : IImportResult;
+
+MethodInfo rejectedFactory = typeof(IImportResult).GetMethod(nameof(IImportResult.Rejected))
+    ?? throw new InvalidOperationException("Factory method was not found.");
+
+MethodCtorInfo rejectedPath = TypeParsingInfo.GetOrAdd<IImportResult>().GetConstruction(rejectedFactory);
+rejectedPath.Parameters[0].UpdateAltName(_ => new NameComparer("ErrorMessage"));
+```
+
+Both factories take one `string`, so selecting only by parameter types cannot identify the rejected path.
+
+## Supply a custom fallback
+
+CLR optional-argument values are not arbitrary mapping fallbacks. A missing `Rating` cannot use the `5` in this declaration by itself.
+
+```csharp
+public record RatedAlbum(int Id, int Rating = 5);
+
+RatedAlbum album = GetAlbumIdOnly.Query<RatedAlbum>(cnn);
+// RINKU3001 because Rating has no matching column.
+```
+
+An `IFallbackParserGetter` can provide a read plan for the missing slot.
+
+```csharp
+sealed class RatingFallback : SimpleDbItemParser, IFallbackParserGetter {
+    public static RatingFallback Instance { get; } = new();
+
+    public DbItemPlan? FallbackTryGetParser(Type type) => type == typeof(int) ? this : null;
+
+    public override void Emit(ColumnInfo[] columns, Rinku.Mapping.Emission.Generator generator, NullSetPoint nullSetPoint)
+        => generator.Emit(OpCodes.Ldc_I4_5);
+
+    public override bool IsSequencial(ref int previousIndex) => true;
+    public override bool NeedNullSetPoint(ColumnInfo[] columns) => false;
+}
+
+MethodCtorInfo path = TypeParsingInfo.GetOrAdd<RatedAlbum>().GetConstruction(typeof(int), typeof(int));
+ParamInfo rating = path.Parameters[1];
+path.Parameters[1] = new ParamInfoPlus(
+    rating.Type,
+    rating.NullColHandler,
+    rating.NameComparer,
+    IColModifier.Nothing,
+    RatingFallback.Instance);
+
+RatedAlbum album = GetAlbumIdOnly.Query<RatedAlbum>(cnn);
+// RatedAlbum(12, 5)
+```
+
 ## Add a member after construction
 
 `AddMember` accepts a field, property, setter, or external static setter.
@@ -142,6 +254,19 @@ MethodInfo setter = typeof(SecretHolder).GetMethod(nameof(SecretHolder.SetSecret
 TypeParsingInfo.GetOrAdd<SecretHolder>().AddMember(setter);
 ```
 
-`ICanProvideMembers.AvailableMembers` can replace the member set or its order.
+## Replace the available members
+
+`ICanProvideMembers.AvailableMembers` accepts the complete ordered member set. This setup removes `DebugNote` so it is never considered for post-construction mapping.
+
+```csharp
+if (TypeParsingInfo.GetOrAdd<ImportRow>() is ICanProvideMembers members) {
+    members.AvailableMembers = members.AvailableMembers
+        .ToArray()
+        .Where(item => item.Member.Name != nameof(ImportRow.DebugNote))
+        .ToArray();
+}
+```
+
+Assign a reordered array instead when member priority must change.
 
 [Map a nested object](nesting.md).

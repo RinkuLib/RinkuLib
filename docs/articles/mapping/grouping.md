@@ -16,7 +16,7 @@ Id  Name    AlbumsId  AlbumsTitle
 2   Queen   20        Jazz
 ```
 
-`Id` and `Name` remain equal for the first two rows, so they build one `Artist`. The third row starts another.
+`Id` and `Name` remain equal for the first two rows, so they build one `Artist`. The third row starts another. Ordinary equality grouping compares each key part with `EqualityComparer<T>.Default`; all parts must remain equal for the row to stay in the group.
 
 ## Choose the key
 
@@ -44,6 +44,35 @@ Several marked values form one key.
 ```csharp
 public record OrderLine([GroupKey] int OrderId, [GroupKey] int ProductId, List<string> Serials);
 ```
+
+### Type member keys match the schema
+
+A key marked on a property or field is a type-level grouping option. It is used when every marked name can be read from the returned schema. Otherwise Rinku continues to the default inferred key.
+
+```csharp
+public sealed class SoftBatch : IDbReadable {
+    [GroupKey, Alt("Key")]
+    public int Id { get; }
+    public string? Code { get; }
+    public List<int> Values { get; }
+
+    public SoftBatch(int key, List<int> values) {
+        Id = key;
+        Values = values;
+    }
+
+    public SoftBatch(string code, List<int> values) {
+        Code = code;
+        Values = values;
+    }
+}
+```
+
+The schema containing `Key` uses `Id` as its key because `[Alt("Key")]` makes the column match. A schema containing only `Code` cannot use that rule, so normal key inference uses `Code`.
+
+A `[GroupKey]` placed directly on a constructor parameter belongs to that construction. Its rule is tried before the type rule. If it returns no boundary, Rinku tries the type rule and then inference.
+
+An application can install an [Id default](../customization/type-registration.md#configure-an-id-default) through the registration delegates without adding any `Id` behavior to Rinku itself.
 
 ## Group by a column that is not stored
 
@@ -114,9 +143,11 @@ public sealed class ShipmentBatch : IDbReadable {
 }
 ```
 
+Method grouping replaces ordinary equality semantics with the method's state and comparison logic.
+
 ## Rule order
 
-A rule on the selected constructor wins over a rule on the type. A type rule wins over inferred grouping.
+Rinku tries the selected construction's rule, the type rule, and inferred grouping in that order. Returning a boundary stops the chain. Returning `null` continues it, while throwing refuses the schema.
 
 ```csharp
 [GroupKeyColumns("Region")]
@@ -127,8 +158,8 @@ public sealed class Sale : IDbReadable {
 ```
 
 ```text
-Date constructor    -> groups by Date
-Region constructor  -> groups by the Region column
+Date constructor    -> Date rule, then Region rule, then inference
+Region constructor  -> Region rule, then inference
 ```
 
 ## Configure grouping at startup
@@ -149,11 +180,48 @@ TypeParsingInfoHelper.SetGroupKeyColumns<ImportRow>("AccountId", "Currency");
 TypeParsingInfoHelper.SetGroupKeyMethod<MonthlyReport>(nameof(MonthlyReport.ByMonth));
 ```
 
-Remove a configured rule when the type should return to inference.
+Remove an assigned rule when the type should return to its attribute default, or to inference when it has no attribute rule.
 
 ```csharp
 TypeParsingInfoHelper.ClearGroupKey<Playlist>();
 ```
+
+## Custom grouping rule
+
+Implement `IGroupingRule` when neither equality keys nor a boundary method can express the rule. This example groups by a named column while discovering its CLR type from the result schema.
+
+```csharp
+sealed class ColumnGroupingRule(string columnName) : IGroupingRule {
+    public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier modifier, IBoundaryBuild build) {
+        int index = Array.FindIndex(columns, item => string.Equals(item.Name, columnName, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+            throw new InvalidOperationException($"Column {columnName} was not found");
+
+        ColumnInfo column = columns[index];
+        var name = ParamInfo.Create(column.Type, columnName, []).NameComparer;
+        DbItemPlan reader = GroupKeyNegotiation.NegotiateReader(name, column.Type, columns, modifier, columnName);
+        return new EqualityBoundary([(build.Reader(reader, column.Type), build.Field(column.Type))]);
+    }
+}
+
+public sealed record RegionGroup(int Ordinal, string Region, List<int> Codes) : IDbReadable;
+
+TypeParsingInfoHelper.SetGroupKey<RegionGroup>(new ColumnGroupingRule("Region"));
+```
+
+```text
+Ordinal  Region  Codes
+1        West    10
+2        West    11
+3        East    20
+
+RegionGroup(1, "West", [10, 11])
+RegionGroup(3, "East", [20])
+```
+
+`MakeBoundary` runs while the parser is built. `IBoundaryBuild` creates the per-execution key storage, so the rule itself does not keep mutable grouping state. Assign a rule to one construction path with `GetConstruction(...).GroupKey` when it should be tried first for that path.
+
+`MakeBoundary` may return `null` when the schema is not a match, or throw when the mismatch is invalid. Rinku tries a construction rule, a type rule, and finally inferred grouping. The built-in equality rule returns `null` when one of its key columns cannot be mapped.
 
 ## Invalid grouping shapes
 
@@ -166,14 +234,12 @@ Report report = GetReport.Query<Report>(cnn);
 // RINKU3002. Total follows the collection and cannot form the inferred key.
 ```
 
-A named key that does not exist in the result raises `RINKU3003`.
+A rule can make an absent key fatal by raising `RINKU3003` instead of returning `null`.
 
 ```csharp
-[GroupKeyColumns("AccountId")]
-public record AccountRows(List<int> Values);
-
-AccountRows rows = GetValuesOnly.Query<AccountRows>(cnn);
-// RINKU3003. The result has no AccountId column.
+throw new RinkuConfigurationException(
+    ErrorCodes.GroupKeyUnmapped,
+    "the required AccountId key matched no column");
 ```
 
 Conflicting rule families at the same level raise `RINKU3004`.
@@ -187,7 +253,5 @@ public sealed class Batch {
 }
 // RINKU3004. The constructor declares both a parameter key and a method key.
 ```
-
-See [type registrations and defaults](../customization/type-registration.md) for custom `IGroupingRule` implementations.
 
 [Adapt names when the SQL and code differ](names.md).

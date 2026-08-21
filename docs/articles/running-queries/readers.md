@@ -12,7 +12,7 @@ using (command) {
         while (reader.Read()) {
             int id = reader.GetInt32(0);
             string title = reader.GetString(1);
-            Show(id, title);
+            Console.WriteLine($"{id}: {title}");
         }
     }
 }
@@ -27,7 +27,7 @@ DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command, new
 
 try {
     while (reader.Read())
-        Show(reader.GetInt32(0), reader.GetString(1));
+        Console.WriteLine($"{reader.GetInt32(0)}: {reader.GetString(1)}");
 }
 finally {
     reader.Dispose();
@@ -38,7 +38,7 @@ finally {
 Disposing the reader closes a connection opened by Rinku, but does not dispose the command.
 
 ```csharp
-using DbConnection cnn = GetConnection(); // closed
+using DbConnection cnn = new SqlConnection(connectionString); // closed
 
 DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command);
 reader.Dispose();
@@ -51,14 +51,14 @@ command.Dispose();
 An initially open connection remains open.
 
 ```csharp
-using DbConnection cnn = GetConnection();
+using DbConnection cnn = new SqlConnection(connectionString);
 cnn.Open();
 
 DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command);
 using (command) {
     using (reader) {
         while (reader.Read())
-            Show(reader);
+            Console.WriteLine(reader.GetValue(0));
     }
 }
 
@@ -73,7 +73,7 @@ DbDataReader reader = await GetAlbumRows.ExecuteReaderAsync(cnn, out DbCommand c
 await using (command) {
     await using (reader) {
         while (await reader.ReadAsync(cancellationToken))
-            Show(reader);
+            Console.WriteLine(reader.GetValue(0));
     }
 }
 ```

@@ -1,4 +1,5 @@
 using Rinku.Mapping;
+using RinkuLib.Tests.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
@@ -103,6 +104,7 @@ public class ScalarMappingTests {
     }
 
     [Fact]
+    [DocumentationExample("objects.md", "require-the-exact-column-type")]
     public void ExactType_rejects_a_numeric_conversion_on_a_constructor_parameter() {
         ColumnInfo[] longCols = [new("V", typeof(long), false)];
         Assert.Throws<RinkuNoParserException>(() => Rows.ParseOne<ExactConstructor>(longCols, 7L));

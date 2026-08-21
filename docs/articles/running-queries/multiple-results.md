@@ -59,7 +59,7 @@ IEnumerable<Artist> artists = results.Query<IEnumerable<Artist>>();
 
 using (IEnumerator<Artist> iterator = artists.GetEnumerator()) {
     if (iterator.MoveNext())
-        Show(iterator.Current);
+        Console.WriteLine(iterator.Current.Name);
 }
 
 // The artists result set was stopped early and results advanced.
@@ -72,7 +72,7 @@ List<Album> albums = results.Query<List<Album>>();
 using MultiReader results = await GetDashboard.ExecuteMultiReaderAsync(cnn, new { artistId = 7 }, ct: cancellationToken);
 
 await foreach (Artist artist in results.StreamQueryAsync<Artist>(ct: cancellationToken)) {
-    Show(artist);
+    Console.WriteLine(artist.Name);
     break;
 }
 
@@ -86,7 +86,7 @@ Set `goToNextResultSet` to `false` when application code advances the reader its
 using MultiReader results = await GetDashboard.ExecuteMultiReaderAsync(cnn, new { artistId = 7 }, ct: cancellationToken);
 
 await foreach (Artist artist in results.StreamQueryAsync<Artist>(goToNextResultSet: false, ct: cancellationToken)) {
-    Show(artist);
+    Console.WriteLine(artist.Name);
 }
 
 await results.NextResultAsync(cancellationToken);

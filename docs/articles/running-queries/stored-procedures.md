@@ -35,13 +35,11 @@ UPDATE albums SET Title = @title WHERE AlbumId = @albumId
 `FromProc` reads the procedure declaration once during application setup.
 
 ```csharp
-static readonly QueryCommand RenumberAlbums = CreateRenumberAlbums();
+static QueryCommand CreateRenumberAlbums(DbConnection setupConnection)
+    => QueryCommand.FromProc("RenumberAlbums", setupConnection);
 
-static QueryCommand CreateRenumberAlbums() {
-    using DbConnection cnn = GetConnection(); // closed
-    QueryCommand command = QueryCommand.FromProc("RenumberAlbums", cnn);
-    return command; // cnn is closed again when the method exits.
-}
+QueryCommand renumberAlbums = CreateRenumberAlbums(setupConnection);
+// A setup connection opened by FromProc is closed again before the call returns.
 ```
 
 Discovery copies the procedure name, command type, parameter names, and parameter metadata into the returned `QueryCommand`. Provider-derived `InputOutput` parameters may be omitted by default, which covers providers that expose an output parameter as `InputOutput`.
@@ -54,7 +52,7 @@ Not retained: connection, transaction, temporary command, provider parameters
 An initially open setup connection remains open.
 
 ```csharp
-using DbConnection cnn = GetConnection();
+using DbConnection cnn = new SqlConnection(connectionString);
 cnn.Open();
 
 QueryCommand command = QueryCommand.FromProc("RenumberAlbums", cnn);
@@ -69,7 +67,7 @@ The temporary provider command is disposed. When discovery fails, a connection o
 `FromProc` already copied the parameter's direction and database metadata, so a default-capable output does not need a placeholder.
 
 ```csharp
-RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
+renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
 
 using (command) {
     int moved = command.GetOutputValue<int>("@moved");
@@ -87,7 +85,7 @@ QueryCommand command = QueryCommand.FromProc("UpdateAndReturn", cnn, inputOutput
 The discovered return-value parameter is added automatically and does not need a placeholder.
 
 ```csharp
-RenumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
+renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
 
 using (command) {
     int moved = command.GetOutputValue<int>("@moved");

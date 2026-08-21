@@ -15,7 +15,7 @@ IAsyncEnumerable<Album> asyncStream = GetAlbums.StreamQueryAsync<Album>(cnn);
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
 
 foreach (Album album in albums)
-    Show(album);
+    Console.WriteLine(album.Title);
 ```
 
 `IEnumerable<T>` keeps the reader active while the sequence is enumerated.
@@ -24,7 +24,7 @@ foreach (Album album in albums)
 IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
 
 foreach (Album album in albums)
-    Show(album);
+    Console.WriteLine(album.Title);
 ```
 
 If the connection was closed, it remains in use until enumeration finishes or the enumerator is disposed. An initially open connection remains open.
@@ -34,13 +34,13 @@ If the connection was closed, it remains in use until enumeration finishes or th
 Disposing the enumerator immediately disposes the reader. Remaining rows do not need to be read by the application.
 
 ```csharp
-using DbConnection cnn = GetConnection(); // closed
+using DbConnection cnn = new SqlConnection(connectionString); // closed
 
 IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
 
 using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
     if (iterator.MoveNext())
-        Show(iterator.Current);
+        Console.WriteLine(iterator.Current.Title);
 }
 
 // The reader is disposed and the connection is closed again.
@@ -49,14 +49,14 @@ using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
 With an initially open connection, only the reader is closed.
 
 ```csharp
-using DbConnection cnn = GetConnection();
+using DbConnection cnn = new SqlConnection(connectionString);
 cnn.Open();
 
 IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
 
 using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
     if (iterator.MoveNext())
-        Show(iterator.Current);
+        Console.WriteLine(iterator.Current.Title);
 }
 
 // cnn remains open.
@@ -68,7 +68,7 @@ Use `StreamQueryAsync<T>` when row consumption should be asynchronous.
 
 ```csharp
 await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken)) {
-    Show(album);
+    Console.WriteLine(album.Title);
 }
 ```
 
@@ -76,7 +76,7 @@ Breaking an `await foreach` disposes its async enumerator.
 
 ```csharp
 await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken)) {
-    Show(album);
+    Console.WriteLine(album.Title);
     break;
 }
 // The reader is disposed here.
@@ -96,7 +96,7 @@ IEnumerable<Album> albums = ReadAndCountAlbums.Query<IEnumerable<Album>>(cnn, ou
 using (command) {
     using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
         if (iterator.MoveNext())
-            Show(iterator.Current);
+            Console.WriteLine(iterator.Current.Title);
     }
 
     int moved = command.GetOutputValue<int>("@moved");

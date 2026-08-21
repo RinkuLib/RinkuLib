@@ -23,7 +23,7 @@ Optional<Album> result = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 9
 
 if (result.HasValue) {
     Album album = result;
-    Show(album);
+    Console.WriteLine(album.Title);
 }
 ```
 
@@ -75,7 +75,7 @@ Album[] albums = GetAlbums.Query<Album[]>(cnn);
 IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
 
 foreach (Album album in albums)
-    Show(album);
+    Console.WriteLine(album.Title);
 ```
 
 The command remains active while the sequence is enumerated. Errors and output parameters can therefore arrive during or after enumeration.

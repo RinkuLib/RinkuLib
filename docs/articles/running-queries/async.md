@@ -36,14 +36,14 @@ An async stream is started with `StreamQueryAsync<T>`. It is not requested throu
 
 ```csharp
 await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, new { artistId = 7 }, ct: cancellationToken))
-    Show(album);
+    Console.WriteLine(album.Title);
 ```
 
 The reader and generated command remain active until enumeration finishes or the enumerator is disposed.
 
 ```csharp
 await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, new { artistId = 7 }, ct: cancellationToken)) {
-    Show(album);
+    Console.WriteLine(album.Title);
     if (album.Id == wantedId)
         break;
 }
@@ -86,7 +86,7 @@ DbDataReader reader = await GetAlbums.ExecuteReaderAsync(cnn, out DbCommand comm
 await using (command) {
     await using (reader) {
         while (await reader.ReadAsync(cancellationToken))
-            Show(reader.GetInt32(0), reader.GetString(1));
+            Console.WriteLine($"{reader.GetInt32(0)}: {reader.GetString(1)}");
     }
 }
 ```

@@ -7,11 +7,7 @@ This page covers default object mapping through `TypeParsingInfo` and constructi
 ```csharp
 public record Album(int Id, string Title);
 
-static readonly QueryCommand GetAlbum = new("""
-    SELECT AlbumId AS Id, Title
-    FROM albums
-    WHERE AlbumId = @albumId
-    """);
+static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
 
 Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
 ```
@@ -66,11 +62,7 @@ public interface IShape {
 
 public record Circle(double Radius) : IShape;
 
-static readonly QueryCommand GetShape = new("""
-    SELECT Radius
-    FROM shapes
-    WHERE ShapeId = @shapeId
-    """);
+static readonly QueryCommand GetShape = new("SELECT Radius FROM shapes WHERE ShapeId = @shapeId");
 
 IShape shape = GetShape.Query<IShape>(cnn, new { shapeId = 1 });
 // shape is a Circle
@@ -129,18 +121,38 @@ RatedAlbum album = GetAlbumIdOnly.Query<RatedAlbum>(cnn);
 // RINKU3001. The missing Rating does not become 5.
 ```
 
-The [construction path options](construction-paths.md) show how to set custom fallback values.
+The [custom fallback example](construction-paths.md#supply-a-custom-fallback) shows how to provide a deliberate mapping fallback.
 
-## Require the exact column type
+## Column type conversions
 
-By default, a compatible database value may be converted to the requested CLR type.
+An exact type match is used directly. Otherwise Rinku can apply the supported CLR conversion path, including numeric widening and narrowing and user-defined implicit or explicit conversion operators.
 
 ```csharp
-public record Amount(int Value);
+public record Totals(long Widened, int Narrowed);
 
-Amount amount = GetLongValue.Query<Amount>(cnn);
-// A long column can fill Value through conversion.
+Totals totals = GetTotals.Query<Totals>(cnn);
+// An int column uses an implicit numeric conversion for Widened.
+// A long column uses an explicit numeric conversion for Narrowed.
 ```
+
+User-defined implicit and explicit operators participate in the same conversion path.
+
+```csharp
+public readonly struct AlbumScore {
+    public double Value { get; }
+    private AlbumScore(double value) => Value = value;
+    public static explicit operator AlbumScore(double value) => new(value);
+}
+
+public record RankedAlbum(int Id, AlbumScore Score);
+
+RankedAlbum album = GetRankedAlbum.Query<RankedAlbum>(cnn);
+// A double Score column uses AlbumScore's explicit operator.
+```
+
+A nullable destination preserves database `NULL` and applies the conversion only to non-null values. Unsupported conversions make that construction path unusable. Register [custom scalar reading](../customization/type-registration.md#register-custom-scalar-reading) for application-specific conversions that the normal CLR path does not cover.
+
+### Require the exact column type
 
 `[ExactType]` requires the column type to match the slot type.
 
@@ -202,7 +214,7 @@ public sealed class Album {
 // Id remains the constructor value. Title can use the remaining column.
 ```
 
-Use `[MayReuseCol]` when a member must read an already-consumed column.
+Use [`[MayReuseCol]`](reading-order.md#reuse-a-column) when a member must read an already-consumed column.
 
 ## Recursive objects
 

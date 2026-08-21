@@ -81,8 +81,6 @@ public static class ErrorCodes {
     public const string AttributeOnWrongMemberType = "RINKU5006";
     /// <summary>A type was asked for an operation it does not carry, such as being built from JSON.</summary>
     public const string OperationNotSupportedForType = "RINKU5007";
-    /// <summary>A default type option was changed after its automatic shape was initialized.</summary>
-    public const string ConfigurationAfterUse = "RINKU5008";
 
     /// <summary>
     /// A type's shape gives the copier nothing to work with, so tracking cannot keep the original to

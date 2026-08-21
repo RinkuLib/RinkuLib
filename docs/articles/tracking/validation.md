@@ -1,44 +1,50 @@
 # Validation and metadata
 
-Validation and metadata are separate tracking capabilities. A type can implement only what it needs, or use one of the combined contracts.
+Validation and metadata are optional generated capabilities. `TrackingList<T>` does not know they exist.
 
 ## Validation
 
-Context-free and contextual validation are separate interfaces.
+Context-free and contextual validation use separate interfaces.
 
 ```csharp
-bool valid = item.Validate();
-bool validForSave = contextualItem.Validate(saveContext);
+using Rinku.Tracking;
+
+static bool IsValid(IValidatable item) => item.Validate();
+static bool IsValidForSave<TContext>(IValidatable<TContext> item, TContext context) => item.Validate(context);
 ```
 
 Asynchronous variants return `ValueTask<bool>` and accept a cancellation token.
 
 ```csharp
-bool valid = await asyncItem.ValidateAsync(cancellationToken);
-bool validForSave = await contextualAsyncItem.ValidateAsync(saveContext, cancellationToken);
+static ValueTask<bool> IsValidAsync(IAsyncValidatable item, CancellationToken cancellationToken) =>
+    item.ValidateAsync(cancellationToken);
 ```
 
-Collections of validation-capable items can use `ValidateAll` and `ValidateAllAsync`.
+Runtime options attach handlers and the required interface to the same generated type.
+
+```csharp
+using Rinku.Tracking.Runtime;
+
+public sealed class Album { public string? Title { get; set; } }
+public interface IAlbumEdit { string? Title { get; set; } }
+
+RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album, IAlbumEdit>();
+options.Validate<Album, IAlbumEdit>(static edit => !string.IsNullOrWhiteSpace(edit.Title));
+
+IAlbumEdit edit = options.GetRegistration<IAlbumEdit>().Create(new Album { Title = "Blue" });
+bool valid = ((IValidatable)edit).Validate();
+```
 
 ## Metadata
 
-`IMetadataReader<TMetadata>` exposes metadata and `IMetadataWriter<TMetadata>` stores it. `IMetadata<TMetadata>` combines both without making metadata a requirement for validation.
+`IMetadataReader<TMetadata>` exposes metadata, `IMetadataWriter<TMetadata>` stores it, and `IMetadata<TMetadata>` combines both. Metadata is direct generated-object state and remains outside the edit/original lifecycle.
 
 ```csharp
-string[] errors = item.Metadata;
-item.SetMetadata(errors);
-```
-
-## Validation with metadata
-
-The `IValidation` and `IAsyncValidation` contracts combine validation with metadata reading when that pairing is useful. Async helpers can return both results together.
-
-```csharp
-ValidationOutcome<string[]> result = await item.ValidateWithMetadataAsync(cancellationToken);
-
-if (!result.IsValid) {
-    string[] errors = result.Metadata;
+static void ReplaceErrors(IMetadata<string[]> metadata, string[] errors)
+{
+    metadata.SetMetadata(errors);
+    string[] current = metadata.Metadata;
 }
 ```
 
-Runtime tracking options can attach validation and metadata capabilities to generated edit types. Keep those capabilities separate unless the generated contract intentionally exposes a combined interface.
+Use `options.Metadata<TOriginal, TMetadata>()` to add metadata capabilities to a generated type. Validation and metadata stay independent unless the selected consumer interface deliberately combines them.

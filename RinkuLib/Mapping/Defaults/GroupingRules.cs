@@ -9,22 +9,26 @@ namespace Rinku.Mapping;
 /// </summary>
 public sealed class EqualityGroupingRule : IGroupingRule {
     private readonly object[] Sources;
-    /// <summary>A key over one or more marked members (properties or fields).</summary>
+    /// <summary>A key over one or more members.</summary>
     public EqualityGroupingRule(params MemberInfo[] members) => Sources = RequireSources(members);
     /// <summary>A key over one or more marked construction parameters.</summary>
     public EqualityGroupingRule(params ParameterInfo[] parameters) => Sources = RequireSources(parameters);
     /// <summary>A key over one or more columns named directly, each read as whatever type its column carries.</summary>
     public EqualityGroupingRule(params string[] columns) => Sources = RequireSources(columns);
     /// <inheritdoc/>
-    public GroupingBoundary MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
-        colModifier.Flags |= UsageFlags.CanReuse | UsageFlags.RemoveSequentialRead;
-        var components = new (IBoundaryReader, IBoundaryField)[Sources.Length];
-        for (int i = 0; i < Sources.Length; i++) {
-            var (name, type) = Resolve(Sources[i], spanningType, columns);
-            var reader = GroupKeyNegotiation.NegotiateReader(name, type, columns, colModifier, Sources[i].ToString()!);
-            components[i] = (build.Reader(reader, type), build.Field(type));
+    public GroupingBoundary? MakeBoundary(Type spanningType, ColumnInfo[] columns, ColModifier colModifier, IBoundaryBuild build) {
+        try {
+            colModifier.Flags |= UsageFlags.CanReuse | UsageFlags.RemoveSequentialRead;
+            var components = new (IBoundaryReader, IBoundaryField)[Sources.Length];
+            for (int i = 0; i < Sources.Length; i++) {
+                var (name, type) = Resolve(Sources[i], spanningType, columns);
+                var reader = GroupKeyNegotiation.NegotiateReader(name, type, columns, colModifier, Sources[i].ToString()!);
+                components[i] = (build.Reader(reader, type), build.Field(type));
+            }
+            return new EqualityBoundary(components);
+        } catch (RinkuConfigurationException error) when (error.Code == ErrorCodes.GroupKeyUnmapped) {
+            return null;
         }
-        return new EqualityBoundary(components);
     }
     private static (INameComparer Name, Type Type) Resolve(object source, Type spanningType, ColumnInfo[] columns) => source switch {
         PropertyInfo or FieldInfo => FromMember(Closed(spanningType, (MemberInfo)source)),

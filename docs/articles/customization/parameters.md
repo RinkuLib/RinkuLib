@@ -78,9 +78,9 @@ sealed class CommandParamInfoGetter(IDbCommand command)
 Register a maker that claims the commands it understands.
 
 ```csharp
-static bool MakeGetter(IDbCommand command, out IDbParamInfoGetter getter) {
-    if (!SupportsProviderMetadata(command)) {
-        getter = default!;
+static bool MakeGetter(IDbCommand command, [MaybeNullWhen(false)] out IDbParamInfoGetter getter) {
+    if (command is not Microsoft.Data.SqlClient.SqlCommand) {
+        getter = default;
         return false;
     }
 
@@ -104,9 +104,14 @@ maker 2               -> not called
 The maker is invoked for every metadata-inspection operation.
 
 ```csharp
-static bool MakeGetter(IDbCommand command, out IDbParamInfoGetter getter) {
-    getter = new CommandParamInfoGetter(command);
-    return SupportsProviderMetadata(command);
+static bool MakeGetter(IDbCommand command, [MaybeNullWhen(false)] out IDbParamInfoGetter getter) {
+    if (command is Microsoft.Data.SqlClient.SqlCommand) {
+        getter = new CommandParamInfoGetter(command);
+        return true;
+    }
+
+    getter = default;
+    return false;
 }
 ```
 
@@ -176,5 +181,30 @@ public sealed class UpdateArgs {
 }
 ```
 
-Structured members take precedence over dictionary fallbacks. Equal-priority collisions can use
-`[ParameterConflict(ParameterConflictBehavior.TakeOne)]` when either winner is acceptable.
+Structured members take precedence over dictionary fallbacks.
+
+## Accept an equal-priority conflict
+
+Two flattened members at the same depth have equal priority. The normal behavior is to reject the ambiguous parameter shape. Put `[ParameterConflict]` on the complete parameter-object type when either value is valid.
+
+```csharp
+public sealed class SearchTermA { public string? Value { get; init; } }
+public sealed class SearchTermB { public string? Value { get; init; } }
+
+[ParameterConflict(ParameterConflictBehavior.TakeOne)]
+public sealed class SearchArgs {
+    [NestedParameters] public SearchTermA Primary { get; init; } = new();
+    [NestedParameters] public SearchTermB Secondary { get; init; } = new();
+}
+
+var search = new QueryCommand("SELECT @Value").StartBuilder();
+search.UseWith(new SearchArgs {
+    Primary = new() { Value = "blue" },
+    Secondary = new() { Value = "green" }
+});
+
+object? value = search["@Value"];
+// value is either "blue" or "green"; which one wins is unspecified.
+```
+
+`TakeOne` applies only after normal source priority. A direct member still beats a flattened member.

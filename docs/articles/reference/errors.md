@@ -266,12 +266,12 @@ A multi-row value has no usable boundary separating one complete `Report` from t
 ### RINKU3003 group key matched no column
 
 ```csharp
-[GroupKeyColumns("AccountId")]
-public record AccountRows(List<int> Values);
-// RINKU3003 when AccountId is absent from the result.
+throw new RinkuConfigurationException(
+    ErrorCodes.GroupKeyUnmapped,
+    "the required AccountId key matched no column");
 ```
 
-Return the named column, adapt its name, or change the grouping rule.
+A grouping rule raises this when its key is mandatory and the schema cannot supply it. A rule that wants Rinku to try the next grouping option returns `null` instead.
 
 ### RINKU3004 conflicting grouping rules
 
@@ -418,19 +418,6 @@ JsonSerializer.Deserialize<DynaObject>("{}", options); // RINKU5007
 ```
 
 `DynaObject` gets its shape from a live result schema. It can be serialized but cannot be reconstructed without that schema.
-
-### RINKU5008 configuration changed after use
-
-```csharp
-var info = (DefaultTypeParsingInfo)
-    TypeParsingInfo.GetOrAdd<ExternalRow>();
-
-_ = TypeParser.GetTypeParser<ExternalRow>(columns);
-
-info.UsePrivateMembers = true; // RINKU5008
-```
-
-Set discovery-changing options during startup before the type is parsed.
 
 ## Tracking errors
 

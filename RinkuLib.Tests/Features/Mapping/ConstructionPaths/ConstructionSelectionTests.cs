@@ -132,18 +132,19 @@ public class ConstructionSelectionTests {
     }
 
     [Fact]
+    [DocumentationExample("construction-paths.md", "supply-a-custom-fallback")]
     public void Runtime_fallback_makes_a_required_slot_optional() {
         if (TypeParsingInfo.GetOrAdd<FallbackTrack>() is ICanProvideConstructions info) {
             var slots = info.PossibleConstructors[0].Parameters;
             var slot = slots[2];
             slots[2] = new ParamInfoPlus(slot.Type, slot.NullColHandler, slot.NameComparer,
-                IColModifier.Nothing, DefaultValueFallback.Instance);
+                IColModifier.Nothing, RatingFallback.Instance);
         }
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
         var track = Rows.ParseOne<FallbackTrack>(cols, 1, "x");
         Assert.Equal(1, track.Id);
         Assert.Equal("x", track.Name);
-        Assert.Equal(0, track.Code);
+        Assert.Equal(5, track.Code);
     }
 
     [Fact]
@@ -212,6 +213,17 @@ public class SecretHolder : IDbReadable {
     public static void SetSecret(SecretHolder target, string secret) => target.Secret = secret;
 }
 public record struct FallbackTrack(int Id, string Name, int Code);
+public sealed class RatingFallback : SimpleDbItemParser, IFallbackParserGetter {
+    public static readonly RatingFallback Instance = new();
+
+    public DbItemPlan? FallbackTryGetParser(Type type) => type == typeof(int) ? this : null;
+
+    public override void Emit(ColumnInfo[] cols, Rinku.Mapping.Emission.Generator generator, NullSetPoint nullSetPoint)
+        => generator.Emit(System.Reflection.Emit.OpCodes.Ldc_I4_5);
+
+    public override bool IsSequencial(ref int previousIndex) => true;
+    public override bool NeedNullSetPoint(ColumnInfo[] cols) => false;
+}
 public class PickyBuilt {
     public bool CameFromMarkedCtor;
     public int Id;

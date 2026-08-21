@@ -3,18 +3,20 @@ using System.Runtime.InteropServices;
 using Rinku.Internal;
 
 namespace Rinku.Mapping.Defaults; 
+/// <summary>Controls optional discovery and registration behavior for default object mappings.</summary>
+[Flags]
+public enum DefaultTypeParsingFlags : byte {
+    /// <summary>Uses the default public discovery and registration behavior.</summary>
+    None = 0,
+    /// <summary>Allows immediate constructor parameter and writable member types to register on demand.</summary>
+    DirectTypesAreReadable = 1,
+    /// <summary>Allows discovery of non-public constructors, factories, fields, properties, and setters.</summary>
+    UsePrivateMembers = 2,
+}
 /// <summary>Provides the standard mapping settings for a class, record, or struct.</summary>
 public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibleConstructor, ICanProvideParamInfos, ICanAddMember, ICanProvideConstructions, ICanProvideMembers, ICanUpdateGroupKey {
-    private IGroupingRule? _groupKey;
-    private bool _groupKeyConfigured;
     /// <inheritdoc/>
-    public IGroupingRule? GroupKey {
-        get => _groupKey;
-        set {
-            _groupKey = value;
-            _groupKeyConfigured = true;
-        }
-    }
+    public IGroupingRule? GroupKey { get; set; }
     internal static readonly
 #if NET9_0_OR_GREATER
         Lock
@@ -34,22 +36,17 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         => target.IsStackEquivalent(Type)
         || (Type.IsGenericTypeDefinition && target.IsGenericType && target.GetGenericTypeDefinition() == Type);
     private bool IsInit;
-    private bool _usePrivateMembers;
     /// <summary>
-    /// Whether automatic discovery may use non-public constructors, fields, properties, setters, and static
-    /// factories. The default remains public-only. Configure this before the type is first parsed.
+    /// Optional discovery and registration behavior for this mapping.
+    /// Type attributes supply the initial value. Change the flags before the type is first parsed.
     /// </summary>
-    public bool UsePrivateMembers {
-        get => _usePrivateMembers;
-        set {
-            if (IsInit && value != _usePrivateMembers)
-                throw new RinkuConfigurationException(ErrorCodes.ConfigurationAfterUse,
-                    $"{nameof(UsePrivateMembers)} must be configured before {Type} is first parsed");
-            if (_usePrivateMembers == value)
-                return;
-            _usePrivateMembers = value;
-        }
-    }
+    public DefaultTypeParsingFlags Flags { get; set; } =
+        (Type.IsDefined(typeof(AreReadableAttribute), inherit: true)
+            ? DefaultTypeParsingFlags.DirectTypesAreReadable
+            : DefaultTypeParsingFlags.None)
+        | (Type.IsDefined(typeof(UsePrivateMembersAttribute), inherit: true)
+            ? DefaultTypeParsingFlags.UsePrivateMembers
+            : DefaultTypeParsingFlags.None);
     private MethodCtorInfo[] MCIs = [];
     /// <summary>
     /// The collection of prioritized construction paths (constructors or static factory methods) 
@@ -105,8 +102,10 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             if (IsInit)
                 return;
             var type = Nullable.GetUnderlyingType(Type) ?? Type;
+            bool usePrivateMembers = Flags.HasFlag(DefaultTypeParsingFlags.UsePrivateMembers);
+            bool directTypesAreReadable = Flags.HasFlag(DefaultTypeParsingFlags.DirectTypesAreReadable);
             var memberFlags = BindingFlags.Public | BindingFlags.Instance;
-            if (UsePrivateMembers)
+            if (usePrivateMembers)
                 memberFlags |= BindingFlags.NonPublic;
             var props = type.GetProperties(memberFlags);
             var fields = type.GetFields(memberFlags);
@@ -115,21 +114,21 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                 var field = fields[i];
                 if (field.IsInitOnly || field.IsLiteral)
                     continue;
-                var p = ParamInfo.TryNew(field);
-                if (p is not null && MemberParser.TryNew(field, p, out var member, UsePrivateMembers))
+                var p = directTypesAreReadable ? ParamInfo.Create(field) : ParamInfo.TryNew(field);
+                if (p is not null && MemberParser.TryNew(field, p, out var member, usePrivateMembers))
                     memberParsers.Add(member);
             }
             for (int i = 0; i < props.Length; i++) {
                 var prop = props[i];
-                if (!prop.CanWrite || prop.GetSetMethod(nonPublic: UsePrivateMembers) is null)
+                if (!prop.CanWrite || prop.GetSetMethod(nonPublic: usePrivateMembers) is null)
                     continue;
-                var p = ParamInfo.TryNew(prop);
-                if (p is not null && MemberParser.TryNew(prop, p, out var member, UsePrivateMembers))
+                var p = directTypesAreReadable ? ParamInfo.Create(prop) : ParamInfo.TryNew(prop);
+                if (p is not null && MemberParser.TryNew(prop, p, out var member, usePrivateMembers))
                     memberParsers.Add(member);
             }
             var constructorFlags = BindingFlags.Public | BindingFlags.Instance;
             var staticMethodFlags = BindingFlags.Public | BindingFlags.Static;
-            if (UsePrivateMembers) {
+            if (usePrivateMembers) {
                 constructorFlags |= BindingFlags.NonPublic;
                 staticMethodFlags |= BindingFlags.NonPublic;
             }
@@ -137,13 +136,15 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             var staticMethods = type.GetMethods(staticMethodFlags);
             var infoList = new List<MethodCtorInfo>(constructors.Length);
             foreach (var constructor in constructors) {
-                var ps = MethodCtorInfo.TryMakeParameters(constructor);
+                var ps = directTypesAreReadable
+                    ? MethodCtorInfo.MakeParameters(constructor)
+                    : MethodCtorInfo.TryMakeParameters(constructor);
                 if (MethodCtorInfo.TryNew(constructor, ps, out var mci))
                     infoList.Add(mci);
                 else if (ParameterlessConstructor is null && ps is not null && ps.Length == 0)
                     ParameterlessConstructor = constructor;
             }
-            if (!UsePrivateMembers)
+            if (!usePrivateMembers)
                 ParameterlessConstructor ??= type.GetConstructor(
                     BindingFlags.NonPublic | BindingFlags.Instance,
                     binder: null,
@@ -152,7 +153,9 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             foreach (var method in staticMethods) {
                 if (method.ReturnType != type || method.IsGenericMethod || !method.IsStatic)
                     continue;
-                var ps = MethodCtorInfo.TryMakeParameters(method);
+                var ps = directTypesAreReadable
+                    ? MethodCtorInfo.MakeParameters(method)
+                    : MethodCtorInfo.TryMakeParameters(method);
                 if (MethodCtorInfo.TryNew(method, ps, out var mci))
                     infoList.Add(mci);
             }
@@ -178,9 +181,9 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                     MCIs = MethodCtorInfo.GetOrderedInfos(result);
                 }
             }
-            if (!_groupKeyConfigured)
-                _groupKey = GroupKeyScan.Resolve(type,
-                    [type, .. props, .. fields, .. type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)]);
+            GroupKey ??= GroupKeyScan.Resolve(type,
+                [type, .. props, .. fields,
+                    .. type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)]);
             IsInit = true;
         }
     }
@@ -237,12 +240,16 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         var mcis = MCIs;
         List<DbItemPlan> readers = [];
         MethodBase? method = null;
-        IGroupingRule? constructionKey = null;
+        MethodCtorInfo? constructionInfo = null;
         var genericArguments = actualType.IsGenericType ? actualType.GetGenericArguments() : [];
+        bool directTypesAreReadable = Flags.HasFlag(DefaultTypeParsingFlags.DirectTypesAreReadable);
+        var typeReadableFlag = directTypesAreReadable
+            ? MethodCtorInfo.AdditionalFlags.ParametersAreReadable
+            : default;
         bool canCompleteWithMembers = false;
         for (int i = 0; i < mcis.Length; i++) {
             var mci = mcis[i];
-            bool forcedRegister = mci.ParametersAreReadable || callerFlags.HasFlag(MethodCtorInfo.AdditionalFlags.ParametersAreReadable);
+            bool forcedRegister = directTypesAreReadable || mci.ParametersAreReadable || callerFlags.HasFlag(MethodCtorInfo.AdditionalFlags.ParametersAreReadable);
             var parameters = mci.Parameters;
             for (int j = 0; j < parameters.Length; j++) {
                 var param = parameters[j];
@@ -256,7 +263,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                         break;
                     typeInfo = ForceGet(paramClosedType);
                 }
-                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage, mci.Flags);
+                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage, mci.Flags | typeReadableFlag);
                 if (node is null)
                     break;
                 readers.Add(node);
@@ -264,7 +271,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             if (readers.Count == parameters.Length) {
                 method = (MethodBase)mci.MethodBase.GetClosedMember(currentClosedType);
                 canCompleteWithMembers = mci.CanCompleteWithMembers;
-                constructionKey = mci.GroupKey;
+                constructionInfo = mci;
                 break;
             }
             colUsage.Rollback(checkpoint, lastIndUsed, nbClaims);
@@ -276,6 +283,11 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                 return paramInfo.FallbackTryGetParser(currentClosedType);
             canCompleteWithMembers = true;
         }
+        var constructionRule = constructionInfo?.GroupKey;
+        var typeRule = GroupKey;
+        IGroupingRule[] groupingRules = constructionRule is null
+            ? typeRule is null ? [] : [typeRule]
+            : typeRule is null ? [constructionRule] : [constructionRule, typeRule];
         List<(MemberInfo, DbItemPlan)>? memberReaders = null;
         if (canCompleteWithMembers) {
             memberReaders = [];
@@ -287,15 +299,21 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                 var paramClosedType = (t ?? param.Type).CloseType(genericArguments);
                 if (isNullableStruct)
                     paramClosedType = typeof(Nullable<>).MakeGenericType(paramClosedType);
-                if (!TryGetInfo(paramClosedType, out var typeInfo))
-                    throw new RinkuInternalException(ErrorCodes.InternalInvariant, "reached a branch believed unreachable while discovering construction paths");
-                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage);
+                if (!TryGetInfo(paramClosedType, out var typeInfo)) {
+                    if (!directTypesAreReadable)
+                        throw new RinkuInternalException(ErrorCodes.InternalInvariant, "reached a branch believed unreachable while discovering construction paths");
+                    typeInfo = ForceGet(paramClosedType);
+                }
+                var node = typeInfo.TryGetParser(paramClosedType, previousUsages, param, columns, colModifier, ref colUsage, typeReadableFlag);
                 if (node is not null)
                     memberReaders.Add((members[i].Member.GetClosedMember(currentClosedType), node));
             }
             if (memberReaders.Count == 0 && readers.Count == 0)
                 return null;
         }
-        return new CustomClassParser(previousUsages.LatestUsedType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders) { GroupKey = constructionKey ?? GroupKey, Context = colModifier };
+        return new CustomClassParser(previousUsages.LatestUsedType, currentClosedType, paramInfo.NameComparer.GetDefaultName(), paramInfo.NullColHandler, method, readers, memberReaders) {
+            GroupingRules = groupingRules,
+            Context = colModifier,
+        };
     }
 }
