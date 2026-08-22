@@ -86,9 +86,7 @@ The configured comparer decides whether the replacement represents the same item
 Pass a comparer when application identity differs from normal equality.
 
 ```csharp
-TrackingList<AlbumRow> rows = new(
-    existingRows,
-    comparer: EqualityComparer<AlbumRow>.Default);
+TrackingList<AlbumRow> rows = new(existingRows, comparer: EqualityComparer<AlbumRow>.Default);
 ```
 
 ## Read structural changes

@@ -23,9 +23,7 @@ WHERE ArtistId = @artistId
 A command can use another character.
 
 ```csharp
-static readonly QueryCommand SearchAlbums = new(
-    "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = :artistId",
-    ':');
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = :artistId", ':');
 ```
 
 A builder uses the same character when the value is supplied directly.

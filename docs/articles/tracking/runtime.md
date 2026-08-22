@@ -41,8 +41,7 @@ RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album>();
 
 options.Member<string>(nameof(Album.Title));
 
-IRuntimeTrackingItem<Album> edit =
-    options.GetRegistration<IRuntimeTrackingItem<Album>>().Create(original);
+IRuntimeTrackingItem<Album> edit = options.GetRegistration<IRuntimeTrackingItem<Album>>().Create(original);
 ```
 
 Options become frozen when the first registration is created. Configure them before calling `GetRegistration()`.
@@ -51,8 +50,7 @@ Options become frozen when the first registration is created. Configure them bef
 RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album>();
 options.Member<string>(nameof(Album.Title)).ReadOnly();
 
-RuntimeTrackingRegistration<Album, IRuntimeTrackingItem<Album>> registration =
-    options.GetRegistration<IRuntimeTrackingItem<Album>>();
+RuntimeTrackingRegistration<Album, IRuntimeTrackingItem<Album>> registration = options.GetRegistration<IRuntimeTrackingItem<Album>>();
 ```
 
 ## Configure one member
@@ -89,8 +87,7 @@ options.Member<string>("DisplayText").Parameters(false);
 Generated runtime items can provide their projected members to a query.
 
 ```csharp
-static readonly QueryCommand UpdateAlbum = new(
-    "UPDATE albums SET Title = @Title WHERE AlbumId = @Id");
+static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @Title WHERE AlbumId = @Id");
 
 IAlbumEdit edit = registration.Create(original);
 edit.Title = "Kind of Blue";
@@ -108,8 +105,7 @@ A registration can create new edits when the original type has an available new 
 RuntimeTrackingOptions<AlbumDraft> options = RuntimeTracking.CreateOptions<AlbumDraft>();
 options.WithNewOriginal(static () => new AlbumDraft());
 
-RuntimeTrackingRegistration<AlbumDraft, IRuntimeTrackingItem<AlbumDraft>> registration =
-    options.GetRegistration<IRuntimeTrackingItem<AlbumDraft>>();
+RuntimeTrackingRegistration<AlbumDraft, IRuntimeTrackingItem<AlbumDraft>> registration = options.GetRegistration<IRuntimeTrackingItem<AlbumDraft>>();
 
 IRuntimeTrackingItem<AlbumDraft> edit = registration.CreateNew();
 ```

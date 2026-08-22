@@ -44,8 +44,7 @@ The generated list uses a source aware tracking context for an `IList<TOriginal>
 RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album, IAlbumEdit>();
 options.Member<int>(nameof(Album.Id)).ReadOnly();
 
-BindingTrackingList<IAlbumEdit> albums =
-    source.ToBindingList<Album, IAlbumEdit>(options);
+BindingTrackingList<IAlbumEdit> albums = source.ToBindingList<Album, IAlbumEdit>(options);
 ```
 
 Binding materialization applies binding support to a copy of the supplied runtime options. The caller can keep the original option set for nonbinding materialization.

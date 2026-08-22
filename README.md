@@ -1,5 +1,7 @@
 # RinkuLib
 
+[![NuGet](https://img.shields.io/nuget/v/Rinku)](https://www.nuget.org/packages/Rinku/) [![NuGet downloads](https://img.shields.io/nuget/dt/Rinku)](https://www.nuget.org/packages/Rinku/) [![Documentation](https://img.shields.io/badge/docs-documentation-blue)](https://rinkulib.github.io/RinkuLib/)
+
 Rinku is a database mapping library for .NET. SQL stays in application code and the requested result type controls how returned rows are read.
 
 ## Install
@@ -15,12 +17,9 @@ using Rinku;
 
 public record Album(int Id, string Title) : IDbReadable;
 
-static readonly QueryCommand GetAlbums = new(
-    "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
-List<Album> albums = GetAlbums.Query<List<Album>>(
-    cnn,
-    new { artistId = 7 });
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
 A `QueryCommand` is reusable. Values are supplied for each call.
@@ -43,8 +42,7 @@ The requested type selects count behavior and buffering.
 public record Artist(int Id, string Name) : IDbReadable;
 public record AlbumWithArtist(int Id, string Title, Artist Artist);
 
-static readonly QueryCommand GetAlbums = new(
-    "SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
+static readonly QueryCommand GetAlbums = new("SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
 
 List<AlbumWithArtist> albums = GetAlbums.Query<List<AlbumWithArtist>>(cnn);
 ```
@@ -54,12 +52,9 @@ Rinku can also fold repeated joined rows into nested collections.
 ## Make SQL conditional
 
 ```csharp
-static readonly QueryCommand SearchAlbums = new(
-    "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title");
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title");
 
-List<Album> albums = SearchAlbums.Query<List<Album>>(
-    cnn,
-    new { artistId = 7 });
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
 The missing `title` removes its condition.
@@ -71,9 +66,7 @@ SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ## Run asynchronously
 
 ```csharp
-List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(
-    cnn,
-    ct: cancellationToken);
+List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);
 ```
 
 Streaming is available when rows should be consumed as they are read.
@@ -90,8 +83,7 @@ Rinku Power Tools can inspect configured database commands and generate typed `D
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
 
-List<GetAlbumsByArtistResult> albums =
-    Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+List<GetAlbumsByArtistResult> albums = Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
 The generated methods return normal `DbCommand` instances. See [code generation](docs/articles/codegen/index.md) for the Visual Studio workflow and configuration.

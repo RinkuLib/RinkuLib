@@ -61,16 +61,9 @@ The shared generated support file contains the existing command extensions and t
 ```csharp
 public static class RinkuPowerTools
 {
-    public static readonly ConcurrentDictionary<string, string> SqlFiles =
-        new(StringComparer.OrdinalIgnoreCase);
+    public static readonly ConcurrentDictionary<string, string> SqlFiles = new(StringComparer.OrdinalIgnoreCase);
 
-    public static string GetSqlFile(string path) =>
-        SqlFiles.GetOrAdd(
-            path,
-            static path => File.ReadAllText(
-                Path.IsPathRooted(path)
-                    ? path
-                    : Path.Combine(AppContext.BaseDirectory, path)));
+    public static string GetSqlFile(string path) => SqlFiles.GetOrAdd(path, static path => File.ReadAllText(Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path)));
 
     // Generated DbCommand extension methods are also in this class.
 }
@@ -110,8 +103,7 @@ Changing SQL at runtime does not regenerate parameters or result records. The ne
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
 
-List<GetAlbumsByArtistResult> albums =
-    Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+List<GetAlbumsByArtistResult> albums = Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
 The generated command is a normal `DbCommand`, so it is not tied to the Rinku result parser.
@@ -230,9 +222,7 @@ SELECT AlbumId, Title AS [Album Title] FROM albums
 ```
 
 ```csharp
-public partial record AlbumRow(
-    int AlbumId,
-    [TrueName("Album Title")] string Album_Title);
+public partial record AlbumRow(int AlbumId, [TrueName("Album Title")] string Album_Title);
 ```
 
 The generated support file defines `TrueNameAttribute` for the project.

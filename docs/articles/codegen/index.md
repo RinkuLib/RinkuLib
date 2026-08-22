@@ -7,8 +7,7 @@ static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> AlbumParser = ne
 
 using SqlConnection cnn = new(connectionString);
 
-List<GetAlbumsByArtistResult> albums =
-    AlbumParser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+List<GetAlbumsByArtistResult> albums = AlbumParser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
 The generated method creates a normal `DbCommand`. Rinku can read it through a cached parser, or application code can execute it directly.

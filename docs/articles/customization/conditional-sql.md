@@ -16,14 +16,9 @@ sealed class SortDirectionHandler : IQuerySegmentHandler
     public void Handle(ref ValueStringBuilder sql, object value)
     {
         if (value is not SortDirection direction)
-            throw new ArgumentException(
-                "A SortDirection value is required.",
-                nameof(value));
+            throw new ArgumentException("A SortDirection value is required.", nameof(value));
 
-        sql.Append(
-            direction == SortDirection.Ascending
-                ? "ASC"
-                : "DESC");
+        sql.Append(direction == SortDirection.Ascending ? "ASC" : "DESC");
     }
 }
 ```
@@ -31,15 +26,13 @@ sealed class SortDirectionHandler : IQuerySegmentHandler
 Register the suffix during application startup before commands using it are created.
 
 ```csharp
-QueryFactory.BaseHandlerMapper['D'] =
-    _ => new SortDirectionHandler();
+QueryFactory.BaseHandlerMapper['D'] = _ => new SortDirectionHandler();
 ```
 
 Use the registered `_D` suffix in the template.
 
 ```csharp
-static readonly QueryCommand OrderedAlbums = new(
-    "SELECT AlbumId AS Id, Title FROM albums ORDER BY Title @direction_D");
+static readonly QueryCommand OrderedAlbums = new("SELECT AlbumId AS Id, Title FROM albums ORDER BY Title @direction_D");
 
 List<Album> albums = OrderedAlbums.Query<List<Album>>(cnn, new
 {

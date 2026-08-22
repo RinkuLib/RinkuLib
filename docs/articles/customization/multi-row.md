@@ -5,17 +5,11 @@
 The example below adds `HashSet<T>` as another multi row result shape.
 
 ```csharp
-ConstructorInfo seed =
-    typeof(HashSet<>).GetConstructor(Type.EmptyTypes)
-    ?? throw new InvalidOperationException("HashSet constructor was not found.");
+ConstructorInfo seed = typeof(HashSet<>).GetConstructor(Type.EmptyTypes) ?? throw new InvalidOperationException("HashSet constructor was not found.");
 
-MethodInfo add =
-    typeof(HashSet<>).GetMethod(nameof(HashSet<int>.Add))
-    ?? throw new InvalidOperationException("HashSet.Add was not found.");
+MethodInfo add = typeof(HashSet<>).GetMethod(nameof(HashSet<int>.Add)) ?? throw new InvalidOperationException("HashSet.Add was not found.");
 
-TypeParsingInfo.AddOrSet(
-    typeof(HashSet<>),
-    new MultiRowTypeParsingInfo(seed, add, null));
+TypeParsingInfo.AddOrSet(typeof(HashSet<>), new MultiRowTypeParsingInfo(seed, add, null));
 ```
 
 The added value still needs normal mapping registration.
@@ -27,8 +21,7 @@ public record Tag(int Id, string Name) : IDbReadable;
 The registered result type can then be requested directly.
 
 ```csharp
-static readonly QueryCommand GetTags = new(
-    "SELECT TagId AS Id, Name FROM tags ORDER BY TagId");
+static readonly QueryCommand GetTags = new("SELECT TagId AS Id, Name FROM tags ORDER BY TagId");
 
 HashSet<Tag> tags = GetTags.Query<HashSet<Tag>>(cnn);
 ```
@@ -40,8 +33,7 @@ SELECT TagId AS Id, Name FROM tags ORDER BY TagId
 With no rows, the seed creates an empty set.
 
 ```csharp
-static readonly QueryCommand FindTags = new(
-    "SELECT TagId AS Id, Name FROM tags WHERE TagId < 0");
+static readonly QueryCommand FindTags = new("SELECT TagId AS Id, Name FROM tags WHERE TagId < 0");
 
 HashSet<Tag> tags = FindTags.Query<HashSet<Tag>>(cnn);
 // tags is empty
@@ -65,8 +57,7 @@ public sealed class Averager
         count++;
     }
 
-    public Average Finish() =>
-        new(count == 0 ? 0 : sum / count, count);
+    public Average Finish() => new(count == 0 ? 0 : sum / count, count);
 }
 
 public readonly record struct Average(double Mean, int Count);
@@ -79,9 +70,7 @@ ConstructorInfo seed = typeof(Averager).GetConstructor(Type.EmptyTypes)!;
 MethodInfo add = typeof(Averager).GetMethod(nameof(Averager.Add))!;
 MethodInfo finish = typeof(Averager).GetMethod(nameof(Averager.Finish))!;
 
-TypeParsingInfo.AddOrSet(
-    typeof(Average),
-    new MultiRowTypeParsingInfo(seed, add, finish));
+TypeParsingInfo.AddOrSet(typeof(Average), new MultiRowTypeParsingInfo(seed, add, finish));
 ```
 
 ```csharp

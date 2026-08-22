@@ -10,14 +10,11 @@ public readonly record struct Last<T>(T Value);
 public sealed class LastParser<T>(ITypeParser<T> inner)
     : BaseTypeParser<Last<T>>
 {
-    public override CommandBehavior Behavior =>
-        inner.Behavior & ~CommandBehavior.SingleRow;
+    public override CommandBehavior Behavior => inner.Behavior & ~CommandBehavior.SingleRow;
 
-    public override bool CanParse(ColumnInfo[] schema) =>
-        inner.CanParse(schema);
+    public override bool CanParse(ColumnInfo[] schema) => inner.CanParse(schema);
 
-    public override Last<T> Default() =>
-        throw new RinkuNoRowsException();
+    public override Last<T> Default() => throw new RinkuNoRowsException();
 
     public override (bool CanContinue, Last<T> Result) Parse(DbDataReader reader)
     {
@@ -29,9 +26,7 @@ public sealed class LastParser<T>(ITypeParser<T> inner)
         return (false, new Last<T>(value));
     }
 
-    public override async ValueTask<(bool CanContinue, Last<T> Result)> ParseAsync(
-        DbDataReader reader,
-        CancellationToken ct = default)
+    public override async ValueTask<(bool CanContinue, Last<T> Result)> ParseAsync(DbDataReader reader, CancellationToken ct = default)
     {
         (bool more, T value) = await inner.ParseAsync(reader, ct);
 
@@ -46,10 +41,7 @@ public sealed class LastParser<T>(ITypeParser<T> inner)
 Register the wrapper during application startup.
 
 ```csharp
-var lastParserMaker = new ReusingBaseTypeParserMaker(
-    [typeof(Last<>)],
-    (definition, itemType, ref _) =>
-        typeof(LastParser<>).MakeGenericType(itemType));
+var lastParserMaker = new ReusingBaseTypeParserMaker([typeof(Last<>)], (definition, itemType, ref _) => typeof(LastParser<>).MakeGenericType(itemType));
 
 TypeParser.TypeParserMakers.Insert(0, lastParserMaker);
 ```
@@ -57,8 +49,7 @@ TypeParser.TypeParserMakers.Insert(0, lastParserMaker);
 The result can then be requested like any other result shape.
 
 ```csharp
-static readonly QueryCommand GetAlbums = new(
-    "SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
 
 Last<Album> last = GetAlbums.Query<Last<Album>>(cnn);
 Album album = last.Value;
@@ -71,8 +62,7 @@ Album album = last.Value;
 The parser decides whether a cached instance can read another schema.
 
 ```csharp
-public override bool CanParse(ColumnInfo[] schema) =>
-    inner.CanParse(schema);
+public override bool CanParse(ColumnInfo[] schema) => inner.CanParse(schema);
 ```
 
 Return `true` only for schemas that both the sync and async parser can read safely.

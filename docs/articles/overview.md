@@ -217,8 +217,7 @@ Rinku Power Tools can inspect configured database commands and generate typed `D
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
 
-List<GetAlbumsByArtistResult> albums =
-    Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+List<GetAlbumsByArtistResult> albums = Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
 The generated method creates a normal `DbCommand`. See [code generation](codegen/index.md) for configuration, query sources, generated results, and refresh behavior.

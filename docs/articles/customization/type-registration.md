@@ -11,19 +11,15 @@ Use normal object mapping first. Register a custom rule when the type needs a di
 ```csharp
 public readonly record struct PositionalValue<T>(T Value);
 
-TypeParsingInfo.AddOrSet(
-    typeof(PositionalValue<>),
-    CtorTypeInfo.Instance);
+TypeParsingInfo.AddOrSet(typeof(PositionalValue<>), CtorTypeInfo.Instance);
 ```
 
 The wrapper can then be used as a result type.
 
 ```csharp
-static readonly QueryCommand CountAlbums = new(
-    "SELECT COUNT(*) FROM albums");
+static readonly QueryCommand CountAlbums = new("SELECT COUNT(*) FROM albums");
 
-PositionalValue<int> value =
-    CountAlbums.Query<PositionalValue<int>>(cnn);
+PositionalValue<int> value = CountAlbums.Query<PositionalValue<int>>(cnn);
 ```
 
 Use `[NoName]` or normal mapping attributes instead when a type can describe its own mapping without a global registration.
@@ -41,12 +37,7 @@ sealed class LocalDateTypeParsingInfo : ScalarTypeParsingInfo<LocalDate>
         .GetMethod(nameof(Convert), BindingFlags.Static | BindingFlags.NonPublic)
         ?? throw new InvalidOperationException("Convert was not found.");
 
-    protected override DbItemPlan? TryCreatePlan(
-        Type targetType,
-        Type parentType,
-        ParamInfo slot,
-        ColumnInfo column,
-        int ordinal)
+    protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo slot, ColumnInfo column, int ordinal)
     {
         if (column.Type != typeof(DateTime))
             return null;
@@ -56,20 +47,13 @@ sealed class LocalDateTypeParsingInfo : ScalarTypeParsingInfo<LocalDate>
         if (Nullable.GetUnderlyingType(targetType) is not null)
             converter = new NullableWrapperConverter(converter);
 
-        return new ConvertedScalarPlan(
-            parentType,
-            converter,
-            slot.NameComparer.GetDefaultName(),
-            slot.NullColHandler,
-            ordinal);
+        return new ConvertedScalarPlan(parentType, converter, slot.NameComparer.GetDefaultName(), slot.NullColHandler, ordinal);
     }
 
     static LocalDate Convert(DateTime value) => new(value);
 }
 
-TypeParsingInfo.AddOrSet(
-    typeof(LocalDate),
-    new LocalDateTypeParsingInfo());
+TypeParsingInfo.AddOrSet(typeof(LocalDate), new LocalDateTypeParsingInfo());
 ```
 
 After registration the type can be used normally.
@@ -95,8 +79,7 @@ public readonly record struct Result<T>(T Value);
 
 TypeParsingInfo.GetOrAdd(typeof(Result<>));
 
-TypeParsingInfo.GetOrAdd<Result<int>>(
-    saveAsGenericDefinitionWhenGeneric: false);
+TypeParsingInfo.GetOrAdd<Result<int>>(saveAsGenericDefinitionWhenGeneric: false);
 ```
 
 `Result<int>` uses its exact registration. Other closed `Result<T>` types can use the open registration.
@@ -106,14 +89,11 @@ TypeParsingInfo.GetOrAdd<Result<int>>(
 Registration initializers can modify mappings created later.
 
 ```csharp
-TypeParsingInfo.RegistrationInitializer =
-    static (type, generated) => generated;
+TypeParsingInfo.RegistrationInitializer = static (type, generated) => generated;
 
-MethodCtorInfo.RegistrationInitializer =
-    static path => path;
+MethodCtorInfo.RegistrationInitializer = static path => path;
 
-ParamInfo.RegistrationInitializer =
-    static slot => slot;
+ParamInfo.RegistrationInitializer = static slot => slot;
 ```
 
 Configure these delegates during application startup before queries or parsers are created.
@@ -125,9 +105,7 @@ They affect registrations created afterward. Existing registrations remain uncha
 Remove a registration when later parsers should stop using it.
 
 ```csharp
-bool removed = TypeParsingInfo.TryRemove(
-    typeof(LocalDate),
-    out TypeParsingInfo? previous);
+bool removed = TypeParsingInfo.TryRemove(typeof(LocalDate), out TypeParsingInfo? previous);
 ```
 
 Already cached parsers keep their current mapping until they are invalidated.

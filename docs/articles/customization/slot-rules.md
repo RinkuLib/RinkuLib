@@ -9,32 +9,21 @@ Use a slot extension when an application needs a naming, null, or column usage r
 This example maps one slot to a database name with a `db_` prefix.
 
 ```csharp
-[AttributeUsage(
-    AttributeTargets.Parameter |
-    AttributeTargets.Property |
-    AttributeTargets.Field)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 sealed class DbPrefixAttribute : Attribute, INameComparerMaker
 {
-    public INameComparer MakeComparer(
-        Type type,
-        ref INameComparer current,
-        object[] attributes,
-        object? member) =>
-        new NameComparer("db_" + current.GetDefaultName());
+    public INameComparer MakeComparer(Type type, ref INameComparer current, object[] attributes, object? member) => new NameComparer("db_" + current.GetDefaultName());
 }
 ```
 
 Apply the attribute to the slot.
 
 ```csharp
-public record Album(
-    [DbPrefix] int Id,
-    string Title);
+public record Album([DbPrefix] int Id, string Title);
 ```
 
 ```csharp
-static readonly QueryCommand GetAlbum = new(
-    "SELECT db_Id, Title FROM albums WHERE db_Id = @id");
+static readonly QueryCommand GetAlbum = new("SELECT db_Id, Title FROM albums WHERE db_Id = @id");
 
 Album album = GetAlbum.Query<Album>(cnn, new { id = 12 });
 ```

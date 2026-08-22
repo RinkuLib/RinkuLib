@@ -61,8 +61,7 @@ Use `From<TSchema>()` when a type already describes the returned columns.
 ```csharp
 public record AlbumRow(int Id, string Title);
 
-static readonly CachedTypeParser AlbumSchemaParser =
-    CachedTypeParser.From<AlbumRow>();
+static readonly CachedTypeParser AlbumSchemaParser = CachedTypeParser.From<AlbumRow>();
 
 Album album = AlbumSchemaParser.Query<Album>(AlbumCommands.GetAlbum(cnn, 12));
 AlbumSummary summary = AlbumSchemaParser.Query<AlbumSummary>(AlbumCommands.GetAlbum(cnn, 12));
@@ -73,15 +72,13 @@ AlbumSummary summary = AlbumSchemaParser.Query<AlbumSummary>(AlbumCommands.GetAl
 The same schema can be supplied directly.
 
 ```csharp
-static readonly CachedTypeParser AlbumSchemaParser =
-    new(TypeSchema<AlbumRow>.Schema);
+static readonly CachedTypeParser AlbumSchemaParser = new(TypeSchema<AlbumRow>.Schema);
 ```
 
 A runtime `Type` can supply the schema too.
 
 ```csharp
-static readonly CachedTypeParser AlbumSchemaParser =
-    new(typeof(AlbumRow));
+static readonly CachedTypeParser AlbumSchemaParser = new(typeof(AlbumRow));
 ```
 
 ## Describe columns from reflection
@@ -94,22 +91,17 @@ public static class AlbumFactory
     public static Album Create(int Id, string Title) => new(Id, Title);
 }
 
-static readonly MethodInfo CreateAlbumMethod =
-    typeof(AlbumFactory).GetMethod(nameof(AlbumFactory.Create))
-    ?? throw new InvalidOperationException();
+static readonly MethodInfo CreateAlbumMethod = typeof(AlbumFactory).GetMethod(nameof(AlbumFactory.Create)) ?? throw new InvalidOperationException();
 
-static readonly CachedTypeParser AlbumSchemaParser =
-    new(SchemaExtractor.FromMethod(CreateAlbumMethod));
+static readonly CachedTypeParser AlbumSchemaParser = new(SchemaExtractor.FromMethod(CreateAlbumMethod));
 ```
 
 A constructor can be used directly.
 
 ```csharp
-static readonly ConstructorInfo AlbumRowConstructor =
-    typeof(AlbumRow).GetConstructors()[0];
+static readonly ConstructorInfo AlbumRowConstructor = typeof(AlbumRow).GetConstructors()[0];
 
-static readonly CachedTypeParser AlbumSchemaParser =
-    new(AlbumRowConstructor);
+static readonly CachedTypeParser AlbumSchemaParser = new(AlbumRowConstructor);
 ```
 
 ## Runtime result types
@@ -125,11 +117,7 @@ object? result = AlbumSchemaParser.Query(resultType, command, disposeCommand: fa
 The asynchronous form follows the same rule.
 
 ```csharp
-object? result = await AlbumSchemaParser.QueryAsync(
-    resultType,
-    command,
-    disposeCommand: false,
-    ct: cancellationToken);
+object? result = await AlbumSchemaParser.QueryAsync(resultType, command, disposeCommand: false, ct: cancellationToken);
 ```
 
 ## Get a parser without running a command
