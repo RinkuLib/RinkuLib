@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using Microsoft.VisualStudio.Extensibility;
 using Microsoft.VisualStudio.Extensibility.Shell;
@@ -66,6 +66,7 @@ public static class ExtensionHelper {
             return false;
         try {
             var fullPath = await MainClassGenerator.GenerateClassAsync(settings, baseNamespace, ct);
+            await extensibility.ApplySqlFileProjectMetadataAsync(projectSnapshot, settings, ct);
             if (openAfter)
                 await extensibility.Documents().OpenDocumentAsync(new Uri(fullPath), ct);
             return true;
@@ -74,6 +75,38 @@ public static class ExtensionHelper {
             await extensibility.ShowPromptAsync($"Failed to write class file to disk: {ex.Message}", ct);
             return false;
         }
+    }
+
+    private static async Task ApplySqlFileProjectMetadataAsync(this VisualStudioExtensibility extensibility, IProjectSnapshot projectSnapshot, ExtensionSettings settings, CancellationToken ct) {
+        HashSet<string> handled = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var query in settings.Queries) {
+            if (query.SourceType != QuerySourceType.FromFile || Path.IsPathRooted(query.Target) || !handled.Add(query.Target))
+                continue;
+
+            string fullPath = settings.ResolveSqlFilePath(query.Target);
+            if (!File.Exists(fullPath))
+                continue;
+
+            IFileSnapshot? file = await FindProjectFileAsync(projectSnapshot, fullPath, ct);
+            if (file is null) {
+                await projectSnapshot.AsUpdatable().AddFile(fullPath, "None").ExecuteAsync(ct);
+                file = await FindProjectFileAsync(projectSnapshot, fullPath, ct);
+                if (file is null)
+                    throw new InvalidOperationException($"Unable to add SQL file '{query.Target}' to the project.");
+            }
+
+            await file.AsUpdatable()
+                .SetPropertyValue("CopyToOutputDirectory", "PreserveNewest")
+                .SetPropertyValue("CopyToPublishDirectory", "PreserveNewest")
+                .ExecuteAsync(ct);
+        }
+    }
+    private static async Task<IFileSnapshot?> FindProjectFileAsync(IProjectSnapshot projectSnapshot, string fullPath, CancellationToken ct) {
+        await foreach (var result in projectSnapshot.Files.With(file => file.Path).QueryAsync(ct)) {
+            if (string.Equals(Path.GetFullPath(result.Value.Path), fullPath, StringComparison.OrdinalIgnoreCase))
+                return result.Value;
+        }
+        return null;
     }
     public static bool IsValidCSharpName(this string name) {
         if (string.IsNullOrWhiteSpace(name))

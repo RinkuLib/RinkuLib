@@ -1,17 +1,16 @@
 # Advanced customization
 
-Rinku includes default attributes and registrations. You can change one rule or replace a larger part of the mapping when needed.
+Use this section when the built in mapping, parameter, or SQL rules do not match an application rule.
 
-## Change nested or row mapping
-
-A normal wrapper needs no global setup.
+Start with the normal usage pages before replacing a rule.
 
 ```csharp
-[method: AreReadable]
 public readonly record struct DbValue<T>([NoName] T Value) : IDbReadable;
 ```
 
-A positional wrapper selects constructor mapping explicitly.
+The wrapper above uses normal mapping with attributes only. It does not need a custom registration.
+
+Use a registration when the type needs a different mapping rule.
 
 ```csharp
 public readonly record struct PositionalValue<T>(T Value);
@@ -19,45 +18,50 @@ public readonly record struct PositionalValue<T>(T Value);
 TypeParsingInfo.AddOrSet(typeof(PositionalValue<>), CtorTypeInfo.Instance);
 ```
 
-A custom `TypeParsingInfo` changes how the type maps both at the root and when nested.
+Use a parameter strategy when the database value needs conversion.
 
 ```csharp
-TypeParsingInfo.AddOrSet(typeof(LocalDate), new LocalDateTypeParsingInfo());
+SaveSearch.UpdateParamCache("@names", new NamesParamInfo());
 ```
 
-`MultiRowTypeParsingInfo` accumulates one mapped `T` across rows.
+Use a SQL handler when a suffix should generate application defined SQL.
 
 ```csharp
-TypeParsingInfo.AddOrSet(typeof(HashSet<>), new MultiRowTypeParsingInfo(seed, add, finish: null));
-```
-
-## Change the complete query result
-
-An `ITypeParserMaker` controls behavior around the complete result, such as zero-result handling or cardinality checks.
-
-```csharp
-TypeParser.TypeParserMakers.Insert(0, new ReusingBaseTypeParserMaker([typeof(Last<>)], (definition, itemType, ref _) => typeof(LastParser<>).MakeGenericType(itemType)));
-```
-
-## Change application-wide defaults
-
-The registration initializers are process-wide startup configuration.
-
-```csharp
-TypeParsingInfo.RegistrationInitializer = (type, info) => info;
-MethodCtorInfo.RegistrationInitializer = path => path;
-ParamInfo.RegistrationInitializer = slot => slot;
-```
-
-Configure them before any query or parser creation. They affect only registrations created afterward.
-
-## Change query values or generated SQL
-
-Parameter member emitters change whether a member is supplied and which value it produces. `DbParamInfo` changes database binding. You can add SQL suffixes alongside `_N`, `_S`, `_R`, and `_X`.
-
-```csharp
-SaveNames.UpdateParamCache("@names", new NamesParamInfo());
 QueryFactory.BaseHandlerMapper['D'] = _ => new SortDirectionHandler();
 ```
 
-The examples are under [parameter binding](parameters.md) and [conditional SQL](conditional-sql.md). Use the smallest change that solves the problem.
+
+Use Method Caller when an existing method should be exposed through another delegate signature.
+
+```csharp
+Func<SaveAlbumArgs, CancellationToken, Task<int>> save =
+    MethodCaller.Create<Func<SaveAlbumArgs, CancellationToken, Task<int>>>(
+        method,
+        CallerParameter<CancellationToken>.ByType());
+```
+
+Use a complete result parser when the requested result type changes how rows are consumed.
+
+```csharp
+TypeParser.TypeParserMakers.Insert(0, lastParserMaker);
+```
+
+The following pages show one complete usage path for each extension point.
+
+* [Type registrations](type-registration.md)
+
+* [Mapping slot rules](slot-rules.md)
+
+* [Multi row mappings](multi-row.md)
+
+* [Complete result parsers](result-parsers.md)
+
+* [Parameter source rules](parameter-members.md)
+
+* [Parameter binding](parameters.md)
+
+* [Method caller](method-caller.md)
+
+* [Conditional SQL handlers](conditional-sql.md)
+
+* [Cache control](caches.md)

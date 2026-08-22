@@ -4,11 +4,8 @@ using Microsoft.VisualStudio.Extensibility.Commands;
 namespace RinkuPowerTools.VisualStudio.Commands; 
 [VisualStudioContribution]
 public class UpdateCommand() : Command {
-    public override CommandConfiguration CommandConfiguration => new("%RinkuPowerTools.VisualStudio.Update.DisplayName%") {
+    public override CommandConfiguration CommandConfiguration => new("%RinkuPowerTools.VisualStudio.Configure.DisplayName%") {
         Icon = new(ImageMoniker.KnownValues.DatabaseColumn, IconSettings.IconAndText),
-        Placements = [
-            CommandPlacement.VsctParent(new Guid("{d309f791-903f-11d0-9efc-00a0c911004f}"), id: 518, priority: 0x1000)
-        ]
     };
     public override async Task ExecuteCommandAsync(IClientContext context, CancellationToken ct) {
         var (projectSnapshot, projectDirectory) = await context.GetProjectAndDirectoryAsync(ct);

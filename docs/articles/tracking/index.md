@@ -1,46 +1,106 @@
 # Tracking
 
-`Rinku.Tracking` separates editable application state from persistence. It provides a structural tracking list, cached runtime-generated edit types, source-aware confirmation, binding support, validation, and metadata capabilities.
-
-## Start with one item
+Tracking keeps accepted values separate from edits and keeps list membership changes visible until the application accepts them.
 
 ```csharp
-using Rinku.Tracking;
-using Rinku.Tracking.Runtime;
-
 public record Album(int Id, string Title);
 
 Album original = new(12, "Blue");
 IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 
 edit.Set(nameof(Album.Title), "Kind of Blue");
-edit.ConfirmEdit();
+
+foreach (TrackingChange change in edit.GetChanges())
+    Console.WriteLine($"{change.Name} {change.OriginalValue} -> {change.Value}");
 ```
 
-The generated item exposes a real CLR property surface, lazy edit state, original access, change enumeration, and member access by name or index. Reading does not start an edit; the first write creates a separate snapshot.
+The generated item reports member changes. The original value stays available until the edit is confirmed.
 
-[Read about tracking items](items.md) and [runtime tracking](runtime.md).
+See [editable items](items.md) for edit state and change inspection.
 
-## Track a collection
+## Track a list
 
 ```csharp
-Album[] originals = [new(1, "Blue"), new(2, "Green")];
-TrackingList<IRuntimeTrackingItem<Album>> albums = originals.ToTrackingList();
+List<Album> source = GetAlbums.Query<List<Album>>(cnn);
+TrackingList<IRuntimeTrackingItem<Album>> albums = source.ToTrackingList();
+
+IRuntimeTrackingItem<Album> added = albums.AddNew();
+added.Set(nameof(Album.Title), "New album");
 
 albums.RemoveAt(0);
-bool changed = albums.HasChanges;
+
+Console.WriteLine(albums.AddedCount);
+Console.WriteLine(albums.RemovedCount);
 ```
 
-`TrackingList<T>` owns active membership, order, removed storage, and fallback Added provenance. Generated item capabilities compose through the list context rather than being built into the list.
+A `TrackingList<T>` tracks additions, removals, replacements, and order. Generated items can track their member edits at the same time.
 
-[Read about tracking lists](lists.md).
+See [tracking lists](lists.md) for structural changes and confirmation.
+
+## Choose the edit surface
+
+Use the default runtime item when member names are only known at runtime.
+
+```csharp
+IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
+edit.Set(nameof(Album.Title), "Kind of Blue");
+```
+
+Use an interface contract when normal typed properties are useful.
+
+```csharp
+public interface IAlbumEdit : IRuntimeTrackingItem<Album>
+{
+    string Title { get; set; }
+}
+
+RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album, IAlbumEdit>();
+IAlbumEdit edit = options.GetRegistration<IAlbumEdit>().Create(original);
+
+edit.Title = "Kind of Blue";
+```
+
+Use a concrete type directly with `TrackingList<T>` when the application owns that type and its construction.
+
+```csharp
+TrackingList<AlbumRow> rows = new(existingRows);
+```
+
+See [runtime tracking](runtime.md) for generated contracts and member options.
+
+## Binding
+
+Binding uses the same tracking model and adds binding notifications and binding list behavior.
+
+```csharp
+BindingTrackingList<IRuntimeTrackingItem<Album>> albums = source.ToBindingList();
+```
+
+See [binding](binding.md) for binding lists and source aware behavior.
 
 ## Validation and metadata
 
-Validation and metadata are optional generated capabilities. They remain independent of both `TrackingList<T>` and persistence.
+Validation and metadata can be added to generated edit types as options.
 
-[Read about validation and metadata](validation.md).
+```csharp
+RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album, IAlbumEdit>();
 
-## Persistence stays explicit
+options.Validate<Album, IAlbumEdit>(static edit => !string.IsNullOrWhiteSpace(edit.Title));
+options.Metadata<Album, string[]>();
+```
 
-Tracking never performs database work. After an external operation succeeds, call the matching confirmation method—such as `ConfirmEdit`, `ConfirmAddedAt`, `ConfirmDeleteAt`, or `ConfirmChanges`—so the owner of that state can advance it.
+See [validation and metadata](validation.md) for synchronous validation, asynchronous validation, caller context, and metadata.
+
+## Save changes
+
+Tracking does not write to a database by itself. Persist the operation with application code, then confirm the matching tracked operation after it succeeds.
+
+```csharp
+if (edit.HasChanges())
+{
+    UpdateAlbum.Execute(cnn, edit);
+    edit.ConfirmEdit();
+}
+```
+
+See [persistence](persistence.md) for items, additions, removals, and transactions.

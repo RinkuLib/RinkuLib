@@ -1,298 +1,154 @@
-# Conditional markers
+# Markers
 
-`/*Key*/` keeps its SQL footprint when the named key is active.
-
-```csharp
-static readonly QueryCommand Albums = new("SELECT AlbumId AS Id, Title, /*IncludeYear*/ReleaseYear FROM albums");
-
-var values = Albums.StartBuilder();
-values.Use("IncludeYear");
-
-List<DynaObject> albums = values.Query<List<DynaObject>>(cnn);
-```
-
-```sql
-SELECT AlbumId AS Id, Title, ReleaseYear FROM albums
-```
-
-Without the key, the column and its comma disappear.
+A marker gives a piece of SQL a name that can be enabled by the caller.
 
 ```csharp
-List<DynaObject> albums = Albums.Query<List<DynaObject>>(cnn);
+static readonly QueryCommand SearchAlbums = new("""
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE /*ByArtist*/ ArtistId = @artistId
+""");
+
+var builder = SearchAlbums.StartBuilder();
+builder.Use("ByArtist");
+builder.Use("artistId", 7);
+
+List<Album> albums = builder.Query<List<Album>>(cnn);
 ```
+
+Without `ByArtist`, the condition is removed.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums
+SELECT AlbumId AS Id, Title
+FROM albums
 ```
 
-## Activate keys from parameter types
-
-`[ForBoolCond]` uses the member name as a key when its value is true.
-
-```csharp
-public sealed class AlbumOptions {
-    [ForBoolCond] public bool IncludeYear { get; init; }
-}
-
-List<DynaObject> albums = Albums.Query<List<DynaObject>>(cnn, new AlbumOptions { IncludeYear = true });
-```
+Supplying `ByArtist` keeps the condition in the SQL.
 
 ```sql
-SELECT AlbumId AS Id, Title, ReleaseYear FROM albums
-```
-
-A false member value leaves its condition key inactive.
-
-```csharp
-List<DynaObject> albums = Albums.Query<List<DynaObject>>(cnn, new AlbumOptions { IncludeYear = false });
-```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums
-```
-
-`[UsesBoolConds]` activates its keys whenever the type supplies values.
-
-```csharp
-[UsesBoolConds("IncludeYear")]
-public sealed class AlbumReportOptions {
-    public int? ArtistId { get; init; }
-}
-
-List<DynaObject> albums = Albums.Query<List<DynaObject>>(cnn, new AlbumReportOptions());
-```
-
-```sql
-SELECT AlbumId AS Id, Title, ReleaseYear FROM albums
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE ArtistId = @artistId
 ```
 
 ## Tie a marker to a parameter
 
-`/*@artistId*/` uses the presence of `@artistId` as its key.
+Use `/*@name*/` when the SQL should follow parameter presence.
 
 ```csharp
-static readonly QueryCommand ArtistAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE /*@artistId*/ArtistId = @artistId");
+static readonly QueryCommand SearchAlbums = new("""
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE /*@artistId*/ ArtistId = @artistId
+""");
 
-List<Album> albums = ArtistAlbums.Query<List<Album>>(cnn);
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new
+{
+    artistId = 7
+});
+```
+
+This is useful when the SQL has a larger shape than a single `?@artistId` footprint.
+
+## Bool conditions from a value source
+
+`ForBoolCond` maps a member to a marker.
+
+```csharp
+public sealed class AlbumFilter
+{
+    [ForBoolCond]
+    public bool OnlyReleased { get; init; }
+}
 ```
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums
-```
-
-```csharp
-List<Album> albums = ArtistAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
-```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
-```
-
-For a plain condition, this produces the same SQL as `?@artistId`. The explicit marker has a stricter boundary around parentheses.
-
-## Parentheses bound explicit markers
-
-An explicit marker inside parentheses removes only its term.
-
-```csharp
-static readonly QueryCommand SearchInvoices = new("SELECT InvoiceId AS Id, Total FROM invoices WHERE Total > @min AND (Country = @country OR /*@city*/City = @city)");
-
-List<Invoice> invoices = SearchInvoices.Query<List<Invoice>>(cnn, new { min = 100m, country = "Canada" });
-```
-
-```sql
-SELECT InvoiceId AS Id, Total FROM invoices WHERE Total > @min AND (Country = @country)
-```
-
-The `?@city` form instead grows out of those parentheses and removes the complete parenthesized condition.
-
-## Make a clause conditional
-
-A marker immediately before a section keyword controls that section.
-
-```csharp
-static readonly QueryCommand CountryInvoices = new(
-    "SELECT i.InvoiceId AS Id FROM invoices i /*@country*/JOIN customers c ON c.CustomerId = i.CustomerId WHERE c.Country = ?@country");
-
-List<Invoice> invoices = CountryInvoices.Query<List<Invoice>>(cnn);
-```
-
-```sql
-SELECT i.InvoiceId AS Id FROM invoices i
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE /*OnlyReleased*/ ReleaseYear IS NOT NULL
 ```
 
 ```csharp
-List<Invoice> invoices = CountryInvoices.Query<List<Invoice>>(cnn, new { country = "Canada" });
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new AlbumFilter
+{
+    OnlyReleased = true
+});
 ```
 
-```sql
-SELECT i.InvoiceId AS Id FROM invoices i JOIN customers c ON c.CustomerId = i.CustomerId WHERE c.Country = @country
-```
-
-Each section is independent. Mark dependent sections separately.
+`UsesBoolConds` enables several markers whenever the parameter object is used.
 
 ```csharp
-static readonly QueryCommand CustomerCounts = new("SELECT Country, COUNT(*) AS Total FROM customers /*Grouped*/GROUP BY Country /*Grouped*/HAVING COUNT(*) > 1");
+[UsesBoolConds("IncludeYear", "IncludeArtist")]
+public sealed class AlbumFilter
+{
+    public bool IncludeDetails { get; init; }
+}
 ```
 
-When `Grouped` is inactive, both marked sections disappear.
+## Parenthesized expressions
+
+An explicit marker can remove only one term inside parentheses.
 
 ```sql
-SELECT Country, COUNT(*) AS Total FROM customers
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE (/*ByTitle*/ Title = @title OR IsFeatured = 1)
 ```
 
-Activating `Grouped` keeps both the `GROUP BY` and `HAVING` sections.
+When `ByTitle` is disabled, `IsFeatured = 1` remains.
+
+## Larger SQL sections
+
+Put the marker before the section that it owns.
 
 ```sql
-SELECT Country, COUNT(*) AS Total FROM customers GROUP BY Country HAVING COUNT(*) > 1
+SELECT a.AlbumId AS Id, a.Title
+FROM albums a
+/*WithArtist*/ JOIN artists ar ON ar.ArtistId = a.ArtistId
 ```
 
-## Require several keys
+The same pattern can control `JOIN`, `GROUP BY`, `HAVING`, and other removable sections.
 
-Adjacent markers on one footprint form an implicit AND.
+## Several markers
+
+Adjacent markers use an implicit `AND`.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE /*Cheap*//*Available*/Price < @maximum
+WHERE /*A*//*B*/ IsPublished = 1
 ```
 
-The condition remains when both keys are active.
+The condition remains only when both markers are active.
+
+Use `&`, `|`, and `!` to write explicit marker logic.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE Price < @maximum
+WHERE /*A&B*/ IsPublished = 1
+WHERE /*A|B*/ IsPublished = 1
+WHERE /*!All*/ IsPublished = 1
 ```
 
-If either key is inactive, the complete condition disappears.
+Expressions are evaluated from left to right.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums
+/*A|B&C*/
 ```
 
-One marker can combine the keys with `&`.
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE /*Cheap&Available*/Price < @maximum
-```
-
-## Accept any key
-
-`|` keeps the footprint when either key is active.
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE /*Recent|Featured*/ReleaseYear >= @year
-```
-
-Activating either `Recent` or `Featured` keeps the condition.
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE ReleaseYear >= @year
-```
-
-Expressions are evaluated from left to right without operator precedence.
+The expression above is evaluated as the following expression.
 
 ```text
-/*A|B&C*/ = (A OR B) AND C
+(A OR B) AND C
 ```
 
-## Negate a key
+## Marker groups in lists
 
-`!` keeps the footprint while its key is inactive.
-
-```csharp
-static readonly QueryCommand ActiveAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE /*!All*/IsArchived = 0");
-```
-
-While `All` is inactive, the condition remains.
+Markers can own separators as well as values.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE IsArchived = 0
+SELECT AlbumId, Title
+FROM albums
+ORDER BY /*Title*/ Title&, /*Year*/ ReleaseYear&, AlbumId
 ```
 
-Activating `All` removes the negated condition.
+This keeps the comma list valid when optional entries are removed.
 
-```sql
-SELECT AlbumId AS Id, Title FROM albums
-```
-
-Write `/*!All*/` without a space after `!`. In `/*! All*/`, the leading space becomes part of the key.
-
-## Merge neighboring footprints
-
-`&AND`, `&OR`, and `&,` make neighboring footprints stay or disappear together.
-
-```sql
-SELECT InvoiceId AS Id, Total FROM invoices WHERE InvoiceDate >= ?@from &AND InvoiceDate < ?@until
-```
-
-When only one value is supplied, both neighboring footprints disappear.
-
-```sql
-SELECT InvoiceId AS Id, Total FROM invoices
-```
-
-Supplying both values keeps the complete date range.
-
-```sql
-SELECT InvoiceId AS Id, Total FROM invoices WHERE InvoiceDate >= @from AND InvoiceDate < @until
-```
-
-The comma form groups projected columns under one key.
-
-```sql
-SELECT CustomerId AS Id, /*Address*/City&, Street&, PostalCode FROM customers
-```
-
-When `Address` is inactive, the grouped columns all disappear.
-
-```sql
-SELECT CustomerId AS Id FROM customers
-```
-
-Activating `Address` keeps every column in the group.
-
-```sql
-SELECT CustomerId AS Id, City, Street, PostalCode FROM customers
-```
-
-## Stop a footprint with `???`
-
-`???` emits nothing and prevents a footprint from crossing it.
-
-```sql
-SELECT DISTINCT??? /*ShowId*/AlbumId AS Id, Title FROM albums
-```
-
-With the boundary in place, an inactive `ShowId` removes only the identifier.
-
-```sql
-SELECT DISTINCT Title FROM albums
-```
-
-Without the boundary, `DISTINCT` belongs to the conditional footprint.
-
-```sql
-SELECT DISTINCT /*ShowId*/AlbumId AS Id, Title FROM albums
-```
-
-Without the boundary, an inactive `ShowId` also removes `DISTINCT`.
-
-```sql
-SELECT Title FROM albums
-```
-
-## Keep a block comment
-
-Prefix a block comment with `~` so it is emitted instead of parsed as a marker.
-
-```sql
-/*~ application note */SELECT AlbumId AS Id, Title FROM albums
-```
-
-The generated SQL keeps the comment and removes the `~` marker.
-
-```sql
-/* application note */SELECT AlbumId AS Id, Title FROM albums
-```
-
-Line comments are already treated as literal text.
-
-Continue with [conditional column selection](dynamic-projection.md).
+See [Cheat sheet](cheatsheet.md) for the compact marker forms.

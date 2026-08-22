@@ -1,43 +1,97 @@
-# Tracking items
+# Editable items
 
-A generated tracking item separates its accepted original value from a lazy edit snapshot.
-
-## Runtime-generated item
+A runtime tracking item reads accepted values until a member is changed.
 
 ```csharp
-using Rinku.Tracking;
-using Rinku.Tracking.Runtime;
-
-public record Album(int Id, string Title);
-
 Album original = new(12, "Blue");
 IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 
+string before = edit.Get<string>(nameof(Album.Title));
+
 edit.Set(nameof(Album.Title), "Kind of Blue");
-bool editing = edit.IsEditing;
+
+string after = edit.Get<string>(nameof(Album.Title));
 ```
 
-The accepted original remains available independently from edit state and new-item state.
+Reading a member does not start an edit. Setting a tracked member creates edit state when needed.
+
+## Check edit state
 
 ```csharp
-if (edit.TryGetOriginal(out Album? accepted))
+Console.WriteLine(edit.IsEditing);
+
+edit.EnsureEditing();
+
+Console.WriteLine(edit.IsEditing);
+```
+
+`EnsureEditing()` creates the edit snapshot without changing a member.
+
+## Read the original
+
+```csharp
+if (edit.TryGetOriginal(out Album accepted))
     Console.WriteLine(accepted.Title);
 ```
 
-## Edit lifecycle
+The original represents the accepted value. It is separate from the current edit snapshot.
 
-`IEditable` exposes `IsEditing`, `EnsureEditing`, `ConfirmEdit`, and `CancelEdit`.
+## Inspect changed members
 
 ```csharp
-edit.EnsureEditing();
 edit.Set(nameof(Album.Title), "Kind of Blue");
 
-edit.ConfirmEdit();
-// or edit.CancelEdit();
+foreach (TrackingChange change in edit.GetChanges())
+{
+    Console.WriteLine(change.Name);
+    Console.WriteLine(change.OriginalValue);
+    Console.WriteLine(change.Value);
+}
 ```
 
-`ConfirmEdit` accepts the current snapshot into the item's original; it does not acknowledge that a new row was inserted. `CancelEdit` discards the snapshot and leaves the accepted original unchanged.
+Only members whose current value differs from the accepted value are returned.
 
-## Application-owned concrete types
+Use `HasChanges()` when only the presence of a change matters.
 
-Automatic original-to-edit materialization is intentionally interface-only. When an application owns a concrete edit type, construct it directly and place it in `TrackingList<T>` with an appropriate `ITrackingListContext<T>` when confirmation or new-item creation requires custom behavior.
+```csharp
+bool saveEnabled = edit.HasChanges();
+```
+
+## Use member indexes
+
+Resolve a name once when the same runtime member is read repeatedly.
+
+```csharp
+int title = edit.GetIndex(nameof(Album.Title));
+
+string value = edit.Get<string>(title);
+edit.Set(title, "Kind of Blue");
+```
+
+Name access and index access use the same runtime member surface.
+
+## Cancel an edit
+
+```csharp
+edit.Set(nameof(Album.Title), "Kind of Blue");
+edit.CancelEdit();
+
+string title = edit.Get<string>(nameof(Album.Title));
+// Blue
+```
+
+`CancelEdit()` discards the current snapshot and returns reads to the accepted value.
+
+## Confirm an edit
+
+```csharp
+edit.Set(nameof(Album.Title), "Kind of Blue");
+edit.ConfirmEdit();
+
+if (edit.TryGetOriginal(out Album accepted))
+    Console.WriteLine(accepted.Title);
+```
+
+`ConfirmEdit()` accepts the current edit. Confirm after the application has accepted the change, such as after a successful database update.
+
+See [persistence](persistence.md) for database examples.

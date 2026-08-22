@@ -1,58 +1,156 @@
 # Tracking lists
 
-`TrackingList<T>` tracks structural membership and order. It works with ordinary values and objects; generated editable items compose through a typed context.
-
-## Materialize originals
+`TrackingList<T>` tracks structural list changes without requiring editable items.
 
 ```csharp
-using Rinku.Tracking;
-using Rinku.Tracking.Binding;
-using Rinku.Tracking.Runtime;
+TrackingList<Album> albums = new(existingAlbums);
 
-public record Album(int Id, string Title);
-
-Album[] originals = [new(1, "Blue"), new(2, "Green")];
-TrackingList<IRuntimeTrackingItem<Album>> albums = originals.ToTrackingList();
-```
-
-## Added and removed rows
-
-```csharp
+albums.Add(new Album(0, "New album"));
 albums.RemoveAt(0);
 
-int removed = albums.RemovedCount;
-int added = albums.AddedCount;
+Console.WriteLine(albums.AddedCount);
+Console.WriteLine(albums.RemovedCount);
+```
+
+Use generated edit items when structural changes and member changes are both needed.
+
+```csharp
+TrackingList<IRuntimeTrackingItem<Album>> albums = existingAlbums.ToTrackingList();
+```
+
+## Add an item
+
+```csharp
+IRuntimeTrackingItem<Album> item = albums.AddNew();
+item.Set(nameof(Album.Title), "New album");
+
+Console.WriteLine(albums.IsAddedAt(albums.Count - 1));
+```
+
+`AddNew()` uses the list context. `CanAddNew` reports whether that context can create an item.
+
+```csharp
+if (albums.CanAddNew)
+    albums.AddNew();
+```
+
+You can also add an item that was created elsewhere.
+
+```csharp
+albums.Add(edit);
+albums.Insert(0, edit);
+```
+
+## Remove an item
+
+```csharp
+IRuntimeTrackingItem<Album> removed = albums[0];
+albums.RemoveAt(0);
+
+Console.WriteLine(albums.RemovedCount);
+```
+
+Removing an accepted item keeps it in `Removed` until deletion is confirmed.
+
+Removing an item that is still new cancels the addition instead of creating a deletion.
+
+## Restore a removal
+
+```csharp
+IRuntimeTrackingItem<Album> removed = albums.Removed[0];
+albums.Restore(removed);
+```
+
+Restore at a specific active index when order matters.
+
+```csharp
+albums.RestoreAt(0, 2);
+```
+
+## Move an item
+
+```csharp
+albums.Move(0, 3);
+```
+
+Moving changes active order. It does not turn the moved item into an addition or removal.
+
+## Replace an item
+
+```csharp
+albums[2] = replacement;
+```
+
+The configured comparer decides whether the replacement represents the same item.
+
+Pass a comparer when application identity differs from normal equality.
+
+```csharp
+TrackingList<AlbumRow> rows = new(
+    existingRows,
+    comparer: EqualityComparer<AlbumRow>.Default);
+```
+
+## Read structural changes
+
+```csharp
+foreach (IRuntimeTrackingItem<Album> item in albums.Added)
+    Console.WriteLine(item.Get<string>(nameof(Album.Title)));
+
+foreach (IRuntimeTrackingItem<Album> item in albums.Removed)
+    Console.WriteLine(item.Get<int>(nameof(Album.Id)));
+```
+
+`HasChanges` on the list reports additions or removals. Member edits belong to the items.
+
+```csharp
 bool structural = albums.HasChanges;
+bool memberEdit = albums[0].HasChanges();
 ```
 
-`Removed` is real list-owned storage. `Added` is derived from active rows, using an item's read-only `IsNew` capability when present and compact fallback provenance otherwise. Moving a row preserves its provenance.
+## Confirm one active item
+
+`ConfirmAt()` chooses addition or edit from the current structural state.
 
 ```csharp
-albums.RestoreAt(0);
+bool confirmed = albums.ConfirmAt(0);
 ```
 
-## Confirmation
-
-Confirmation acknowledges successful external work; it is not persistence. Operations are per item and partial success is allowed.
+Use the specific operation when the application already knows which operation succeeded.
 
 ```csharp
-bool editConfirmed = albums.ConfirmEditAt(0);
+albums.ConfirmAddedAt(0);
+albums.ConfirmEditAt(1);
+```
+
+## Confirm a deletion
+
+```csharp
+IRuntimeTrackingItem<Album> removed = albums.Removed[0];
+
+DeleteAlbum.Execute(cnn, removed);
+albums.ConfirmDelete(removed);
+```
+
+A confirmed deletion is removed from the `Removed` collection.
+
+## Confirm every observed operation
+
+```csharp
 bool allConfirmed = albums.ConfirmChanges();
 ```
 
-Use `ConfirmAddedAt` for an active Added row and `ConfirmDeleteAt` for an item in `Removed`. A failed confirmation leaves list-owned state observable.
+`ConfirmChanges()` asks the list context to confirm every current operation. Use operation specific confirmation when persistence is performed one operation at a time.
 
-## Equality and source identity
+See [persistence](persistence.md) for that pattern.
 
-Constructors and materialization overloads accept an `IEqualityComparer<T>` for logical list identity. Source-aware generated contexts separately map wrapper reference identity to source indexes, so equal objects in different source slots remain distinct.
+## Use a concrete item type
 
-## Binding support
-
-Binding is a separate layer. `BindingTrackingList<T>` implements the BCL component-model contracts, forwards generated property notifications, and supports pending `AddNew`/`CancelNew` behavior.
+Automatic conversion from original values is for generated interface contracts. Construct a normal `TrackingList<T>` when the application owns a concrete edit type.
 
 ```csharp
-Rinku.Tracking.Binding.BindingTrackingList<IRuntimeTrackingItem<Album>> bindingAlbums =
-    Rinku.Tracking.Binding.RuntimeBindingMaterializationExtensions.ToBindingList(originals);
-IRuntimeTrackingItem<Album> pending = bindingAlbums.AddNew();
-bindingAlbums.CancelNew(bindingAlbums.Count - 1);
+IEnumerable<AlbumRow> rows = existingRows;
+TrackingList<AlbumRow> tracked = new(rows);
 ```
+
+A custom `ITrackingListContext<T>` can provide new item creation and confirmation behavior when the concrete type needs it.

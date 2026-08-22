@@ -1,20 +1,26 @@
 # Rinku documentation
 
-Rinku is split into a few main areas. Start with the [overview](overview.md) for a tour through the library, or jump directly to the part you need.
+Rinku keeps SQL in application code and maps database results into the shape requested by the caller.
 
-## Main modules
+```csharp
+public record Album(int Id, string Title) : IDbReadable;
 
-- Running queries, [execute SQL](running-queries/execution.md), [supply values](running-queries/values.md), [build from application logic](running-queries/builders.md), [choose result shapes](running-queries/result-shapes.md), [async execution](running-queries/async.md) and [streaming](running-queries/streaming.md)
-- Mapping, [map rows to objects](mapping/objects.md), [choose construction paths](mapping/construction-paths.md), [map nested objects](mapping/nesting.md), [fill collections](mapping/collections.md), [adapt names](mapping/names.md) and [handle database NULL](mapping/nulls.md)
-- Conditional SQL, [conditional variables](conditional-sql/variables.md), [collection expansion](conditional-sql/collections.md), [conditional markers](conditional-sql/markers.md), [dynamic projection](conditional-sql/dynamic-projection.md) and the [cheat sheet](conditional-sql/cheatsheet.md)
-- Advanced customization, [overview](customization/index.md), [type registrations and defaults](customization/type-registration.md), [complete-result parsers](customization/result-parsers.md), [parameter binding](customization/parameters.md) and [cache ownership](customization/caches.md)
-- Code generation, [RinkuPowerTools](codegen/index.md), [configuration](codegen/configuration.md) and [analyzers](codegen/analyzers.md)
-- Tracking, [overview](tracking/index.md), [tracking items](tracking/items.md), [tracking lists](tracking/lists.md), [runtime tracking](tracking/runtime.md) and [validation and metadata](tracking/validation.md)
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
-## Coming from Dapper
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+```
 
-The [Coming from Dapper](reference/dapper.md) guide puts common Dapper operations next to their Rinku equivalents.
+Start with the [overview](overview.md) if Rinku is new to you.
 
-## Reference
+## Main areas
 
-Use [performance](reference/performance.md), [errors](reference/errors.md), the [FAQ](reference/faq.md) and the [API reference](../api/index.md) when you need details rather than a guided tour.
+* [Running queries](running-queries/execution.md) covers commands, values, builders, result shapes, async work, streaming, transactions, stored procedures, and direct reader access.
+* [Mapping](mapping/objects.md) covers objects, constructors, nested types, collections, grouping, names, null handling, tuples, dynamic rows, and registration.
+* [Conditional SQL](conditional-sql/variables.md) covers optional parameters, collections, conditional markers, dynamic projection, and value handlers.
+* [Advanced customization](customization/index.md) covers custom registrations, parsers, parameter behavior, method signatures, conditional SQL handlers, and cache ownership.
+* [Code generation](codegen/index.md) covers Rinku Power Tools configuration, query discovery, generated commands, and refresh behavior.
+* [Analyzers and code fixes](codegen/analyzers.md) ship with `Rinku` and cover schema links, constructor contracts, and method invocation generation.
+* [Tracking](tracking/index.md) covers editable items, tracking lists, runtime generated edit types, validation, and metadata.
+* [Coming from Dapper](reference/dapper.md) puts common Dapper operations beside the matching Rinku forms.
+
+Use the [FAQ](reference/faq.md), [errors](reference/errors.md), [performance notes](reference/performance.md), and [API reference](../api/index.md) when you need a direct reference.

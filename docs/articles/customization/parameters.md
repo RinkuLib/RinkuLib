@@ -1,168 +1,54 @@
 # Parameter binding
 
-Use a custom `DbParamInfo` to change a parameter's database value or metadata.
+Use a custom `DbParamInfo` when an application value needs a different database value or parameter metadata.
 
-## Convert one application type
-
-`ConvertedDbParamInfo<T>` keeps normal parameter reuse while converting the value before binding.
+This example stores a list of names as one string.
 
 ```csharp
 public readonly record struct Names(IReadOnlyList<string> Items);
 
-sealed class NamesParamInfo : ConvertedDbParamInfo<Names> {
-    protected override object ConvertValue(Names value) => string.Join(',', value.Items);
+sealed class NamesParamInfo : ConvertedDbParamInfo<Names>
+{
+    protected override object ConvertValue(Names value) =>
+        string.Join(',', value.Items);
 
-    protected override void ConfigureParameter(IDbDataParameter parameter) => parameter.DbType = DbType.String;
+    protected override void ConfigureParameter(IDbDataParameter parameter) =>
+        parameter.DbType = DbType.String;
 }
 ```
 
-Attach it to one command parameter during application setup.
+Attach the strategy to the command once.
 
 ```csharp
-static readonly QueryCommand SaveSearch = new("INSERT INTO saved_searches (Names) VALUES (@names)");
+static readonly QueryCommand SaveSearch = new(
+    "INSERT INTO saved_searches (Names) VALUES (@names)");
 
 SaveSearch.UpdateParamCache("@names", new NamesParamInfo());
 ```
 
+Use the application type normally at execution time.
+
 ```csharp
-int inserted = SaveSearch.Execute(cnn, new { names = new Names(["Blue", "Live"]) });
+int inserted = SaveSearch.Execute(cnn, new
+{
+    names = new Names(["Blue", "Live"])
+});
 ```
 
 ```sql
 INSERT INTO saved_searches (Names) VALUES (@names)
--- The provider receives Blue,Live as a string.
+-- @names contains Blue,Live
 ```
 
-See [parameter metadata](../running-queries/parameter-metadata.md) for fixed sizes, directional values, and reset behavior. See [positional parameters](../running-queries/values.md#positional-parameters) for the included positional strategy.
+See [Parameter metadata](../running-queries/parameter-metadata.md) when only `DbType`, size, direction, or another normal parameter setting needs to change.
 
-## Inspect provider parameter metadata
+## Shape a parameter object
 
-An `IDbParamInfoGetter` reads metadata from one command.
+Parameter source attributes change which members are exposed and which names they use.
 
 ```csharp
-sealed class CommandParamInfoGetter(IDbCommand command)
-    : IDbParamInfoGetter {
-
-    public IEnumerable<KeyValuePair<string, int>> EnumerateParameters() => command.Parameters.Cast<IDataParameter>()
-            .Select((parameter, index) => KeyValuePair.Create(parameter.ParameterName, index));
-
-    public DbParamInfo MakeInfoAt(int index) {
-        var parameter = (IDbDataParameter)command.Parameters[index]!;
-        return MakeInfo(parameter);
-    }
-
-    public bool TryGetInfo(string name, out DbParamInfo info) {
-        int index = command.Parameters.IndexOf(name);
-
-        if (index < 0) {
-            info = DbParameterDefaults.Current.Inferred;
-            return false;
-        }
-
-        info = MakeInfoAt(index);
-        return true;
-    }
-
-    static DbParamInfo MakeInfo(IDbDataParameter parameter) => parameter.DbType switch {
-            DbType.String or
-            DbType.AnsiString or
-            DbType.Binary or
-            DbType.Xml or
-            DbType.AnsiStringFixedLength or
-            DbType.StringFixedLength => TypedDbParamCache.Get(parameter.DbType, parameter.Size),
-            _ => TypedDbParamCache.Get(parameter.DbType)
-        };
-}
-```
-
-Register a maker that claims the commands it understands.
-
-```csharp
-static bool MakeGetter(IDbCommand command, [MaybeNullWhen(false)] out IDbParamInfoGetter getter) {
-    if (command is not Microsoft.Data.SqlClient.SqlCommand) {
-        getter = default;
-        return false;
-    }
-
-    getter = new CommandParamInfoGetter(command);
-    return true;
-}
-
-IDbParamInfoGetter.ParamGetterMakers.Add(MakeGetter);
-```
-
-Makers are tried in list order until one returns true.
-
-```text
-maker 0 returns false -> try maker 1
-maker 1 returns true  -> consume its getter
-maker 2               -> not called
-```
-
-## Getter lifetime
-
-The maker is invoked for every metadata-inspection operation.
-
-```csharp
-static bool MakeGetter(IDbCommand command, [MaybeNullWhen(false)] out IDbParamInfoGetter getter) {
-    if (command is Microsoft.Data.SqlClient.SqlCommand) {
-        getter = new CommandParamInfoGetter(command);
-        return true;
-    }
-
-    getter = default;
-    return false;
-}
-```
-
-Rinku consumes the returned getter synchronously. It does not cache or dispose it.
-
-```text
-inspection starts -> maker receives current command
-maker returns      -> getter is consumed synchronously
-inspection ends   -> Rinku retains no getter reference
-```
-
-A maker may return a shared getter, but the getter methods do not receive the current command. Shared getters must therefore be stateless and thread-safe.
-
-When metadata comes from `command.Parameters`, create a command-bound getter for each inspection. Rebinding one shared mutable getter is unsafe during concurrent execution.
-
-## Replace the fallback inference rule
-
-`IDbParameterDefaults` controls parameters that no registered getter claims.
-
-```csharp
-sealed class AppParameterDefaults : IDbParameterDefaults {
-    readonly DefaultDbParameterServices shipped = new();
-
-    public DbParamInfo Inferred => shipped.Inferred;
-
-    public DbParamInfo MakeInfo(IDbDataParameter parameter) {
-        if (parameter.DbType == DbType.String && parameter.Size == 0)
-            return TypedDbParamCache.Get(DbType.String, 4000);
-
-        return shipped.MakeInfo(parameter);
-    }
-}
-
-DbParameterDefaults.Current = new AppParameterDefaults();
-```
-
-Set the default during application startup.
-
-```text
-parameter inferred afterward -> uses AppParameterDefaults
-parameter reset afterward    -> uses AppParameterDefaults.Inferred
-already learned strategy     -> unchanged
-manually pinned strategy     -> unchanged
-```
-
-## Shape a parameter source
-
-Use Core attributes to control the names and members exposed by a parameter object.
-
-```csharp
-public sealed class EmployeeArgs {
+public sealed class EmployeeArgs
+{
     [ParameterName("EmployeeName")]
     [ParameterAlias("NameForSearch")]
     public string? Name { get; init; }
@@ -172,39 +58,87 @@ public sealed class EmployeeArgs {
 }
 ```
 
-Explicitly flatten nested values when the query expects a flat parameter surface.
+Flatten a nested object when the SQL expects its values at the same level.
 
 ```csharp
-public sealed class UpdateArgs {
+public sealed class UpdateArgs
+{
     [NestedParameters("Employee")]
     public EmployeeArgs Employee { get; init; } = new();
 }
 ```
 
-Structured members take precedence over dictionary fallbacks.
+```csharp
+UpdateEmployee.Execute(cnn, new UpdateArgs
+{
+    Employee = new EmployeeArgs
+    {
+        Name = "Ana"
+    }
+});
+```
 
-## Accept an equal-priority conflict
+## Equal priority conflicts
 
-Two flattened members at the same depth have equal priority. The normal behavior is to reject the ambiguous parameter shape. Put `[ParameterConflict]` on the complete parameter-object type when either value is valid.
+Two flattened members at the same depth are ambiguous by default.
+
+Use `ParameterConflictBehavior.TakeOne` only when either value is acceptable.
 
 ```csharp
-public sealed class SearchTermA { public string? Value { get; init; } }
-public sealed class SearchTermB { public string? Value { get; init; } }
-
-[ParameterConflict(ParameterConflictBehavior.TakeOne)]
-public sealed class SearchArgs {
-    [NestedParameters] public SearchTermA Primary { get; init; } = new();
-    [NestedParameters] public SearchTermB Secondary { get; init; } = new();
+public sealed class SearchTermA
+{
+    public string? Value { get; init; }
 }
 
+public sealed class SearchTermB
+{
+    public string? Value { get; init; }
+}
+
+[ParameterConflict(ParameterConflictBehavior.TakeOne)]
+public sealed class SearchArgs
+{
+    [NestedParameters]
+    public SearchTermA Primary { get; init; } = new();
+
+    [NestedParameters]
+    public SearchTermB Secondary { get; init; } = new();
+}
+```
+
+```csharp
 var search = new QueryCommand("SELECT @Value").StartBuilder();
-search.UseWith(new SearchArgs {
+
+search.UseWith(new SearchArgs
+{
     Primary = new() { Value = "blue" },
     Secondary = new() { Value = "green" }
 });
 
 object? value = search["@Value"];
-// value is either "blue" or "green"; which one wins is unspecified.
+// Either value may be selected
 ```
 
-`TakeOne` applies only after normal source priority. A direct member still beats a flattened member.
+A direct member still has priority over a flattened member.
+
+## Provider metadata readers
+
+A provider can add an `IDbParamInfoGetter` when Rinku cannot read its parameter metadata with the built in rules.
+
+Register the getter maker during application startup.
+
+```csharp
+static bool MakeGetter(
+    IDbCommand command,
+    out IDbParamInfoGetter getter)
+{
+    getter = null!;
+    return false;
+}
+
+IDbParamInfoGetter.ParamGetterMakers.Add(MakeGetter);
+```
+
+The maker should return `false` for command types it does not understand.
+
+Use this extension point only for provider metadata discovery. Normal command specific metadata should use `UpdateParamCache`.

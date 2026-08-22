@@ -10,11 +10,11 @@ static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM al
 Album album = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
 ```
 
-The template is parsed once. Per-call values remain outside the command.
+The template is parsed once. Per call values remain outside the command.
 
 ## Can one command be shared across threads?
 
-Yes. Sharing is the intended use. Per-call execution state comes from the parameter object or builder operation, while the command's reusable caches are guarded.
+Yes. Sharing is the intended use. Per call execution state comes from the parameter object or builder operation, while the command's reusable caches are guarded.
 
 ```csharp
 using DbConnection firstConnection = new SqlConnection(connectionString);
@@ -44,7 +44,7 @@ No. Keep the provider's positional placeholders and declare the variables in pro
 var command = new QueryCommand("SELECT UserId, Name FROM users WHERE UserId = ? AND Status = ?", ["userId", "status"], CommandType.Text);
 ```
 
-See [positional parameters](../running-queries/values.md#positional-parameters).
+See [positional parameters](../running-queries/values.md#positional-parameters) for the supported positional value forms.
 
 ## Why did the provider report a missing parameter?
 
@@ -88,7 +88,7 @@ With Rinku's default parser, an unwrapped `T` requires a first complete result.
 Optional<Album> album = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
 ```
 
-Use one of the included wrappers or add another [result parser](../running-queries/result-shapes.md#custom-result-shapes) when no result is valid.
+Use one of the included wrappers or add another [result parser](../running-queries/result-shapes.md#custom-result shapes) when no result is valid.
 
 ## Why did IN (?@ids_X) disappear?
 
@@ -179,4 +179,45 @@ ArtistWithAlbums artist = results.Query<ArtistWithAlbums>();
 artist.Albums = results.Query<List<Album>>();
 ```
 
-See [multiple result sets](../running-queries/multiple-results.md).
+See [multiple result sets](../running-queries/multiple-results.md) for ordered reads from one command.
+
+## Which database can CodeGen inspect?
+
+Rinku Power Tools currently discovers command and result metadata from SQL Server.
+
+```text
+Current discovery provider    SQL Server
+Generated command type        DbCommand
+```
+
+The configuration, query list, generated command, and refresh workflow do not depend on SQL Server specific application code. See [code generation](../codegen/index.md).
+
+## Do generated commands require the Rinku result parser?
+
+No. The generated method returns a normal `DbCommand`.
+
+```csharp
+using DbCommand command = cnn.GetAlbumsByArtist(artistId: 7);
+using DbDataReader reader = command.ExecuteReader();
+```
+
+Rinku can also read the same command through a cached parser.
+
+```csharp
+static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
+
+List<GetAlbumsByArtistResult> albums =
+    Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+```
+
+See [generated commands](../codegen/generated-code.md).
+
+## Why does a generated CodeGen file contain an error directive?
+
+A query failed while CodeGen was discovering or generating its command.
+
+```csharp
+#error Query generation failed for method 'GetBrokenAlbums'
+```
+
+Other valid query entries are still generated. Fix the failed query or its metadata and refresh the configuration again. See [refresh generated code](../codegen/refresh.md).

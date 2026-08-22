@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -9,13 +9,10 @@ namespace RinkuPowerTools;
 
 public static class MainClassGenerator {
     public static async Task<string> GenerateClassAsync(ExtensionSettings settings, string baseNamespace, CancellationToken ct) {
-        using var cnn = settings.GetConnection();
-        if (!SQLServerDiscoveryStrategy.CanHandle(cnn))
-            throw new NotSupportedException();
-        return await GenerateClassAsync<SQLServerDiscoveryStrategy>(cnn, settings, baseNamespace, ct);
+        DatabaseProvider provider = settings.GetDatabaseProvider();
+        using DbConnection connection = provider.CreateConnection(settings.ConnectionString ?? throw new InvalidOperationException("The connection string was not resolved."));
+        return await GenerateClassAsync(provider.SchemaDiscoverer, connection, settings, baseNamespace, ct);
     }
-    public static Task<string> GenerateClassAsync<T>(DbConnection connection, ExtensionSettings settings, string baseNamespace, CancellationToken ct) where T : ISchemaDiscovererStrategy
-        => GenerateClassAsync(new SchemaDiscoverer<T>(), connection, settings, baseNamespace, ct);
 
     public static string DeduceNamespaceFromPath(string baseNamespace, string relativePath) {
         if (string.IsNullOrEmpty(relativePath) || relativePath == ".")
@@ -57,8 +54,6 @@ public static class MainClassGenerator {
     private static async Task EnsureSupportFileAsync(ExtensionSettings settings, string baseNamespace, CancellationToken ct) {
         string path = Path.Combine(settings.GetFullPath(string.Empty), ".PowerTools.rinku.cs");
 
-        if (File.Exists(path))
-            return;
         string content = GenerateSupportFile(baseNamespace);
         await File.WriteAllTextAsync(path, content, Encoding.UTF8, ct);
     }
@@ -70,8 +65,10 @@ public static class MainClassGenerator {
 #nullable enable
 
 using System;
+using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using System.IO;
 using System.Runtime.CompilerServices;
 
 namespace {{baseNamespace}};
@@ -81,7 +78,36 @@ public sealed class TrueNameAttribute(string name) : Attribute {
     public string Name { get; } = name;
 }
 
-public static partial class RinkuDbCommandExtensions {
+public static class RinkuPowerTools {
+    public static readonly ConcurrentDictionary<string, string> SqlFiles = new(StringComparer.OrdinalIgnoreCase);
+
+    public static string GetSqlFile(string path) =>
+        SqlFiles.GetOrAdd(
+            path,
+            static path => File.ReadAllText(
+                Path.IsPathRooted(path)
+                    ? path
+                    : Path.Combine(AppContext.BaseDirectory, path)));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static DbParameter Add(this DbCommand command, string name, object value) {
+        var p = command.CreateParameter();
+        p.ParameterName = name;
+        p.Value = value;
+        command.Parameters.Add(p);
+        return p;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static DbParameter Add(this DbCommand command, string name, object value, int size) {
+        var p = command.CreateParameter();
+        p.ParameterName = name;
+        p.Size = size;
+        p.Value = value;
+        command.Parameters.Add(p);
+        return p;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static DbParameter Add(this DbCommand command, string name, DbType dbType, object value) {
         var p = command.CreateParameter();
@@ -110,7 +136,7 @@ public static partial class RinkuDbCommandExtensions {
         var dtoSb = new StringBuilder();
         string @namespace = string.IsNullOrWhiteSpace(settings.Namespace) ? DeduceNamespaceFromPath(baseNamespace, settings.OutputPath) : settings.Namespace;
         AppendFileHeaders(classSb, settings.ClassName!, @namespace, baseNamespace, settings.IsInternal);
-        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm");
+        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm'Z'");
 
         foreach (var query in settings.Queries) {
             int classLength = classSb.Length;
@@ -218,7 +244,14 @@ public static partial class RinkuDbCommandExtensions {
         }
         sb.AppendLine(") {");
         sb.AppendLine("        var command = connection.CreateCommand();");
-        sb.AppendLine($"        command.CommandText = @\"{schema.SQL}\";");
+        if (query.SourceType == QuerySourceType.FromFile) {
+            string target = IsAbsoluteSqlFilePath(query.Target)
+                ? "@\"" + query.Target.Replace("\"", "\"\"") + "\""
+                : "\"" + query.Target.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            sb.AppendLine($"        command.CommandText = RinkuPowerTools.GetSqlFile({target});");
+        }
+        else
+            sb.AppendLine($"        command.CommandText = @\"{schema.SQL.Replace("\"", "\"\"")}\";");
         sb.AppendLine($"        command.CommandType = CommandType.{query.GetCommandType()};");
         sb.AppendLine();
         foreach (var param in schema.Parameters)
@@ -227,19 +260,41 @@ public static partial class RinkuDbCommandExtensions {
         sb.AppendLine("    }");
     }
 
+    private static bool IsAbsoluteSqlFilePath(string path) =>
+        Path.IsPathRooted(path) ||
+        (path.Length >= 3 && char.IsLetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/')) ||
+        path.StartsWith("\\\\", StringComparison.Ordinal);
+
     private static void WriteOneParameter(StringBuilder sb, ParameterMetadata param) {
         string valueExpr = param.Direction == ParameterDirection.Output
             ? "DBNull.Value"
             : param.IsNullable ? $"(object?){param.CleanName} ?? DBNull.Value" : param.CleanName;
 
         bool hasSize = param.Size > 0 || param.Size == -1;
-        var method = !hasSize
-            ? $"command.Add(\"{param.DbName}\", DbType.{param.DbType}, {valueExpr});"
-            : $"command.Add(\"{param.DbName}\", DbType.{param.DbType}, {valueExpr}, {param.Size});";
-        if (param.Direction == ParameterDirection.Input && param.Precision == 0 && param.Scale == 0) {
+        string method;
+        string dbName = EscapeStringLiteral(param.Binding == ParameterBinding.Positional ? string.Empty : param.DbName);
+        if (param.DbType is { } dbType) {
+            method = !hasSize
+                ? $"command.Add(\"{dbName}\", DbType.{dbType}, {valueExpr});"
+                : $"command.Add(\"{dbName}\", DbType.{dbType}, {valueExpr}, {param.Size});";
+        }
+        else {
+            method = !hasSize
+                ? $"command.Add(\"{dbName}\", {valueExpr});"
+                : $"command.Add(\"{dbName}\", {valueExpr}, {param.Size});";
+        }
+
+        bool needsVariable =
+            param.Direction != ParameterDirection.Input ||
+            param.Precision != 0 ||
+            param.Scale != 0 ||
+            param.ProviderType is not null;
+
+        if (!needsVariable) {
             sb.AppendLine($"        {method}");
             return;
         }
+
         string paramVar;
         if (param.Direction is ParameterDirection.Output or ParameterDirection.InputOutput) {
             paramVar = $"out_{param.CleanName}";
@@ -249,6 +304,10 @@ public static partial class RinkuDbCommandExtensions {
             paramVar = $"p_{param.CleanName}";
             sb.AppendLine($"        var {paramVar} = {method}");
         }
+
+        if (param.ProviderType is { } providerType)
+            DatabaseProviders.Get(providerType.Database).AppendGeneratedParameterType(sb, paramVar, providerType);
+
         if (param.Direction != ParameterDirection.Input)
             sb.AppendLine($"        {paramVar}.Direction = ParameterDirection.{param.Direction};");
         if (param.Precision > 0)
@@ -256,6 +315,9 @@ public static partial class RinkuDbCommandExtensions {
         if (param.Scale > 0)
             sb.AppendLine($"        {paramVar}.Scale = {param.Scale};");
     }
+
+    private static string EscapeStringLiteral(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 
     private static void WriteDto(StringBuilder sb, string name, List<ParameterMetadata> cols, string timeStamp) {
         sb.AppendLine();
@@ -301,6 +363,8 @@ public static partial class RinkuDbCommandExtensions {
         ReadOnlySpan<char> span = csharpType.AsSpan();
         if (span.EndsWith("?"))
             span = span[..^1];
+        while (span.EndsWith("[]"))
+            span = span[..^2];
 
         return span.Equals("int", StringComparison.OrdinalIgnoreCase) ||
                span.Equals("long", StringComparison.OrdinalIgnoreCase) ||
@@ -312,7 +376,15 @@ public static partial class RinkuDbCommandExtensions {
                span.Equals("decimal", StringComparison.OrdinalIgnoreCase) ||
                span.Equals("double", StringComparison.OrdinalIgnoreCase) ||
                span.Equals("datetime", StringComparison.OrdinalIgnoreCase) ||
-               span.Equals("float", StringComparison.OrdinalIgnoreCase);
+               span.Equals("float", StringComparison.OrdinalIgnoreCase) ||
+               span.Equals("uint", StringComparison.OrdinalIgnoreCase) ||
+               span.Equals("ulong", StringComparison.OrdinalIgnoreCase) ||
+               span.Equals("ushort", StringComparison.OrdinalIgnoreCase) ||
+               span.Equals("sbyte", StringComparison.OrdinalIgnoreCase) ||
+               span.Equals("datetimeoffset", StringComparison.OrdinalIgnoreCase) ||
+               span.Equals("dateonly", StringComparison.OrdinalIgnoreCase) ||
+               span.Equals("timeonly", StringComparison.OrdinalIgnoreCase) ||
+               span.Equals("timespan", StringComparison.OrdinalIgnoreCase);
     }
     private static RecordDeclarationSyntax? FindDto(CompilationUnitSyntax? r, string n) => r?.DescendantNodes().OfType<RecordDeclarationSyntax>().FirstOrDefault(x => x.Identifier.ValueText == n);
     private static CompilationUnitSyntax? GetCompilationUnit(string fullPath) {

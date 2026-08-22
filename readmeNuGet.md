@@ -1,45 +1,93 @@
-# RinkuLib
+# Rinku
 
-A micro-ORM for .NET built directly on **ADO.NET**. You keep the SQL and choose a result type. Rinku reads the result into that type.
+Rinku maps database results into the type requested by the caller while keeping SQL in application code.
 
-Read the [documentation](https://rinkulib.github.io/RinkuLib/), see the [Dapper guide](https://rinkulib.github.io/RinkuLib/articles/reference/dapper.html), or browse the [source on GitHub](https://github.com/RinkuLib/RinkuLib).
+## First query
 
 ```csharp
 using Rinku;
 
-public record Album(int Id, string Title);
+public record Album(int Id, string Title) : IDbReadable;
 
-// Create the command once (a static readonly field is ideal). The SQL template is parsed here.
-static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+static readonly QueryCommand GetAlbums = new(
+    "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 1 });
-// GetAlbums.Query<Album>(cnn, ...)               -> the first album
-// GetAlbums.Query<IEnumerable<Album>>(cnn, ...)  -> streamed
+List<Album> albums = GetAlbums.Query<List<Album>>(
+    cnn,
+    new { artistId = 7 });
 ```
 
-The type argument chooses the result parser. A class, record, or struct can be used directly when the columns match a constructor or writable members. Nested types follow separate registration rules. Parsers can also be added or replaced.
+## Result shapes
 
-Rinku includes these features.
+```csharp
+Album first = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
+Optional<Album> maybe = GetAlbum.Query<Optional<Album>>(cnn, new { albumId = 12 });
+List<Album> all = GetAlbums.Query<List<Album>>(cnn);
+IEnumerable<Album> streamed = GetAlbums.Query<IEnumerable<Album>>(cnn);
+```
 
-- **Object mapping.** Map returned columns to your types and change the rules when needed.
-- **Conditional SQL.** Mark optional SQL in one template without assembling strings at the call site.
-- **Code generation.** Generate ready-to-run `DbCommand`s from your database schema at design time.
-- **Tracking.** Edit, commit, and revert change tracking over an `IEnumerable`.
-
-Mapping is the spine, and the rest builds on it. Targets .NET 8 and .NET 10.
+The requested type selects result count behavior and buffering.
 
 ## Conditional SQL
 
-When a query must change shape at runtime, mark the optional parts (`?@var`, `/*...*/`) and the values you supply decide what stays.
-
 ```csharp
-static readonly QueryCommand Search = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND Title LIKE ?@title");
+static readonly QueryCommand SearchAlbums = new(
+    "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title");
 
-// @title omitted, so its clause is pruned.
-List<Album> albums = Search.Query<List<Album>>(cnn, new { artistId = 1 });
-// Resulting SQL: SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+List<Album> albums = SearchAlbums.Query<List<Album>>(
+    cnn,
+    new { artistId = 7 });
 ```
 
-## How it works
+Without `title` the second condition is removed.
 
-You define the template first, so application code chooses which marked parts are active without joining SQL strings or adding `WHERE 1=1`. The result type chooses a parser. The parser and mapping rules decide how to read the returned columns and rows.
+```sql
+SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+```
+
+## Nested mapping
+
+```csharp
+public record Artist(int Id, string Name) : IDbReadable;
+public record AlbumWithArtist(int Id, string Title, Artist Artist);
+
+static readonly QueryCommand GetAlbums = new(
+    "SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
+
+List<AlbumWithArtist> albums = GetAlbums.Query<List<AlbumWithArtist>>(cnn);
+```
+
+## Code generation
+
+Rinku Power Tools can generate typed `DbCommand` methods from configured SQL, SQL files, and stored procedures.
+
+```csharp
+static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
+
+List<GetAlbumsByArtistResult> albums =
+    Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+```
+
+## Analyzers and code fixes
+
+The `Rinku` package includes analyzers and code fixes. They can track reviewed schemas with `BasedOn`, require constructor shapes with `MatchConstructor`, generate missing constructors, and complete method invocations.
+
+```csharp
+/// <Schema LastUpdated="2026-08-21T14:00Z" />
+public record AlbumSchema(int Id, string Title);
+
+/// <BasedOn cref="AlbumSchema" LastUpdated="2026-08-21T14:00Z" />
+public record AlbumDto(int Id, string Title);
+```
+
+No separate analyzer package or PowerTools installation is required. See [analyzers and code fixes](https://rinkulib.github.io/RinkuLib/articles/codegen/analyzers.html).
+
+## Async
+
+```csharp
+List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(
+    cnn,
+    ct: cancellationToken);
+```
+
+See the full [Rinku documentation](https://rinkulib.github.io/RinkuLib/articles/index.html) for queries, mapping, conditional SQL, customization, code generation, analyzers, tracking, errors, and the Dapper comparison.

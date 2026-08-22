@@ -1,157 +1,136 @@
 # Conditional variables
 
-Add `?` before a variable when its SQL should remain only when a value is supplied.
+Conditional variables remove the SQL that depends on a value when that value is not supplied.
 
 ```csharp
-static readonly QueryCommand Albums = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = ?@albumId");
+static readonly QueryCommand SearchAlbums = new("""
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE ArtistId = ?@artistId
+AND Title LIKE ?@title
+""");
+
+var builder = SearchAlbums.StartBuilder();
+builder.UseWith(new { artistId = 7 });
+
+List<Album> albums = builder.Query<List<Album>>(cnn);
 ```
 
-Without the value, the condition and empty `WHERE` clause are removed.
+The SQL used by this call is equivalent to the following SQL.
+
+```sql
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE ArtistId = @artistId
+```
+
+If neither value is supplied, Rinku also removes the empty `WHERE` clause.
 
 ```csharp
-List<Album> albums = Albums.Query<List<Album>>(cnn);
+List<Album> albums = SearchAlbums
+    .StartBuilder()
+    .Query<List<Album>>(cnn);
 ```
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums
+SELECT AlbumId AS Id, Title
+FROM albums
 ```
 
-Supplying the value keeps the condition.
+## Required values inside an optional part
+
+A normal variable can live inside SQL controlled by a conditional variable.
 
 ```csharp
-Album album = Albums.Query<Album>(cnn, new { albumId = 1 });
+static readonly QueryCommand SearchAroundYear = new("""
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE ReleaseYear BETWEEN ?@fromYear AND @toYear
+""");
+
+var builder = SearchAroundYear.StartBuilder();
+builder.UseWith(new { fromYear = 1990, toYear = 2000 });
 ```
 
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId
-```
+`toYear` is required when `fromYear` keeps the condition.
 
-A `null` member is also absent.
+When `fromYear` is absent, the complete condition is removed and `toYear` is not required.
+
+## Updates
+
+Conditional variables can remove assignments too.
 
 ```csharp
-int? albumId = null;
-List<Album> albums = Albums.Query<List<Album>>(cnn, new { albumId });
+static readonly QueryCommand UpdateAlbum = new("""
+UPDATE albums
+SET Title = ?@title,
+    ReleaseYear = ?@releaseYear
+WHERE AlbumId = @albumId
+""");
+
+var builder = UpdateAlbum.StartBuilder();
+builder.UseWith(new
+{
+    albumId = 12,
+    title = "New title"
+});
+
+builder.Execute(cnn);
 ```
+
+The assignment without a supplied value is removed.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums
+UPDATE albums
+SET Title = @title
+WHERE AlbumId = @albumId
 ```
 
-The same marker works outside a `WHERE` clause.
+## Parentheses
+
+A conditional variable can remove the surrounding expression when that expression only exists for the value.
 
 ```csharp
-static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = ?@title, ReleaseYear = ?@releaseYear WHERE AlbumId = @albumId");
-
-int affected = UpdateAlbum.Execute(cnn, new { albumId = 1, title = "New title" });
+static readonly QueryCommand Search = new("""
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE (?@title IS NULL OR Title = @title)
+""");
 ```
 
-```sql
-UPDATE albums SET Title = @title WHERE AlbumId = @albumId
-```
+If `title` is absent, Rinku can remove the complete parenthesized condition.
 
-Supplying both values keeps both assignments.
+Use an [explicit marker](markers.md) when only one term inside parentheses should be optional.
+
+## Values that count as absent
+
+A source member with `null` is absent by default.
 
 ```csharp
-int affected = UpdateAlbum.Execute(cnn, new { albumId = 1, title = "New title", releaseYear = 2026 });
+string? title = null;
+
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { title });
 ```
 
-```sql
-UPDATE albums SET Title = @title, ReleaseYear = @releaseYear WHERE AlbumId = @albumId
-```
-
-## The surrounding expression is optional
-
-The removable footprint includes the expression around the variable.
+Use `DBNull.Value` when the parameter must remain present and carry database `NULL`.
 
 ```csharp
-static readonly QueryCommand SearchByTitle = new("SELECT AlbumId AS Id, Title FROM albums WHERE Title LIKE CONCAT('%', ?@title, '%')");
-
-List<Album> albums = SearchByTitle.Query<List<Album>>(cnn);
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new
+{
+    title = DBNull.Value
+});
 ```
+
+More value rules are shown in [Supplying values](../running-queries/values.md).
+
+## Collections
+
+Collections use the `_X` handler for parameter expansion.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE AlbumId IN (?@ids_X)
 ```
 
-Supplying the value keeps the complete expression.
-
-```csharp
-List<Album> albums = SearchByTitle.Query<List<Album>>(cnn, new { title = "Blue" });
-```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE Title LIKE CONCAT('%', @title, '%')
-```
-
-## Required values inside an optional footprint
-
-A plain variable is required only when its surviving SQL uses it.
-
-```csharp
-static readonly QueryCommand SearchByTotal = new("SELECT InvoiceId AS Id, Total FROM invoices WHERE Total BETWEEN @minimum AND ?@maximum");
-
-List<Invoice> invoices = SearchByTotal.Query<List<Invoice>>(cnn);
-```
-
-```sql
-SELECT InvoiceId AS Id, Total FROM invoices
-```
-
-Supplying `maximum` keeps the footprint, so `minimum` is then required.
-
-```csharp
-List<Invoice> invoices = SearchByTotal.Query<List<Invoice>>(cnn, new { minimum = 10m, maximum = 100m });
-```
-
-```sql
-SELECT InvoiceId AS Id, Total FROM invoices WHERE Total BETWEEN @minimum AND @maximum
-```
-
-## Parenthesized expressions
-
-An optional variable grows out of ordinary parentheses containing its expression.
-
-```csharp
-static readonly QueryCommand SearchInvoices = new("SELECT InvoiceId AS Id, Total FROM invoices WHERE Total > @min AND (Country = @country OR City = ?@city)");
-
-List<Invoice> invoices = SearchInvoices.Query<List<Invoice>>(cnn, new { min = 100m });
-```
-
-```sql
-SELECT InvoiceId AS Id, Total FROM invoices WHERE Total > @min
-```
-
-Use an [explicit marker](markers.md#parentheses-bound-explicit-markers) when only one term inside the parentheses should disappear.
-
-## Send database NULL
-
-`null` means absent. Use `DBNull.Value` when the parameter must be present with a database `NULL` value.
-
-```csharp
-static readonly QueryCommand ClearTitle = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
-
-ClearTitle.Execute(cnn, new { albumId = 1, title = DBNull.Value });
-```
-
-```sql
-UPDATE albums SET Title = @title WHERE AlbumId = @albumId
--- @title contains database NULL.
-```
-
-`[UseDbNull]` keeps nullable parameter models strongly typed.
-
-```csharp
-public sealed class AlbumUpdate {
-    public int AlbumId { get; init; }
-    [UseDbNull] public string? Title { get; init; }
-}
-
-ClearTitle.Execute(cnn, new AlbumUpdate { AlbumId = 1, Title = null });
-```
-
-```sql
-UPDATE albums SET Title = @title WHERE AlbumId = @albumId
--- @title contains database NULL.
-```
-
-[Expand a collection into parameters](collections.md).
+See [Collections](collections.md) for expansion and empty collection behavior.

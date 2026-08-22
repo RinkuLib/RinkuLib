@@ -1,18 +1,14 @@
 # Rinku overview
 
-This page is the full tour of Rinku. The [documentation index](index.md) is the shorter starting point when you only need to find the right module.
-
-Get Rinku from [NuGet](https://www.nuget.org/packages/Rinku/) or browse the [source on GitHub](https://github.com/RinkuLib/RinkuLib). Add it to a .NET 8 or .NET 10 project with the following command.
+Install the package and run a query first.
 
 ```bash
 dotnet add package Rinku
 ```
 
-## Query rows into a type
-
-Declare a command for SQL that will be used more than once.
-
 ```csharp
+using Rinku;
+
 public record Album(int Id, string Title) : IDbReadable;
 
 static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums");
@@ -20,97 +16,62 @@ static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM a
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
 ```
 
-The same query can be written inline.
-
-```csharp
-List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums");
-```
-
-[See how SQL-string shortcuts work](running-queries/sql-string.md).
+A reusable `QueryCommand` owns the SQL template. Per call values and builder state stay outside the command.
 
 ## Pass values
 
-Pass parameters to the SQL by matching object names.
-
 ```csharp
-public record Album(int Id, string Title) : IDbReadable;
-
 static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
 
 Album album = GetAlbum.Query<Album>(cnn, new { albumId = 7 });
 ```
 
-[Read about supplying values](running-queries/values.md).
+Readable public members supply values by name. See [supplying values](running-queries/values.md).
 
-## Choose how results are read
+## Choose the result shape
 
 ```csharp
-public record Album(int Id, string Title) : IDbReadable;
-
-static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
-static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums");
-
-Album first = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
-Optional<Album> maybe = GetAlbum.Query<Optional<Album>>(cnn, new { albumId = 1 });
-Album exactlyOne = GetAlbum.Query<Single<Album>>(cnn, new { albumId = 1 });
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
+Album first = GetAlbum.Query<Album>(cnn, new { albumId = 7 });
+Optional<Album> maybe = GetAlbum.Query<Optional<Album>>(cnn, new { albumId = 7 });
+Single<Album> one = GetAlbum.Query<Single<Album>>(cnn, new { albumId = 7 });
+List<Album> all = GetAlbums.Query<List<Album>>(cnn);
 IEnumerable<Album> stream = GetAlbums.Query<IEnumerable<Album>>(cnn);
 ```
 
-`Album` requires a row. `Optional<Album>` allows none, and `Single<Album>` also rejects a second row.
+The requested type controls result count behavior and buffering. See [result shapes](running-queries/result-shapes.md).
 
-See [result shapes](running-queries/result-shapes.md) and [streaming](running-queries/streaming.md).
-
-## Build from application logic
+## Build values from application logic
 
 ```csharp
-public record NewAlbum(string Title, int ArtistId);
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@ArtistId AND Title LIKE ?@Title");
 
-static readonly QueryCommand AddAlbum = new("INSERT INTO albums (Title, ArtistId, Status, CreatedBy) VALUES (@Title, @ArtistId, @Status, @CreatedBy)");
+var search = SearchAlbums.StartBuilder();
 
-var values = AddAlbum.StartBuilder();
-values.UseWith(new NewAlbum("Blue", 7));
-values.Use("@Status", publishNow ? "published" : "draft");
-values.Use('@', "CreatedBy", currentUser.Id);
-int affected = values.Execute(cnn);
+if (artistId is int id)
+    search.Use("@ArtistId", id);
+
+if (!string.IsNullOrWhiteSpace(title))
+    search.Use("@Title", title);
+
+List<Album> albums = search.Query<List<Album>>(cnn);
 ```
 
-[Read about builders](running-queries/builders.md).
+A builder holds mutable state for one execution flow. The shared `QueryCommand` stays reusable. See [builders](running-queries/builders.md).
 
 ## Map nested objects
-
-The `ArtistId` and `ArtistName` columns fill the `Artist` member.
 
 ```csharp
 public record Artist(int Id, string Name) : IDbReadable;
 public record AlbumWithArtist(int Id, string Title, Artist Artist);
 
-static readonly QueryCommand GetAlbumsWithArtists = new("SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
+static readonly QueryCommand GetAlbumsWithArtist = new("SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
 
-List<AlbumWithArtist> albums = GetAlbumsWithArtists.Query<List<AlbumWithArtist>>(cnn);
+List<AlbumWithArtist> albums = GetAlbumsWithArtist.Query<List<AlbumWithArtist>>(cnn);
 ```
 
-See [object mapping](mapping/objects.md) and [nested objects](mapping/nesting.md).
+The `ArtistId` and `ArtistName` columns belong to the nested `Artist`. See [nested objects](mapping/nesting.md).
 
-## Read several result sets
-
-```csharp
-public record Album(int Id, string Title) : IDbReadable;
-public record class ArtistWithAlbums(int Id, string Name) {
-    public List<Album> Albums { get; set; } = [];
-}
-
-static readonly QueryCommand GetArtistWithAlbums = new("SELECT ArtistId AS Id, Name FROM artists WHERE ArtistId = @artistId; SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
-
-using MultiReader results = GetArtistWithAlbums.ExecuteMultiReader(cnn, new { artistId = 7 });
-
-ArtistWithAlbums artist = results.Query<ArtistWithAlbums>();
-artist.Albums = results.Query<List<Album>>();
-```
-
-[Read about multiple result sets](running-queries/multiple-results.md).
-
-## Fill collections from joined rows
+## Fold joined rows into collections
 
 ```csharp
 public record Album(int Id, string Title) : IDbReadable;
@@ -121,138 +82,19 @@ static readonly QueryCommand GetArtists = new("SELECT ar.ArtistId AS Id, ar.Name
 List<ArtistWithAlbums> artists = GetArtists.Query<List<ArtistWithAlbums>>(cnn);
 ```
 
-```text
-Id  Name   AlbumsId  AlbumsTitle
-1   Queen  10        Jazz
-1   Queen  11        The Game
+Repeated parent rows can fill a nested collection when Rinku has a usable group boundary. See [collections](mapping/collections.md) and [grouping](mapping/grouping.md).
 
-artists[0].Albums.Count == 2
-```
-
-See [collections from joins](mapping/collections.md) and [grouping](mapping/grouping.md).
-
-## Read columns in order with a tuple
-
-### Scalar values
+## Handle database NULL
 
 ```csharp
-static readonly QueryCommand GetAlbumSummary = new("SELECT AlbumId, Title FROM albums WHERE AlbumId = @albumId");
+static readonly QueryCommand GetYear = new("SELECT ReleaseYear FROM albums WHERE AlbumId = @albumId");
 
-(int id, string title) = GetAlbumSummary.Query<(int, string)>(cnn, new { albumId = 1 });
+int? year = GetYear.Query<int?>(cnn, new { albumId = 7 });
 ```
 
-### An object with its parent id
+Database `NULL` and no result are separate choices. See [database NULL](mapping/nulls.md) and [result shapes](running-queries/result-shapes.md).
 
-```csharp
-public record Album(int Id, string Title) : IDbReadable;
-
-static readonly QueryCommand GetAlbumWithArtistId = new("SELECT ArtistId, AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
-
-(int artistId, Album album) = GetAlbumWithArtistId.Query<(int, Album)>(cnn, new { albumId = 1 });
-```
-
-### An employee and their manager
-
-```csharp
-public record Employee(int Id, string Name) : IDbReadable;
-
-static readonly QueryCommand GetEmployeeAndManager = new("SELECT e.EmployeeId AS Id, e.Name, m.EmployeeId AS Id, m.Name FROM employees e JOIN employees m ON m.EmployeeId = e.ManagerId WHERE e.EmployeeId = @employeeId");
-
-(Employee employee, Employee manager) = GetEmployeeAndManager.Query<(Employee, Employee)>(cnn, new { employeeId = 1 });
-```
-
-[Read about tuples](mapping/tuples.md).
-
-## Read a row without declaring a type
-
-### Whole row
-
-```csharp
-static readonly QueryCommand GetAlbumRow = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
-
-DynaObject row = GetAlbumRow.Query<DynaObject>(cnn, new { albumId = 1 });
-
-int id = row.Get<int>("Id");
-string title = row.Get<string>("Title");
-```
-
-### Typed value followed by dynamic columns
-
-```csharp
-static readonly QueryCommand GetAlbumRemainder = new("SELECT AlbumId, Title, ReleaseYear FROM albums WHERE AlbumId = @albumId");
-
-(int id, DynaObject remaining) = GetAlbumRemainder.Query<(int, DynaObject)>(cnn, new { albumId = 1 });
-
-string title = remaining.Get<string>("Title");
-int releaseYear = remaining.Get<int>("ReleaseYear");
-```
-
-[Read about dynamic rows](mapping/dynamic-rows.md).
-
-## Read database NULL
-
-### Nullable value
-
-```csharp
-static readonly QueryCommand GetAlbumPrice = new("SELECT Price FROM albums WHERE AlbumId = @albumId");
-
-decimal? price = GetAlbumPrice.Query<decimal?>(cnn, new { albumId = 1 });
-// Database NULL becomes null. No row still raises RINKU4001.
-```
-
-### Missing nested object
-
-```csharp
-public record LatestAlbum([AbortOnNull] int Id, string Title) : IDbReadable;
-public record ArtistWithLatest(int Id, string Name, LatestAlbum? LatestAlbum);
-
-static readonly QueryCommand GetArtist = new("SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS LatestAlbumId, al.Title AS LatestAlbumTitle FROM artists ar LEFT JOIN albums al ON al.AlbumId = ar.LatestAlbumId WHERE ar.ArtistId = @artistId");
-
-ArtistWithLatest artist = GetArtist.Query<ArtistWithLatest>(cnn, new { artistId = 1 });
-// NULL LatestAlbumId makes artist.LatestAlbum null.
-```
-
-[Read about database NULL](mapping/nulls.md).
-
-## Select a constructor or factory from the columns
-
-### Constructor
-
-```csharp
-public sealed class AlbumLabel {
-    public AlbumLabel(int id) => Id = id;
-    public AlbumLabel(int id, string title) => (Id, Title) = (id, title);
-
-    public int Id { get; }
-    public string? Title { get; }
-}
-
-static readonly QueryCommand GetAlbumLabel = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
-
-AlbumLabel album = GetAlbumLabel.Query<AlbumLabel>(cnn, new { albumId = 1 });
-// Id and Title select AlbumLabel(int, string).
-```
-
-### Static factory
-
-```csharp
-public interface IShape {
-    public static IShape FromCircle(double radius) => new Circle(radius);
-}
-
-public record Circle(double Radius) : IShape;
-
-static readonly QueryCommand GetShape = new("SELECT Radius FROM shapes WHERE ShapeId = @shapeId");
-
-IShape shape = GetShape.Query<IShape>(cnn, new { shapeId = 1 });
-// The Radius column selects FromCircle(double).
-```
-
-[Read about construction paths](mapping/construction-paths.md).
-
-## Remove SQL when a value is missing
-
-Put `?` before a value when its condition should exist only when that value is supplied.
+## Make SQL optional
 
 ```csharp
 static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title");
@@ -264,85 +106,69 @@ List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
 SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ```
 
-Supplying both values keeps both conditions.
-
-```csharp
-List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7, title = "%blue%" });
-```
-
-[Read about conditional variables](conditional-sql/variables.md).
+The missing `title` removes its condition. See [conditional variables](conditional-sql/variables.md).
 
 ## Expand a collection
 
-`_X` creates one database parameter for each item.
-
 ```csharp
-List<Album> albums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (?@albumIds_X)", new { albumIds = new[] { 1, 4, 9 } });
+static readonly QueryCommand GetByIds = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@ids_X)");
+
+List<Album> albums = GetByIds.Query<List<Album>>(cnn, new { ids = new[] { 2, 5, 9 } });
 ```
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@albumIds_1, @albumIds_2, @albumIds_3)
+SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@ids_1, @ids_2, @ids_3)
 ```
 
-[Read about collection expansion](conditional-sql/collections.md).
-
-## Pick returned columns
-
-`?SELECT` lets the supplied keys choose the projection.
-
-```csharp
-static readonly QueryCommand AlbumProjection = new("?SELECT AlbumId AS Id, Title, ReleaseYear FROM albums");
-
-var projection = AlbumProjection.StartBuilder();
-projection.Use("Title");
-List<DynaObject> albums = projection.Query<List<DynaObject>>(cnn);
-```
-
-```sql
-SELECT Title FROM albums
-```
-
-[Read about dynamic projection](conditional-sql/dynamic-projection.md).
+See [collection expansion](conditional-sql/collections.md) for lists used inside conditional SQL.
 
 ## Execute SQL
 
 ```csharp
-int affected = cnn.Execute("UPDATE albums SET Title = @title WHERE AlbumId = @albumId", new { albumId = 1, title = "Blue" });
+static readonly QueryCommand RenameAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+
+int affected = RenameAlbum.Execute(cnn, new { albumId = 7, title = "Blue" });
 ```
 
-Use `ExecuteScalar<T>` when executing the SQL also returns one value.
+Use `ExecuteScalar<T>` when execution also returns one value. See [executing SQL](running-queries/execution.md).
+
+## Run asynchronously
 
 ```csharp
-int albumId = cnn.ExecuteScalar<int>("INSERT INTO albums (Title, ArtistId) VALUES (@title, @artistId) RETURNING AlbumId", new { title = "Blue", artistId = 7 });
+List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);
 ```
 
-[Read about executing SQL](running-queries/execution.md).
-
-## Await a query
-
 ```csharp
-List<Album> albums = await cnn.QueryAsync<List<Album>>("SELECT AlbumId AS Id, Title FROM albums", ct: cancellationToken);
-```
-
-[Read about async calls](running-queries/async.md).
-
-## Stream rows asynchronously
-
-```csharp
-await foreach (Album album in cnn.StreamQueryAsync<Album>("SELECT AlbumId AS Id, Title FROM albums", ct: cancellationToken))
+await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken))
     Console.WriteLine(album.Title);
 ```
 
-[Read about streaming](running-queries/streaming.md).
+See [async execution](running-queries/async.md) and [streaming](running-queries/streaming.md).
 
-## Use a transaction and timeout
+## Use a transaction
 
 ```csharp
-using IDbTransaction transaction = cnn.BeginTransaction();
-int affected = cnn.Execute("UPDATE albums SET Title = @title WHERE AlbumId = @albumId", new { albumId = 1, title = "Blue" }, transaction: transaction, timeout: 30);
+using DbTransaction transaction = cnn.BeginTransaction();
+
+RenameAlbum.Execute(cnn, new { albumId = 7, title = "Blue" }, transaction: transaction);
+
+transaction.Commit();
 ```
 
-[Read about transactions, timeouts, and cancellation](running-queries/execution-context.md).
+See [transactions, timeouts, and cancellation](running-queries/execution-context.md).
+
+## Read several result sets
+
+```csharp
+static readonly QueryCommand GetArtist = new("SELECT ArtistId AS Id, Name FROM artists WHERE ArtistId = @artistId; SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+
+using MultiReader results = GetArtist.ExecuteMultiReader(cnn, new { artistId = 7 });
+
+Artist artist = results.Query<Artist>();
+List<Album> albums = results.Query<List<Album>>();
+```
+
+See [multiple result sets](running-queries/multiple-results.md) for reading several result sets from one command.
 
 ## Call a stored procedure
 
@@ -352,120 +178,68 @@ static readonly QueryCommand GetAlbumsForArtist = new("GetAlbumsForArtist", ["ar
 List<Album> albums = GetAlbumsForArtist.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
-[Read about stored procedures and output values](running-queries/stored-procedures.md).
+See [stored procedures](running-queries/stored-procedures.md) for procedure calls and output values.
 
-## Read a stored procedure output value
-
-```csharp
-static QueryCommand CreateRenumberAlbums(DbConnection setupConnection)
-    => QueryCommand.FromProc("RenumberAlbums", setupConnection);
-
-QueryCommand renumberAlbums = CreateRenumberAlbums(setupConnection);
-renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
-
-using (command) {
-    int moved = command.GetOutputValue<int>("@moved");
-}
-```
-
-[Read about output and return values](running-queries/stored-procedures.md#read-an-output-parameter).
-
-## Map an existing DbCommand
+## Use an existing DbCommand
 
 ```csharp
 static readonly CachedTypeParser<Album> AlbumParser = new();
 
 using DbCommand command = cnn.CreateCommand();
-command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 1";
+command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 7";
 
 Album album = AlbumParser.Query(command);
 ```
 
-[Read about existing DbCommand instances](running-queries/dbcommand.md).
+See [existing DbCommand](running-queries/dbcommand.md) when the application already owns the command instance.
+
+See [fixed result schema](running-queries/fixed-result-schema.md) when compatible columns are read as several result types.
 
 ## Read rows yourself
 
 ```csharp
-static readonly QueryCommand GetAlbumRows = new("SELECT AlbumId, Title FROM albums");
+DbDataReader reader = GetAlbums.ExecuteReader(cnn, out DbCommand command);
 
-DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command);
 using (command)
-using (reader) {
+using (reader)
+{
     while (reader.Read())
-        Console.WriteLine($"{reader.GetInt32(0)}: {reader.GetString(1)}");
+        Console.WriteLine(reader.GetValue(0));
 }
 ```
 
-[Read about raw readers](running-queries/readers.md).
+See [raw readers](running-queries/readers.md) when application code needs the provider reader directly.
 
-## Use IDbConnection
+## Generate database commands
 
-```csharp
-static List<Album> GetAlbums(IDbConnection cnn)
-    => cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums");
-```
-
-[Read about IDbConnection support](running-queries/idbconnection.md).
-
-## Change a mapping rule
+Rinku Power Tools can inspect configured database commands and generate typed `DbCommand` methods and result records.
 
 ```csharp
-public readonly record struct PositionalValue<T>(T Value);
+static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
 
-TypeParsingInfo.AddOrSet(typeof(PositionalValue<>), CtorTypeInfo.Instance);
-
-static readonly QueryCommand CountAlbums = new("SELECT COUNT(*) FROM albums");
-PositionalValue<int> count = CountAlbums.Query<PositionalValue<int>>(cnn);
+List<GetAlbumsByArtistResult> albums =
+    Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
-[See more mapping changes](customization/type-registration.md) or [write a result parser](customization/result-parsers.md).
+The generated method creates a normal `DbCommand`. See [code generation](codegen/index.md) for configuration, query sources, generated results, and refresh behavior.
 
-## Generate typed commands
+Generated result records also carry schema metadata that can be tracked by the analyzers shipped in `Rinku`. See [analyzers and code fixes](codegen/analyzers.md) for schema links, constructor contracts, and method invocation generation.
 
-```csharp
-static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> AlbumParser = new();
+## Extend Rinku
 
-using SqlConnection sqlConnection = new(connectionString);
+Normal usage pages show the built in choices first. Use [advanced customization](customization/index.md) when you need a new result parser, mapping rule, parameter rule, or conditional SQL handler.
 
-List<GetAlbumsByArtistResult> albums = AlbumParser.Query(sqlConnection.GetAlbumsByArtist(artistId: 7));
-```
-
-[Read about RinkuPowerTools](codegen/index.md).
-
-## Track edits
-
-Runtime tracking can generate an editable wrapper directly from an ordinary object.
+## Track application edits
 
 ```csharp
 using Rinku.Tracking;
 using Rinku.Tracking.Runtime;
-
-public record Album(int Id, string Title);
 
 Album original = new(12, "Blue");
-IRuntimeTrackingItem<Album> album = RuntimeTracking.Default<Album>().Create(original);
+IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 
-album.Set(nameof(Album.Title), "Kind of Blue");
-bool changed = album.IsEditing;
+edit.Set(nameof(Album.Title), "Kind of Blue");
+edit.ConfirmEdit();
 ```
 
-Collections can track item edits and structural changes together.
-
-```csharp
-using Rinku.Tracking;
-using Rinku.Tracking.Runtime;
-
-Album[] originals = [new(1, "Blue"), new(2, "Green")];
-TrackingList<IRuntimeTrackingItem<Album>> albums = originals.ToTrackingList();
-
-albums.RemoveAt(0);
-bool changed = albums.HasChanges;
-```
-
-Tracking does not persist anything by itself. Accept the local state only after the application has saved it successfully.
-
-[Read about tracking](tracking/index.md), [tracking items](tracking/items.md), [tracking lists](tracking/lists.md) and [runtime tracking](tracking/runtime.md).
-
-## Find details
-
-The [Dapper guide](reference/dapper.md) maps familiar operations to Rinku. The [performance notes](reference/performance.md), [error reference](reference/errors.md), and [FAQ](reference/faq.md) cover evaluation and troubleshooting. The generated API pages list public types and members.
+See [tracking](tracking/index.md) for editable items, structural list changes, and binding support.

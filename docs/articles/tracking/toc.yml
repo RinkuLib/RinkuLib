@@ -1,10 +1,14 @@
 - name: Tracking
   href: index.md
-- name: Tracking items
+- name: Editable items
   href: items.md
 - name: Tracking lists
   href: lists.md
 - name: Runtime tracking
   href: runtime.md
+- name: Binding
+  href: binding.md
 - name: Validation and metadata
   href: validation.md
+- name: Persistence
+  href: persistence.md

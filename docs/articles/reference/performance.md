@@ -1,8 +1,8 @@
 # Performance
 
-These measurements come from one BenchmarkDotNet run against SQL Server in a test container. Every measurement includes the database round trip. Lower values are better, and ratios compare each Rinku route with Dapper for the same operation.
+These measurements are from one BenchmarkDotNet run against SQL Server in a test container. Every measurement includes the database round trip. Ratios compare each Rinku route with Dapper for the same operation.
 
-The numbers are a recorded run, not a guarantee for another database, provider, machine, schema, or workload.
+The values record that run. Another database, provider, machine, schema, or workload can produce different results.
 
 ## First result
 
@@ -61,7 +61,7 @@ The numbers are a recorded run, not a guarantee for another database, provider, 
 
 | Relationship | Route | Mean | Allocated |
 | --- | --- | ---: | ---: |
-| One-to-many fold | Dapper multi-map | 10.745 ms (1.00) | 3.30 MB (1.00) |
+| One to many fold | Dapper multi map | 10.745 ms (1.00) | 3.30 MB (1.00) |
 | | Rinku tuples | 10.556 ms (0.98) | 2.61 MB (0.79) |
 | | Rinku native grouping | 10.254 ms (0.95) | 2.15 MB (0.65) |
 | Separate result sets | Dapper | 11.133 ms (1.00) | 2.85 MB (1.00) |

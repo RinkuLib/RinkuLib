@@ -4,4 +4,5 @@
     <Deploy />
   </Project>
   <Project Path="RinkuPowerTools/RinkuPowerTools.csproj" />
+  <Project Path="RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj" />
 </Solution>

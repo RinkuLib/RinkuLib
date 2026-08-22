@@ -1,8 +1,6 @@
 # Stored procedures and output values
 
-## Declare the parameter names
-
-A procedure name and its parameters can be declared without inspecting the database.
+Declare the procedure name and parameter names when the application already knows them.
 
 ```csharp
 static readonly QueryCommand GetAlbumsForArtist = new("GetAlbumsForArtist", ["artistId"]);
@@ -10,103 +8,43 @@ static readonly QueryCommand GetAlbumsForArtist = new("GetAlbumsForArtist", ["ar
 List<Album> albums = GetAlbumsForArtist.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
-The constructor uses `CommandType.StoredProcedure` by default.
+This constructor uses `CommandType.StoredProcedure` by default.
 
-```text
-CommandText: GetAlbumsForArtist
-CommandType: StoredProcedure
-Parameters: @artistId = 7
-```
-
-The same constructor can describe text when its parameter names cannot be found from SQL.
+## Discover procedure metadata
 
 ```csharp
-static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId", ["title", "albumId"], CommandType.Text);
-
-int affected = UpdateAlbum.Execute(cnn, new { albumId = 12, title = "Kind of Blue" });
+QueryCommand renumberAlbums = QueryCommand.FromProc("RenumberAlbums", setupConnection);
 ```
 
-```sql
-UPDATE albums SET Title = @title WHERE AlbumId = @albumId
-```
+`FromProc` reads the provider procedure metadata during setup and returns a reusable `QueryCommand`.
 
-## Discover the parameter metadata
-
-`FromProc` reads the procedure declaration once during application setup.
-
-```csharp
-static QueryCommand CreateRenumberAlbums(DbConnection setupConnection)
-    => QueryCommand.FromProc("RenumberAlbums", setupConnection);
-
-QueryCommand renumberAlbums = CreateRenumberAlbums(setupConnection);
-// A setup connection opened by FromProc is closed again before the call returns.
-```
-
-Discovery copies the procedure name, command type, parameter names, and parameter metadata into the returned `QueryCommand`. Provider-derived `InputOutput` parameters may be omitted by default, which covers providers that expose an output parameter as `InputOutput`.
-
-```text
-Copied: names, types, sizes, directions, return-value metadata
-Not retained: connection, transaction, temporary command, provider parameters
-```
-
-An initially open setup connection remains open.
-
-```csharp
-using DbConnection cnn = new SqlConnection(connectionString);
-cnn.Open();
-
-QueryCommand command = QueryCommand.FromProc("RenumberAlbums", cnn);
-
-// cnn remains open.
-```
-
-The temporary provider command is disposed. When discovery fails, a connection opened by Rinku is still closed before the exception leaves `FromProc`.
+The returned command does not keep the setup connection or temporary provider command.
 
 ## Read an output parameter
 
-`FromProc` already copied the parameter's direction and database metadata, so a default-capable output does not need a placeholder.
-
 ```csharp
 renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
 
-using (command) {
+using (command)
+{
     int moved = command.GetOutputValue<int>("@moved");
 }
 ```
 
-When a discovered `InputOutput` parameter really requires an incoming value, create the command with `inputOutputHasDefault: false`.
+The generated command is returned so provider output values can be read after execution.
+
+## InputOutput parameters
+
+When a discovered `InputOutput` parameter needs an incoming value, create the command with `inputOutputHasDefault: false`.
 
 ```csharp
-QueryCommand command = QueryCommand.FromProc("UpdateAndReturn", cnn, inputOutputHasDefault: false);
+QueryCommand command = QueryCommand.FromProc("RenumberAlbums", setupConnection, inputOutputHasDefault: false);
 ```
 
-## Read the return value
+Supply the incoming value through the normal parameter object or builder.
 
-The discovered return-value parameter is added automatically and does not need a placeholder.
+## Return values and provider metadata
 
-```csharp
-renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
+`FromProc` copies names, database types, sizes, directions, and return value metadata from the provider declaration.
 
-using (command) {
-    int moved = command.GetOutputValue<int>("@moved");
-    int returnValue = command.GetReturnValue<int>();
-}
-```
-
-## When discovery is unavailable
-
-`FromProc` fails when the provider cannot derive procedure parameters. It does not fall back to guessed metadata.
-
-```csharp
-static readonly QueryCommand GetAlbumsForArtist = new("GetAlbumsForArtist", ["artistId"]);
-```
-
-The explicit-name form remains available. Direction, size, precision, and scale can be supplied through [parameter metadata](parameter-metadata.md) when the procedure needs them.
-
-## Async
-
-```csharp
-List<Album> albums = await GetAlbumsForArtist.QueryAsync<List<Album>>(cnn, new { artistId = 7 }, ct: cancellationToken);
-```
-
-Output values are available after the reader is disposed. For a streamed result, that includes [stopping enumeration early](streaming.md#output-parameters).
+See [parameter metadata](parameter-metadata.md) when metadata is configured without procedure discovery.
