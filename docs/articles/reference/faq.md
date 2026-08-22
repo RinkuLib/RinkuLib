@@ -86,7 +86,7 @@ With Rinku's default parser, an unwrapped `T` requires a first complete result.
 Optional<Album> album = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
 ```
 
-Use one of the included wrappers or add another [result parser](../running-queries/result-shapes.md#custom-result shapes) when no result is valid.
+Use one of the included wrappers or add another [custom result parser](../customization/result-parsers.md) when no result is valid.
 
 ## Why did IN (?@ids_X) disappear?
 
@@ -181,14 +181,15 @@ See [multiple result sets](../running-queries/multiple-results.md) for ordered r
 
 ## Which database can CodeGen inspect?
 
-Rinku Power Tools currently discovers command and result metadata from SQL Server.
+Rinku Power Tools supports SQL Server, PostgreSQL, and SQLite.
 
 ```text
-Current discovery provider    SQL Server
-Generated command type        DbCommand
+SQL Server    SQL queries, SQL files, stored procedures
+PostgreSQL    SQL queries, SQL files, stored procedures
+SQLite        SQL queries, SQL files
 ```
 
-The configuration, query list, generated command, and refresh workflow do not depend on SQL Server specific application code. See [code generation](../codegen/index.md).
+Generated methods still return provider-neutral `DbCommand` values. See [code generation](../codegen/index.md) and [query sources](../codegen/queries.md).
 
 ## Do generated commands require the Rinku result parser?
 

@@ -13,6 +13,8 @@ Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
 
 `Id` fills `Album.Id`. `ArtistId` fills `Album.Artist.Id`. `ArtistName` fills `Album.Artist.Name`.
 
+This query uses aliases because the SQL is convenient to shape here. When returned names should stay unchanged, use the same [name rules](names.md) from the .NET side or setup registration.
+
 ## Register nested types
 
 A type reached through another mapped object must be readable.

@@ -3,15 +3,11 @@
 A marker gives a piece of SQL a name that can be enabled by the caller.
 
 ```csharp
-static readonly QueryCommand SearchAlbums = new("""
-SELECT AlbumId AS Id, Title
-FROM albums
-WHERE /*ByArtist*/ ArtistId = @artistId
-""");
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE /*ByArtist*/ ArtistId = @artistId");
 
 var builder = SearchAlbums.StartBuilder();
 builder.Use("ByArtist");
-builder.Use("artistId", 7);
+builder.Use("@artistId", 7);
 
 List<Album> albums = builder.Query<List<Album>>(cnn);
 ```
@@ -19,16 +15,13 @@ List<Album> albums = builder.Query<List<Album>>(cnn);
 Without `ByArtist`, the condition is removed.
 
 ```sql
-SELECT AlbumId AS Id, Title
-FROM albums
+SELECT AlbumId AS Id, Title FROM albums
 ```
 
 Supplying `ByArtist` keeps the condition in the SQL.
 
 ```sql
-SELECT AlbumId AS Id, Title
-FROM albums
-WHERE ArtistId = @artistId
+SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ```
 
 ## Tie a marker to a parameter

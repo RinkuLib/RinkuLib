@@ -47,7 +47,18 @@ public class CustomizationDocumentationStyleTests {
 
     private static void CheckParagraph(string file, List<string> lines) {
         string paragraph = string.Join(' ', lines);
+        if (IsLinkOnlyParagraph(paragraph))
+            return;
         Assert.True(paragraph.Length <= 300, $"{file} has a prose paragraph longer than 300 characters\n{paragraph}");
+    }
+
+    private static bool IsLinkOnlyParagraph(string text) {
+        string remaining = text.Trim();
+        if (remaining.StartsWith("See ", StringComparison.OrdinalIgnoreCase))
+            remaining = remaining[4..].Trim();
+        remaining = remaining.TrimEnd('.');
+        return remaining.Split(" · ", StringSplitOptions.RemoveEmptyEntries)
+            .All(part => part.StartsWith("[") && part.Contains("](", StringComparison.Ordinal) && part.EndsWith(")"));
     }
 
     private static string FindCustomizationFolder()

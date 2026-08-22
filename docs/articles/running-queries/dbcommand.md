@@ -1,6 +1,6 @@
 # Existing DbCommand
 
-Use `CachedTypeParser<T>` when the application already owns the command and wants to reuse the parsing work for one result type.
+Use `CachedTypeParser<T>` when a `DbCommand` already exists and the same result schema will be parsed repeatedly.
 
 The cache is normally kept beside the command factory.
 
@@ -31,7 +31,17 @@ Album album = GetAlbumParser.Query(AlbumCommands.GetAlbum(cnn, 12));
 
 The cache keeps reusable parser and schema information. It does not keep per call parser state.
 
-The exact command factory is not an ownership requirement. Another command can use the same cache when it returns a compatible schema for `Album`.
+The command can come from application code, generated code, a stored procedure wrapper, or another component. Another command can use the same cache when it returns a compatible schema for `Album`.
+
+For example, the same parser can consume a generated command.
+
+```csharp
+static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> AlbumsParser = new();
+
+List<GetAlbumsByArtistResult> albums = AlbumsParser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+```
+
+See [code generation](../codegen/index.md) for generated `DbCommand` methods.
 
 When one returned schema can be read as several result types, use the non generic `CachedTypeParser`.
 

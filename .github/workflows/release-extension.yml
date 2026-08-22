@@ -8,6 +8,11 @@ on:
         type: choice
         default: patch
         options: [patch, minor, major]
+      version:
+        description: Optional exact SemVer version; leave blank to use bump
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -32,18 +37,34 @@ jobs:
       - name: Compute next version
         id: ver
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           git fetch --tags --force
-          latest=$(git tag -l 'ext-v*' --sort=-v:refname | head -n1)
-          base="${latest#ext-v}"
-          [ -z "$base" ] && base="0.1.0"
-          IFS='.' read -r major minor patch <<< "$base"
-          case "${{ inputs.bump }}" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-          esac
-          next="$major.$minor.$patch"
+          if [ -n "$RELEASE_VERSION" ]; then
+            if ! [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "The exact version must use MAJOR.MINOR.PATCH format." >&2
+              exit 1
+            fi
+            next="$RELEASE_VERSION"
+          else
+            latest=$(git tag -l 'ext-v*' --sort=-v:refname | head -n1)
+            base="${latest#ext-v}"
+            [ -z "$base" ] && base="0.1.0"
+            IFS='.' read -r major minor patch <<< "$base"
+            case "${{ inputs.bump }}" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+            esac
+            next="$major.$minor.$patch"
+          fi
+
+          if git rev-parse "ext-v$next" >/dev/null 2>&1; then
+            echo "The tag ext-v$next already exists. Choose another version." >&2
+            exit 1
+          fi
+
           echo "version=$next" >> "$GITHUB_OUTPUT"
           echo "tag=ext-v$next" >> "$GITHUB_OUTPUT"
 
@@ -54,6 +75,9 @@ jobs:
             8.0
             10.0
 
+      - name: Run PowerTools tests
+        run: dotnet run --project RinkuPowerTools/RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj --configuration Release
+
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
@@ -63,7 +87,20 @@ jobs:
       - name: Find the VSIX
         id: vsix
         shell: bash
-        run: echo "path=$(find ${{ env.EXTENSION_DIR }}/bin -name '*.vsix' | head -n1)" >> "$GITHUB_OUTPUT"
+        run: |
+          path=$(find "${{ env.EXTENSION_DIR }}/bin" -type f -name '*.vsix' -print -quit)
+          if [ -z "$path" ]; then
+            echo "The build did not produce a VSIX file." >&2
+            exit 1
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RinkuPowerTools-${{ steps.ver.outputs.version }}
+          path: ${{ steps.vsix.outputs.path }}
+          if-no-files-found: error
 
       - name: Create and push tag
         run: |
@@ -76,3 +113,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release create "${{ steps.ver.outputs.tag }}" "${{ steps.vsix.outputs.path }}" --title "${{ steps.ver.outputs.tag }}" --generate-notes
+
+      - name: Show manual Marketplace upload instructions
+        shell: bash
+        run: |
+          {
+            echo "## Marketplace upload"
+            echo ""
+            echo "Marketplace publishing is intentionally manual because no Marketplace token is configured."
+            echo ""
+            echo "1. Download the VSIX from [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/${{ steps.ver.outputs.tag }})."
+            echo "2. Open the [Rinku Power Tools publisher page](https://marketplace.visualstudio.com/manage/publishers/rinku/extensions/rinkupowertools/edit)."
+            echo "3. Upload the VSIX as the next version and wait for Marketplace validation."
+          } >> "$GITHUB_STEP_SUMMARY"

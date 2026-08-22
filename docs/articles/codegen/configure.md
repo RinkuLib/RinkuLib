@@ -8,10 +8,6 @@ Rinku Power Tools
 Configure
 ```
 
-<!-- SCREENSHOT PLACEHOLDER
-Insert the configuration manager here.
-Show Database, a JSON configuration source, the extraction path, output path, namespace, internal option, Show Connection String, and Test Connection.
--->
 
 The database selector defaults to `Auto detect`. Use SQL Server, PostgreSQL, or SQLite explicitly when the connection string is ambiguous or when you want the configuration to pin a provider.
 

@@ -11,10 +11,15 @@ IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(origi
 edit.Set(nameof(Album.Title), "Kind of Blue");
 
 foreach (TrackingChange change in edit.GetChanges())
+{
+    // Generated over the configured editable members.
+    // Current edit state is compared with the accepted value when enumerated.
+    // No separate per-member mutation history is stored.
     Console.WriteLine($"{change.Name} {change.OriginalValue} -> {change.Value}");
+}
 ```
 
-The generated item reports member changes. The original value stays available until the edit is confirmed.
+The generated item can enumerate the differences that exist now. The original value stays available until the edit is confirmed.
 
 See [editable items](items.md) for edit state and change inspection.
 
