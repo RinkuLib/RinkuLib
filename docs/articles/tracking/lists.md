@@ -34,7 +34,7 @@ if (albums.CanAddNew)
     albums.AddNew();
 ```
 
-You can also add an item that was created elsewhere.
+An item created elsewhere can be added to the list.
 
 ```csharp
 albums.Add(edit);

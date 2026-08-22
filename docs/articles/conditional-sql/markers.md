@@ -126,7 +126,7 @@ Expressions are evaluated from left to right.
 /*A|B&C*/
 ```
 
-The expression above is evaluated as the following expression.
+The equivalent expression is shown below.
 
 ```text
 (A OR B) AND C

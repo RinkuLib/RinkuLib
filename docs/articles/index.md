@@ -2,15 +2,15 @@
 
 Rinku is a micro ORM for .NET built on ADO.NET. SQL stays explicit instead of being generated from an object model. Rinku adapts between database-facing and .NET-facing shapes so both sides can keep the form that fits them best.
 
-## Install
+## Overview
 
-Add the `Rinku` NuGet package to your .NET project.
+[Start with the Rinku overview](overview.md) for the main workflow: queries, result shapes, mapping, conditional SQL, customization, and tracking.
+
+## Install
 
 ```bash
 dotnet add package Rinku
 ```
-
-You can also install `Rinku` from your IDE's NuGet package manager.
 
 ## First query
 
@@ -22,15 +22,7 @@ static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM a
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
-## Start here
-
-**Continue with the [Rinku overview](https://rinkulib.github.io/RinkuLib/articles/overview.html).**
-
-It is a fast tour of the main query, mapping, conditional SQL, code generation, execution, and tracking forms.
-
 ## Documentation map
-
-The links below are useful when reading the Markdown directly or when you already know which topic you need.
 
 ### Running queries
 

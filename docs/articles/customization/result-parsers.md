@@ -2,7 +2,7 @@
 
 A complete result parser is useful when a result type changes how rows are consumed rather than how one row is mapped.
 
-The example below adds `Last<T>` as a complete result parser.
+## `Last<T>`
 
 ```csharp
 public readonly record struct Last<T>(T Value);

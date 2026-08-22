@@ -1,7 +1,5 @@
 # Rinku overview
 
-This page is a fast tour of Rinku. The examples intentionally use different forms so you can see the range of the library without reading every detailed guide first.
-
 ## Query and shape results
 
 A reusable `QueryCommand` keeps the SQL template separate from the values used for one call.
@@ -43,7 +41,7 @@ OptionalNullable<string> maybeTitle = FindNullableTitle.Query<OptionalNullable<s
 // No row and database NULL are both accepted.
 ```
 
-See [execute and query SQL](https://rinkulib.github.io/RinkuLib/articles/running-queries/execution.html), [result shapes](https://rinkulib.github.io/RinkuLib/articles/running-queries/result-shapes.html), [SQL-string shortcuts](https://rinkulib.github.io/RinkuLib/articles/running-queries/sql-string.html), and [database NULL](https://rinkulib.github.io/RinkuLib/articles/mapping/nulls.html).
+[Execute and query SQL](running-queries/execution.md) · [Result shapes](running-queries/result-shapes.md) · [SQL-string shortcuts](running-queries/sql-string.md) · [Database NULL](mapping/nulls.md)
 
 ## Adapt the mapping
 
@@ -95,7 +93,7 @@ TypeParsingInfo.GetOrAdd<Customer>().UpdateAltName(names =>
     });
 ```
 
-See [object mapping](https://rinkulib.github.io/RinkuLib/articles/mapping/objects.html), [adapt names](https://rinkulib.github.io/RinkuLib/articles/mapping/names.html), [nested objects](https://rinkulib.github.io/RinkuLib/articles/mapping/nesting.html), [collections](https://rinkulib.github.io/RinkuLib/articles/mapping/collections.html), and [grouping](https://rinkulib.github.io/RinkuLib/articles/mapping/grouping.html).
+[Object mapping](mapping/objects.md) · [Adapt names](mapping/names.md) · [Nested objects](mapping/nesting.md) · [Collections](mapping/collections.md) · [Grouping](mapping/grouping.md)
 
 ## Build one execution
 
@@ -145,7 +143,7 @@ List<Album> albums = GetByIds.Query<List<Album>>(cnn, new { ids });
 // SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@ids_0, @ids_1, @ids_2)
 ```
 
-See [builders](https://rinkulib.github.io/RinkuLib/articles/running-queries/builders.html), [conditional variables](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/variables.html), [markers](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/markers.html), and [collection expansion](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/collections.html).
+[Builders](running-queries/builders.md) · [Conditional variables](conditional-sql/variables.md) · [Markers](conditional-sql/markers.md) · [Collection expansion](conditional-sql/collections.md)
 
 ## Use the database surface you already have
 
@@ -192,7 +190,7 @@ public partial record GetAlbumResult(int Id, string Title);
 public record AlbumDto(int Id, string Title);
 ```
 
-See [stored procedures](https://rinkulib.github.io/RinkuLib/articles/running-queries/stored-procedures.html), [existing DbCommand](https://rinkulib.github.io/RinkuLib/articles/running-queries/dbcommand.html), [code generation](https://rinkulib.github.io/RinkuLib/articles/codegen/index.html), and [analyzers](https://rinkulib.github.io/RinkuLib/articles/codegen/analyzers.html).
+[Stored procedures](running-queries/stored-procedures.md) · [Existing DbCommand](running-queries/dbcommand.md) · [Code generation](codegen/index.md) · [Analyzers](codegen/analyzers.md)
 
 ## Choose how execution runs
 
@@ -229,7 +227,7 @@ Artist artist = results.Query<Artist>();
 List<Album> albums = results.Query<List<Album>>();
 ```
 
-You can also drop to the provider reader when that is the right level.
+Provider readers are available when the application needs direct reader access.
 
 ```csharp
 DbDataReader reader = GetAlbums.ExecuteReader(cnn, out DbCommand command, new { artistId = 7 });
@@ -242,7 +240,7 @@ using (reader)
 }
 ```
 
-See [async execution](https://rinkulib.github.io/RinkuLib/articles/running-queries/async.html), [streaming](https://rinkulib.github.io/RinkuLib/articles/running-queries/streaming.html), [execution context](https://rinkulib.github.io/RinkuLib/articles/running-queries/execution-context.html), [multiple result sets](https://rinkulib.github.io/RinkuLib/articles/running-queries/multiple-results.html), and [raw readers](https://rinkulib.github.io/RinkuLib/articles/running-queries/readers.html).
+[Async execution](running-queries/async.md) · [Streaming](running-queries/streaming.md) · [Execution context](running-queries/execution-context.md) · [Multiple result sets](running-queries/multiple-results.md) · [Raw readers](running-queries/readers.md)
 
 ## Track application state
 
@@ -297,7 +295,7 @@ Console.WriteLine(tracked.AddedCount);
 Console.WriteLine(tracked.RemovedCount);
 ```
 
-See [tracking](https://rinkulib.github.io/RinkuLib/articles/tracking/index.html), [editable items](https://rinkulib.github.io/RinkuLib/articles/tracking/items.html), [runtime tracking](https://rinkulib.github.io/RinkuLib/articles/tracking/runtime.html), [tracking lists](https://rinkulib.github.io/RinkuLib/articles/tracking/lists.html), and [persistence](https://rinkulib.github.io/RinkuLib/articles/tracking/persistence.html).
+[Tracking](tracking/index.md) · [Editable items](tracking/items.md) · [Runtime tracking](tracking/runtime.md) · [Tracking lists](tracking/lists.md) · [Persistence](tracking/persistence.md)
 
 ## Extend the boundary
 
@@ -312,6 +310,4 @@ static readonly QueryCommand CountAllAlbums = new("SELECT COUNT(*) FROM albums")
 PositionalValue<int> count = CountAllAlbums.Query<PositionalValue<int>>(cnn);
 ```
 
-Parameter binding, complete result parsers, multi-row mappings, method adaptation, conditional SQL handlers, and cache control are also exposed when the built-in behavior is not enough.
-
-See [advanced customization](https://rinkulib.github.io/RinkuLib/articles/customization/index.html).
+[Advanced customization](customization/index.md)

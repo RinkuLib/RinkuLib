@@ -9,17 +9,13 @@ Rinku Power Tools is not required for the analyzers. PowerTools does make the sc
 public partial record GetAlbumResult(int Id, string Title);
 ```
 
-The analyzer features are independent, so projects can adopt only the workflows they need.
-
-```text
-BasedOn            tracks when a referenced schema was last reviewed
-MatchConstructor   keeps a constructor compatible with a type or method
-Generate invocation completes an uncalled method reference
-```
+`BasedOn` tracks when a referenced schema was last reviewed. `MatchConstructor` keeps a constructor compatible with a type or method. The invocation analyzer completes an uncalled method reference.
 
 ## Add a schema link
 
 When the current project contains at least one source declaration with `<Schema>`, a type without a schema link gets an `Add schema link` Quick Action.
+
+![Rinku analyzer Quick Action](../../images/codegen/analyzer-quick-action.png)
 
 ```csharp
 /// <Schema LastUpdated="2026-08-21T14:00Z" />
@@ -339,7 +335,7 @@ int Save(int id, string title) => id;
 int Build(int id) => Save;
 ```
 
-The code fix produces the following invocation:
+The completed method invocation is shown below.
 
 ```csharp
 int Save(int id, string title) => id;
@@ -360,7 +356,7 @@ public sealed class AlbumService
 int Build(AlbumService service, int id) => service.Save;
 ```
 
-The code fix produces the following invocation:
+The completed member invocation is shown below.
 
 ```csharp
 int Build(AlbumService service, int id) => service.Save(id);

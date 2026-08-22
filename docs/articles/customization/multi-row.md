@@ -2,7 +2,7 @@
 
 `MultiRowTypeParsingInfo` registers a result type that accumulates one mapped value from each row.
 
-The example below adds `HashSet<T>` as another multi row result shape.
+## `HashSet<T>`
 
 ```csharp
 ConstructorInfo seed = typeof(HashSet<>).GetConstructor(Type.EmptyTypes) ?? throw new InvalidOperationException("HashSet constructor was not found.");

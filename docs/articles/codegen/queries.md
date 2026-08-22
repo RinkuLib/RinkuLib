@@ -2,6 +2,8 @@
 
 Open the configuration and add a query. Each entry produces one generated command method.
 
+![Rinku Power Tools query manager](../../images/codegen/query-manager.png)
+
 The available command sources and parameter type suggestions follow the configuration database. SQL Server and PostgreSQL offer stored procedures. SQLite offers SQL queries and SQL files.
 
 
@@ -51,6 +53,8 @@ Stored procedure suggestions come from the configured database connection.
 ## SQL file
 
 Choose `SQL File` when SQL should stay in its own file.
+
+![Rinku Power Tools SQL file query controls](../../images/codegen/query-sql-file.png)
 
 ```text
 Method Name    GetOpenInvoices
@@ -160,12 +164,4 @@ Without the correction, PowerTools keeps the parameter as `object?` and does not
 
 ## Remove a query
 
-Delete the query from the query manager and refresh the configuration.
-
-```text
-Delete query
-Refresh configuration
-Generated method is removed
-```
-
-See [Refresh generated code](refresh.md) for regeneration behavior.
+Deleting a query and refreshing the configuration removes its generated method. See [Refresh generated code](refresh.md) for regeneration behavior.
