@@ -1,13 +1,8 @@
 # Configure CodeGen
 
-Create a Rinku Power Tools configuration from the project submenu. The configuration manager writes a `rinkupt.json` file in the project.
+The configuration manager writes a `rinkupt.json` file in the project.
 
-```text
-Right click the project
-Rinku Power Tools
-Configure
-```
-
+![Rinku Power Tools configuration manager](../../images/codegen/configuration-manager.png)
 
 The database selector defaults to `Auto detect`. Use SQL Server, PostgreSQL, or SQLite explicitly when the connection string is ambiguous or when you want the configuration to pin a provider.
 
@@ -33,8 +28,6 @@ A common configuration reads the connection string from `appsettings.json`.
 The extraction path walks through JSON properties using `:` between each name.
 
 ## Test the connection
-
-Use `Test Connection` before adding queries.
 
 ```text
 Connection Source     JSON Configuration File
@@ -157,5 +150,3 @@ The project file must contain a `UserSecretsId`.
 ```
 
 The first value selects the launch profile. The second value selects an environment variable from that profile.
-
-Continue with [Add queries](queries.md).

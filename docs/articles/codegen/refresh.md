@@ -2,22 +2,12 @@
 
 Refresh a configuration after its SQL or database shape changes.
 
-```text
-Change SQL or database schema
-Refresh the configuration
-Review generated command and result shape
-Build the project
-```
+![Rinku Power Tools Refresh all command](../../images/codegen/project-menu.png)
+![Rinku Power Tools Refresh command](../../images/codegen/refresh-menu.png)
 
 ## Refresh one selected configuration
 
 Select a `rinkupt.json` or named `rinkupt` configuration and use `Refresh`.
-
-```text
-rinkupt.Reporting.json
-Refresh
-Reporting command file is regenerated
-```
 
 The generated file is opened after generation.
 
@@ -25,38 +15,17 @@ The generated file is opened after generation.
 
 Use `Configure` on a selected `rinkupt` file when the connection, output settings, or query list also need to change.
 
-```text
-Select rinkupt.json
-Configure
-Change query
-Save
-Generated file is refreshed
-```
-
+`Configure` saves the selected configuration and regenerates it when the changes require generation.
 
 ## Refresh from the project
 
 The project context menu groups the project commands under `Rinku Power Tools`.
 
-```text
-Rinku Power Tools
-    Configure
-    Refresh all
-```
-
 `Refresh all` regenerates every CodeGen configuration in the project.
-
-```text
-rinkupt.json
-rinkupt.Reporting.json
-rinkupt.Admin.json
-
-Refresh all
-```
 
 Each configuration is loaded and generated separately.
 
-Refresh one configuration from its selected `rinkupt` file context menu instead of adding per configuration project commands.
+Refresh one configuration from its selected `rinkupt` file context menu. `Refresh all` is the project-level operation.
 
 
 ## Generation failures
@@ -71,13 +40,7 @@ One failing query does not stop the remaining query entries from being generated
 
 The generated error block includes the method, query source, target, and exception message.
 
-Fix the query or connection metadata and refresh again.
-
-```text
-Fix GetBrokenAlbums
-Refresh rinkupt.json
-Build again
-```
+Fix the query or connection metadata and refresh again, then build the project.
 
 ## Result records after a refresh
 

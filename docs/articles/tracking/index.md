@@ -11,17 +11,12 @@ IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(origi
 edit.Set(nameof(Album.Title), "Kind of Blue");
 
 foreach (TrackingChange change in edit.GetChanges())
-{
-    // Generated over the configured editable members.
-    // Current edit state is compared with the accepted value when enumerated.
-    // No separate per-member mutation history is stored.
     Console.WriteLine($"{change.Name} {change.OriginalValue} -> {change.Value}");
-}
 ```
 
-The generated item can enumerate the differences that exist now. The original value stays available until the edit is confirmed.
+`GetChanges()` enumerates differences that exist now by comparing current edit values with accepted values; it is not an assignment-history log. The accepted value remains available until confirmation.
 
-See [editable items](items.md) for edit state and change inspection.
+[Editable items](items.md)
 
 ## Track a list
 
@@ -40,18 +35,18 @@ Console.WriteLine(albums.RemovedCount);
 
 A `TrackingList<T>` tracks additions, removals, replacements, and order. Generated items can track their member edits at the same time.
 
-See [tracking lists](lists.md) for structural changes and confirmation.
+[Tracking lists](lists.md)
 
 ## Choose the edit surface
 
-Use the default runtime item when member names are only known at runtime.
+Use the default runtime item when member names are known only at runtime.
 
 ```csharp
 IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 edit.Set(nameof(Album.Title), "Kind of Blue");
 ```
 
-Use an interface contract when normal typed properties are useful.
+Use an interface contract when typed properties are useful.
 
 ```csharp
 public interface IAlbumEdit : IRuntimeTrackingItem<Album>
@@ -65,13 +60,13 @@ IAlbumEdit edit = options.GetRegistration<IAlbumEdit>().Create(original);
 edit.Title = "Kind of Blue";
 ```
 
-Use a concrete type directly with `TrackingList<T>` when the application owns that type and its construction.
+Use a concrete type directly with `TrackingList<T>` when the application owns its construction.
 
 ```csharp
 TrackingList<AlbumRow> rows = new(existingRows);
 ```
 
-See [runtime tracking](runtime.md) for generated contracts and member options.
+[Runtime tracking](runtime.md)
 
 ## Binding
 
@@ -81,7 +76,7 @@ Binding uses the same tracking model and adds binding notifications and binding 
 BindingTrackingList<IRuntimeTrackingItem<Album>> albums = source.ToBindingList();
 ```
 
-See [binding](binding.md) for binding lists and source aware behavior.
+[Binding](binding.md)
 
 ## Validation and metadata
 
@@ -94,7 +89,7 @@ options.Validate<Album, IAlbumEdit>(static edit => !string.IsNullOrWhiteSpace(ed
 options.Metadata<Album, string[]>();
 ```
 
-See [validation and metadata](validation.md) for synchronous validation, asynchronous validation, caller context, and metadata.
+[Validation and metadata](validation.md)
 
 ## Save changes
 
@@ -108,4 +103,4 @@ if (edit.HasChanges())
 }
 ```
 
-See [persistence](persistence.md) for items, additions, removals, and transactions.
+[Persistence](persistence.md)

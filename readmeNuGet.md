@@ -2,6 +2,12 @@
 
 Rinku is a micro ORM for .NET built directly on ADO.NET. SQL stays explicit instead of being generated from an object model. Mapping and configuration adapt between database shapes and .NET shapes so neither side has to be designed around the mapper.
 
+## Install
+
+```bash
+dotnet add package Rinku
+```
+
 ```csharp
 using Rinku;
 

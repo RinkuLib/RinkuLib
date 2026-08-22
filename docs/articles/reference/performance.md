@@ -7,11 +7,11 @@ The benchmark suite follows two invariants:
 - Rinku allocates less memory than Dapper.
 - Rinku is no slower than Dapper, allowing for normal benchmark error.
 
-Ratios use Dapper as the baseline. A passing result has a performance ratio at or below `1.00` within measurement error and an allocation ratio below `1.00`.
+Ratios use Dapper as the baseline. The benchmark-suite criterion is lower allocation and timing at or below Dapper within normal measurement error.
+
+Reported 2026-08-22 on Windows 11 with .NET SDK 10.0.303 and .NET 10.0.11, using x64 RyuJIT x86-64-v3.
 
 ## Latest verified results
-
-Update the values in this table when publishing a newer run. The interpretation below remains unchanged.
 
 | Benchmark | Route | Dapper mean | Rinku mean | Performance ratio | Dapper memory | Rinku memory | Memory ratio |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -21,8 +21,6 @@ Update the values in this table when publishing a newer run. The interpretation 
 | Direct reader sync | Command | 582.1 us | 586.2 us | 1.01 | 5.33 KB | 4.73 KB | 0.89 |
 | Output and return parameters | Command | 531.7 us | 527.7 us | 0.99 | 13.98 KB | 12.57 KB | 0.90 |
 
-These representative checks satisfy both invariants. The complete set of scenarios is defined in `RinkuLib.Benchmarks`.
-
 ## Running the benchmarks
 
 Run from a standalone Release terminal with Docker running and no debugger attached:
@@ -31,7 +29,7 @@ Run from a standalone Release terminal with Docker running and no debugger attac
 dotnet run --project .\RinkuLib.Benchmarks\RinkuLib.Benchmarks.csproj -c Release
 ```
 
-Here are examples of focused benchmark runs:
+### Focused runs
 
 ```text
 dotnet run --project .\RinkuLib.Benchmarks\RinkuLib.Benchmarks.csproj -c Release -- --filter "*Complex*"

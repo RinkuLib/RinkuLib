@@ -2,8 +2,6 @@
 
 Each configured query generates a `DbCommand` extension method.
 
-A configuration with this query generates the following command.
-
 ```json
 {
   "MethodName": "GetAlbumsByArtist",
@@ -11,7 +9,7 @@ A configuration with this query generates the following command.
 }
 ```
 
-produces a method with this shape.
+The generated method has this shape.
 
 ```csharp
 public static partial class DbCommands
@@ -148,19 +146,7 @@ public partial record GetAlbumsByArtistResult
 
 A query that returns one simple column does not need a result record.
 
-```text
-int
-long
-short
-byte
-string
-Guid
-bool
-decimal
-double
-DateTime
-float
-```
+`int`, `long`, `short`, `byte`, `string`, `Guid`, `bool`, `decimal`, `double`, `DateTime`, and `float` are supported scalar result types, including nullable forms.
 
 Nullable forms of these types use the same scalar behavior.
 
@@ -204,11 +190,7 @@ The generated method still returns the complete `DbCommand`.
 using DbCommand command = cnn.GetArtistAndAlbums(artistId: 7);
 using DbDataReader reader = command.ExecuteReader();
 
-// First result set
-
 reader.NextResult();
-
-// Second result set
 ```
 
 See [multiple result sets](../running-queries/multiple-results.md) for the Rinku result reader when the command is represented by a `QueryCommand`.

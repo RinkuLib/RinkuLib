@@ -144,7 +144,7 @@ using (command) {
 
 ## Where should a Dapper user start?
 
-Start with [Coming from Dapper](dapper.md), then follow the links for the operation or feature you need.
+[Coming from Dapper](dapper.md)
 
 ## Does Tracking save changes to the database?
 

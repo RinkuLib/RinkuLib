@@ -174,18 +174,11 @@ IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(origi
 edit.Set(nameof(Album.Title), "Kind of Blue");
 
 foreach (TrackingChange change in edit.GetChanges())
-{
-    // Generated over the configured editable members.
-    // Current edit state is compared with the accepted value when enumerated.
-    // No separate per-member mutation history is stored.
     Console.WriteLine($"{change.Name} {change.OriginalValue} -> {change.Value}");
-}
 ```
 
 See [tracking](https://rinkulib.github.io/RinkuLib/articles/tracking/index.html), [editable items](https://rinkulib.github.io/RinkuLib/articles/tracking/items.html), and [persistence](https://rinkulib.github.io/RinkuLib/articles/tracking/persistence.html).
 
 ## Documentation
 
-Start with the [documentation index](https://rinkulib.github.io/RinkuLib/articles/index.html) or the [overview](https://rinkulib.github.io/RinkuLib/articles/overview.html).
-
-The main guides cover [running queries](https://rinkulib.github.io/RinkuLib/articles/running-queries/execution.html), [mapping](https://rinkulib.github.io/RinkuLib/articles/mapping/objects.html), [conditional SQL](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/variables.html), [advanced customization](https://rinkulib.github.io/RinkuLib/articles/customization/index.html), [code generation](https://rinkulib.github.io/RinkuLib/articles/codegen/index.html), [analyzers](https://rinkulib.github.io/RinkuLib/articles/codegen/analyzers.html), [tracking](https://rinkulib.github.io/RinkuLib/articles/tracking/index.html), and [coming from Dapper](https://rinkulib.github.io/RinkuLib/articles/reference/dapper.html).
+[Documentation index](https://rinkulib.github.io/RinkuLib/articles/index.html) · [Overview](https://rinkulib.github.io/RinkuLib/articles/overview.html) · [Running queries](https://rinkulib.github.io/RinkuLib/articles/running-queries/execution.html) · [Mapping](https://rinkulib.github.io/RinkuLib/articles/mapping/objects.html) · [Conditional SQL](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/variables.html) · [Advanced customization](https://rinkulib.github.io/RinkuLib/articles/customization/index.html) · [Code generation](https://rinkulib.github.io/RinkuLib/articles/codegen/index.html) · [Analyzers](https://rinkulib.github.io/RinkuLib/articles/codegen/analyzers.html) · [Tracking](https://rinkulib.github.io/RinkuLib/articles/tracking/index.html) · [Coming from Dapper](https://rinkulib.github.io/RinkuLib/articles/reference/dapper.html)

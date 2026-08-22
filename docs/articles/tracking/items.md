@@ -42,13 +42,7 @@ The original represents the accepted value. It is separate from the current edit
 edit.Set(nameof(Album.Title), "Kind of Blue");
 
 foreach (TrackingChange change in edit.GetChanges())
-{
-    // Generated code already knows which configured members can be edited.
-    // The value is compared with the accepted value when this is enumerated.
-    Console.WriteLine(change.Name);
-    Console.WriteLine(change.OriginalValue);
-    Console.WriteLine(change.Value);
-}
+    Console.WriteLine($"{change.Name} {change.OriginalValue} -> {change.Value}");
 ```
 
 Only members whose current value differs from the accepted value are returned. `GetChanges()` computes the current differences; it does not expose a history of every value assigned.
@@ -63,11 +57,7 @@ bool changed = edit.HasChanges();
 // false
 ```
 
-Use `HasChanges()` when only the presence of a change matters.
-
-```csharp
-bool saveEnabled = edit.HasChanges();
-```
+Use `HasChanges()` when only the presence of a change matters: `bool saveEnabled = edit.HasChanges();`
 
 ## Use member indexes
 
