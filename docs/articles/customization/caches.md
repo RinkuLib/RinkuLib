@@ -13,15 +13,13 @@ int removed = GetAlbums.InvalidateParsers();
 Keep the global parser and remove only this command reference.
 
 ```csharp
-GetAlbums.InvalidateParsers(
-    QueryParserInvalidationScope.Local);
+GetAlbums.InvalidateParsers(QueryParserInvalidationScope.Local);
 ```
 
 Use global invalidation when the parser itself should no longer be reused.
 
 ```csharp
-GetAlbums.InvalidateParsers(
-    QueryParserInvalidationScope.Global);
+GetAlbums.InvalidateParsers(QueryParserInvalidationScope.Global);
 ```
 
 ## Parameter source accessors
@@ -29,13 +27,9 @@ GetAlbums.InvalidateParsers(
 Parameter objects and builder `UseWith` use cached accessors.
 
 ```csharp
-GetAlbum.InvalidateParameterAccessor(
-    typeof(AlbumFilter),
-    ParameterAccessorKinds.Direct);
+GetAlbum.InvalidateParameterAccessor(typeof(AlbumFilter), ParameterAccessorKinds.Direct);
 
-GetAlbum.InvalidateParameterAccessor(
-    typeof(AlbumFilter),
-    ParameterAccessorKinds.UseWith);
+GetAlbum.InvalidateParameterAccessor(typeof(AlbumFilter), ParameterAccessorKinds.UseWith);
 ```
 
 Use `ParameterAccessorKinds.Both` to invalidate both forms.
@@ -47,16 +41,13 @@ This does not invalidate row parsers.
 SQL string shortcuts keep their `QueryCommand` instances in a global cache.
 
 ```csharp
-QueryCommand command =
-    ConnectionQueryExtensions.GetOrCreateCommand(sql);
+QueryCommand command = ConnectionQueryExtensions.GetOrCreateCommand(sql);
 ```
 
 Remove one exact SQL key when needed.
 
 ```csharp
-bool removed = ConnectionQueryExtensions.CommandCache.TryRemove(
-    sql,
-    out QueryCommand? cached);
+bool removed = ConnectionQueryExtensions.CommandCache.TryRemove(sql, out QueryCommand? cached);
 ```
 
 Removing the cache entry does not dispose the command.
@@ -104,17 +95,13 @@ The first query learns the schema. Use [fixed result schema](../running-queries/
 Use the global API when configuration changes affect parsers beyond one command.
 
 ```csharp
-TypeParser.Invalidate(
-    columns,
-    ParserInvalidationMode.CheckUsage);
+TypeParser.Invalidate(columns, ParserInvalidationMode.CheckUsage);
 ```
 
 Use `InvalidateReferences` when owners should release one exact parser instance.
 
 ```csharp
-TypeParser.Invalidate(
-    parser,
-    ParserInvalidationMode.InvalidateReferences);
+TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
 ```
 
 Configuring mappings and parser makers during startup avoids runtime invalidation for normal application use.

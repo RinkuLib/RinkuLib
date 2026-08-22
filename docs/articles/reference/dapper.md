@@ -611,11 +611,7 @@ public sealed class Customer {
     public string Name { get; set; } = "";
 }
 
-SqlMapper.SetTypeMap(typeof(Customer), new CustomPropertyTypeMap(typeof(Customer), (Type type, string column) => column switch {
-    "customer_id" => type.GetProperty(nameof(Customer.Id)),
-    "display_name" => type.GetProperty(nameof(Customer.Name)),
-    _ => null
-}));
+SqlMapper.SetTypeMap(typeof(Customer), new CustomPropertyTypeMap(typeof(Customer), (Type type, string column) => column switch { "customer_id" => type.GetProperty(nameof(Customer.Id)), "display_name" => type.GetProperty(nameof(Customer.Name)), _ => null }));
 
 IEnumerable<Customer> customers = cnn.Query<Customer>(sql);
 ```
@@ -631,11 +627,7 @@ List<Customer> customers = cnn.Query<List<Customer>>(sql);
 // Or configure the type externally
 public record ExternalCustomer(int Id, string Name);
 
-TypeParsingInfo.GetOrAdd<ExternalCustomer>().UpdateAltName(names => names.GetDefaultName() switch {
-    "Id" => new NameComparer("customer_id"),
-    "Name" => new NameComparer("display_name"),
-    _ => null
-});
+TypeParsingInfo.GetOrAdd<ExternalCustomer>().UpdateAltName(names => names.GetDefaultName() switch { "Id" => new NameComparer("customer_id"), "Name" => new NameComparer("display_name"), _ => null });
 
 List<ExternalCustomer> customers = cnn.Query<List<ExternalCustomer>>(sql);
 ```
@@ -679,10 +671,7 @@ public sealed class Post {
 
 const string dapperSql = "SELECT p.Id, p.Title, u.Id, u.Name FROM Posts p INNER JOIN Users u ON u.Id = p.UserId";
 
-IEnumerable<Post> posts = cnn.Query<Post, User, Post>(dapperSql, (post, owner) => {
-    post.Owner = owner;
-    return post;
-}, splitOn: "Id");
+IEnumerable<Post> posts = cnn.Query<Post, User, Post>(dapperSql, (post, owner) => { post.Owner = owner; return post; }, splitOn: "Id");
 ```
 
 ### Keep the C# type
@@ -732,8 +721,7 @@ public sealed class Post {
 }
 
 TypeParsingInfo.GetOrAdd<User>();
-TypeParsingInfo.GetOrAdd<Post>().UpdateAltName(names =>
-    names.GetDefaultName() == "Owner" ? NoNameComparer.Instance : null);
+TypeParsingInfo.GetOrAdd<Post>().UpdateAltName(names => names.GetDefaultName() == "Owner" ? NoNameComparer.Instance : null);
 
 const string dapperSql = "SELECT p.Id, p.Title, u.Id, u.Name FROM Posts p INNER JOIN Users u ON u.Id = p.UserId";
 

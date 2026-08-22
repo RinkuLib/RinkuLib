@@ -20,9 +20,7 @@ Yes. Sharing is the intended use. Per call execution state comes from the parame
 using DbConnection firstConnection = new SqlConnection(connectionString);
 using DbConnection secondConnection = new SqlConnection(connectionString);
 
-Album[] albums = await Task.WhenAll(
-    GetAlbum.QueryAsync<Album>(firstConnection, new { albumId = 12 }),
-    GetAlbum.QueryAsync<Album>(secondConnection, new { albumId = 46 }));
+Album[] albums = await Task.WhenAll(GetAlbum.QueryAsync<Album>(firstConnection, new { albumId = 12 }), GetAlbum.QueryAsync<Album>(secondConnection, new { albumId = 46 }));
 ```
 
 Each execution uses its own connection and values while sharing `GetAlbum`.
@@ -206,8 +204,7 @@ Rinku can also read the same command through a cached parser.
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
 
-List<GetAlbumsByArtistResult> albums =
-    Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+List<GetAlbumsByArtistResult> albums = Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
 See [generated commands](../codegen/generated-code.md).

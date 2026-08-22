@@ -34,10 +34,7 @@ QueryFactory.BaseHandlerMapper['D'] = _ => new SortDirectionHandler();
 Use Method Caller when an existing method should be exposed through another delegate signature.
 
 ```csharp
-Func<SaveAlbumArgs, CancellationToken, Task<int>> save =
-    MethodCaller.Create<Func<SaveAlbumArgs, CancellationToken, Task<int>>>(
-        method,
-        CallerParameter<CancellationToken>.ByType());
+Func<SaveAlbumArgs, CancellationToken, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, CancellationToken, Task<int>>>(method, CallerParameter<CancellationToken>.ByType());
 ```
 
 Use a complete result parser when the requested result type changes how rows are consumed.

@@ -24,24 +24,15 @@ This example supplies a string only when an application method accepts it.
 ```csharp
 static class SearchRules
 {
-    public static bool HasText(string? value) =>
-        !string.IsNullOrWhiteSpace(value);
+    public static bool HasText(string? value) => !string.IsNullOrWhiteSpace(value);
 }
 
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
 sealed class HasTextAttribute : AccessorEmitterHandler
 {
-    static readonly MethodConditionEmitter Emitter = new(
-        typeof(SearchRules).GetMethod(nameof(SearchRules.HasText))
-        ?? throw new InvalidOperationException("HasText was not found."));
+    static readonly MethodConditionEmitter Emitter = new(typeof(SearchRules).GetMethod(nameof(SearchRules.HasText)) ?? throw new InvalidOperationException("HasText was not found."));
 
-    public override IAccessorEmitter? GetMemberEmitter(
-        char variableCharacter,
-        int index,
-        Type type,
-        MemberInfo member,
-        Mapper mapper) =>
-        index < 0 ? null : Emitter;
+    public override IAccessorEmitter? GetMemberEmitter(char variableCharacter, int index, Type type, MemberInfo member, Mapper mapper) => index < 0 ? null : Emitter;
 }
 ```
 
@@ -56,8 +47,7 @@ public sealed class AlbumSearch
 ```
 
 ```csharp
-static readonly QueryCommand SearchAlbums = new(
-    "SELECT AlbumId AS Id, Title FROM albums WHERE Title = ?@title");
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE Title = ?@title");
 
 List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new AlbumSearch
 {
@@ -94,18 +84,12 @@ sealed class IncludeDeletedAttribute : AccessorEmitterHandler
 {
     static readonly IncludeDeletedEmitter Emitter = new();
 
-    public override ITypeAccessorEmitter? GetTypeEmitter(
-        char variableCharacter,
-        int index,
-        Type type,
-        Mapper mapper) =>
-        mapper.GetIndex("IncludeDeleted") == index ? Emitter : null;
+    public override ITypeAccessorEmitter? GetTypeEmitter(char variableCharacter, int index, Type type, Mapper mapper) => mapper.GetIndex("IncludeDeleted") == index ? Emitter : null;
 }
 
 sealed class IncludeDeletedEmitter : TypeAccessorEmitterBase
 {
-    protected override void EmitCondition(ILGenerator il, Type type) =>
-        il.Emit(OpCodes.Ldc_I4_1);
+    protected override void EmitCondition(ILGenerator il, Type type) => il.Emit(OpCodes.Ldc_I4_1);
 
     protected override void EmitValue(ILGenerator il, Type type)
     {

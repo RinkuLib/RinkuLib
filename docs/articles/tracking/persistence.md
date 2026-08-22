@@ -7,8 +7,7 @@ Confirm a tracked operation only after the matching persistence operation succee
 ## Save one edited item
 
 ```csharp
-static readonly QueryCommand UpdateAlbum = new(
-    "UPDATE albums SET Title = @Title WHERE AlbumId = @Id");
+static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @Title WHERE AlbumId = @Id");
 
 IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 

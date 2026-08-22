@@ -90,8 +90,7 @@ bool missing = search.Use("@Unknown", 1);
 A builder bound to a live command keeps defaults explicit.
 
 ```csharp
-QueryCommand renumberAlbums =
-    QueryCommand.FromProc("RenumberAlbums", setupConnection);
+QueryCommand renumberAlbums = QueryCommand.FromProc("RenumberAlbums", setupConnection);
 
 using DbCommand command = cnn.CreateCommand();
 var call = renumberAlbums.StartBuilder(command);

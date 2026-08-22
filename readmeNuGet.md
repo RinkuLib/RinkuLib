@@ -9,12 +9,9 @@ using Rinku;
 
 public record Album(int Id, string Title) : IDbReadable;
 
-static readonly QueryCommand GetAlbums = new(
-    "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
-List<Album> albums = GetAlbums.Query<List<Album>>(
-    cnn,
-    new { artistId = 7 });
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
 ## Result shapes
@@ -31,12 +28,9 @@ The requested type selects result count behavior and buffering.
 ## Conditional SQL
 
 ```csharp
-static readonly QueryCommand SearchAlbums = new(
-    "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title");
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title");
 
-List<Album> albums = SearchAlbums.Query<List<Album>>(
-    cnn,
-    new { artistId = 7 });
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
 Without `title` the second condition is removed.
@@ -51,8 +45,7 @@ SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 public record Artist(int Id, string Name) : IDbReadable;
 public record AlbumWithArtist(int Id, string Title, Artist Artist);
 
-static readonly QueryCommand GetAlbums = new(
-    "SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
+static readonly QueryCommand GetAlbums = new("SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
 
 List<AlbumWithArtist> albums = GetAlbums.Query<List<AlbumWithArtist>>(cnn);
 ```
@@ -64,8 +57,7 @@ Rinku Power Tools can generate typed `DbCommand` methods from configured SQL, SQ
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
 
-List<GetAlbumsByArtistResult> albums =
-    Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+List<GetAlbumsByArtistResult> albums = Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
 ## Analyzers and code fixes
@@ -85,9 +77,7 @@ No separate analyzer package or PowerTools installation is required. See [analyz
 ## Async
 
 ```csharp
-List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(
-    cnn,
-    ct: cancellationToken);
+List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);
 ```
 
 See the full [Rinku documentation](https://rinkulib.github.io/RinkuLib/articles/index.html) for queries, mapping, conditional SQL, customization, code generation, analyzers, tracking, errors, and the Dapper comparison.

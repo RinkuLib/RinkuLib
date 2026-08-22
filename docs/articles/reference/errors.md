@@ -266,9 +266,7 @@ A multi row value has no usable boundary separating one complete `Report` from t
 ### RINKU3003 group key matched no column
 
 ```csharp
-throw new RinkuConfigurationException(
-    ErrorCodes.GroupKeyUnmapped,
-    "the required AccountId key matched no column");
+throw new RinkuConfigurationException(ErrorCodes.GroupKeyUnmapped, "the required AccountId key matched no column");
 ```
 
 A grouping rule raises this when its key is mandatory and the schema cannot supply it. A rule that wants Rinku to try the next grouping option returns `null` instead.

@@ -43,11 +43,7 @@ Use the exact constructor or factory reflected from the real type.
 A non public constructor or external factory can be added during setup.
 
 ```csharp
-ConstructorInfo constructor = typeof(Album).GetConstructor(
-    BindingFlags.Instance | BindingFlags.NonPublic,
-    binder: null,
-    [typeof(int), typeof(string)],
-    modifiers: null)!;
+ConstructorInfo constructor = typeof(Album).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, binder: null, [typeof(int), typeof(string)], modifiers: null)!;
 
 TypeParsingInfo.GetOrAdd<Album>().AddPossibleConstruction(constructor);
 ```

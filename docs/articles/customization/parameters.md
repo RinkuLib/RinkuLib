@@ -9,19 +9,16 @@ public readonly record struct Names(IReadOnlyList<string> Items);
 
 sealed class NamesParamInfo : ConvertedDbParamInfo<Names>
 {
-    protected override object ConvertValue(Names value) =>
-        string.Join(',', value.Items);
+    protected override object ConvertValue(Names value) => string.Join(',', value.Items);
 
-    protected override void ConfigureParameter(IDbDataParameter parameter) =>
-        parameter.DbType = DbType.String;
+    protected override void ConfigureParameter(IDbDataParameter parameter) => parameter.DbType = DbType.String;
 }
 ```
 
 Attach the strategy to the command once.
 
 ```csharp
-static readonly QueryCommand SaveSearch = new(
-    "INSERT INTO saved_searches (Names) VALUES (@names)");
+static readonly QueryCommand SaveSearch = new("INSERT INTO saved_searches (Names) VALUES (@names)");
 
 SaveSearch.UpdateParamCache("@names", new NamesParamInfo());
 ```
@@ -128,9 +125,7 @@ A provider can add an `IDbParamInfoGetter` when Rinku cannot read its parameter 
 Register the getter maker during application startup.
 
 ```csharp
-static bool MakeGetter(
-    IDbCommand command,
-    out IDbParamInfoGetter getter)
+static bool MakeGetter(IDbCommand command, out IDbParamInfoGetter getter)
 {
     getter = null!;
     return false;
