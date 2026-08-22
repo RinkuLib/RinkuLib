@@ -32,7 +32,7 @@ When several paths are usable, the configured path order decides which one wins.
 Use the type registration during setup when another constructor should be registered explicitly.
 
 ```csharp
-ConstructorInfo constructor = typeof(Album).GetConstructor([typeof(int), typeof(string)])!;
+ConstructorInfo constructor = typeof(Album).GetConstructor([typeof(int), typeof(string)]) ?? throw new InvalidOperationException("Album constructor was not found.");
 TypeParsingInfo.GetOrAdd<Album>().AddPossibleConstruction(constructor);
 ```
 
@@ -43,7 +43,7 @@ Use the exact constructor or factory reflected from the real type.
 A non public constructor or external factory can be added during setup.
 
 ```csharp
-ConstructorInfo constructor = typeof(Album).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, binder: null, [typeof(int), typeof(string)], modifiers: null)!;
+ConstructorInfo constructor = typeof(Album).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, binder: null, [typeof(int), typeof(string)], modifiers: null) ?? throw new InvalidOperationException("Album constructor was not found.");
 
 TypeParsingInfo.GetOrAdd<Album>().AddPossibleConstruction(constructor);
 ```

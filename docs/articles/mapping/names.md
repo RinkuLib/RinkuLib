@@ -11,18 +11,17 @@ Customer customer = GetCustomer.Query<Customer>(cnn);
 
 ## Adapt the SQL
 
-Alias the columns when application code owns the SQL.
+Alias columns when SQL is the cleanest place to express the result shape.
 
 ```sql
-SELECT customer_id AS Id, display_name AS Name
-FROM customers
+SELECT customer_id AS Id, display_name AS Name FROM customers
 ```
 
 This keeps the C# type unchanged.
 
-## Accept another name in C#
+## Adapt the .NET side
 
-Use `[Alt]` when the SQL cannot change.
+Use `[Alt]` when the returned database names should stay unchanged.
 
 ```csharp
 public record Customer([Alt("customer_id")] int Id, [Alt("display_name")] string Name);
@@ -49,9 +48,8 @@ An alternate name inside the nested type still keeps the outer prefix.
 
 ```csharp
 public record Address([Alt("Postal")] int Zip, string City) : IDbReadable;
+// HomeZip and HomePostal can both fill Zip.
 ```
-
-Both `HomeZip` and `HomePostal` can fill `Zip`.
 
 ## Skip prefix parts
 
@@ -61,9 +59,10 @@ Use `[AltSkippingSegments]` when an alternate name should remove a fixed number 
 public record Inner([AltSkippingSegments("Code", 2)] int Code) : IDbReadable;
 public record Middle(Inner Sub) : IDbReadable;
 public record Outer(int Id, Middle Mid);
-```
 
-`MidSubCode` is the normal full name. `MidCode` is the alternate name.
+// MidSubCode is the normal full name.
+// MidCode is the alternate name.
+```
 
 Use `[AltUpTo]` when the alternate path should remove segments through a named part.
 
@@ -80,7 +79,7 @@ Use `[NoName]` when the next compatible column can fill the slot without a name 
 public readonly record struct Boxed<T>([NoName] T Value);
 ```
 
-## Configure alternate names during setup
+## Keep the rule outside both sides
 
 ```csharp
 TypeParsingInfo.GetOrAdd<Customer>().UpdateAltName(names =>
@@ -92,6 +91,12 @@ TypeParsingInfo.GetOrAdd<Customer>().UpdateAltName(names =>
     });
 ```
 
-Use this when neither SQL nor model attributes should carry the database naming rule.
+Use setup registration when neither SQL nor model attributes should carry the database naming rule.
 
-See [advanced type registration](../customization/type-registration.md) for application wide mapping configuration.
+```csharp
+// SQL keeps customer_id/display_name.
+// Customer keeps Id/Name.
+// Rinku owns only the translation between them.
+```
+
+See [advanced type registration](../customization/type-registration.md).

@@ -26,10 +26,6 @@ static readonly QueryCommand GetTags = new("SELECT TagId AS Id, Name FROM tags O
 HashSet<Tag> tags = GetTags.Query<HashSet<Tag>>(cnn);
 ```
 
-```sql
-SELECT TagId AS Id, Name FROM tags ORDER BY TagId
-```
-
 With no rows, the seed creates an empty set.
 
 ```csharp
@@ -66,9 +62,9 @@ public readonly record struct Average(double Mean, int Count);
 Register the seed, add method, and final converter.
 
 ```csharp
-ConstructorInfo seed = typeof(Averager).GetConstructor(Type.EmptyTypes)!;
-MethodInfo add = typeof(Averager).GetMethod(nameof(Averager.Add))!;
-MethodInfo finish = typeof(Averager).GetMethod(nameof(Averager.Finish))!;
+ConstructorInfo seed = typeof(Averager).GetConstructor(Type.EmptyTypes) ?? throw new InvalidOperationException("Averager constructor was not found.");
+MethodInfo add = typeof(Averager).GetMethod(nameof(Averager.Add)) ?? throw new InvalidOperationException("Averager.Add was not found.");
+MethodInfo finish = typeof(Averager).GetMethod(nameof(Averager.Finish)) ?? throw new InvalidOperationException("Averager.Finish was not found.");
 
 TypeParsingInfo.AddOrSet(typeof(Average), new MultiRowTypeParsingInfo(seed, add, finish));
 ```

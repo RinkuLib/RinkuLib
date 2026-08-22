@@ -33,10 +33,6 @@ Save
 Generated file is refreshed
 ```
 
-<!-- SCREENSHOT PLACEHOLDER
-Insert the Solution Explorer context menu for a selected rinkupt file here.
-Show Configure and Refresh.
--->
 
 ## Refresh from the project
 
@@ -62,10 +58,6 @@ Each configuration is loaded and generated separately.
 
 Refresh one configuration from its selected `rinkupt` file context menu instead of adding per configuration project commands.
 
-<!-- SCREENSHOT PLACEHOLDER
-Insert the project context menu here.
-Show the Rinku Power Tools submenu with Configure and Refresh all.
--->
 
 ## Generation failures
 

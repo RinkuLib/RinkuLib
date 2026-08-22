@@ -4,10 +4,6 @@ Open the configuration and add a query. Each entry produces one generated comman
 
 The available command sources and parameter type suggestions follow the configuration database. SQL Server and PostgreSQL offer stored procedures. SQLite offers SQL queries and SQL files.
 
-<!-- SCREENSHOT PLACEHOLDER
-Insert the query manager here.
-Show Method Name, Command Type, Raw SQL Query, Result Set Name, Parameter Corrections, and Add Parameter Override.
--->
 
 ## SQL text
 

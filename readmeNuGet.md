@@ -1,8 +1,6 @@
-# Rinku
+# RinkuLib
 
-Rinku maps database results into the type requested by the caller while keeping SQL in application code.
-
-## First query
+Rinku is a micro ORM for .NET built directly on ADO.NET. SQL stays explicit instead of being generated from an object model. Mapping and configuration adapt between database shapes and .NET shapes so neither side has to be designed around the mapper.
 
 ```csharp
 using Rinku;
@@ -14,6 +12,26 @@ static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM a
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
+## Adapt either side
+
+```sql
+SELECT customer_id AS Id, display_name AS Name FROM customers
+```
+
+Or leave both SQL and the model unchanged and register the boundary rule.
+
+```csharp
+TypeParsingInfo.GetOrAdd<Customer>().UpdateAltName(names =>
+    names.GetDefaultName() switch
+    {
+        "Id" => new NameComparer("customer_id"),
+        "Name" => new NameComparer("display_name"),
+        _ => null
+    });
+```
+
+See [adapt names](https://rinkulib.github.io/RinkuLib/articles/mapping/names.html).
+
 ## Result shapes
 
 ```csharp
@@ -23,21 +41,19 @@ List<Album> all = GetAlbums.Query<List<Album>>(cnn);
 IEnumerable<Album> streamed = GetAlbums.Query<IEnumerable<Album>>(cnn);
 ```
 
-The requested type selects result count behavior and buffering.
+See [result shapes](https://rinkulib.github.io/RinkuLib/articles/running-queries/result-shapes.html).
 
 ## Conditional SQL
 
 ```csharp
-static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title");
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND Title LIKE ?@title");
 
 List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+// title is absent:
+// SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ```
 
-Without `title` the second condition is removed.
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
-```
+See [conditional SQL](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/variables.html).
 
 ## Nested mapping
 
@@ -45,14 +61,14 @@ SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 public record Artist(int Id, string Name) : IDbReadable;
 public record AlbumWithArtist(int Id, string Title, Artist Artist);
 
-static readonly QueryCommand GetAlbums = new("SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
+static readonly QueryCommand GetAlbumsWithArtist = new("SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId");
 
-List<AlbumWithArtist> albums = GetAlbums.Query<List<AlbumWithArtist>>(cnn);
+List<AlbumWithArtist> albums = GetAlbumsWithArtist.Query<List<AlbumWithArtist>>(cnn);
 ```
 
-## Code generation
+See [nested objects](https://rinkulib.github.io/RinkuLib/articles/mapping/nesting.html), [collections](https://rinkulib.github.io/RinkuLib/articles/mapping/collections.html), and [grouping](https://rinkulib.github.io/RinkuLib/articles/mapping/grouping.html).
 
-Rinku Power Tools can generate typed `DbCommand` methods from configured SQL, SQL files, and stored procedures.
+## Code generation
 
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
@@ -60,19 +76,25 @@ static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
 List<GetAlbumsByArtistResult> albums = Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
-## Analyzers and code fixes
+See [code generation](https://rinkulib.github.io/RinkuLib/articles/codegen/index.html) and [analyzers](https://rinkulib.github.io/RinkuLib/articles/codegen/analyzers.html).
 
-The `Rinku` package includes analyzers and code fixes. They can track reviewed schemas with `BasedOn`, require constructor shapes with `MatchConstructor`, generate missing constructors, and complete method invocations.
+## Tracking
 
 ```csharp
-/// <Schema LastUpdated="2026-08-21T14:00Z" />
-public record AlbumSchema(int Id, string Title);
+Album original = new(12, "Blue");
+IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 
-/// <BasedOn cref="AlbumSchema" LastUpdated="2026-08-21T14:00Z" />
-public record AlbumDto(int Id, string Title);
+edit.Set(nameof(Album.Title), "Kind of Blue");
+
+foreach (TrackingChange change in edit.GetChanges())
+{
+    // Computed from accepted value + current edit state.
+    // No separate per-member mutation history is stored.
+    Console.WriteLine($"{change.Name} {change.OriginalValue} -> {change.Value}");
+}
 ```
 
-No separate analyzer package or PowerTools installation is required. See [analyzers and code fixes](https://rinkulib.github.io/RinkuLib/articles/codegen/analyzers.html).
+See [tracking](https://rinkulib.github.io/RinkuLib/articles/tracking/index.html).
 
 ## Async
 
@@ -80,4 +102,4 @@ No separate analyzer package or PowerTools installation is required. See [analyz
 List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);
 ```
 
-See the full [Rinku documentation](https://rinkulib.github.io/RinkuLib/articles/index.html) for queries, mapping, conditional SQL, customization, code generation, analyzers, tracking, errors, and the Dapper comparison.
+See the full [Rinku documentation](https://rinkulib.github.io/RinkuLib/articles/index.html).

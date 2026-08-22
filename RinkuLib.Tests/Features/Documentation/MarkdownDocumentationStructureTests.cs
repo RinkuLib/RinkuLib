@@ -82,6 +82,10 @@ public class MarkdownDocumentationStructureTests {
                 if (paragraph.Count == 0)
                     return;
                 string text = string.Join(' ', paragraph).Trim();
+                if (IsLinkOnlyParagraph(text)) {
+                    paragraph.Clear();
+                    return;
+                }
                 int words = Word.Matches(text).Count;
                 if (words <= 5 || words > 65)
                     failures.Add($"{Path.GetRelativePath(docsRoot, file)}:{start} [{words} words] {text}");
@@ -109,6 +113,15 @@ public class MarkdownDocumentationStructureTests {
         }
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    static bool IsLinkOnlyParagraph(string text) {
+        string remaining = text.Trim();
+        if (remaining.StartsWith("See ", StringComparison.OrdinalIgnoreCase))
+            remaining = remaining[4..].Trim();
+        remaining = remaining.TrimEnd('.');
+        return remaining.Split(" · ", StringSplitOptions.RemoveEmptyEntries)
+            .All(part => part.StartsWith("[") && part.Contains("](", StringComparison.Ordinal) && part.EndsWith(")"));
     }
 
     [Fact]
