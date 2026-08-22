@@ -1,50 +1,88 @@
 # Validation and metadata
 
-Validation and metadata are optional generated capabilities. `TrackingList<T>` does not know they exist.
-
-## Validation
-
-Context-free and contextual validation use separate interfaces.
+Validation can be added to a generated edit contract during runtime tracking configuration.
 
 ```csharp
-using Rinku.Tracking;
-
-static bool IsValid(IValidatable item) => item.Validate();
-static bool IsValidForSave<TContext>(IValidatable<TContext> item, TContext context) => item.Validate(context);
-```
-
-Asynchronous variants return `ValueTask<bool>` and accept a cancellation token.
-
-```csharp
-static ValueTask<bool> IsValidAsync(IAsyncValidatable item, CancellationToken cancellationToken) =>
-    item.ValidateAsync(cancellationToken);
-```
-
-Runtime options attach handlers and the required interface to the same generated type.
-
-```csharp
-using Rinku.Tracking.Runtime;
-
-public sealed class Album { public string? Title { get; set; } }
-public interface IAlbumEdit { string? Title { get; set; } }
+public interface IAlbumEdit : IRuntimeTrackingItem<Album>
+{
+    string Title { get; set; }
+}
 
 RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album, IAlbumEdit>();
-options.Validate<Album, IAlbumEdit>(static edit => !string.IsNullOrWhiteSpace(edit.Title));
 
-IAlbumEdit edit = options.GetRegistration<IAlbumEdit>().Create(new Album { Title = "Blue" });
+options.Validate<Album, IAlbumEdit>(
+    static edit => !string.IsNullOrWhiteSpace(edit.Title));
+
+IAlbumEdit edit = options.GetRegistration<IAlbumEdit>().Create(original);
 bool valid = ((IValidatable)edit).Validate();
 ```
 
-## Metadata
+The validation handler receives the generated edit through the contract selected by the application.
 
-`IMetadataReader<TMetadata>` exposes metadata, `IMetadataWriter<TMetadata>` stores it, and `IMetadata<TMetadata>` combines both. Metadata is direct generated-object state and remains outside the edit/original lifecycle.
+## Pass caller context
+
+Use context validation when the rule needs a value supplied by the caller.
 
 ```csharp
-static void ReplaceErrors(IMetadata<string[]> metadata, string[] errors)
-{
-    metadata.SetMetadata(errors);
-    string[] current = metadata.Metadata;
-}
+options.Validate<Album, IAlbumEdit, HashSet<string>>(
+    static (edit, reservedTitles) => !reservedTitles.Contains(edit.Title));
+
+IValidatable<HashSet<string>> validatable =
+    (IValidatable<HashSet<string>>)edit;
+
+bool valid = validatable.Validate(reservedTitles);
 ```
 
-Use `options.Metadata<TOriginal, TMetadata>()` to add metadata capabilities to a generated type. Validation and metadata stay independent unless the selected consumer interface deliberately combines them.
+The context type belongs to the application.
+
+## Validate asynchronously
+
+```csharp
+options.ValidateAsync<Album, IAlbumEdit>(
+    static (edit, cancellationToken) =>
+        ValueTask.FromResult(!string.IsNullOrWhiteSpace(edit.Title)));
+
+IAsyncValidatable validatable = (IAsyncValidatable)edit;
+bool valid = await validatable.ValidateAsync(cancellationToken);
+```
+
+The asynchronous handler receives the caller cancellation token.
+
+## Validate asynchronously with context
+
+```csharp
+options.ValidateAsync<Album, IAlbumEdit, AlbumRules>(
+    static (edit, rules, cancellationToken) =>
+        rules.ValidateAsync(edit.Title, cancellationToken));
+
+IAsyncValidatable<AlbumRules> validatable =
+    (IAsyncValidatable<AlbumRules>)edit;
+
+bool valid = await validatable.ValidateAsync(rules, cancellationToken);
+```
+
+Use the context form when the validator needs application services or other caller data.
+
+## Add metadata
+
+Metadata can be configured independently from validation rules.
+
+```csharp
+RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album>();
+options.Metadata<Album, string[]>();
+
+IRuntimeTrackingItem<Album> edit =
+    options.GetRegistration<IRuntimeTrackingItem<Album>>().Create(original);
+
+((IMetadataWriter<string[]>)edit).SetMetadata(["Title is required"]);
+
+string[] messages = ((IMetadataReader<string[]>)edit).Metadata;
+```
+
+Choose reader and writer support separately when only one direction is needed.
+
+```csharp
+options.Metadata<Album, string[]>(reader: true, writer: false);
+```
+
+Metadata can hold validation messages, UI state, or any other application value. Tracking does not assign a meaning to the metadata type.

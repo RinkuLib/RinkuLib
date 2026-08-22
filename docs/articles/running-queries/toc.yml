@@ -1,8 +1,8 @@
-- name: Execute SQL
+- name: Execute and query SQL
   href: execution.md
 - name: Supplying values
   href: values.md
-- name: Build from application logic
+- name: Builders
   href: builders.md
 - name: Result shapes
   href: result-shapes.md
@@ -10,19 +10,21 @@
   href: async.md
 - name: Streaming
   href: streaming.md
-- name: Transactions, timeouts, and cancellation
+- name: Transactions timeouts and cancellation
   href: execution-context.md
 - name: Multiple result sets
   href: multiple-results.md
-- name: Raw readers
-  href: readers.md
-- name: Stored procedures and output values
+- name: Stored procedures
   href: stored-procedures.md
 - name: Existing DbCommand
   href: dbcommand.md
+- name: Fixed result schema
+  href: fixed-result-schema.md
+- name: Raw readers
+  href: readers.md
+- name: SQL string shortcuts
+  href: sql-string.md
 - name: IDbConnection support
   href: idbconnection.md
-- name: SQL-string shortcuts
-  href: sql-string.md
 - name: Parameter metadata
   href: parameter-metadata.md

@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.DataContracts;
 using System.Text.Json;
@@ -24,6 +24,12 @@ public class ConnectionSourceMetadata(ConnectionSourceType SourceType, string Di
     [DataMember] public string? ErrorMessage { get; } = ErrorMessage;
 }
 [DataContract]
+public sealed class DatabaseSelection(DatabaseType? Database, string DisplayName) {
+    [DataMember] public DatabaseType? Database { get; } = Database;
+    [DataMember] public string DisplayName { get; } = DisplayName;
+}
+
+[DataContract]
 public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     private readonly string _projectDirectory;
     private readonly VisualStudioExtensibility _extensibility;
@@ -34,6 +40,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     private string? _editExtractionPath;
     private string _editOutputPath = string.Empty;
     private string? _editNamespace;
+    private DatabaseType? _editDatabase;
     private bool _editIsInternal;
 
     private bool _hasNameError;
@@ -58,6 +65,12 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     #region Properties
 
     [DataMember] public List<DisplayItem<ConnectionSourceMetadata>> AvailableSources { get; } = [..Sources.Select(s => new DisplayItem<ConnectionSourceMetadata>(s, s.DisplayName))];
+    [DataMember] public List<DatabaseSelection> AvailableDatabases { get; } = [
+        new(null, "Auto detect"),
+        new(DatabaseType.SqlServer, "SQL Server"),
+        new(DatabaseType.PostgreSql, "PostgreSQL"),
+        new(DatabaseType.Sqlite, "SQLite")
+    ];
 
     public readonly static ConnectionSourceMetadata[] Sources = [
         new(ConnectionSourceType.RawConnectionString, "Raw Connection String", "Connection String", null, false),
@@ -93,6 +106,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     [DataMember] public string? EditExtractionPath { get => _editExtractionPath; set { if (SetProperty(ref _editExtractionPath, value)) RunValidation(); } }
     [DataMember] public string EditOutputPath { get => _editOutputPath; set { if (SetProperty(ref _editOutputPath, value)) RunValidation(); } }
     [DataMember] public string? EditNamespace { get => _editNamespace; set { if (SetProperty(ref _editNamespace, value)) RunValidation(); } }
+    [DataMember] public DatabaseType? EditDatabase { get => _editDatabase; set { if (SetProperty(ref _editDatabase, value)) RunValidation(); } }
     [DataMember] public bool EditIsInternal { get => _editIsInternal; set { if (SetProperty(ref _editIsInternal, value)) RunValidation(); } }
 
     [DataMember] public string? NameError => _hasNameError ? "Name must be unique and a valid C# identifier." : null;
@@ -140,6 +154,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
             EditExtractionPath = null;
             EditOutputPath = string.Empty;
             EditNamespace = null;
+            EditDatabase = null;
             EditIsInternal = false;
         }
         else {
@@ -149,6 +164,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
             SelectedSource = AvailableSources.FirstOrDefault(s => s.Value.SourceType == item.ConnectionSourceType).Value ?? AvailableSources[0].Value;
             EditOutputPath = item.OutputPath;
             EditNamespace = item.Namespace;
+            EditDatabase = item.Database;
             EditIsInternal = item.IsInternal;
         }
         RunValidation();
@@ -160,12 +176,14 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
                 || !string.IsNullOrWhiteSpace(EditExtractionPath)
                 || !string.IsNullOrWhiteSpace(EditTarget)
                 || !string.IsNullOrWhiteSpace(EditOutputPath)
-                || !string.IsNullOrWhiteSpace(EditNamespace);
+                || !string.IsNullOrWhiteSpace(EditNamespace)
+                || EditDatabase is not null;
         return item.ConnectionSourceType != (SelectedSource?.SourceType ?? 0)
             || item.ConnectionTarget != EditTarget
             || item.ConnectionExtractionPath != EditExtractionPath
             || item.OutputPath != EditOutputPath
             || item.Namespace != EditNamespace
+            || item.Database != EditDatabase
             || item.IsInternal != EditIsInternal;
     }
 
@@ -184,6 +202,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
         item.ConnectionExtractionPath = EditExtractionPath;
         item.OutputPath = EditOutputPath;
         item.Namespace = string.IsNullOrWhiteSpace(EditNamespace) ? null : EditNamespace;
+        item.Database = EditDatabase;
         item.IsInternal = EditIsInternal;
 
         await WriteFileAsync(item, ct);
@@ -226,6 +245,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
 
                 _items.Add(new ConfigFile {
                     FilePath = file,
+                    Database = DatabaseProviders.TryParseType(node[nameof(ExtensionSettings.Database)]?.ToString(), out DatabaseType database) ? database : null,
                     ConnectionSourceType = detectedType ?? ConnectionSourceType.RawConnectionString,
                     ConnectionTarget = detectedTarget ?? string.Empty,
                     ConnectionExtractionPath = node[nameof(ExtensionSettings.ConnectionExtractionPath)]?.ToString(),
@@ -263,6 +283,11 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
             json.Remove(sourceType);
 
         json[file.ConnectionSourceType.ToString()] = file.ConnectionTarget;
+
+        if (file.Database is { } database)
+            json[nameof(ExtensionSettings.Database)] = database.ToString();
+        else
+            json.Remove(nameof(ExtensionSettings.Database));
 
         json[nameof(ExtensionSettings.ConnectionExtractionPath)] = file.ConnectionExtractionPath;
         json[nameof(ExtensionSettings.OutputPath)] = file.OutputPath;
@@ -335,6 +360,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
 
         try {
             var settings = new ExtensionSettings {
+                Database = EditDatabase,
                 ConnectionSourceType = SelectedSource.SourceType,
                 ConnectionTarget = EditTarget,
                 ConnectionExtractionPath = EditExtractionPath,

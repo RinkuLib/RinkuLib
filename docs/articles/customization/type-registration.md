@@ -1,51 +1,78 @@
-# Type registrations and defaults
+# Type registrations
 
-## Register a positional wrapper
+A type registration changes how a type is mapped wherever that registration is used.
 
-`CtorTypeInfo` maps constructor parameters sequentially, like the built-in tuples.
+Use normal object mapping first. Register a custom rule when the type needs a different mapping behavior.
+
+## Positional wrapper
+
+`CtorTypeInfo` maps constructor values in column order.
 
 ```csharp
 public readonly record struct PositionalValue<T>(T Value);
 
-TypeParsingInfo.AddOrSet(typeof(PositionalValue<>), CtorTypeInfo.Instance);
+TypeParsingInfo.AddOrSet(
+    typeof(PositionalValue<>),
+    CtorTypeInfo.Instance);
 ```
+
+The wrapper can then be used as a result type.
 
 ```csharp
-PositionalValue<int> value = GetValue.Query<PositionalValue<int>>(cnn);
+static readonly QueryCommand CountAlbums = new(
+    "SELECT COUNT(*) FROM albums");
+
+PositionalValue<int> value =
+    CountAlbums.Query<PositionalValue<int>>(cnn);
 ```
 
-```sql
-SELECT COUNT(*) FROM albums
-```
+Use `[NoName]` or normal mapping attributes instead when a type can describe its own mapping without a global registration.
 
-Use the [attribute-only wrapper](../mapping/registration.md#generic-wrappers) when normal name-based mapping is enough.
+## Custom scalar mapping
 
-## Register custom scalar reading
-
-A `ScalarTypeParsingInfo<T>` can accept a provider value and create an application value at the root or inside another mapped object.
+A `ScalarTypeParsingInfo<T>` can convert a provider scalar into an application type at the root or inside another object.
 
 ```csharp
 public readonly record struct LocalDate(DateTime Value);
 
-sealed class LocalDateTypeParsingInfo : ScalarTypeParsingInfo<LocalDate> {
-    static readonly MethodInfo ConvertMethod = typeof(LocalDateTypeParsingInfo).GetMethod(nameof(Convert), BindingFlags.Static | BindingFlags.NonPublic) ?? throw new InvalidOperationException("Convert was not found.");
+sealed class LocalDateTypeParsingInfo : ScalarTypeParsingInfo<LocalDate>
+{
+    static readonly MethodInfo ConvertMethod = typeof(LocalDateTypeParsingInfo)
+        .GetMethod(nameof(Convert), BindingFlags.Static | BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException("Convert was not found.");
 
-    protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo slot, ColumnInfo column, int ordinal) {
+    protected override DbItemPlan? TryCreatePlan(
+        Type targetType,
+        Type parentType,
+        ParamInfo slot,
+        ColumnInfo column,
+        int ordinal)
+    {
         if (column.Type != typeof(DateTime))
             return null;
 
         ITypeConverter converter = new MethodCallConverter(ConvertMethod);
+
         if (Nullable.GetUnderlyingType(targetType) is not null)
             converter = new NullableWrapperConverter(converter);
 
-        return new ConvertedScalarPlan(parentType, converter, slot.NameComparer.GetDefaultName(), slot.NullColHandler, ordinal);
+        return new ConvertedScalarPlan(
+            parentType,
+            converter,
+            slot.NameComparer.GetDefaultName(),
+            slot.NullColHandler,
+            ordinal);
     }
 
     static LocalDate Convert(DateTime value) => new(value);
 }
 
-TypeParsingInfo.AddOrSet(typeof(LocalDate), new LocalDateTypeParsingInfo());
+TypeParsingInfo.AddOrSet(
+    typeof(LocalDate),
+    new LocalDateTypeParsingInfo());
 ```
+
+After registration the type can be used normally.
 
 ```csharp
 public record Event(int Id, LocalDate Date);
@@ -57,151 +84,52 @@ Event item = GetEvent.Query<Event>(cnn);
 SELECT EventId AS Id, EventDate AS Date FROM events
 ```
 
-## Prefer an exact closed registration
+The custom parser accepts `DateTime` columns and converts them into `LocalDate`.
 
-An exact closed registration wins over an open generic registration.
+## Open and closed registrations
+
+An exact closed registration has priority over an open generic registration.
 
 ```csharp
 public readonly record struct Result<T>(T Value);
 
-TypeParsingInfo open = TypeParsingInfo.GetOrAdd(typeof(Result<>));
+TypeParsingInfo.GetOrAdd(typeof(Result<>));
 
-TypeParsingInfo integers = TypeParsingInfo.GetOrAdd<Result<int>>(saveAsGenericDefinitionWhenGeneric: false);
+TypeParsingInfo.GetOrAdd<Result<int>>(
+    saveAsGenericDefinitionWhenGeneric: false);
 ```
 
-```text
-Result<string> -> open Result<> registration
-Result<int>    -> exact Result<int> registration
-```
+`Result<int>` uses its exact registration. Other closed `Result<T>` types can use the open registration.
 
-## Configure registrations created afterward
+## Application defaults
 
-The initializers are global. Set them during application startup before any queries or parser creation.
-
-### Configure an Id default
-
-An application can use the parameter and type initializers together when every parameter named `Id` should abort on NULL and types without a rule should try an `Id` key.
+Registration initializers can modify mappings created later.
 
 ```csharp
-IGroupingRule idRule = new EqualityGroupingRule("Id");
+TypeParsingInfo.RegistrationInitializer =
+    static (type, generated) => generated;
 
-ParamInfo.RegistrationInitializer = static slot => {
-    if (slot.NameComparer.Contains("Id"))
-        slot.SetAbortOnNull(true);
+MethodCtorInfo.RegistrationInitializer =
+    static path => path;
 
-    return slot;
-};
-
-TypeParsingInfo.RegistrationInitializer = (_, info) => {
-    if (info is ICanUpdateGroupKey grouping && grouping.GroupKey is null)
-        grouping.GroupKey = idRule;
-
-    return info;
-};
+ParamInfo.RegistrationInitializer =
+    static slot => slot;
 ```
 
-This rule instance belongs to the application. Rinku does not define an `Id` convention or special `Id` null behavior. Both are created here by the application delegates.
+Configure these delegates during application startup before queries or parsers are created.
 
-The equality rule checks the returned schema and returns no boundary when `Id` is absent.
-
-The null check leaves an already assigned type rule unchanged. Types without one receive the application default. Type attributes are discovered later when no rule was assigned. `SetAbortOnNull` keeps the slot's current null behavior.
-
-Rinku tries construction rules, type rules, and inferred grouping in order. A returned boundary or an exception stops the chain.
-
-The first callback sees slots created through `ParamInfo.Create`. The second sees every generated type mapping before publication. Explicit registrations and directly constructed slots bypass the corresponding callback.
-
-## Know when the type initializer runs
-
-A mapping generated for publication passes through the initializer.
-
-```csharp
-TypeParsingInfo created = TypeParsingInfo.GetOrAdd(typeof(Invoice));
-// Rinku generates the Invoice mapping, then RegistrationInitializer runs.
-```
-
-When the caller supplies a registration, the initializer is bypassed.
-
-```csharp
-TypeParsingInfo supplied = CtorTypeInfo.Instance;
-
-TypeParsingInfo first = TypeParsingInfo.GetOrAdd(typeof(Invoice), supplied);
-
-TypeParsingInfo.AddOrSet(typeof(Invoice), supplied);
-// RegistrationInitializer does not run for either call.
-```
-
-Returning an existing registration also invokes nothing.
-
-```csharp
-TypeParsingInfo existing = TypeParsingInfo.GetOrAdd(typeof(Invoice));
-```
-
-`ForceGet(...)` passes a newly created default registration through the initializer too.
-
-Configure initializers before concurrent query use. During concurrent first use, Rinku may generate and initialize more than one candidate, but only the registration that wins publication is kept.
-
-## Open registrations are reused directly
-
-Using a closed type through an existing open registration does not store another closed `TypeParsingInfo`.
-
-```csharp
-public readonly record struct Box<T>(T Value);
-
-TypeParsingInfo.GetOrAdd(typeof(Box<>));
-// RegistrationInitializer runs when Box<> is created.
-
-Box<int> number = GetNumber.Query<Box<int>>(cnn);
-Box<string> text = GetText.Query<Box<string>>(cnn);
-// No Box<int> or Box<string> TypeParsingInfo registration is created.
-```
-
-The open registration receives the current closed type during parser construction.
-
-## Adapt every generated mapping
-
-Rinku creates default registrations. `TypeParsingInfo.RegistrationInitializer` can change each one before it is stored. The other initializers do the same for slots and construction paths.
-
-```csharp
-TypeParsingInfo.RegistrationInitializer = static (type, generated) => type == typeof(LocalDate) ? new LocalDateTypeParsingInfo() : generated;
-```
-
-Existing registrations remain unchanged. Explicit registrations still bypass the initializer.
-
-## Enable demand-driven registration
-
-`DefaultTypeParsingFlags.DirectTypesAreReadable` keeps a type's immediate construction parameters and writable members available even when their types have not been registered yet. During parsing, those direct types may be registered on demand.
-
-Apply the flag to every default object mapping in the type initializer.
-
-```csharp
-TypeParsingInfo.RegistrationInitializer = static (_, generated) => {
-    if (generated is DefaultTypeParsingInfo defaults)
-        defaults.Flags |= DefaultTypeParsingFlags.DirectTypesAreReadable;
-
-    return generated;
-};
-```
-
-This creates a demand-driven chain without a deep registration scan. A requested root gets a default mapping with the flag.
-
-When parsing needs one of its direct types, Rinku creates that mapping and runs the initializer again. The new mapping gets the same flag before its own direct types are considered.
-
-The initializer affects only mappings generated afterward. Existing registrations are unchanged, and registrations supplied explicitly still bypass the initializer. Configure it during application startup before queries or parser creation.
-
-`DefaultTypeParsingFlags.UsePrivateMembers` controls non-public discovery. `[UsePrivateMembers]` sets that flag from the mapped type. See [private path and member discovery](../mapping/construction-paths.md#discover-private-paths-and-members).
+They affect registrations created afterward. Existing registrations remain unchanged.
 
 ## Remove a registration
 
-Removing a registration affects only parsers created later.
+Remove a registration when later parsers should stop using it.
 
 ```csharp
-bool removed = TypeParsingInfo.TryRemove(typeof(LocalDate), out TypeParsingInfo? previous);
+bool removed = TypeParsingInfo.TryRemove(
+    typeof(LocalDate),
+    out TypeParsingInfo? previous);
 ```
 
-Parsers already cached from the removed registration keep working.
+Already cached parsers keep their current mapping until they are invalidated.
 
-```csharp
-TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences);
-```
-
-Invalidate the affected parsers when they must stop using the previous registration.
+See [Cache control](caches.md) when a registration is changed after queries already ran.

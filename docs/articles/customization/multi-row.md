@@ -1,25 +1,34 @@
-# Multi-row mappings
+# Custom multi row mappings
 
-`MultiRowTypeParsingInfo` builds an accumulator, adds one mapped value for each row, and optionally converts the accumulator to the requested type.
+`MultiRowTypeParsingInfo` registers a result type that accumulates one mapped value from each row.
 
-## Return the accumulator directly
-
-Register the seed and add operations as explicit `MethodBase` values.
+The example below adds `HashSet<T>` as another multi row result shape.
 
 ```csharp
-ConstructorInfo seed = typeof(HashSet<>).GetConstructor(Type.EmptyTypes) ?? throw new InvalidOperationException("HashSet constructor was not found.");
+ConstructorInfo seed =
+    typeof(HashSet<>).GetConstructor(Type.EmptyTypes)
+    ?? throw new InvalidOperationException("HashSet constructor was not found.");
 
-MethodInfo add = typeof(HashSet<>).GetMethod(nameof(HashSet<int>.Add)) ?? throw new InvalidOperationException("HashSet.Add was not found.");
+MethodInfo add =
+    typeof(HashSet<>).GetMethod(nameof(HashSet<int>.Add))
+    ?? throw new InvalidOperationException("HashSet.Add was not found.");
 
-TypeParsingInfo.AddOrSet(typeof(HashSet<>), new MultiRowTypeParsingInfo(seed, add, null));
+TypeParsingInfo.AddOrSet(
+    typeof(HashSet<>),
+    new MultiRowTypeParsingInfo(seed, add, null));
 ```
 
-The accumulator and requested type are both `HashSet<T>`, so a null converter returns the accumulator unchanged.
+The added value still needs normal mapping registration.
 
 ```csharp
 public record Tag(int Id, string Name) : IDbReadable;
+```
 
-static readonly QueryCommand GetTags = new("SELECT TagId AS Id, Name FROM tags ORDER BY TagId");
+The registered result type can then be requested directly.
+
+```csharp
+static readonly QueryCommand GetTags = new(
+    "SELECT TagId AS Id, Name FROM tags ORDER BY TagId");
 
 HashSet<Tag> tags = GetTags.Query<HashSet<Tag>>(cnn);
 ```
@@ -28,103 +37,55 @@ HashSet<Tag> tags = GetTags.Query<HashSet<Tag>>(cnn);
 SELECT TagId AS Id, Name FROM tags ORDER BY TagId
 ```
 
-With no rows, the seed still creates an empty set.
+With no rows, the seed creates an empty set.
 
 ```csharp
-static readonly QueryCommand FindTags = new("SELECT TagId AS Id, Name FROM tags WHERE TagId < 0");
+static readonly QueryCommand FindTags = new(
+    "SELECT TagId AS Id, Name FROM tags WHERE TagId < 0");
 
 HashSet<Tag> tags = FindTags.Query<HashSet<Tag>>(cnn);
-// tags is empty.
+// tags is empty
 ```
 
-The return value of the add method is ignored. `HashSet<T>.Add(T)` may therefore return `bool` while the set remains the accumulator.
+The return value from the add method is ignored. This allows methods such as `HashSet<T>.Add` to return `bool` while the collection remains the accumulator.
 
-## Convert another accumulator
+## Convert the accumulator
 
-The seed may build a type different from the requested result.
+The seed can create a different type when a final conversion is needed.
 
 ```csharp
-public sealed class Averager {
+public sealed class Averager
+{
     double sum;
     int count;
 
-    public void Add(double value) {
+    public void Add(double value)
+    {
         sum += value;
         count++;
     }
 
-    public Average Finish() => new(count == 0 ? 0 : sum / count, count);
+    public Average Finish() =>
+        new(count == 0 ? 0 : sum / count, count);
 }
 
 public readonly record struct Average(double Mean, int Count);
 ```
 
-Pass the accumulator constructor, its add method, and its converter explicitly.
+Register the seed, add method, and final converter.
 
 ```csharp
-ConstructorInfo seed = typeof(Averager).GetConstructor(Type.EmptyTypes) ?? throw new InvalidOperationException("Averager constructor was not found.");
+ConstructorInfo seed = typeof(Averager).GetConstructor(Type.EmptyTypes)!;
+MethodInfo add = typeof(Averager).GetMethod(nameof(Averager.Add))!;
+MethodInfo finish = typeof(Averager).GetMethod(nameof(Averager.Finish))!;
 
-MethodInfo add = typeof(Averager).GetMethod(nameof(Averager.Add)) ?? throw new InvalidOperationException("Averager.Add was not found.");
-
-MethodInfo converter = typeof(Averager).GetMethod(nameof(Averager.Finish)) ?? throw new InvalidOperationException("Averager.Finish was not found.");
-
-TypeParsingInfo.AddOrSet(typeof(Average), new MultiRowTypeParsingInfo(seed, add, converter));
+TypeParsingInfo.AddOrSet(
+    typeof(Average),
+    new MultiRowTypeParsingInfo(seed, add, finish));
 ```
 
 ```csharp
 Average average = GetScores.Query<Average>(cnn);
 ```
 
-```sql
-SELECT Score FROM reviews
-```
-
-```text
-10 | 20 | 30 -> Average(20, 3)
-no rows      -> Average(0, 0)
-```
-
-## Register the added value separately
-
-The add method's parameter type does not become readable automatically.
-
-```csharp
-public record Tag(int Id, string Name);
-
-HashSet<Tag> tags = GetTags.Query<HashSet<Tag>>(cnn);
-// RINKU3001: Tag has no registration.
-```
-
-Use any normal registration mechanism before the multi-row mapping needs that value.
-
-```csharp
-TypeParsingInfo.GetOrAdd<Tag>();
-
-HashSet<Tag> tags = GetTags.Query<HashSet<Tag>>(cnn);
-```
-
-The added type can instead register itself with the marker interface.
-
-```csharp
-public record Tag(int Id, string Name) : IDbReadable;
-```
-
-## Accumulate inside another object
-
-The same registration works when the multi-row value is nested.
-
-```csharp
-public record Album(int Id, string Title) : IDbReadable;
-public record Artist(int Id, string Name, HashSet<Album> Albums);
-
-static readonly QueryCommand GetArtists = new(
-    "SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumsId, al.Title AS AlbumsTitle FROM artists ar JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId");
-
-List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
-```
-
-```sql
-SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumsId, al.Title AS AlbumsTitle FROM artists ar JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId
-```
-
-Each `Artist` grouping boundary finishes its current `HashSet<Album>` and begins another. The [grouping guide](../mapping/grouping.md) covers inferred and explicit boundaries.
+A custom multi row type can also be nested inside another mapped object. Normal [grouping](../mapping/grouping.md) decides where one parent ends and the next begins.

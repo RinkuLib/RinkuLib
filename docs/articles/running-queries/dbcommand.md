@@ -1,223 +1,125 @@
 # Existing DbCommand
 
-Mapping also works with a command created by the application.
+Use `CachedTypeParser<T>` when the application already owns the command and wants to reuse the parsing work for one result type.
+
+The cache is normally kept beside the command factory.
 
 ```csharp
-static readonly CachedTypeParser<Album> AlbumParser = new();
+public record Album(int Id, string Title);
+public record AlbumSummary(int Id, string Title);
 
-using DbCommand command = cnn.CreateCommand();
-command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
+static readonly CachedTypeParser<Album> GetAlbumParser = new();
 
-DbParameter parameter = command.CreateParameter();
-parameter.ParameterName = "@albumId";
-parameter.Value = 12;
-command.Parameters.Add(parameter);
+public static class AlbumCommands
+{
+    public static DbCommand GetAlbum(DbConnection cnn, int albumId)
+    {
+        DbCommand command = cnn.CreateCommand();
+        command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
 
-Album album = AlbumParser.Query(command);
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = "@albumId";
+        parameter.Value = albumId;
+        command.Parameters.Add(parameter);
+
+        return command;
+    }
+}
+
+Album album = GetAlbumParser.Query(AlbumCommands.GetAlbum(cnn, 12));
 ```
 
-`CachedTypeParser<T>` remembers the parser selected from the first command schema and reuses it for later commands with that complete result shape. It stores reusable parser and schema information, not per-call parsing state, so one instance can be shared by concurrent calls. Use a separate cache for a different complete result shape.
+The cache keeps reusable parser and schema information. It does not keep per call parser state.
+
+The exact command factory is not an ownership requirement. Another command can use the same cache when it returns a compatible schema for `Album`.
+
+When one returned schema can be read as several result types, use the non generic `CachedTypeParser`.
 
 ```csharp
-using DbCommand firstCommand = cnn.CreateCommand();
-firstCommand.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 1";
+static readonly CachedTypeParser GetAlbumSchemaParser = new();
 
-using DbCommand secondCommand = cnn.CreateCommand();
-secondCommand.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 2";
-
-Album first = AlbumParser.Query(firstCommand);
-Album second = AlbumParser.Query(secondCommand);
+Album album = GetAlbumSchemaParser.Query<Album>(AlbumCommands.GetAlbum(cnn, 12));
+AlbumSummary summary = GetAlbumSchemaParser.Query<AlbumSummary>(AlbumCommands.GetAlbum(cnn, 12));
 ```
+
+The first query learns the schema. See [fixed result schema](fixed-result-schema.md) for explicit schemas and runtime result types.
+
+A command factory that returns several rows naturally gets its own matching cache.
 
 ```csharp
-static readonly CachedTypeParser<List<Album>> AlbumListParser = new();
+static readonly CachedTypeParser<List<Album>> GetAlbumsParser = new();
 
-List<Album> albums = AlbumListParser.Query(command);
+public static class AlbumListCommands
+{
+    public static DbCommand GetAlbums(DbConnection cnn, int artistId)
+    {
+        DbCommand command = cnn.CreateCommand();
+        command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId ORDER BY AlbumId";
+
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = "@artistId";
+        parameter.Value = artistId;
+        command.Parameters.Add(parameter);
+
+        return command;
+    }
+}
+
+List<Album> albums = GetAlbumsParser.Query(AlbumListCommands.GetAlbums(cnn, 12));
 ```
 
-## Execute commands
-
-Commands that do not need object mapping can execute directly.
+## Execute an existing command
 
 ```csharp
 using DbCommand updateCommand = cnn.CreateCommand();
 updateCommand.CommandText = "UPDATE albums SET Title = 'Blue' WHERE AlbumId = 1";
+
 int affected = updateCommand.Execute(disposeCommand: false);
 ```
 
-A value can be read through the normal result parser.
+A scalar value can use a long lived parser cache.
 
 ```csharp
+static readonly CachedTypeParser<int> CountAlbumsParser = new();
+
 using DbCommand countCommand = cnn.CreateCommand();
 countCommand.CommandText = "SELECT COUNT(*) FROM albums";
 
-using var countParser = new CachedTypeParser<int>();
-int count = countParser.Query(countCommand, disposeCommand: false);
+int count = CountAlbumsParser.Query(countCommand, disposeCommand: false);
 ```
 
-`ExecuteScalar<T>` reads the first value directly without creating a result parser.
+Or it can use `ExecuteScalar<T>`.
 
 ```csharp
-using DbCommand insertCommand = cnn.CreateCommand();
-insertCommand.CommandText = "INSERT INTO albums (Title, ArtistId) VALUES ('Blue', 7) RETURNING AlbumId";
-int albumId = insertCommand.ExecuteScalar<int>(disposeCommand: false);
+int count = countCommand.ExecuteScalar<int>(disposeCommand: false);
 ```
 
 ## Command ownership
 
-The command remains caller-owned by default.
+The command remains caller owned when `disposeCommand` is false.
 
 ```csharp
-Album album = AlbumParser.Query(command, disposeCommand: false);
-
-// command is still available here.
+Album album = GetAlbumParser.Query(command, disposeCommand: false);
+// command is still available.
 ```
 
-Set `disposeCommand` to `true` to transfer command disposal to the execution call.
+Pass true when the execution call should dispose it.
 
 ```csharp
-Album album = AlbumParser.Query(command, disposeCommand: true);
-
-// command has been disposed.
+Album album = GetAlbumParser.Query(command, disposeCommand: true);
 ```
 
-Do not wrap a command in `using` after transferring ownership unless the provider explicitly permits repeated disposal.
-
-Streams defer disposal until enumeration finishes.
+## Reuse one command with a builder
 
 ```csharp
-using var streamParser = new CachedTypeParser<IEnumerable<Album>>();
-IEnumerable<Album> albums = streamParser.Query(command, disposeCommand: true);
+using DbCommand command = cnn.CreateCommand();
+var batch = InsertAlbum.StartBuilder(command);
 
 foreach (Album album in albums)
-    Console.WriteLine(album.Title);
-
-// command is disposed when enumeration finishes.
-```
-
-Stopping early also disposes the enumerator and the owned command when the loop scope exits through normal `foreach` cleanup.
-
-## Connection state
-
-Connection restoration is independent from command ownership.
-
-```csharp
-using DbConnection cnn = new SqlConnection(connectionString); // closed
-using DbCommand command = cnn.CreateCommand();
-command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 1";
-
-Album album = AlbumParser.Query(command, disposeCommand: false);
-
-// cnn is closed again.
-// command remains caller-owned.
-```
-
-```csharp
-using DbConnection cnn = new SqlConnection(connectionString);
-cnn.Open();
-
-using DbCommand command = cnn.CreateCommand();
-command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 1";
-
-Album album = AlbumParser.Query(command, disposeCommand: false);
-
-// cnn remains open.
-```
-
-A command without a connection raises `RINKU2001`.
-
-```csharp
-using DbCommand command = CreateUnboundCommand();
-command.CommandText = "SELECT AlbumId AS Id, Title FROM albums";
-
-Album album = AlbumParser.Query(command);
-// RINKU2001
-```
-
-## Transactions, timeout, and parameters
-
-The application configures these directly on the command before execution.
-
-```csharp
-using DbCommand command = cnn.CreateCommand();
-command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
-command.Transaction = transaction;
-command.CommandTimeout = 30;
-
-DbParameter albumId = command.CreateParameter();
-albumId.ParameterName = "@albumId";
-albumId.Value = 1;
-command.Parameters.Add(albumId);
-
-Album album = AlbumParser.Query(command);
-```
-
-Rinku reads the command as configured. It does not replace its transaction, timeout, SQL, or parameters.
-
-## Output parameters
-
-Output and return values remain on the caller-owned command after execution.
-
-```csharp
-using DbCommand command = cnn.CreateCommand();
-command.CommandText = "RenumberAlbums";
-command.CommandType = CommandType.StoredProcedure;
-
-DbParameter albumId = command.CreateParameter();
-albumId.ParameterName = "@albumId";
-albumId.DbType = DbType.Int32;
-albumId.Value = 7;
-command.Parameters.Add(albumId);
-
-DbParameter movedParameter = command.CreateParameter();
-movedParameter.ParameterName = "@moved";
-movedParameter.DbType = DbType.Int32;
-movedParameter.Direction = ParameterDirection.Output;
-command.Parameters.Add(movedParameter);
-
-DbParameter returnParameter = command.CreateParameter();
-returnParameter.DbType = DbType.Int32;
-returnParameter.Direction = ParameterDirection.ReturnValue;
-command.Parameters.Add(returnParameter);
-
-command.Execute(disposeCommand: false);
-
-int moved = command.GetOutputValue<int>("@moved");
-int returnValue = command.GetReturnValue<int>();
-```
-
-For a stream, read output values only after the enumerator has been disposed.
-
-## Async and streaming
-
-Async queries and async streams follow the same ownership rules.
-
-```csharp
-Album album = await AlbumParser.QueryAsync(command, disposeCommand: false, ct: cancellationToken);
-```
-
-```csharp
-await foreach (Album album in AlbumParser.StreamQueryAsync(command, disposeCommand: false, ct: cancellationToken)) {
-    Console.WriteLine(album.Title);
+{
+    batch.UseWith(album);
+    batch.Execute();
 }
 ```
 
-`DbCommand` uses the provider's async methods. An `IDbCommand` that is not a `DbCommand` uses synchronous work through the async surface.
-
-## Invalidate or dispose a cache
-
-Invalidate a learned parser when the command schema or mapping configuration changes.
-
-```csharp
-bool removed = AlbumParser.Invalidate();
-```
-
-A cache with a limited lifetime should be disposed so it releases its parser reference.
-
-```csharp
-using var parser = new CachedTypeParser<Album>();
-
-Album album = parser.Query(command);
-```
-
-[Cache ownership](../customization/caches.md) covers learned schemas, global invalidation, and application-owned caches. [Custom result parsing](../customization/result-parsers.md) covers lower-level parsers.
+See [builders](builders.md) for mutable per execution values.

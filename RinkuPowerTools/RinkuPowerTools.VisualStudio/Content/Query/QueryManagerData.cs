@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.DataContracts;
@@ -17,20 +17,11 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
     private readonly string _projectDirectory;
     private readonly VisualStudioExtensibility _extensibility;
     private readonly ExtensionSettings _settings;
+    private readonly DatabaseProvider _databaseProvider;
 
     [DataMember] public List<DisplayItem<string>> StoredProcedureSuggestions { get; } = [];
-    [DataMember] public List<DisplayItem<QuerySourceType>> TargetTypeValues { get; } = [
-        new(QuerySourceType.Text, "SQL Query"),
-        new(QuerySourceType.StoredProcedure, "Stored procedure"),
-        new(QuerySourceType.FromFile, "SQL File")
-        ];
-    [DataMember] public List<string> ParameterTypeSuggestions { get; } = [
-            "bigint", "binary", "bit", "char", "date", "datetime", "datetime2",
-            "decimal", "float", "image", "int", "money", "nchar", "ntext",
-            "numeric", "nvarchar", "real", "smalldatetime", "smallint",
-            "smallmoney", "text", "time", "timestamp", "tinyint",
-            "uniqueidentifier", "varbinary", "varchar", "xml"
-        ];
+    [DataMember] public List<DisplayItem<QuerySourceType>> TargetTypeValues { get; } = [];
+    [DataMember] public List<string> ParameterTypeSuggestions { get; } = [];
     [DataMember] public BulkObservableCollection<EditParameterData> EditParameters { get; } = [];
 
     private string _editMethodName = string.Empty;
@@ -45,8 +36,16 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
         _extensibility = extensibility;
         _projectDirectory = projectDirectory;
         _settings = settings;
+        _databaseProvider = settings.GetDatabaseProvider();
 
-        _ = LoadStoredProceduresAsync();
+        TargetTypeValues.Add(new(QuerySourceType.Text, "SQL Query"));
+        if (_databaseProvider.Supports(DatabaseCapabilities.StoredProcedures))
+            TargetTypeValues.Add(new(QuerySourceType.StoredProcedure, "Stored procedure"));
+        TargetTypeValues.Add(new(QuerySourceType.FromFile, "SQL File"));
+        ParameterTypeSuggestions.AddRange(_databaseProvider.ParameterTypeSuggestions);
+
+        if (_databaseProvider.Supports(DatabaseCapabilities.StoredProcedures))
+            _ = LoadStoredProceduresAsync();
 
         EditParameters.CollectionChanged += (_, _) => RunValidation();
         Init(settings.Queries);
@@ -139,7 +138,7 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
     private Task AddParameterAsync(object? arg, CancellationToken ct) {
         EditParameters.Add(new EditParameterData {
             Name = string.Empty,
-            Type = "nvarchar",
+            Type = _databaseProvider.DefaultParameterType,
             IsNullable = false
         });
 
@@ -172,10 +171,8 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
         var path = await _extensibility.Shell()
             .ShowOpenFileDialogAsync(options, ct);
 
-        if (!string.IsNullOrWhiteSpace(path)) {
-            var rel = Path.GetRelativePath(_projectDirectory, path);
-            EditTarget = rel.Replace('\\', '/');
-        }
+        if (!string.IsNullOrWhiteSpace(path))
+            EditTarget = _settings.GetSqlFileReference(path);
     }
 
     #endregion
@@ -233,6 +230,7 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
                 || !string.IsNullOrWhiteSpace(EditTarget);
 
         if (item.MethodName != EditMethodName ||
+            item.ResultSetName != (string.IsNullOrEmpty(EditResultSetName) ? null : EditResultSetName) ||
             item.Target != EditTarget ||
             item.SourceType != EditTargetType)
             return true;
@@ -334,35 +332,18 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
 
         #region Loaders
     private async Task LoadStoredProceduresAsync() {
-        using var cnn = _settings.GetConnection();
-        await cnn.OpenAsync();
+        try {
+            using var cnn = _settings.GetConnection();
+            IReadOnlyList<string> procedures = await _databaseProvider.GetStoredProceduresAsync(cnn, CancellationToken.None);
 
-        DataTable proceduresTable = await Task.Run(() => cnn.GetSchema("Procedures"));
-
-        var discoveredProcs = new List<string>();
-        string? targetColumn = null;
-
-        if (proceduresTable.Columns.Contains("ROUTINE_NAME"))
-            targetColumn = "ROUTINE_NAME";
-        else if (proceduresTable.Columns.Contains("routine_name"))
-            targetColumn = "routine_name";
-        else if (proceduresTable.Columns.Contains("name"))
-            targetColumn = "name";
-
-        if (targetColumn != null) {
-            foreach (DataRow row in proceduresTable.Rows) {
-                string? procName = row[targetColumn]?.ToString();
-                if (!string.IsNullOrWhiteSpace(procName)) {
-                    discoveredProcs.Add(procName);
-                }
-            }
+            StoredProcedureSuggestions.Clear();
+            foreach (string procedure in procedures)
+                StoredProcedureSuggestions.Add(new DisplayItem<string>(procedure, procedure));
+            RaiseNotifyPropertyChangedEvent(nameof(StoredProcedureSuggestions));
         }
-
-        discoveredProcs.Sort();
-        StoredProcedureSuggestions.Clear();
-        foreach (var proc in discoveredProcs)
-            StoredProcedureSuggestions.Add(new DisplayItem<string>(proc, proc));
-        RaiseNotifyPropertyChangedEvent(nameof(StoredProcedureSuggestions));
+        catch {
+            // Suggestions are optional. Generation and Test Connection surface provider errors explicitly.
+        }
     }
 
     #endregion

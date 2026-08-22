@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 
 namespace RinkuPowerTools.VisualStudio.Content.Config;
 
@@ -13,7 +13,8 @@ public sealed class ConfigFile {
         }
     }
     public bool EqualName(string name) => _name is null ? name == string.Empty : _name.Equals(name, StringComparison.OrdinalIgnoreCase);
-    public string Name => _name ?? "(default)"; 
+    public string Name => _name ?? "(default)";
+    public DatabaseType? Database { get; set; }
     public ConnectionSourceType ConnectionSourceType { get; set; }
     public string ConnectionTarget { get; set; } = string.Empty;
     public string? ConnectionExtractionPath { get; set; }

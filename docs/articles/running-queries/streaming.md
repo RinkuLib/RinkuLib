@@ -1,6 +1,6 @@
 # Streaming
 
-Rinku includes buffered and streamed results for common collection use. Choose based on how the results will be read. A custom parser can use another approach.
+Choose a buffered or streamed result shape based on how the rows will be consumed.
 
 ```csharp
 List<Album> list = GetAlbums.Query<List<Album>>(cnn);
@@ -9,16 +9,9 @@ IEnumerable<Album> stream = GetAlbums.Query<IEnumerable<Album>>(cnn);
 IAsyncEnumerable<Album> asyncStream = GetAlbums.StreamQueryAsync<Album>(cnn);
 ```
 
-`List<T>` and arrays finish reading before `Query` returns. Their connection and command work is complete.
+`List<T>` and arrays finish reading before `Query` returns.
 
-```csharp
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
-
-foreach (Album album in albums)
-    Console.WriteLine(album.Title);
-```
-
-`IEnumerable<T>` keeps the reader active while the sequence is enumerated.
+## Synchronous streaming
 
 ```csharp
 IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
@@ -27,93 +20,43 @@ foreach (Album album in albums)
     Console.WriteLine(album.Title);
 ```
 
-If the connection was closed, it remains in use until enumeration finishes or the enumerator is disposed. An initially open connection remains open.
+The reader stays active during enumeration.
 
-## Stop a synchronous stream early
+If Rinku opened the connection, the connection stays in use until enumeration finishes or the enumerator is disposed. A connection that was already open stays open.
 
-Disposing the enumerator immediately disposes the reader. Remaining rows do not need to be read by the application.
+## Stop early
 
 ```csharp
-using DbConnection cnn = new SqlConnection(connectionString); // closed
-
 IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
 
-using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
+using (IEnumerator<Album> iterator = albums.GetEnumerator())
+{
     if (iterator.MoveNext())
         Console.WriteLine(iterator.Current.Title);
 }
-
-// The reader is disposed and the connection is closed again.
 ```
 
-With an initially open connection, only the reader is closed.
+Disposing the enumerator disposes the active reader.
+
+## Async streaming
 
 ```csharp
-using DbConnection cnn = new SqlConnection(connectionString);
-cnn.Open();
-
-IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
-
-using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
-    if (iterator.MoveNext())
-        Console.WriteLine(iterator.Current.Title);
-}
-
-// cnn remains open.
-```
-
-## Read rows asynchronously
-
-Use `StreamQueryAsync<T>` when row consumption should be asynchronous.
-
-```csharp
-await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken)) {
+await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken))
     Console.WriteLine(album.Title);
-}
 ```
 
-Breaking an `await foreach` disposes its async enumerator.
+Breaking the loop disposes the async enumerator.
 
 ```csharp
-await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken)) {
+await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken))
+{
     Console.WriteLine(album.Title);
     break;
 }
-// The reader is disposed here.
 ```
 
-`QueryAsync<IEnumerable<T>>` only starts the command asynchronously. The returned sequence is still consumed synchronously. Prefer `StreamQueryAsync<T>` when asynchronous enumeration is required.
+## Output parameters and active commands
 
-## Output parameters
+A streamed result can keep output values unavailable until reader work has finished. Dispose or finish the stream before reading provider output parameters.
 
-Use an overload that returns the `DbCommand` when output values are needed.
-
-```csharp
-static readonly QueryCommand ReadAndCountAlbums = QueryCommand.FromProc("ReadAndCountAlbums", setupConnection);
-
-IEnumerable<Album> albums = ReadAndCountAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command);
-
-using (command) {
-    using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
-        if (iterator.MoveNext())
-            Console.WriteLine(iterator.Current.Title);
-    }
-
-    int moved = command.GetOutputValue<int>("@moved");
-}
-```
-
-Disposing the enumerator closes the reader, so output and return values are available even when application enumeration stops early. The provider may consume pending results while closing the reader.
-
-## Command ownership
-
-A normal `QueryCommand` stream owns its generated command and disposes it with the iterator. An overload that returns the command leaves disposal to the caller.
-
-An existing caller-owned `DbCommand` follows its `disposeCommand` argument.
-
-```csharp
-IEnumerable<Album> albums = parser.Query(command, disposeCommand: false);
-// Disposing the iterator closes the reader but leaves command alive.
-```
-
-[Add transactions, timeouts, and cancellation](execution-context.md).
+See [stored procedures](stored-procedures.md) for output values and [execution context](execution-context.md) for connection lifetime.

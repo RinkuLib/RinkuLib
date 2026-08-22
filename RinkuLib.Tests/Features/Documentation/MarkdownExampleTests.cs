@@ -359,12 +359,14 @@ internal static class ExampleCompiler {
     const string Usings = """
         using System;
         using System.Collections;
+        using System.Collections.Concurrent;
         using System.Collections.Generic;
         using System.ComponentModel;
         using System.Data;
         using System.Data.Common;
         using System.Diagnostics;
         using System.Diagnostics.CodeAnalysis;
+        using System.IO;
         using System.Linq;
         using System.Reflection;
         using System.Reflection.Emit;
@@ -382,6 +384,7 @@ internal static class ExampleCompiler {
         using Rinku.Querying.Defaults;
         using Rinku.Querying.Parameters;
         using Rinku.Tracking;
+        using Rinku.Tracking.Binding;
         using Rinku.Tracking.Runtime;
         """;
 
@@ -471,7 +474,8 @@ internal static class ExampleCompiler {
             string scoped = BuildScopedSource(block, unknownFields, unknownTypes);
             string raw = BuildRawSource(block, unknownTypes);
             var results = new List<Diagnostic[]> {
-                Compile(scoped, OutputKind.DynamicallyLinkedLibrary)
+                Compile(scoped, OutputKind.DynamicallyLinkedLibrary),
+                Compile(raw, OutputKind.DynamicallyLinkedLibrary)
             };
             string? fragment = BuildFragmentSource(block);
             if (fragment is not null)
@@ -588,7 +592,8 @@ internal static class ExampleCompiler {
         ExampleBlock block,
         IReadOnlyCollection<Diagnostic> diagnostics)
         => block.RelativePath == "articles/codegen/analyzers.md" &&
-           block.Content.Contains("=> Save;", StringComparison.Ordinal) &&
+           (block.Content.Contains("=> Save;", StringComparison.Ordinal) ||
+            block.Content.Contains("=> service.Save;", StringComparison.Ordinal)) &&
            diagnostics.All(diagnostic => diagnostic.Id == "CS0428");
 
     static string BuildScopedSource(
@@ -631,10 +636,11 @@ internal static class ExampleCompiler {
                     !isComparisonPage &&
                     declaration.RelativePath == block.RelativePath &&
                     declaration.Ordinal < block.Ordinal &&
-                    !currentTypeNames.Contains(declaration.Name) &&
+                    (!currentTypeNames.Contains(declaration.Name) ||
+                        declaration.Source.Contains(" partial ", StringComparison.Ordinal)) &&
                     !declaration.Source.Contains("this DbConnection", StringComparison.Ordinal))
                 .GroupBy(declaration => declaration.Name, StringComparer.Ordinal)
-                .Select(group => group.MaxBy(declaration => declaration.Ordinal)!.Source)
+                .SelectMany(SelectPageDeclarationSources)
                 .Concat(importedDeclarations
                     .Where(declaration => !currentTypeNames.Contains(declaration.Name))
                     .Select(declaration => declaration.Source)));
@@ -707,9 +713,64 @@ internal static class ExampleCompiler {
 
                 public static class GeneratedCommandFixture
                 {
+                    public static DbParameter Add(
+                        this DbCommand command,
+                        string name,
+                        DbType type,
+                        object? value)
+                    {
+                        DbParameter parameter = command.CreateParameter();
+                        parameter.ParameterName = name;
+                        parameter.DbType = type;
+                        parameter.Value = value ?? DBNull.Value;
+                        command.Parameters.Add(parameter);
+                        return parameter;
+                    }
+
+                    public static DbParameter Add(
+                        this DbCommand command,
+                        string name,
+                        object? value)
+                    {
+                        DbParameter parameter = command.CreateParameter();
+                        parameter.ParameterName = name;
+                        parameter.Value = value ?? DBNull.Value;
+                        command.Parameters.Add(parameter);
+                        return parameter;
+                    }
+
                     public static DbCommand GetAlbumsByArtist(
                         this DbConnection connection,
                         int artistId) => connection.CreateCommand();
+
+                    public static DbCommand GetAlbums(this DbConnection connection)
+                        => connection.CreateCommand();
+
+                    public static DbCommand CountAlbumsByArtist(
+                        this DbConnection connection,
+                        int artistId) => connection.CreateCommand();
+
+                    public static DbCommand DeleteAlbum(
+                        this DbConnection connection,
+                        int albumId) => connection.CreateCommand();
+
+                    public static DbCommand GetArtistAndAlbums(
+                        this DbConnection connection,
+                        int artistId) => connection.CreateCommand();
+
+                    public static DbCommand FindAlbums(
+                        this DbConnection connection,
+                        string? title) => connection.CreateCommand();
+
+                    public static DbCommand UpdateCounter(
+                        this DbConnection connection,
+                        object? counter,
+                        out DbParameter out_counter)
+                    {
+                        DbCommand command = connection.CreateCommand();
+                        out_counter = command.CreateParameter();
+                        return command;
+                    }
                 }
 
                 public abstract class DocumentationContext
@@ -749,6 +810,33 @@ internal static class ExampleCompiler {
             """;
     }
 
+    static IEnumerable<string> SelectPageDeclarationSources(
+        IGrouping<string, PageDeclaration> declarations)
+    {
+        PageDeclaration[] ordered = [.. declarations.OrderBy(declaration => declaration.Ordinal)];
+        if (!ordered.All(declaration => declaration.Source.Contains(" partial ", StringComparison.Ordinal)))
+            return [ordered[^1].Source];
+
+        var sources = new List<string>();
+        var seenSources = new HashSet<string>(StringComparer.Ordinal);
+        bool hasPrimaryRecord = false;
+        foreach (PageDeclaration declaration in ordered)
+        {
+            if (!seenSources.Add(declaration.Source))
+                continue;
+
+            bool isPrimaryRecord = SyntaxFactory.ParseMemberDeclaration(declaration.Source)
+                is RecordDeclarationSyntax { ParameterList: not null };
+            if (isPrimaryRecord && hasPrimaryRecord)
+                continue;
+
+            hasPrimaryRecord |= isPrimaryRecord;
+            sources.Add(declaration.Source);
+        }
+
+        return sources;
+    }
+
     static IEnumerable<PageDeclaration> GetImportedDeclarations(ExampleBlock block) {
         var requests = new List<(string Path, string Name)>();
 
@@ -779,7 +867,28 @@ internal static class ExampleCompiler {
     static string BuildRawSource(
         ExampleBlock block,
         IReadOnlyDictionary<string, int> unknownTypes)
-        => $"{Usings}\n{block.Content}\n{BuildGlobalTypeStubs(block.RelativePath, unknownTypes)}";
+    {
+        string runtimeSupport = block.Content.Contains(
+            "RinkuPowerTools.GetSqlFile",
+            StringComparison.Ordinal)
+            ? "public static class RinkuPowerTools { public static string GetSqlFile(string path) => path; }"
+            : "";
+
+        return $$"""
+            {{Usings}}
+            {{runtimeSupport}}
+            public static class DocumentationCommandExtensions
+            {
+                public static DbParameter Add(this DbCommand command, string name, DbType type, object? value)
+                    => command.CreateParameter();
+
+                public static DbParameter Add(this DbCommand command, string name, object? value)
+                    => command.CreateParameter();
+            }
+            {{block.Content}}
+            {{BuildGlobalTypeStubs(block.RelativePath, unknownTypes)}}
+            """;
+    }
 
     static string BuildBlockNamespaceSource(ExampleBlock block) {
         string[] lines = block.Content.Split('\n');

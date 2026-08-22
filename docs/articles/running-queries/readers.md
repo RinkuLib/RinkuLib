@@ -1,79 +1,43 @@
 # Raw readers
 
-Use `ExecuteReader` when application code needs the `DbDataReader` directly.
+Use `ExecuteReader` when application code needs the provider `DbDataReader` directly.
 
 ```csharp
 static readonly QueryCommand GetAlbumRows = new("SELECT AlbumId, Title FROM albums WHERE ArtistId = @artistId");
 
 DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command, new { artistId = 7 });
 
-using (command) {
-    using (reader) {
-        while (reader.Read()) {
-            int id = reader.GetInt32(0);
-            string title = reader.GetString(1);
-            Console.WriteLine($"{id}: {title}");
-        }
-    }
-}
-```
-
-The generated-command form returns the command through `out DbCommand`. The caller disposes both objects.
-
-The returned object is the provider's `DbDataReader`, not a Rinku wrapper.
-
-```csharp
-DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command, new { artistId = 7 });
-
-try {
+using (command)
+using (reader)
+{
     while (reader.Read())
-        Console.WriteLine($"{reader.GetInt32(0)}: {reader.GetString(1)}");
-}
-finally {
-    reader.Dispose();
-    command.Dispose();
-}
-```
-
-Disposing the reader closes a connection opened by Rinku, but does not dispose the command.
-
-```csharp
-using DbConnection cnn = new SqlConnection(connectionString); // closed
-
-DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command);
-reader.Dispose();
-
-// cnn is closed again.
-// command still belongs to the caller.
-command.Dispose();
-```
-
-An initially open connection remains open.
-
-```csharp
-using DbConnection cnn = new SqlConnection(connectionString);
-cnn.Open();
-
-DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command);
-using (command) {
-    using (reader) {
-        while (reader.Read())
-            Console.WriteLine(reader.GetValue(0));
+    {
+        int id = reader.GetInt32(0);
+        string title = reader.GetString(1);
+        Console.WriteLine($"{id}: {title}");
     }
 }
-
-// cnn remains open.
 ```
 
-The asynchronous form has the same ownership.
+The returned reader is the provider reader. The caller disposes both the reader and generated command.
+
+## Connection ownership
+
+Disposing the reader closes a connection that Rinku opened for the operation. It does not dispose the generated command.
+
+An already open connection remains open. See [execution context](execution-context.md) for the same ownership rules used by other query forms.
+
+## Async reader
 
 ```csharp
 DbDataReader reader = await GetAlbumRows.ExecuteReaderAsync(cnn, out DbCommand command, new { artistId = 7 }, ct: cancellationToken);
 
-await using (command) {
-    await using (reader) {
-        while (await reader.ReadAsync(cancellationToken))
-            Console.WriteLine(reader.GetValue(0));
-    }
+await using (command)
+await using (reader)
+{
+    while (await reader.ReadAsync(cancellationToken))
+        Console.WriteLine(reader.GetValue(0));
 }
 ```
+
+Use normal [result shapes](result-shapes.md) when Rinku should map the reader instead.

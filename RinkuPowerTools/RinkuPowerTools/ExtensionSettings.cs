@@ -1,6 +1,5 @@
-﻿using System.Data;
+using System.Data;
 using System.Data.Common;
-using Microsoft.Data.SqlClient;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -31,14 +30,50 @@ public class ExtensionSettings {
     [JsonIgnore]
     private string? ProjectDirectory;
     public void SetProjectDirectory(string projectDirectory) => ProjectDirectory = projectDirectory;
-    public string GetFullPath(string relativePath) => Path.Combine(ProjectDirectory ?? throw new Exception("The project directory was not set"), relativePath);
-    public string GetRelativePath(string relativePath) => Path.GetRelativePath(ProjectDirectory ?? throw new Exception("The project directory was not set"), relativePath);
+    private string GetProjectDirectory() => ProjectDirectory ?? throw new Exception("The project directory was not set");
+    public string GetFullPath(string relativePath) => Path.Combine(GetProjectDirectory(), relativePath);
+    public string GetRelativePath(string path) => Path.GetRelativePath(GetProjectDirectory(), path);
+    public string GetSqlFileReference(string path) {
+        string projectDirectory = Path.GetFullPath(GetProjectDirectory());
+        string fullPath = Path.GetFullPath(path);
+        string relativePath = Path.GetRelativePath(projectDirectory, fullPath);
+        if (!IsOutsideProject(relativePath))
+            return relativePath.Replace('\\', '/');
+        return fullPath;
+    }
+    public string ResolveSqlFilePath(string path) {
+        if (Path.IsPathRooted(path))
+            return Path.GetFullPath(path);
+        string projectDirectory = Path.GetFullPath(GetProjectDirectory());
+        string fullPath = Path.GetFullPath(Path.Combine(projectDirectory, path));
+        string relativePath = Path.GetRelativePath(projectDirectory, fullPath);
+        if (IsOutsideProject(relativePath))
+            throw new InvalidOperationException($"Relative SQL file path '{path}' resolves outside the project directory.");
+        return fullPath;
+    }
+    private static bool IsOutsideProject(string relativePath) =>
+        Path.IsPathRooted(relativePath) ||
+        relativePath == ".." ||
+        relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+        relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal);
     public async Task<string> GetSqlTextAsync(QuerySetting query, CancellationToken ct) =>
         query.SourceType == QuerySourceType.FromFile
-            ? await File.ReadAllTextAsync(Path.IsPathRooted(query.Target) ? query.Target : GetFullPath(query.Target), ct)
+            ? await File.ReadAllTextAsync(ResolveSqlFilePath(query.Target), ct)
             : query.Target;
-    public DbConnection GetConnection() => new SqlConnection(ConnectionString ?? throw new Exception("The connection string was not set"));
+    [JsonIgnore]
+    private DatabaseProvider? _databaseProvider;
+    public DatabaseProvider GetDatabaseProvider() {
+        if (_databaseProvider is not null)
+            return _databaseProvider;
+        string connectionString = ConnectionString ?? throw new InvalidOperationException("The connection string was not set");
+        return _databaseProvider = DatabaseProviders.Resolve(connectionString, Database);
+    }
+    public DbConnection GetConnection() {
+        string connectionString = ConnectionString ?? throw new InvalidOperationException("The connection string was not set");
+        return GetDatabaseProvider().CreateConnection(connectionString);
+    }
     public string? ConnectionString { get; set; }
+    public DatabaseType? Database { get; set; }
     public ConnectionSourceType ConnectionSourceType { get; set; }
     public required string ConnectionTarget { get; set; }
     public string? ConnectionExtractionPath { get; set; }
@@ -48,6 +83,7 @@ public class ExtensionSettings {
     public List<QuerySetting> Queries { get; set; } = [];
     public async Task ResolveConnectionStringAsync(CancellationToken ct) {
         ConnectionString = await ConnectionResolver.ResolveAsync(ConnectionSourceType, ConnectionTarget, ConnectionExtractionPath, ProjectDirectory ?? throw new Exception("The project directory was not set"), ct);
+        _databaseProvider = null;
     }
 
 }
@@ -57,6 +93,7 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
             throw new JsonException("Expected JSON object for ExtensionSettings.");
 
         ConnectionSourceType? connectionSourceType = null;
+        DatabaseType? database = null;
         string? connectionTarget = null;
         string? connectionExtractionPath = null;
         string outputPath = string.Empty;
@@ -72,7 +109,15 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
                 string propertyName = reader.GetString() ?? string.Empty;
                 reader.Read();
 
-                if (string.Equals(propertyName, nameof(ExtensionSettings.ConnectionExtractionPath), StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(propertyName, nameof(ExtensionSettings.Database), StringComparison.OrdinalIgnoreCase)) {
+                    string? databaseName = reader.TokenType == JsonTokenType.Null ? null : reader.GetString();
+                    if (databaseName is not null) {
+                        if (!DatabaseProviders.TryParseType(databaseName, out DatabaseType parsedDatabase))
+                            throw new JsonException($"Unknown database type '{databaseName}'.");
+                        database = parsedDatabase;
+                    }
+                }
+                else if (string.Equals(propertyName, nameof(ExtensionSettings.ConnectionExtractionPath), StringComparison.OrdinalIgnoreCase))
                     connectionExtractionPath = reader.GetString();
                 else if (string.Equals(propertyName, nameof(ExtensionSettings.OutputPath), StringComparison.OrdinalIgnoreCase))
                     outputPath = reader.GetString() ?? string.Empty;
@@ -96,6 +141,7 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
             throw new JsonException("Extension settings are missing the connection source type identifier or target value.");
 
         return new ExtensionSettings {
+            Database = database,
             ConnectionSourceType = connectionSourceType.Value,
             ConnectionTarget = connectionTarget,
             ConnectionExtractionPath = connectionExtractionPath,
@@ -110,6 +156,9 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
         writer.WriteStartObject();
 
         writer.WriteString(value.ConnectionSourceType.ToString(), value.ConnectionTarget);
+
+        if (value.Database is { } database)
+            writer.WriteString(nameof(ExtensionSettings.Database), database.ToString());
 
         if (!string.IsNullOrWhiteSpace(value.ConnectionExtractionPath))
             writer.WriteString(nameof(ExtensionSettings.ConnectionExtractionPath), value.ConnectionExtractionPath);
@@ -230,10 +279,8 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
                 break;
         }
 
-        if (value.ResultSetName != null) {
-            writer.WritePropertyName(nameof(QuerySetting.ResultSetName));
-            JsonSerializer.Serialize(writer, value.Parameters, options);
-        }
+        if (value.ResultSetName != null)
+            writer.WriteString(nameof(QuerySetting.ResultSetName), value.ResultSetName);
 
         if (value.Parameters != null && value.Parameters.Count > 0) {
             writer.WritePropertyName(nameof(QuerySetting.Parameters));

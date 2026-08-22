@@ -1,45 +1,117 @@
-# Conditional SQL cheat sheet
+# Cheat sheet
 
-## Values and handlers
+## Optional value
 
-| Template | Supplied value | Generated SQL |
-| --- | --- | --- |
-| `WHERE Id = @id` | `id = 7` | `WHERE Id = @id` |
-| `WHERE Id = ?@id` | no `id` | removed |
-| `OFFSET @skip_N ROWS` | `skip = 10` | `OFFSET 10 ROWS` |
-| `Name = @name_S` | `name = "O'Brien"` | `Name = 'O''Brien'` |
-| `ORDER BY @order_R` | `order = "Title DESC"` | `ORDER BY Title DESC` |
-| `IN (@ids_X)` | `ids = [2, 5]` | `IN (@ids_1, @ids_2)` |
-| `IN (?@ids_X)` | `ids = []` | condition removed |
+```sql
+WHERE ArtistId = ?@artistId
+```
 
-## Conditional keys
+Missing or `null` removes the surrounding condition.
 
-| Template | Meaning |
-| --- | --- |
-| `/*Key*/column` | Keep the footprint when `Key` is active. |
-| `/*@value*/column` | Keep it when `@value` is supplied. |
-| `/*A&B*/column` | Require both keys. |
-| `/*A|B*/column` | Accept either key. |
-| `/*!All*/condition` | Keep it while `All` is inactive. |
-| `/*A|B&C*/column` | Evaluate left to right as `(A OR B) AND C`. |
+## Named marker
 
-## Footprint controls
+```sql
+WHERE /*ByArtist*/ ArtistId = @artistId
+```
 
-| Template | Meaning |
-| --- | --- |
-| `?@a &AND ?@b` | Keep or remove both conditions together. |
-| `?@a &OR ?@b` | Keep or remove both alternatives together. |
-| `/*Key*/a&, b&, c` | Keep or remove the grouped list entries together. |
-| `DISTINCT??? /*Key*/column` | Prevent the column footprint from taking `DISTINCT`. |
-| `/*~ note */` | Emit the block comment as `/* note */`. |
+```csharp
+builder.Use("ByArtist");
+```
+
+## Parameter marker
+
+```sql
+WHERE /*@artistId*/ ArtistId = @artistId
+```
+
+The SQL follows the presence of `artistId`.
+
+## Marker logic
+
+```sql
+/*A&B*/
+/*A|B*/
+/*!A*/
+```
+
+`&` means AND, `|` means OR, and `!` means NOT.
+
+## Collection
+
+```sql
+WHERE AlbumId IN (@ids_X)
+```
+
+The collection is expanded into database parameters.
+
+## Optional collection
+
+```sql
+WHERE AlbumId IN (?@ids_X)
+```
+
+An empty or missing collection removes the condition.
+
+## Numeric text
+
+```sql
+OFFSET @skip_N ROWS
+```
+
+The value is written as invariant numeric SQL text.
+
+## Quoted text
+
+```sql
+ORDER BY @name_S
+```
+
+The value is quoted and embedded into the SQL text.
+
+## Raw text
+
+```sql
+ORDER BY @orderBy_R
+```
+
+The value is embedded without escaping. Use only application controlled values.
 
 ## Dynamic projection
 
-| Template | Meaning |
-| --- | --- |
-| `?SELECT Id, Title` | Use `Id` and `Title` as independent keys. |
-| `?SELECT AlbumId AS Id!, Title` | Always keep `Id`. |
-| `?SELECT AlbumId AS Id&, Title` | Keep both columns under the `Title` key. |
-| `?SELECT /*Admin*/Id` | Require both `Id` and `Admin`. |
+```sql
+?SELECT
+    AlbumId AS Id!,
+    Title,
+    ReleaseYear AS Year
+FROM albums
+```
 
-See full examples for [variables](variables.md), [collections](collections.md), [markers](markers.md), [dynamic projection](dynamic-projection.md), [handlers](handlers.md), and [template syntax](template-syntax.md).
+`!` keeps a projection entry even when it was not selected.
+
+## Projection group
+
+```sql
+?SELECT
+    ArtistId&,
+    ArtistName AS Artist,
+    AlbumId AS Id!
+FROM albums
+```
+
+Selecting `Artist` keeps both grouped columns.
+
+## Optional modifier
+
+```sql
+???Distinct DISTINCT
+?SELECT AlbumId AS Id!, Title
+FROM albums
+```
+
+## Keep a normal block comment
+
+```sql
+/*~ sent to the database */
+```
+
+See [Conditional variables](variables.md), [Markers](markers.md), [Collections](collections.md), and [Dynamic projection](dynamic-projection.md) for complete examples.

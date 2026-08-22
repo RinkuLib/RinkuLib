@@ -6,122 +6,92 @@ Names match without regard to case.
 public record Customer(int Id, string Name);
 
 Customer customer = GetCustomer.Query<Customer>(cnn);
-// ID | name -> Customer.Id | Customer.Name
+// ID and name can fill Id and Name.
 ```
 
-A nested value adds its member name to the names inside it.
+## Adapt the SQL
 
-```csharp
-public record Address(int Zip, string City) : IDbReadable;
-public record Person(int Id, Address Home);
-
-Person person = GetPerson.Query<Person>(cnn);
-// Id | HomeZip | HomeCity
-```
-
-When the code cannot change, adapt the SQL.
-
-```csharp
-public record Customer(int Id, string Name);
-```
+Alias the columns when application code owns the SQL.
 
 ```sql
 SELECT customer_id AS Id, display_name AS Name
 FROM customers
 ```
 
-When the SQL cannot change, add accepted names to the code.
+This keeps the C# type unchanged.
+
+## Accept another name in C#
+
+Use `[Alt]` when the SQL cannot change.
 
 ```csharp
 public record Customer([Alt("customer_id")] int Id, [Alt("display_name")] string Name);
 ```
 
-```sql
-SELECT customer_id, display_name
-FROM customers
-```
+The declared names still work too.
 
-`Alt` keeps the declared name as well as the additional name.
+## Nested prefixes
+
+Nested values normally include every member name in their column prefix.
 
 ```csharp
-static readonly QueryCommand GetCustomerWithAliases = new("""
-    SELECT customer_id AS Id, display_name AS Name
-    FROM customers
-    """);
-
-static readonly QueryCommand GetCustomerWithDatabaseNames = new("""
-    SELECT customer_id, display_name
-    FROM customers
-    """);
-
-Customer first = GetCustomerWithAliases.Query<Customer>(cnn);
-Customer second = GetCustomerWithDatabaseNames.Query<Customer>(cnn);
+public record Address(int Zip, string City) : IDbReadable;
+public record Person(int Id, Address Home);
 ```
 
-An alternate name on a nested value still includes the outer prefix.
+```text
+Id
+HomeZip
+HomeCity
+```
+
+An alternate name inside the nested type still keeps the outer prefix.
 
 ```csharp
 public record Address([Alt("Postal")] int Zip, string City) : IDbReadable;
-public record Person(int Id, Address Home);
-
-Person person = GetPerson.Query<Person>(cnn);
-// HomeZip or HomePostal can fill person.Home.Zip.
 ```
+
+Both `HomeZip` and `HomePostal` can fill `Zip`.
 
 ## Skip prefix parts
 
-`[AltSkippingSegments]` removes a fixed number of inner prefix parts for its alternate name.
+Use `[AltSkippingSegments]` when an alternate name should remove a fixed number of inner path segments.
 
 ```csharp
 public record Inner([AltSkippingSegments("Code", 2)] int Code) : IDbReadable;
 public record Middle(Inner Sub) : IDbReadable;
 public record Outer(int Id, Middle Mid);
-
-Outer value = GetOuter.Query<Outer>(cnn);
-// MidSubCode uses the full name.
-// MidCode uses the alternate name after skipping Sub.
 ```
 
-`[AltUpTo]` removes prefix parts through a named part of the path.
+`MidSubCode` is the normal full name. `MidCode` is the alternate name.
+
+Use `[AltUpTo]` when the alternate path should remove segments through a named part.
 
 ```csharp
-public record LayerOne(int First, LayerTwo Two);
 public record LayerTwo([AltUpTo("NotTooDeep", "Two")] int Second, LayerThree Three) : IDbReadable;
 public record LayerThree([AltUpTo("SuperDeep", "Two")] int Third) : IDbReadable;
-
-LayerOne value = GetLayers.Query<LayerOne>(cnn);
-// First | NotTooDeep | SuperDeep
 ```
 
-## Ignore the name
+## Ignore the column name
 
-`[NoName]` takes the next compatible column without requiring a name match.
+Use `[NoName]` when the next compatible column can fill the slot without a name match.
 
 ```csharp
 public readonly record struct Boxed<T>([NoName] T Value);
-
-Boxed<int> value = GetNumber.Query<Boxed<int>>(cnn);
-// Any available integer column can fill Value.
 ```
 
-When neither the SQL nor the type should carry the rule, configure it at startup.
+## Configure alternate names during setup
 
 ```csharp
 TypeParsingInfo.GetOrAdd<Customer>().UpdateAltName(names =>
-    names.GetDefaultName() switch {
+    names.GetDefaultName() switch
+    {
         "Id" => new NameComparer("customer_id"),
         "Name" => new NameComparer("display_name"),
         _ => null
     });
 ```
 
-The mapping can now read the fixed SQL into the unchanged type.
+Use this when neither SQL nor model attributes should carry the database naming rule.
 
-```csharp
-Customer customer = GetCustomer.Query<Customer>(cnn);
-// customer_id | display_name -> Customer.Id | Customer.Name
-```
-
-See [mapping slot rules](../customization/slot-rules.md) for more ways to change names at runtime.
-
-Continue with [tuple mapping](tuples.md).
+See [advanced type registration](../customization/type-registration.md) for application wide mapping configuration.

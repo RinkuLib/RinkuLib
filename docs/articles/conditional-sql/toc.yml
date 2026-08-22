@@ -1,9 +1,9 @@
 - name: Conditional variables
   href: variables.md
-- name: Expand a collection
-  href: collections.md
-- name: Conditional markers
+- name: Markers
   href: markers.md
+- name: Collections
+  href: collections.md
 - name: Dynamic projection
   href: dynamic-projection.md
 - name: Value handlers

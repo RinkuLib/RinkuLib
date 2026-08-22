@@ -1,6 +1,6 @@
 # Coming from Dapper
 
-Comparisons use the [SQL-string shortcut](../running-queries/sql-string.md) to stay direct, which simply redirects to a `QueryCommand`. Differences are called out when the two APIs do not have identical semantics.
+Comparisons use the [SQL string shortcut](../running-queries/sql-string.md) to stay direct, which simply redirects to a `QueryCommand`. Differences are called out when the two APIs do not have identical semantics.
 
 ## Query<T>
 [Result shapes](../running-queries/result-shapes.md) and [Map rows to objects](../mapping/objects.md)
@@ -29,7 +29,7 @@ IEnumerable<Album> streamed = cnn.Query<IEnumerable<Album>>(sql, parameters);
 
 
 ## Runtime result Type
-Compare runtime-type queries with the [result-shape rules](../running-queries/result-shapes.md) and [complete-result parsers](../customization/result-parsers.md).
+Compare runtime type queries with the [result shape rules](../running-queries/result-shapes.md) and [complete result parsers](../customization/result-parsers.md).
 
 ```csharp
 Type albumType = typeof(Album);
@@ -54,7 +54,7 @@ object album = cnn.Query(singleType, sql, parameters);
 
 
 ## QueryFirst<T>
-Use the [result-shape rules](../running-queries/result-shapes.md) to choose the corresponding Rinku result type.
+Use the [result shape rules](../running-queries/result-shapes.md) to choose the corresponding Rinku result type.
 
 ```csharp
 const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
@@ -73,7 +73,7 @@ Album album = cnn.Query<Album>(sql, parameters);
 
 
 ## QueryFirstOrDefault<T>
-Use the [result-shape rules](../running-queries/result-shapes.md) and [database NULL guidance](../mapping/nulls.md) when choosing the equivalent Rinku shape.
+Use the [result shape rules](../running-queries/result-shapes.md) and [database NULL guidance](../mapping/nulls.md) when choosing the equivalent Rinku shape.
 
 ```csharp
 const string albumSql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
@@ -114,7 +114,7 @@ int? nullableYear = cnn.Query<OptionalNullableStruct<int>>(yearSql, parameters);
 
 
 ## QuerySingle<T>
-Use the [result-shape rules](../running-queries/result-shapes.md) to choose the corresponding Rinku result type.
+Use the [result shape rules](../running-queries/result-shapes.md) to choose the corresponding Rinku result type.
 
 ```csharp
 const string sql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
@@ -508,7 +508,7 @@ using (command) {
 ```
 
 
-### Automatic output write-back
+### Automatic output write back
 [Stored procedures and output values](../running-queries/stored-procedures.md) and [Parameter binding](../customization/parameters.md)
 
 ```csharp
@@ -664,7 +664,7 @@ List<CustomerByConvention> customers = cnn.Query<List<CustomerByConvention>>(sql
 ```
 
 
-## Multi-mapping / nested objects
+## Multi mapping / nested objects
 [Nested objects](../mapping/nesting.md), [Adapt names](../mapping/names.md) and [Construction paths](../mapping/construction-paths.md)
 
 ```csharp
@@ -741,7 +741,7 @@ List<Post> posts = cnn.Query<List<Post>>(dapperSql);
 ```
 
 
-## One-to-many mapping
+## One to many mapping
 [Collections from database results](../mapping/collections.md), [Group rows into results](../mapping/grouping.md) and [Nested objects](../mapping/nesting.md)
 
 ```csharp
@@ -782,7 +782,7 @@ List<ArtistWithAlbums> artists = cnn.Query<List<ArtistWithAlbums>>(sql);
 
 
 ## GetRowParser / runtime concrete types
-[Construction paths](../mapping/construction-paths.md) and [Complete-result parsers](../customization/result-parsers.md)
+[Construction paths](../mapping/construction-paths.md) and [Complete result parsers](../customization/result-parsers.md)
 
 Dapper selects a row parser inside the read loop. Rinku usually models the same scenario as construction paths on the requested interface, letting one result parser select the concrete value for each row.
 
@@ -1046,7 +1046,7 @@ using (reader) {
 
 
 ## Query cache / CommandFlags.NoCache
-[Cache ownership](../customization/caches.md) and [Complete-result parsers](../customization/result-parsers.md)
+[Cache ownership](../customization/caches.md) and [Complete result parsers](../customization/result-parsers.md)
 
 ```csharp
 // Dapper

@@ -1,6 +1,18 @@
-# Execute SQL
+# Execute and query SQL
 
-Use `Execute` to run SQL when no result rows need to be mapped. It returns the affected-row count reported by the database provider.
+Use `Query<T>` when rows should be mapped.
+
+```csharp
+public record Album(int Id, string Title) : IDbReadable;
+
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+```
+
+Use [result shapes](result-shapes.md) to choose how many results are accepted and whether they are buffered.
+
+## Execute without mapped rows
 
 ```csharp
 static readonly QueryCommand RenameAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
@@ -8,7 +20,7 @@ static readonly QueryCommand RenameAlbum = new("UPDATE albums SET Title = @title
 int affected = RenameAlbum.Execute(cnn, new { albumId = 1, title = "New title" });
 ```
 
-The provider supplies the affected-row count. An update that matches no rows normally returns `0`.
+`Execute` returns the affected row count reported by the provider.
 
 ```csharp
 int affected = RenameAlbum.Execute(cnn, new { albumId = 999, title = "Missing" });
@@ -17,13 +29,7 @@ if (affected == 0)
     Console.WriteLine("Album not found");
 ```
 
-## Return one value while executing
-
-Use `ExecuteScalar<T>` when the command must execute and it also returns one value. It asks the provider for the first column of the first returned row and converts that value to `T`.
-
-The SQL syntax used to return the value is chosen by the database provider.
-
-PostgreSQL and SQLite can use `RETURNING`.
+## Execute and return one value
 
 ```csharp
 static readonly QueryCommand AddAlbum = new("INSERT INTO albums (Title, ArtistId) VALUES (@title, @artistId) RETURNING AlbumId");
@@ -31,7 +37,9 @@ static readonly QueryCommand AddAlbum = new("INSERT INTO albums (Title, ArtistId
 int albumId = AddAlbum.ExecuteScalar<int>(cnn, new { title = "Blue", artistId = 7 });
 ```
 
-SQL Server can use `OUTPUT INSERTED`.
+`ExecuteScalar<T>` reads the first value returned by `DbCommand.ExecuteScalar` and converts it to `T`.
+
+SQL Server can use its normal output syntax.
 
 ```csharp
 static readonly QueryCommand AddAlbum = new("INSERT INTO albums (Title, ArtistId) OUTPUT INSERTED.AlbumId VALUES (@title, @artistId)");
@@ -39,13 +47,7 @@ static readonly QueryCommand AddAlbum = new("INSERT INTO albums (Title, ArtistId
 int albumId = AddAlbum.ExecuteScalar<int>(cnn, new { title = "Blue", artistId = 7 });
 ```
 
-The returned value is converted to `T`.
-
-## ExecuteScalar or Query
-
-`ExecuteScalar<T>` is an execution operation. It executes the command and reads its first returned value without creating a result parser.
-
-`Query<T>` is a result-set operation. It reads through the normal parser and does not provide the same execution guarantee. For a query such as `SELECT COUNT(*)`, `Query<int>` better expresses the intent and is faster.
+## Query a scalar result
 
 ```csharp
 static readonly QueryCommand CountAlbums = new("SELECT COUNT(*) FROM albums WHERE ArtistId = @artistId");
@@ -53,26 +55,18 @@ static readonly QueryCommand CountAlbums = new("SELECT COUNT(*) FROM albums WHER
 int count = CountAlbums.Query<int>(cnn, new { artistId = 7 });
 ```
 
-The same SQL can still be sent through `ExecuteScalar<int>`.
-
-```csharp
-int count = CountAlbums.ExecuteScalar<int>(cnn, new { artistId = 7 });
-```
-
-`Query<int>` applies its [no-result behavior](result-shapes.md#first-result) and [database `NULL` rules](../mapping/nulls.md). `ExecuteScalar<int>` converts the value returned by `DbCommand.ExecuteScalar`.
+A scalar `SELECT` can use `Query<T>`. It then follows the normal result parser and null rules.
 
 ## Run asynchronously
-
-`ExecuteAsync` and `ExecuteScalarAsync<T>` are the matching asynchronous operations.
 
 ```csharp
 int affected = await RenameAlbum.ExecuteAsync(cnn, new { albumId = 1, title = "New title" }, ct: cancellationToken);
 int albumId = await AddAlbum.ExecuteScalarAsync<int>(cnn, new { title = "Blue", artistId = 7 }, ct: cancellationToken);
 ```
 
-## Use a transaction, timeout, or cancellation token
+See [async execution](async.md) for the matching async operations.
 
-Execution context is supplied after the values object.
+## Use a transaction or timeout
 
 ```csharp
 using DbTransaction transaction = cnn.BeginTransaction();
@@ -82,21 +76,12 @@ int affected = RenameAlbum.Execute(cnn, new { albumId = 1, title = "New title" }
 transaction.Commit();
 ```
 
-The transaction must belong to the same open connection. 
+See [transactions, timeouts, and cancellation](execution-context.md).
 
-Async methods accept cancellation through `ct`.
-
-```csharp
-int affected = await RenameAlbum.ExecuteAsync(cnn, new { albumId = 1, title = "New title" }, timeout: 30, ct: cancellationToken);
-```
-
-## Execute SQL directly from a connection
-
-The [SQL-string shortcuts](sql-string.md) expose the same operations.
+## Execute from a SQL string
 
 ```csharp
 int affected = cnn.Execute("UPDATE albums SET Title = @title WHERE AlbumId = @albumId", new { albumId = 1, title = "New title" });
-int albumId = cnn.ExecuteScalar<int>("INSERT INTO albums (Title, ArtistId) VALUES (@title, @artistId) RETURNING AlbumId", new { title = "Blue", artistId = 7 });
 ```
 
-[Transactions, timeouts, and cancellation](execution-context.md) covers connection ownership and cleanup. [Result shapes](result-shapes.md) covers values read through `Query<T>`.
+The [SQL string shortcuts](sql-string.md) use the same command behavior through a global SQL string cache.

@@ -1,38 +1,6 @@
 # Collections from database results
 
-There are two common ways to build a parent with children. Several result sets avoid repeating the parent columns. A joined result can be folded directly into nested collections.
-
-## Use several result sets
-
-Read the parents once, then read each child with its parent key.
-
-```csharp
-public record Album(int Id, string Title) : IDbReadable;
-public record class Artist(int Id, string Name) {
-    public List<Album> Albums { get; } = [];
-}
-
-static readonly QueryCommand GetArtistsAndAlbums = new("SELECT ArtistId AS Id, Name FROM artists ORDER BY ArtistId; SELECT ArtistId, AlbumId AS Id, Title FROM albums ORDER BY ArtistId");
-
-using MultiReader results = GetArtistsAndAlbums.ExecuteMultiReader(cnn);
-
-List<Artist> artists = results.Query<List<Artist>>();
-using IEnumerator<(int ArtistId, Album Album)> albums = results.Query<IEnumerable<(int, Album)>>().GetEnumerator();
-
-bool more = albums.MoveNext();
-foreach (Artist artist in artists) {
-    while (more && albums.Current.ArtistId == artist.Id) {
-        artist.Albums.Add(albums.Current.Album);
-        more = albums.MoveNext();
-    }
-}
-```
-
-The two result sets must use the same key order for this merge. This approach is useful when repeating large parent rows would make the joined result unnecessarily wide.
-
-## Fold joined rows
-
-A collection in the requested type can consume consecutive rows and build one parent.
+A joined result can fill a nested collection directly.
 
 ```csharp
 public record Album(int Id, string Title) : IDbReadable;
@@ -43,120 +11,69 @@ static readonly QueryCommand GetArtists = new("SELECT ar.ArtistId AS Id, ar.Name
 List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
 ```
 
-```text
-Id  Name    AlbumsId  AlbumsTitle
-1   AC/DC   10        High Voltage
-1   AC/DC   11        Let There Be Rock
-2   Queen   20        Jazz
-```
+Rows that belong to one parent must be consecutive. Order by the parent key when the database does not already guarantee that order.
 
-```text
-Artist(1, "AC/DC", [Album(10, "High Voltage"), Album(11, "Let There Be Rock")])
-Artist(2, "Queen", [Album(20, "Jazz")])
-```
+## Collection prefixes
 
-Rows for one parent must be consecutive. Order the SQL by the parent key when the database does not already guarantee that order.
-
-## Column prefixes
-
-The collection member name prefixes the columns used by its elements.
+The collection member name prefixes the element columns.
 
 ```text
 AlbumsId
 AlbumsTitle
 ```
 
-`[Alt]` accepts another prefix when the SQL uses a singular name.
+Use `[Alt]` when another prefix should also be accepted.
 
 ```csharp
-public record Album(int Id, string Title) : IDbReadable;
 public record Artist(int Id, string Name, [Alt("Album")] List<Album> Albums);
 ```
 
-```sql
-SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumId, al.Title AS AlbumTitle FROM artists ar JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId
-```
+Now `AlbumId` and `AlbumTitle` can fill the collection.
 
 ## Keep parents with no children
 
-A `LEFT JOIN` returns database `NULL` for the missing child. Put `[AbortOnNull]` on the child identity so that row does not create an empty child object.
+Use `[AbortOnNull]` on the child identity when a left join should produce no child object.
 
 ```csharp
 public record Album([AbortOnNull] int Id, string Title) : IDbReadable;
 public record Artist(int Id, string Name, List<Album> Albums);
-
-static readonly QueryCommand GetArtists = new("SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumsId, al.Title AS AlbumsTitle FROM artists ar LEFT JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId");
-
-List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
 ```
 
-```text
-Id  Name   AlbumsId  AlbumsTitle
-3   Bjork  NULL      NULL
-
-Artist(3, "Bjork", [])
-```
-
-Without `[AbortOnNull]`, a non-nullable value such as `Album.Id` rejects database `NULL`. A child made only from nullable reference values may instead produce an unwanted object whose members are all null.
+A row with database `NULL` in `AlbumsId` keeps the parent and adds no child.
 
 ## Null scalar elements
 
 Null collection elements are skipped by default.
 
 ```csharp
-public record Playlist(int Id, List<string> Tags);
-
-Playlist playlist = GetPlaylistTags.Query<Playlist>(cnn);
-// Tags: "rock" | NULL | "live" -> ["rock", "live"]
+public record Palette(int Id, List<string> Colors);
 ```
 
-`[KeepNullElements]` retains null elements in their original positions.
+Use `[KeepNullElements]` when null elements should remain.
 
 ```csharp
-public record Playlist(int Id, [KeepNullElements] List<string?> Tags);
-
-Playlist playlist = GetPlaylistTags.Query<Playlist>(cnn);
-// Tags: "rock" | NULL | "live" -> ["rock", null, "live"]
+public record Palette(int Id, [KeepNullElements] List<string?> Colors);
 ```
 
-`[NotNull]` rejects null elements instead of skipping them.
-
-```csharp
-public record Playlist(int Id, [NotNull] List<string> Tags);
-
-Playlist playlist = GetPlaylistTags.Query<Playlist>(cnn);
-// A NULL tag raises RINKU4003.
-```
+See [database NULL](nulls.md) for collection element null handling.
 
 ## Nested collections
 
-Collections can nest to any depth supported by the mapped types.
+A collection element can contain another collection.
 
 ```csharp
-public record Lesson(int Id, string Title) : IDbReadable;
-public record Module(int Id, string Name, List<Lesson> Lessons) : IDbReadable;
-public record Course(int Id, string Name, List<Module> Modules);
-
-List<Course> courses = GetCourses.Query<List<Course>>(cnn);
+public record Track(int Id, string Name) : IDbReadable;
+public record Album(int Id, string Title, List<Track> Tracks) : IDbReadable;
+public record Artist(int Id, string Name, List<Album> Albums);
 ```
 
-```text
-Id  Name  ModulesId  ModulesName  ModulesLessonsId  ModulesLessonsTitle
-1   C#    10         Basics       100               Variables
-1   C#    10         Basics       101               Loops
-1   C#    11         Async        110               Tasks
-```
+The returned columns use the complete path such as `AlbumsTracksId` and `AlbumsTracksName`.
 
-```text
-Course(1, "C#", [
-    Module(10, "Basics", [Lesson(100, "Variables"), Lesson(101, "Loops")]),
-    Module(11, "Async", [Lesson(110, "Tasks")])
-])
-```
+Each level needs a usable grouping boundary.
 
-## Side-by-side collections
+## Side by side collections
 
-One parent can collect different child types from the same rows. Each child uses `[AbortOnNull]` so a row intended for the other collection contributes nothing.
+One parent can fill several child collections from the same joined rows.
 
 ```csharp
 public record OrderItem([AbortOnNull] int Id, decimal Price) : IDbReadable;
@@ -164,19 +81,31 @@ public record OrderNote([AbortOnNull] int Id, string Text) : IDbReadable;
 public record Order(int Id, List<OrderItem> Items, List<OrderNote> Notes);
 ```
 
-```text
-Id  ItemsId  ItemsPrice  NotesId  NotesText
-1   10       9.99        NULL     NULL
-1   11       4.00        NULL     NULL
-1   NULL     NULL        20       gift wrap
+A row can contribute to one collection while the other collection receives no element.
+
+## Several result sets
+
+Several result sets avoid repeating large parent columns.
+
+```csharp
+public record Album(int Id, string Title) : IDbReadable;
+public record class Artist(int Id, string Name)
+{
+    public List<Album> Albums { get; } = [];
+}
+
+using MultiReader results = GetArtistsAndAlbums.ExecuteMultiReader(cnn);
+
+List<Artist> artists = results.Query<List<Artist>>();
+using IEnumerator<(int ArtistId, Album Album)> albums = results.Query<IEnumerable<(int, Album)>>().GetEnumerator();
 ```
 
-```text
-Order(1, [OrderItem(10, 9.99), OrderItem(11, 4.00)], [OrderNote(20, "gift wrap")])
-```
+Application code can merge the two ordered sets by parent key. See [multiple result sets](../running-queries/multiple-results.md).
 
 ## Supported collection shapes
 
-`List<T>`, arrays, and `IEnumerable<T>` have built-in multi-row mappings. Other collection types can be registered with `MultiRowTypeParsingInfo`.
+`List<T>`, arrays, and `IEnumerable<T>` have built in multi row mappings.
 
-[Grouping](grouping.md) controls where one parent ends and the next begins. [Database NULL](nulls.md) covers collapsed children and null elements. [Custom multi-row types](../customization/multi-row.md) covers other collection implementations.
+Use [custom multi row types](../customization/multi-row.md) when another collection shape needs its own mapping behavior.
+
+See [grouping](grouping.md) for parent boundaries.

@@ -1,135 +1,108 @@
-# Expand a collection
+# Collections
 
-The `_X` handler creates one database parameter for every item in a collection and writes their names into the SQL.
+Use `_X` to expand a collection into normal database parameters.
 
 ```csharp
-static readonly QueryCommand AlbumsByGenre = new("SELECT AlbumId AS Id, Title FROM albums WHERE GenreId IN (@genreIds_X)");
+static readonly QueryCommand GetAlbums = new("""
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE AlbumId IN (@ids_X)
+""");
 
-List<Album> albums = AlbumsByGenre.Query<List<Album>>(cnn, new { genreIds = new[] { 1, 2, 3 } });
+int[] ids = [2, 5, 9];
+
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { ids });
 ```
+
+The generated SQL uses one parameter for each item.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE GenreId IN (@genreIds_1, @genreIds_2, @genreIds_3)
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE AlbumId IN (@ids_0, @ids_1, @ids_2)
 ```
 
-The provider receives three normal parameters whose values are `1`, `2`, and `3`. The original `@genreIds_X` marker is not sent to the database.
-
-## Required collections
-
-Without `?`, the collection is required and must contain at least one item.
-
-```csharp
-List<Album> albums = AlbumsByGenre.Query<List<Album>>(cnn, new { genreIds = Array.Empty<int>() });
-// RINKU2002
-```
-
-Rinku raises the binding error before calling the provider. It never generates `IN ()`.
-
-A missing or null collection has the same result.
-
-```csharp
-List<Album> albums = AlbumsByGenre.Query<List<Album>>(cnn);
-// RINKU2002
-```
+The values still use database parameters. They are not written directly into the SQL text.
 
 ## Optional collections
 
-Add `?` when an absent or empty collection should remove its surrounding SQL.
+Add `?` when an empty or missing collection should remove the condition.
 
 ```csharp
-static readonly QueryCommand OptionalGenres = new("SELECT AlbumId AS Id, Title FROM albums WHERE GenreId IN (?@genreIds_X)");
+static readonly QueryCommand SearchAlbums = new("""
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE ArtistId = @artistId
+AND AlbumId IN (?@ids_X)
+""");
 
-List<Album> albums = OptionalGenres.Query<List<Album>>(cnn, new { genreIds = Array.Empty<int>() });
+int[] ids = [];
+
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new
+{
+    artistId = 7,
+    ids
+});
 ```
+
+The generated SQL no longer contains the `IN` condition.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE ArtistId = @artistId
 ```
 
-A non-empty collection keeps the condition.
+## Required empty collections
 
-```csharp
-List<Album> albums = OptionalGenres.Query<List<Album>>(cnn, new { genreIds = new[] { 1, 2 } });
-```
+A required `_X` value must contain at least one item.
 
 ```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE GenreId IN (@genreIds_1, @genreIds_2)
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE AlbumId IN (@ids_X)
 ```
 
-## Use any enumerable value
+An empty or missing `ids` value produces `RINKU2002`.
 
-Arrays, lists, sets, and lazy `IEnumerable<T>` values can be expanded.
+Use `?@ids_X` when an empty collection means that the filter should not be applied.
+
+## Enumerable values
+
+The handler accepts values from any enumerable sequence.
 
 ```csharp
-HashSet<int> genreIds = [1, 2, 3];
-List<Album> albums = AlbumsByGenre.Query<List<Album>>(cnn, new { genreIds });
+IEnumerable<int> ids = [1, 4, 8];
+
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { ids });
 ```
 
-```csharp
-IEnumerable<int> genreIds = Enumerable.Range(1, 3).Where(id => id != 2);
-List<Album> albums = AlbumsByGenre.Query<List<Album>>(cnn, new { genreIds });
-```
+## Repeated use
 
-A lazy sequence is enumerated while the execution command is prepared. Avoid a sequence whose enumeration has side effects or depends on mutable state.
-
-## Reuse one expansion
-
-The same collection marker can appear more than once. Every occurrence writes the same generated parameter names.
-
-```csharp
-static readonly QueryCommand Genres = new("SELECT GenreId AS Id, Name FROM genres WHERE GenreId IN (@ids_X) OR ParentGenreId IN (@ids_X)");
-
-List<Genre> genres = Genres.Query<List<Genre>>(cnn, new { ids = new[] { 2, 5 } });
-```
+The same collection marker can appear more than once.
 
 ```sql
-SELECT GenreId AS Id, Name FROM genres WHERE GenreId IN (@ids_1, @ids_2) OR ParentGenreId IN (@ids_1, @ids_2)
+SELECT AlbumId AS Id, Title
+FROM albums
+WHERE AlbumId IN (@ids_X)
+OR ParentAlbumId IN (@ids_X)
 ```
 
-Only two provider parameters are created.
+Rinku reuses the generated parameter set for that value.
 
-## Combine collections with other filters
+## Builders
 
-Collection expansion composes with ordinary and conditional parameters.
-
-```csharp
-static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND GenreId IN (?@genreIds_X) AND ReleaseYear >= ?@minimumYear");
-
-List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7, genreIds = new[] { 1, 2 }, minimumYear = 2000 });
-```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND GenreId IN (@genreIds_1, @genreIds_2) AND ReleaseYear >= @minimumYear
-```
-
-Leaving `genreIds` empty removes only the genre condition. Leaving `minimumYear` null removes only the year condition.
-
-## Reuse a bound command
-
-A bound builder updates the numbered parameters when the collection size changes.
+A bound builder can be reused with a different collection size.
 
 ```csharp
 using DbCommand command = cnn.CreateCommand();
-var search = SearchAlbums.StartBuilder(command);
+var builder = GetAlbums.StartBuilder(command);
 
-search.Use("@artistId", 7);
-search.Use("@genreIds", new[] { 1, 2, 3 });
-List<Album> first = search.Query<List<Album>>();
+builder.Use("ids", new[] { 1, 2 });
+builder.Execute();
 
-search.Use("@genreIds", new[] { 4 });
-List<Album> second = search.Query<List<Album>>();
+builder.Use("ids", new[] { 4, 5, 6, 7 });
+builder.Execute();
 ```
 
-The second execution keeps one generated genre parameter and removes the extras from the command.
-
-## Parameter metadata
-
-Expanded elements share one cached parameter strategy. After the provider reports the first element's database metadata, later expansions reuse that strategy for every generated element.
-
-```csharp
-AlbumsByGenre.Parameters.Reset();
-```
-
-Resetting the command parameters also resets the cached strategy used by `_X` elements.
-
-[Value handlers](handlers.md) covers `_N`, `_S`, `_R`, and handler errors. [Conditional variables](variables.md) explains how the surrounding SQL is removed. [Parameter metadata](../running-queries/parameter-metadata.md) covers learned and pinned database types.
+See [Builders](../running-queries/builders.md) for per call state and bound commands.

@@ -81,7 +81,7 @@ Use a registered suffix. Collection expansion uses `_X`.
 SELECT AlbumId AS Id FROM albums WHERE AlbumId IN (@albumIds_X)
 ```
 
-See [value handlers](../conditional-sql/handlers.md).
+See [value handlers](../conditional-sql/handlers.md) for the supported suffix handler flow.
 
 ### RINKU1005 condition variable not in the query
 
@@ -118,7 +118,7 @@ Parentheses, `CASE`, and `BEGIN` share a maximum nesting depth of 63.
 64 nested scopes -> RINKU1007
 ```
 
-### RINKU1008 projection-only construct
+### RINKU1008 projection only construct
 
 ```sql
 SELECT AlbumId AS Id!, Title FROM albums
@@ -130,7 +130,7 @@ SELECT AlbumId AS Id!, Title FROM albums
 ?SELECT AlbumId AS Id!, Title FROM albums
 ```
 
-See [dynamic projection](../conditional-sql/dynamic-projection.md).
+See [dynamic projection](../conditional-sql/dynamic-projection.md) for projection syntax and generated SQL.
 
 ## Binding errors
 
@@ -160,7 +160,7 @@ static readonly QueryCommand ById = new("SELECT AlbumId AS Id, Title FROM albums
 List<Album> albums = ById.Query<List<Album>>(cnn); // RINKU2002
 ```
 
-Supply a non-empty value or make the handler conditional.
+Supply a nonempty value or make the handler conditional.
 
 ```sql
 SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (?@albumIds_X)
@@ -180,7 +180,7 @@ values.Use("@skip", "46");
 
 ### RINKU2004 invalid parameter at index
 
-A caller-created `IDbCommand` returned something that is not an `IDbDataParameter` from its parameter collection. Normal providers reject that item when it is added.
+A caller created `IDbCommand` returned something that is not an `IDbDataParameter` from its parameter collection. Normal providers reject that item when it is added.
 
 ```text
 command.Parameters[index] -> object that is not IDbDataParameter -> RINKU2004
@@ -203,7 +203,7 @@ handler.Update(command, ref state, new[] { 2, 5 }); // RINKU2005
 SizedDbParamCache.Get(DbType.Int32, 100); // RINKU2006
 ```
 
-Use size only with text, binary, XML, and fixed-length database types.
+Use size only with text, binary, XML, and fixed length database types.
 
 ## Mapping errors
 
@@ -261,7 +261,7 @@ public record Report(List<int> Rows, int Total);
 Report report = GetReport.Query<Report>(cnn); // RINKU3002
 ```
 
-A multi-row value has no usable boundary separating one complete `Report` from the next. Put stable scalar values before the first multi-row value or configure a [grouping rule](../mapping/grouping.md).
+A multi row value has no usable boundary separating one complete `Report` from the next. Put stable scalar values before the first multi row value or configure a [grouping rule](../mapping/grouping.md).
 
 ### RINKU3003 group key matched no column
 
@@ -284,7 +284,7 @@ public class Batch {
 }
 ```
 
-The constructor declares both equality-key and method grouping at the same level. Keep one rule family there. See [grouping precedence](../mapping/grouping.md).
+The constructor declares both equality key and method grouping at the same level. Keep one rule family there. See [grouping precedence](../mapping/grouping.md).
 
 ## Reading errors
 
@@ -308,7 +308,7 @@ Album album = GetAlbum.Query<Single<Album>>(cnn);
 // RINKU4002 when a second complete Album exists.
 ```
 
-`Single<T>` and the single-or-default shapes reject a second result. See [result shapes](../running-queries/result-shapes.md).
+`Single<T>` and the single or default shapes reject a second result. See [result shapes](../running-queries/result-shapes.md).
 
 ### RINKU4003 database NULL not allowed
 
@@ -346,13 +346,13 @@ Version invalidId = row.Get<Version>("Id"); // RINKU4005 for an integer column
 int id = row.Get<int>("Id");
 ```
 
-See [dynamic rows](../mapping/dynamic-rows.md).
+See [dynamic rows](../mapping/dynamic-rows.md) for runtime row access and name comparison.
 
 ## Configuration errors
 
 ### RINKU5001 type not usable by this parsing info
 
-A `TypeParsingInfo` was asked to handle a type it does not support. Custom implementations report this from their type validation.
+A `TypeParsingInfo` was asked to handle a type it does not support. Custom implementations report this from their type validation. See [type registrations](../customization/type-registration.md) for the user facing registration path.
 
 ### RINKU5002 construction shape not usable
 
@@ -364,7 +364,7 @@ static class BoxFactory {
 }
 ```
 
-See [open generic factories](../mapping/construction-paths.md#add-an-open-generic-factory).
+See [constructors and factories](../mapping/construction-paths.md#add-a-constructor-or-factory) for supported factory shapes and registration.
 
 ### RINKU5003 unusable member
 
@@ -389,7 +389,7 @@ The path builds a different target type.
 
 ### RINKU5005 construction from a foreign generic type
 
-Move an open generic factory from a generic host to a non-generic host.
+Move an open generic factory from a generic host to a nongeneric host.
 
 ```csharp
 static class BoxFactory {
@@ -429,9 +429,7 @@ source or explicit runtime binding. See the [tracking overview](../tracking/inde
 
 ### RINKU6002 copy method not usable
 
-The requested tracking member has a source method or property that does not match
-its declared value type. Bind a compatible member or provide a matching runtime
-capability.
+The requested tracking member has a source method or property that does not match its declared value type. Bind a compatible member or provide a matching runtime capability. See [runtime tracking](../tracking/runtime.md) for member configuration.
 
 ### RINKU6003 no current value
 
@@ -448,10 +446,10 @@ IBindingList binding = tracked;
 binding.AddNew(); // RINKU6004
 ```
 
-Set a new-item factory or handle `AddingNew` before calling `AddNew`.
+Set a new item factory or handle `AddingNew` before calling `AddNew`.
 
 ## Internal errors
 
 ### RINKU9001 internal invariant
 
-This reports a library bug rather than an invalid application call. Report it with the stack trace, query template, target type, and result schema when available.
+This reports a library bug rather than an invalid application call. Report it with the stack trace, query template, target type, and result schema when available. Use the [RinkuLib issue tracker](https://github.com/RinkuLib/RinkuLib/issues) when the error is reproducible.

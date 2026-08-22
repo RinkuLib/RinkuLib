@@ -1,6 +1,14 @@
 - name: Code generation
   href: index.md
-- name: Configuration
-  href: configuration.md
-- name: Analyzers
+- name: Configure CodeGen
+  href: configure.md
+- name: Add queries
+  href: queries.md
+- name: Generated commands
+  href: generated-code.md
+- name: Analyzers and code fixes
   href: analyzers.md
+- name: Refresh generated code
+  href: refresh.md
+- name: Configuration file
+  href: configuration.md
