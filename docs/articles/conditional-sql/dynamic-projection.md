@@ -1,6 +1,6 @@
 # Dynamic projection
 
-`?SELECT` lets the caller choose columns while keeping a valid projection.
+## Select returned columns
 
 ```csharp
 static readonly QueryCommand SearchAlbums = new("""
@@ -17,8 +17,6 @@ builder.Use("Title");
 List<DynaObject> rows = builder.Query<List<DynaObject>>(cnn);
 ```
 
-The generated projection keeps the required `Id` column and the selected `Title` column.
-
 ```sql
 SELECT
     AlbumId AS Id,
@@ -26,9 +24,7 @@ SELECT
 FROM albums
 ```
 
-## Derived keys
-
-The final column name becomes the key used by the builder.
+## Projection key from final alias
 
 ```sql
 ?SELECT
@@ -43,7 +39,7 @@ var builder = SearchAlbums.StartBuilder();
 builder.Use("Year");
 ```
 
-Calculated columns should use an explicit alias so their key is clear.
+Calculated columns can expose an explicit key with an alias.
 
 ```sql
 ?SELECT
@@ -52,9 +48,7 @@ Calculated columns should use an explicit alias so their key is clear.
 FROM invoice_lines
 ```
 
-## Required columns
-
-Add `!` to a projection entry that must always remain.
+## Required projection entry
 
 ```sql
 ?SELECT
@@ -64,11 +58,9 @@ Add `!` to a projection entry that must always remain.
 FROM albums
 ```
 
-`Id` stays in the generated SQL even when the caller does not select it.
+`Id` remains even when it is not selected by the caller.
 
-## Group a supporting column
-
-`&,` groups a column with the next projection key.
+## Supporting column group
 
 ```sql
 ?SELECT
@@ -80,9 +72,7 @@ FROM albums
 
 Selecting `Artist` keeps both `ArtistId` and `ArtistName`.
 
-## Add another condition
-
-A projection entry can also use an explicit marker.
+## Projection entry with a marker
 
 ```sql
 ?SELECT
@@ -91,11 +81,11 @@ A projection entry can also use an explicit marker.
 FROM albums
 ```
 
-The projection key and marker can then be controlled separately when that is useful.
+The projection key and the marker remain separate conditions.
+
+[Markers](markers.md)
 
 ## UNION
-
-Matching aliases can share the same projection key across a union.
 
 ```sql
 ?SELECT Id!, Name
@@ -105,11 +95,9 @@ UNION ALL
 FROM archived_artists
 ```
 
-Selecting `Name` applies to both projections.
+The same alias key controls matching projection entries in both branches.
 
-## CTEs
-
-Dynamic projection can be used inside a common table expression.
+## CTE
 
 ```sql
 WITH albums_cte AS
@@ -117,13 +105,10 @@ WITH albums_cte AS
     ?SELECT AlbumId AS Id!, Title, ReleaseYear
     FROM albums
 )
-SELECT *
-FROM albums_cte
+SELECT * FROM albums_cte
 ```
 
-## Optional modifiers
-
-Use `???` when a modifier should be controlled separately from the projection.
+## Optional modifier
 
 ```sql
 ???Distinct DISTINCT
@@ -137,4 +122,4 @@ builder.Use("Distinct");
 builder.Use("Title");
 ```
 
-See [Template syntax](template-syntax.md) for the syntax rules used by the parser.
+[Template syntax](template-syntax.md)

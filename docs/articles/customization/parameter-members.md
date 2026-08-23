@@ -1,8 +1,6 @@
 # Parameter source rules
 
-Use a custom parameter source rule when a member needs an application specific presence rule.
-
-The built in attributes already cover common cases.
+## Built in presence rules
 
 ```csharp
 public sealed class AlbumSearch
@@ -15,11 +13,9 @@ public sealed class AlbumSearch
 }
 ```
 
-See [Supplying values](../running-queries/values.md) for the built in rules.
+[Supplying values](../running-queries/values.md)
 
-## Add an application condition
-
-This example supplies a string only when an application method accepts it.
+## Custom member condition
 
 ```csharp
 static class SearchRules
@@ -30,13 +26,14 @@ static class SearchRules
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
 sealed class HasTextAttribute : AccessorEmitterHandler
 {
-    static readonly MethodConditionEmitter Emitter = new(typeof(SearchRules).GetMethod(nameof(SearchRules.HasText)) ?? throw new InvalidOperationException("HasText was not found."));
+    static readonly MethodConditionEmitter Emitter = new(
+        typeof(SearchRules).GetMethod(nameof(SearchRules.HasText))
+        ?? throw new InvalidOperationException("HasText was not found."));
 
-    public override IAccessorEmitter? GetMemberEmitter(char variableCharacter, int index, Type type, MemberInfo member, Mapper mapper) => index < 0 ? null : Emitter;
+    public override IAccessorEmitter? GetMemberEmitter(char variableCharacter, int index, Type type, MemberInfo member, Mapper mapper)
+        => index < 0 ? null : Emitter;
 }
 ```
-
-Use the attribute on the parameter object.
 
 ```csharp
 public sealed class AlbumSearch
@@ -44,39 +41,17 @@ public sealed class AlbumSearch
     [HasText]
     public string? Title { get; init; }
 }
-```
 
-```csharp
 static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE Title = ?@title");
 
-List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new AlbumSearch
-{
-    Title = "   "
-});
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new AlbumSearch { Title = "   " });
+// SELECT AlbumId AS Id, Title FROM albums
+
+albums = SearchAlbums.Query<List<Album>>(cnn, new AlbumSearch { Title = "Blue" });
+// SELECT AlbumId AS Id, Title FROM albums WHERE Title = @title
 ```
 
-The generated SQL does not contain the title condition.
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums
-```
-
-A value accepted by the rule keeps the condition.
-
-```csharp
-List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new AlbumSearch
-{
-    Title = "Blue"
-});
-```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE Title = @title
-```
-
-## Type rules
-
-Apply the handler to the parameter type when the rule needs to provide a key that has no matching member.
+## Type rule for a key without a member
 
 ```csharp
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
@@ -84,7 +59,8 @@ sealed class IncludeDeletedAttribute : AccessorEmitterHandler
 {
     static readonly IncludeDeletedEmitter Emitter = new();
 
-    public override ITypeAccessorEmitter? GetTypeEmitter(char variableCharacter, int index, Type type, Mapper mapper) => mapper.GetIndex("IncludeDeleted") == index ? Emitter : null;
+    public override ITypeAccessorEmitter? GetTypeEmitter(char variableCharacter, int index, Type type, Mapper mapper)
+        => mapper.GetIndex("IncludeDeleted") == index ? Emitter : null;
 }
 
 sealed class IncludeDeletedEmitter : TypeAccessorEmitterBase
@@ -102,6 +78,6 @@ sealed class IncludeDeletedEmitter : TypeAccessorEmitterBase
 public sealed record AlbumSearch(int ArtistId);
 ```
 
-The parameter type has no `IncludeDeleted` member. The type rule supplies that key when the query asks for it.
+The parameter type has no `IncludeDeleted` member. The type rule supplies that query key.
 
-Use `ITypeAccessorEmitter` for a missing key and `IAccessorEmitter` when a type rule needs to replace an existing member rule. A normal member attribute is sufficient when the rule only applies to one member.
+[`ITypeAccessorEmitter`](xref:Rinku.Querying.Parameters.ITypeAccessorEmitter) handles a key supplied by the type. [`IAccessorEmitter`](xref:Rinku.Querying.Parameters.IAccessorEmitter) handles an existing member slot.

@@ -1,13 +1,9 @@
 # Fixed result schema
 
-Use the non generic `CachedTypeParser` when one returned column schema can be read as several result types.
-
-It is normally kept beside the command factory whose results it reads.
-
 ```csharp
+public record Album(int Id, string Title);
 public record AlbumSummary(int Id, string Title);
-
-static readonly CachedTypeParser GetAlbumParser = new();
+public record AlbumRow(int Id, string Title);
 
 public static class AlbumCommands
 {
@@ -20,18 +16,10 @@ public static class AlbumCommands
         parameter.ParameterName = "@albumId";
         parameter.Value = albumId;
         command.Parameters.Add(parameter);
-
         return command;
     }
 }
-
-Album album = GetAlbumParser.Query<Album>(AlbumCommands.GetAlbum(cnn, 12));
-AlbumSummary summary = GetAlbumParser.Query<AlbumSummary>(AlbumCommands.GetAlbum(cnn, 12));
 ```
-
-The first query learns the returned columns. Later result types reuse that schema and keep their own parser in the same cache.
-
-The exact command or factory is not enforced. Another command can use the same cache when it returns compatible columns.
 
 ## Learn the schema from the first query
 
@@ -39,51 +27,38 @@ The exact command or factory is not enforced. Another command can use the same c
 static readonly CachedTypeParser AlbumSchemaParser = new();
 
 Album album = AlbumSchemaParser.Query<Album>(AlbumCommands.GetAlbum(cnn, 12));
-DynaObject row = AlbumSchemaParser.Query<DynaObject>(AlbumCommands.GetAlbum(cnn, 12));
-```
-
-Check whether the schema is already known when that matters to the caller.
-
-```csharp
-bool learned = AlbumSchemaParser.HasSchema;
-```
-
-Read the fixed columns after they are known.
-
-```csharp
-ColumnInfo[] columns = AlbumSchemaParser.Schema;
-```
-
-## Supply the schema before the first query
-
-Use `From<TSchema>()` when a type already describes the returned columns.
-
-```csharp
-public record AlbumRow(int Id, string Title);
-
-static readonly CachedTypeParser AlbumSchemaParser = CachedTypeParser.From<AlbumRow>();
-
-Album album = AlbumSchemaParser.Query<Album>(AlbumCommands.GetAlbum(cnn, 12));
 AlbumSummary summary = AlbumSchemaParser.Query<AlbumSummary>(AlbumCommands.GetAlbum(cnn, 12));
 ```
 
-`AlbumRow` describes the columns. It does not force the query result to be `AlbumRow`.
+The first query fixes the returned column schema. Each result type keeps its own parser against that schema.
 
-The same schema can be supplied directly.
+```csharp
+bool learned = AlbumSchemaParser.HasSchema;
+ColumnInfo[] columns = AlbumSchemaParser.Schema;
+```
+
+## Supply the schema from a type
+
+```csharp
+static readonly CachedTypeParser AlbumSchemaParser = CachedTypeParser.From<AlbumRow>();
+```
+
+The same schema can be passed directly.
 
 ```csharp
 static readonly CachedTypeParser AlbumSchemaParser = new(TypeSchema<AlbumRow>.Schema);
 ```
 
-A runtime `Type` can supply the schema too.
+A runtime type can supply it too.
 
 ```csharp
-static readonly CachedTypeParser AlbumSchemaParser = new(typeof(AlbumRow));
+Type rowType = typeof(AlbumRow);
+var albumSchemaParser = new CachedTypeParser(rowType);
 ```
 
-## Describe columns from reflection
+`AlbumRow` describes the columns. It does not force the query result type.
 
-`SchemaExtractor` can describe method or constructor parameters when those parameters already represent the required columns.
+## Supply a reflected construction schema
 
 ```csharp
 public static class AlbumFactory
@@ -92,21 +67,17 @@ public static class AlbumFactory
 }
 
 static readonly MethodInfo CreateAlbumMethod = typeof(AlbumFactory).GetMethod(nameof(AlbumFactory.Create)) ?? throw new InvalidOperationException();
-
 static readonly CachedTypeParser AlbumSchemaParser = new(SchemaExtractor.FromMethod(CreateAlbumMethod));
 ```
 
-A constructor can be used directly.
+A constructor can be supplied directly.
 
 ```csharp
 static readonly ConstructorInfo AlbumRowConstructor = typeof(AlbumRow).GetConstructors()[0];
-
 static readonly CachedTypeParser AlbumSchemaParser = new(AlbumRowConstructor);
 ```
 
-## Runtime result types
-
-Use the non generic overload when the result type is known only at runtime.
+## Runtime result type
 
 ```csharp
 Type resultType = typeof(AlbumSummary);
@@ -114,35 +85,35 @@ using DbCommand command = AlbumCommands.GetAlbum(cnn, 12);
 object? result = AlbumSchemaParser.Query(resultType, command, disposeCommand: false);
 ```
 
-The asynchronous form follows the same rule.
-
 ```csharp
 object? result = await AlbumSchemaParser.QueryAsync(resultType, command, disposeCommand: false, ct: cancellationToken);
 ```
 
-## Get a parser without running a command
+## Async stream
 
-Once the schema is known, get the parser for a result type directly.
+The fixed-schema parser can also stream rows asynchronously from an existing command.
+
+```csharp
+using DbCommand command = AlbumCommands.GetAlbum(cnn, 12);
+
+await foreach (Album album in AlbumSchemaParser.StreamQueryAsync<Album>(command, ct: cancellationToken))
+    Console.WriteLine(album.Title);
+```
+
+## Get a parser without executing
 
 ```csharp
 ITypeParser<Album> albumParser = AlbumSchemaParser.Get<Album>();
 ITypeParser runtimeParser = AlbumSchemaParser.Get(resultType);
 ```
 
-## Invalidate cached result parsers
-
-Remove one result parser while keeping the fixed schema and the other result parsers.
+## Invalidate result parsers
 
 ```csharp
 AlbumSchemaParser.Invalidate<Album>();
-```
-
-Remove every result parser held by this cache.
-
-```csharp
 AlbumSchemaParser.Invalidate();
 ```
 
-The schema remains fixed for the lifetime of the `CachedTypeParser` instance.
+The fixed column schema remains on the `CachedTypeParser` instance.
 
-Use [existing DbCommand](dbcommand.md) for the generic cache and normal command factory usage. Use [cache control](../customization/caches.md) for parser invalidation.
+[Existing DbCommand](dbcommand.md) · [Cache control](../customization/caches.md)

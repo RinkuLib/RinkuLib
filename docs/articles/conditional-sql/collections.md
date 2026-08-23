@@ -1,76 +1,59 @@
-# Collections
+# Collection expansion
 
-Use `_X` to expand a collection into normal database parameters.
+## Expand to database parameters
 
 ```csharp
 static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@ids_X)");
 
 int[] ids = [2, 5, 9];
-
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { ids });
 ```
-
-The generated SQL uses one parameter for each item.
 
 ```sql
 SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@ids_0, @ids_1, @ids_2)
 ```
 
-The values still use database parameters. They are not written directly into the SQL text.
+The elements remain database parameters.
 
-## Optional collections
-
-Add `?` when an empty or missing collection should remove the condition.
+## Optional empty collection
 
 ```csharp
 static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId AND AlbumId IN (?@ids_X)");
 
 int[] ids = [];
-
 List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7, ids });
 ```
-
-The generated SQL no longer contains the `IN` condition.
 
 ```sql
 SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ```
 
-## Required empty collections
+## Required empty collection
 
-A required `_X` value must contain at least one item.
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@ids_X)
+```csharp
+int[] ids = [];
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { ids });
+// RINKU2002
 ```
 
-An empty or missing `ids` value produces `RINKU2002`.
+[Errors](../reference/errors.md#rinku2002-required-handler-value)
 
-Use `?@ids_X` when an empty collection means that the filter should not be applied.
-
-## Enumerable values
-
-The handler accepts values from any enumerable sequence.
+## Any enumerable
 
 ```csharp
 IEnumerable<int> ids = [1, 4, 8];
-
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { ids });
 ```
 
-## Repeated use
-
-The same collection marker can appear more than once.
+## Same collection used twice
 
 ```sql
 SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@ids_X) OR ParentAlbumId IN (@ids_X)
 ```
 
-Rinku reuses the generated parameter set for that value.
+The repeated value uses the same generated parameter set.
 
-## Builders
-
-A bound builder can be reused with a different collection size.
+## Change collection size on a bound builder
 
 ```csharp
 using DbCommand command = cnn.CreateCommand();
@@ -83,4 +66,4 @@ builder.Use("@ids", new[] { 4, 5, 6, 7 });
 builder.Execute();
 ```
 
-See [Builders](../running-queries/builders.md) for per call state and bound commands.
+[Builders](../running-queries/builders.md)

@@ -1,43 +1,39 @@
 # Mapping slot rules
 
-A mapping slot is a constructor parameter, property, or field.
-
-Use a slot extension when an application needs a naming, null, or column usage rule that the built in attributes do not provide.
-
-## Add a naming rule
-
-This example maps one slot to a database name with a `db_` prefix.
+## Custom name comparer attribute
 
 ```csharp
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 sealed class DbPrefixAttribute : Attribute, INameComparerMaker
 {
-    public INameComparer MakeComparer(Type type, ref INameComparer current, object[] attributes, object? member) => new NameComparer("db_" + current.GetDefaultName());
+    public INameComparer MakeComparer(Type type, ref INameComparer current, object[] attributes, object? member)
+        => new NameComparer("db_" + current.GetDefaultName());
 }
 ```
 
-Apply the attribute to the slot.
-
 ```csharp
 public record Album([DbPrefix] int Id, string Title);
-```
 
-```csharp
 static readonly QueryCommand GetAlbum = new("SELECT db_Id, Title FROM albums WHERE db_Id = @id");
-
 Album album = GetAlbum.Query<Album>(cnn, new { id = 12 });
 ```
 
-```sql
-SELECT db_Id, Title FROM albums WHERE db_Id = @id
-```
+The attribute changes the name comparer for that mapping slot.
 
-## Other slot rules
+## Null rule extension point
 
-Use `INullColHandlerMaker` when an attribute must define a new database `NULL` rule.
+Custom null attributes implement [`INullColHandlerMaker`](xref:Rinku.Mapping.INullColHandlerMaker).
 
-Use `IUsageFlagModifier` when an attribute must change sequential reading or column reuse.
+Built in null behavior is shown with concrete examples in [Database NULL](../mapping/nulls.md).
 
-Use `IParamInfoMaker` only when one attribute must replace several slot rules together.
+## Column usage extension point
 
-The built in alternatives are documented in [Names](../mapping/names.md), [Null handling](../mapping/nulls.md), and [Reading order](../mapping/reading-order.md).
+Custom column usage attributes implement [`IUsageFlagModifier`](xref:Rinku.Mapping.IUsageFlagModifier).
+
+Built in usage behavior is shown with concrete examples in [Reading order](../mapping/reading-order.md).
+
+## Combined slot rule
+
+An attribute that replaces several slot properties can implement [`IParamInfoMaker`](xref:Rinku.Mapping.IParamInfoMaker).
+
+[ParamInfo API](xref:Rinku.Mapping.ParamInfo)

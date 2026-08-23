@@ -1,11 +1,13 @@
 # Raw readers
 
-Use `ExecuteReader` when application code needs the provider `DbDataReader` directly.
+```csharp
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+```
+
+## DbDataReader
 
 ```csharp
-static readonly QueryCommand GetAlbumRows = new("SELECT AlbumId, Title FROM albums WHERE ArtistId = @artistId");
-
-DbDataReader reader = GetAlbumRows.ExecuteReader(cnn, out DbCommand command, new { artistId = 7 });
+DbDataReader reader = GetAlbums.ExecuteReader(cnn, out DbCommand command, new { artistId = 7 });
 
 using (command)
 using (reader)
@@ -14,30 +16,35 @@ using (reader)
     {
         int id = reader.GetInt32(0);
         string title = reader.GetString(1);
-        Console.WriteLine($"{id}: {title}");
+        Console.WriteLine($"{id} {title}");
     }
 }
 ```
 
-The returned reader is the provider reader. The caller disposes both the reader and generated command.
-
-## Connection ownership
-
-Disposing the reader closes a connection that Rinku opened for the operation. It does not dispose the generated command.
-
-An already open connection remains open. See [execution context](execution-context.md) for the same ownership rules used by other query forms.
+The caller owns the returned reader and command. A connection opened for this reader is closed when the reader is disposed.
 
 ## Async reader
 
 ```csharp
-DbDataReader reader = await GetAlbumRows.ExecuteReaderAsync(cnn, out DbCommand command, new { artistId = 7 }, ct: cancellationToken);
+DbDataReader reader = await GetAlbums.ExecuteReaderAsync(cnn, out DbCommand command, new { artistId = 7 }, ct: cancellationToken);
 
 await using (command)
 await using (reader)
 {
     while (await reader.ReadAsync(cancellationToken))
-        Console.WriteLine(reader.GetValue(0));
+        Console.WriteLine(reader.GetString(1));
 }
 ```
 
-Use normal [result shapes](result-shapes.md) when Rinku should map the reader instead.
+## Existing command parser
+
+```csharp
+static readonly CachedTypeParser<Album> AlbumParser = new();
+
+using DbCommand command = cnn.CreateCommand();
+command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 12";
+
+Album album = AlbumParser.Query(command);
+```
+
+[Existing DbCommand](dbcommand.md)

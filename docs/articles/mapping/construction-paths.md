@@ -1,6 +1,6 @@
 # Construction paths
 
-Rinku can create an object through constructors, static factories, and registered construction paths.
+## Construction negotiation
 
 ```csharp
 public sealed class Album
@@ -8,51 +8,131 @@ public sealed class Album
     public Album(int id, string title) { }
     public Album(int id, string title, string notes) { }
 }
+
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+// The two-parameter construction can be satisfied.
 ```
 
-The returned columns decide which path is usable.
+A construction participates when every required input can be satisfied by the returned shape.
 
-## Selection order
+When several constructions can be satisfied, candidates are ordered from the most specific to the least specific. Specificity is based on parameter count and assignment compatibility.
 
-A construction path must be able to satisfy every required input.
+```csharp
+public sealed class Value
+{
+    public Value(object value) { }
+    public Value(string value) { }
+}
+
+Value value = cnn.Query<Value>("SELECT CAST('Blue' AS varchar(20)) AS value");
+// The string construction is more specific than the object construction.
+```
+
+If one candidate cannot negotiate a complete value, the next candidate can be tried from the original column usage state.
+
+## Defaults provide another construction
 
 ```csharp
 public record Album(int Id, string Title, string? Notes = null);
 
-Album shortRow = GetAlbum.Query<Album>(cnn);
-Album longRow = GetAlbumWithNotes.Query<Album>(cnn);
+Album shortRow = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+Album longRow = cnn.Query<Album>("SELECT AlbumId AS Id, Title, Notes FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
 
-The shorter row can use the declared default. The longer row can use all three columns.
+The declared default can satisfy `Notes` when no matching column exists.
 
-When several paths are usable, the configured path order decides which one wins.
-
-## Select one constructor
-
-Use the type registration during setup when another constructor should be registered explicitly.
+## Recursive termination
 
 ```csharp
-ConstructorInfo constructor = typeof(Album).GetConstructor([typeof(int), typeof(string)]) ?? throw new InvalidOperationException("Album constructor was not found.");
+public record Employee(int Id, string Name, Employee? Manager = null) : IDbReadable;
+
+Employee employee = cnn.Query<Employee>("SELECT e.EmployeeId AS Id, e.Name, m.EmployeeId AS ManagerId, m.Name AS ManagerName, b.EmployeeId AS ManagerManagerId, b.Name AS ManagerManagerName FROM employees e LEFT JOIN employees m ON m.EmployeeId = e.ManagerId LEFT JOIN employees b ON b.EmployeeId = m.ManagerId WHERE e.EmployeeId = @employeeId", new { employeeId = 12 });
+// Construction keeps taking Manager while matching columns exist.
+// At the deepest level the default Manager value provides a terminating construction.
+```
+
+A shorter constructor provides the same kind of alternative construction.
+
+```csharp
+public sealed class Employee : IDbReadable
+{
+    public Employee(int id, string name) : this(id, name, null) { }
+
+    public Employee(int id, string name, Employee? manager)
+    {
+        Id = id;
+        Name = name;
+        Manager = manager;
+    }
+
+    public int Id { get; }
+    public string Name { get; }
+    public Employee? Manager { get; }
+}
+```
+
+[Recursive mapping](nesting.md)
+
+## Positional constructor selection
+
+```csharp
+public sealed class AlbumRow
+{
+    public AlbumRow(int id) { }
+
+    [DbConstructor]
+    public AlbumRow(int id, string title) { }
+}
+
+TypeParsingInfo.AddOrSet<AlbumRow>(CtorTypeInfo.Instance);
+```
+
+`CtorTypeInfo` maps constructor parameters by column order and type. `DbConstructor` selects the constructor when several parameterized constructors exist.
+
+## Register a construction
+
+```csharp
+ConstructorInfo constructor = typeof(Album).GetConstructor([typeof(int), typeof(string)])
+    ?? throw new InvalidOperationException("Album constructor was not found.");
+
 TypeParsingInfo.GetOrAdd<Album>().AddPossibleConstruction(constructor);
 ```
 
-Use the exact constructor or factory reflected from the real type.
+The same registration surface accepts a reflected static factory.
 
-## Add a constructor or factory
+## Non public members
 
-A non public constructor or external factory can be added during setup.
+One construction can be registered explicitly.
 
 ```csharp
-ConstructorInfo constructor = typeof(Album).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, binder: null, [typeof(int), typeof(string)], modifiers: null) ?? throw new InvalidOperationException("Album constructor was not found.");
+ConstructorInfo constructor = typeof(Album).GetConstructor(
+    BindingFlags.Instance | BindingFlags.NonPublic,
+    binder: null,
+    [typeof(int), typeof(string)],
+    modifiers: null)
+    ?? throw new InvalidOperationException("Album constructor was not found.");
 
 TypeParsingInfo.GetOrAdd<Album>().AddPossibleConstruction(constructor);
 ```
 
-The same registration model can add a static factory method.
+A type can expose its non public constructors and writable members to default discovery.
 
-## Complete with writable members
+```csharp
+[UsePrivateMembers]
+public sealed class Album
+{
+    private Album(int id, string title)
+    {
+        Id = id;
+        Title = title;
+    }
 
-A construction path can allow remaining columns to fill writable members.
+    public int Id { get; }
+    public string Title { get; }
+}
+```
+
+## Complete with members
 
 ```csharp
 public sealed class Album
@@ -63,14 +143,16 @@ public sealed class Album
     public int Id { get; }
     public string? Title { get; set; }
 }
+
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+// Id is consumed by the constructor.
+// Title is filled through the writable member.
 ```
 
-Use this when part of the result belongs to the constructor and the rest belongs to members.
+## Missing column fallback
 
-## Change path order or fallback behavior
+A mapping slot can provide a parser when no result column matches it.
 
-Use the registration APIs when application conventions need another order or fallback.
+<xref:Rinku.Mapping.ParamInfo.FallbackTryGetParser*> returns that fallback parser. Returning `null` keeps the slot required.
 
-Keep those changes in application setup before parsers are created.
-
-The [advanced type registration](../customization/type-registration.md) page shows how to replace type level mapping behavior. The [API reference](../../api/index.md) contains the individual construction configuration members.
+[Slot rules](../customization/slot-rules.md) · [Type registration](../customization/type-registration.md) · [Reading order](reading-order.md)

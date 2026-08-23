@@ -1,6 +1,6 @@
-# Collections from database results
+# Multi-row mapping
 
-A joined result can fill a nested collection directly.
+## List inside a mapped value
 
 ```csharp
 public record Album(int Id, string Title) : IDbReadable;
@@ -11,101 +11,94 @@ static readonly QueryCommand GetArtists = new("SELECT ar.ArtistId AS Id, ar.Name
 List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
 ```
 
-Rows that belong to one parent must be consecutive. Order by the parent key when the database does not already guarantee that order.
+`List<Album>` folds consecutive rows while `Album` keeps its mapping.
 
-## Collection prefixes
+Rows for one parent group stay consecutive.
 
-The collection member name prefixes the element columns.
+[Grouping](grouping.md)
 
-```text
-AlbumsId
-AlbumsTitle
-```
-
-Use `[Alt]` when another prefix should also be accepted.
+## Name adaptation on the same path
 
 ```csharp
+public record Album(int Id, string Title) : IDbReadable;
 public record Artist(int Id, string Name, [Alt("Album")] List<Album> Albums);
+
+List<Artist> artists = cnn.Query<List<Artist>>("SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumId, al.Title AS AlbumTitle FROM artists ar JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId");
+// AlbumId reaches Albums.Id through Alt("Album").
 ```
 
-Now `AlbumId` and `AlbumTitle` can fill the collection.
+[Name adaptation](names.md)
 
-## Keep parents with no children
-
-Use `[AbortOnNull]` on the child identity when a left join should produce no child object.
+## Left join with no child
 
 ```csharp
 public record Album([AbortOnNull] int Id, string Title) : IDbReadable;
 public record Artist(int Id, string Name, List<Album> Albums);
+
+List<Artist> artists = cnn.Query<List<Artist>>("SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumsId, al.Title AS AlbumsTitle FROM artists ar LEFT JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId");
+// NULL AlbumsId keeps the Artist and contributes no Album.
 ```
 
-A row with database `NULL` in `AlbumsId` keeps the parent and adds no child.
+[Database NULL](nulls.md)
 
-## Null scalar elements
-
-Null collection elements are skipped by default.
+## Scalar elements
 
 ```csharp
 public record Palette(int Id, List<string> Colors);
-```
 
-Use `[KeepNullElements]` when null elements should remain.
+Palette palette = cnn.Query<Palette>("SELECT PaletteId AS Id, Color AS Colors FROM palette_colors WHERE PaletteId = @paletteId ORDER BY SortOrder", new { paletteId = 3 });
+// Database NULL Colors elements are skipped.
+```
 
 ```csharp
 public record Palette(int Id, [KeepNullElements] List<string?> Colors);
+// Database NULL Colors elements remain in the collection.
 ```
 
-See [database NULL](nulls.md) for collection element null handling.
-
-## Nested collections
-
-A collection element can contain another collection.
+## Another multi-row mapping inside the element shape
 
 ```csharp
 public record Track(int Id, string Name) : IDbReadable;
 public record Album(int Id, string Title, List<Track> Tracks) : IDbReadable;
 public record Artist(int Id, string Name, List<Album> Albums);
+
+static readonly QueryCommand GetArtists = new("SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumsId, al.Title AS AlbumsTitle, tr.TrackId AS AlbumsTracksId, tr.Name AS AlbumsTracksName FROM artists ar JOIN albums al ON al.ArtistId = ar.ArtistId JOIN tracks tr ON tr.AlbumId = al.AlbumId ORDER BY ar.ArtistId, al.AlbumId");
+
+List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
+// Artist.Albums folds rows at the Artist level.
+// Album.Tracks folds rows while each Album is mapped.
 ```
 
-The returned columns use the complete path such as `AlbumsTracksId` and `AlbumsTracksName`.
+Each multi-row mapping negotiates its own boundary at the point where it appears in the type shape.
 
-Each level needs a usable grouping boundary.
+[Grouping](grouping.md)
 
-## Side by side collections
-
-One parent can fill several child collections from the same joined rows.
+## Side by side multi-row mappings
 
 ```csharp
 public record OrderItem([AbortOnNull] int Id, decimal Price) : IDbReadable;
 public record OrderNote([AbortOnNull] int Id, string Text) : IDbReadable;
 public record Order(int Id, List<OrderItem> Items, List<OrderNote> Notes);
+
+List<Order> orders = cnn.Query<List<Order>>("SELECT o.OrderId AS Id, i.ItemId AS ItemsId, i.Price AS ItemsPrice, n.NoteId AS NotesId, n.Text AS NotesText FROM orders o LEFT JOIN order_items i ON i.OrderId = o.OrderId LEFT JOIN order_notes n ON n.OrderId = o.OrderId ORDER BY o.OrderId");
+// Each row is offered to both multi-row mappings.
+// AbortOnNull lets either side contribute no element on that row.
 ```
 
-A row can contribute to one collection while the other collection receives no element.
+The two mappings still use their own element mapping and grouping behavior.
 
-## Several result sets
+[Grouping](grouping.md)
 
-Several result sets avoid repeating large parent columns.
+## Built in collection result shapes
 
 ```csharp
-public record Album(int Id, string Title) : IDbReadable;
-public record class Artist(int Id, string Name)
-{
-    public List<Album> Albums { get; } = [];
-}
+const string sql = "SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId";
 
-using MultiReader results = GetArtistsAndAlbums.ExecuteMultiReader(cnn);
-
-List<Artist> artists = results.Query<List<Artist>>();
-using IEnumerator<(int ArtistId, Album Album)> albums = results.Query<IEnumerable<(int, Album)>>().GetEnumerator();
+List<Album> list = cnn.Query<List<Album>>(sql);
+Album[] array = cnn.Query<Album[]>(sql);
+IEnumerable<Album> stream = cnn.Query<IEnumerable<Album>>(sql);
 ```
 
-Application code can merge the two ordered sets by parent key. See [multiple result sets](../running-queries/multiple-results.md).
+`List<T>`, arrays, and `IEnumerable<T>` have built in multi-row mappings.
 
-## Supported collection shapes
-
-`List<T>`, arrays, and `IEnumerable<T>` have built in multi row mappings.
-
-Use [custom multi row types](../customization/multi-row.md) when another collection shape needs its own mapping behavior.
-
-See [grouping](grouping.md) for parent boundaries.
+[Custom multi-row mappings](../customization/multi-row.md)

@@ -1,6 +1,6 @@
 # Configuration file
 
-The Visual Studio configuration manager writes the same settings that can be edited in `rinkupt.json`.
+## Complete example
 
 ```json
 {
@@ -29,9 +29,13 @@ The Visual Studio configuration manager writes the same settings that can be edi
 }
 ```
 
+The Visual Studio configuration manager writes the same settings.
+
+[Configure](configure.md)
+
 ## Connection source
 
-Exactly one connection source property identifies where the connection string comes from.
+One connection source property identifies where the connection string comes from.
 
 ```json
 {
@@ -52,20 +56,19 @@ Exactly one connection source property identifies where the connection string co
 }
 ```
 
-See [Configure CodeGen](configure.md) for all connection sources exposed by the current configuration manager.
+[All connection source examples](configure.md)
 
 ## Database provider
 
-The `Database` property is optional. When it is absent, PowerTools infers the provider from the resolved connection string.
+Without `Database`, Power Tools infers the provider from the resolved connection string when it can do so without ambiguity.
 
 ```json
 {
-  "JsonFile": "appsettings.json",
-  "ConnectionExtractionPath": "ConnectionStrings:Default"
+  "RawConnectionString": "Data Source=mydatabase"
 }
 ```
 
-Inference is conservative. A connection string with strong provider specific keys is detected automatically. A string such as `Data Source=mydatabase` can describe SQL Server or SQLite, so PowerTools asks for an explicit provider instead of guessing.
+`Data Source=mydatabase` can describe more than one provider, so this form needs an explicit `Database`.
 
 ```json
 {
@@ -74,13 +77,9 @@ Inference is conservative. A connection string with strong provider specific key
 }
 ```
 
-Supported values are `SqlServer`, `PostgreSql`, and `Sqlite`. `Postgres` and `PostgreSQL` are also accepted when reading configuration. The writer uses `PostgreSql`.
-
-An explicit provider always wins over inference.
+Accepted provider values include `SqlServer`, `PostgreSql`, and `Sqlite`. `Postgres` and `PostgreSQL` are accepted when reading configuration. The writer emits `PostgreSql`.
 
 ## Output path
-
-`OutputPath` is relative to the project.
 
 ```json
 {
@@ -88,11 +87,9 @@ An explicit provider always wins over inference.
 }
 ```
 
-An empty output path writes the command file at the project root.
+The path is project relative. An empty path writes the command file at the project root.
 
 ## Namespace
-
-Set `Namespace` when the generated namespace should not be derived from the project and output path.
 
 ```json
 {
@@ -101,7 +98,7 @@ Set `Namespace` when the generated namespace should not be derived from the proj
 }
 ```
 
-Without `Namespace`, an output path such as `Data/Generated` is appended to the project namespace.
+Without `Namespace`, the generated namespace is derived from the project namespace and output path.
 
 ## Accessibility
 
@@ -111,19 +108,13 @@ Without `Namespace`, an output path such as `Data/Generated` is appended to the 
 }
 ```
 
-This generates an internal command class.
-
 ```csharp
 internal static class DbCommands
 {
 }
 ```
 
-The default value generates a public class.
-
-## Query source
-
-A query uses one source property. SQL Server and PostgreSQL support stored procedure entries. SQLite supports SQL queries and SQL files.
+## Query sources
 
 ```json
 {
@@ -139,10 +130,6 @@ A query uses one source property. SQL Server and PostgreSQL support stored proce
 }
 ```
 
-A relative `SQLFile` is read from the project during generation and packaged at the same relative path for runtime use. An absolute `SQLFile` keeps its absolute path and is not packaged.
-
-The configured path remains the runtime dictionary key. The generated method calls `RinkuPowerTools.GetSqlFile` and application code can access `RinkuPowerTools.SqlFiles` directly. See [Generated commands](generated-code.md) for the runtime behavior.
-
 ```json
 {
   "MethodName": "GetAlbums",
@@ -150,13 +137,11 @@ The configured path remains the runtime dictionary key. The generated method cal
 }
 ```
 
-`StoredProcName` is available for SQL Server and PostgreSQL. SQLite has no stored procedures.
+SQL Server and PostgreSQL support stored procedure entries. SQLite supports SQL queries and SQL files.
 
-Do not put more than one query source property on the same query entry.
+[Add queries](queries.md)
 
 ## Method name
-
-`MethodName` becomes the generated C# method name.
 
 ```json
 {
@@ -166,14 +151,10 @@ Do not put more than one query source property on the same query entry.
 ```
 
 ```csharp
-cnn.GetAlbumsByArtist(artistId: 7);
+using DbCommand command = cnn.GetAlbumsByArtist(artistId: 7);
 ```
 
-Use a name that is a valid C# identifier.
-
-## Result name
-
-`ResultSetName` changes the generated record name when the result requires a record.
+## Result set name
 
 ```json
 {
@@ -187,11 +168,7 @@ Use a name that is a valid C# identifier.
 public partial record AlbumRow(int Id, string Title);
 ```
 
-See [Generated commands](generated-code.md) for the cases that produce scalar results or no record.
-
-## Parameter corrections
-
-`Parameters` changes discovered metadata for matching parameter names.
+## Parameter correction
 
 ```json
 {
@@ -207,19 +184,15 @@ See [Generated commands](generated-code.md) for the cases that produce scalar re
 }
 ```
 
-`Type` and `IsNullable` are optional correction values. Leave a value absent when the discovered value should be kept.
+`Type` and `IsNullable` replace the discovered values when supplied. Provider type names use the provider database type vocabulary.
 
-Type names are provider specific. SQL Server accepts SQL Server declarations, PostgreSQL accepts PostgreSQL declarations including custom type names, and SQLite accepts SQLite declared types and affinity names.
+SQLite can leave an unresolved parameter as `object?`. A correction can provide a stronger generated type.
 
-SQLite cannot infer a declared type for a query parameter from the database schema. Without a correction, the generated method uses `object?` and lets `Microsoft.Data.Sqlite` infer the runtime parameter type from the supplied value. Add a parameter correction when the generated method should expose a stronger C# type.
+PostgreSQL can retain a native PostgreSQL type name in addition to common `DbType` metadata.
 
-PostgreSQL keeps the discovered PostgreSQL type name in addition to common `DbType` metadata. This preserves distinctions such as `jsonb`, arrays, timestamp variants, enums, composites, and domains in generated Npgsql commands.
-
-See [Add queries](queries.md) for the query manager form of the same options.
+[Generated parameters](generated-code.md#postgresql-parameters) · [SQLite parameters](generated-code.md#sqlite-parameters)
 
 ## Named configurations
-
-A project can contain several configuration files.
 
 ```text
 rinkupt.json
@@ -227,4 +200,4 @@ rinkupt.Reporting.json
 rinkupt.Admin.json
 ```
 
-Use [Refresh generated code](refresh.md) to refresh one configuration or all project configurations.
+[Refresh](refresh.md)

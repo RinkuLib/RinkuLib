@@ -1,62 +1,85 @@
 # Cache control
 
-Cache invalidation is normally needed only after application configuration changes while the process is already running.
+## Command lifetime
 
-## Parsers kept by a command
-
-Remove parsers referenced by one `QueryCommand`.
+`QueryCommand` is reusable and can be shared when its lifetime is the application. Dispose a command that owns a shorter-lived cache when that scope ends.
 
 ```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId";
+
+using var command = new QueryCommand(sql);
+List<Album> albums = command.Query<List<Album>>(cnn);
+```
+
+Disposal invalidates the command's parsers and parameter accessors, releases its mapper, and makes the command unusable. `CachedTypeParser<T>` and the non-generic `CachedTypeParser` are disposable as well, so scope them in the same way when they are not application-lifetime caches.
+
+## QueryCommand parsers
+
+```csharp
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
+
 int removed = GetAlbums.InvalidateParsers();
 ```
 
-Keep the global parser and remove only this command reference.
+The overload without a scope removes the command references and removes a parser globally only when no other command still uses it.
 
 ```csharp
 GetAlbums.InvalidateParsers(QueryParserInvalidationScope.Local);
-```
-
-Use global invalidation when the parser itself should no longer be reused.
-
-```csharp
+GetAlbums.InvalidateParsers(QueryParserInvalidationScope.GlobalIfUnused);
 GetAlbums.InvalidateParsers(QueryParserInvalidationScope.Global);
 ```
 
-## Parameter source accessors
+```text
+Local           remove this command reference
+GlobalIfUnused  also remove the global parser when no other command uses it
+Global          remove the parser globally and clear command references to it
+```
 
-Parameter objects and builder `UseWith` use cached accessors.
+One exact parser can be invalidated through the same scopes.
+
+```csharp
+GetAlbums.InvalidateParser(parser, QueryParserInvalidationScope.GlobalIfUnused);
+```
+
+## Parameter accessors
+
+```csharp
+public sealed class AlbumFilter
+{
+    public int ArtistId { get; init; }
+}
+
+static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @ArtistId");
+
+GetAlbum.Query<List<Album>>(cnn, new AlbumFilter { ArtistId = 7 });
+
+(Type ParameterType, ParameterAccessorKinds Accessors)[] accessors = GetAlbum.GetCachedParameterAccessors();
+```
 
 ```csharp
 GetAlbum.InvalidateParameterAccessor(typeof(AlbumFilter), ParameterAccessorKinds.Direct);
-
 GetAlbum.InvalidateParameterAccessor(typeof(AlbumFilter), ParameterAccessorKinds.UseWith);
+GetAlbum.InvalidateParameterAccessor(typeof(AlbumFilter), ParameterAccessorKinds.Both);
 ```
 
-Use `ParameterAccessorKinds.Both` to invalidate both forms.
+These calls affect parameter source accessors. They do not invalidate row parsers.
 
-This does not invalidate row parsers.
-
-## SQL string commands
-
-SQL string shortcuts keep their `QueryCommand` instances in a global cache.
+## SQL string command cache
 
 ```csharp
+const string sql = "SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId";
 QueryCommand command = ConnectionQueryExtensions.GetOrCreateCommand(sql);
 ```
-
-Remove one exact SQL key when needed.
 
 ```csharp
 bool removed = ConnectionQueryExtensions.CommandCache.TryRemove(sql, out QueryCommand? cached);
 ```
 
-Removing the cache entry does not dispose the command.
+The exact SQL string is the cache key. Removing the key does not dispose the removed command.
 
-See [SQL string shortcuts](../running-queries/sql-string.md) for normal use.
+[SQL string access](../running-queries/sql-string.md)
 
-## CachedTypeParser
-
-A generic `CachedTypeParser<T>` is normally a long lived cache kept beside the command factory it serves.
+## Generic CachedTypeParser
 
 ```csharp
 static readonly CachedTypeParser<List<Album>> AlbumParser = new();
@@ -65,43 +88,51 @@ using DbCommand command = cnn.CreateCommand();
 command.CommandText = "SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId";
 
 List<Album> first = AlbumParser.Query(command, disposeCommand: false);
-
 AlbumParser.Invalidate();
-
 List<Album> second = AlbumParser.Query(command, disposeCommand: false);
 ```
 
-The generic cache keeps one result type. A different command can use the same cache when its returned schema is compatible.
-
-A non generic cache keeps one fixed schema and can cache several result parsers over it.
+## Non generic CachedTypeParser
 
 ```csharp
-static readonly CachedTypeParser AlbumSchemaParser = new();
+static readonly CachedTypeParser SchemaParser = new();
 
 using DbCommand command = cnn.CreateCommand();
 command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 12";
 
-Album album = AlbumSchemaParser.Query<Album>(command, disposeCommand: false);
-DynaObject row = AlbumSchemaParser.Query<DynaObject>(command, disposeCommand: false);
+Album album = SchemaParser.Query<Album>(command, disposeCommand: false);
+DynaObject row = SchemaParser.Query<DynaObject>(command, disposeCommand: false);
 
-AlbumSchemaParser.Invalidate<Album>();
+SchemaParser.Invalidate<Album>();
 // The DynaObject parser remains cached.
 ```
 
-The first query learns the schema. Use [fixed result schema](../running-queries/fixed-result-schema.md) when the schema should be supplied before the first query or when the result type is known only at runtime.
+[Fixed result schema](../running-queries/fixed-result-schema.md)
 
-## Global parser invalidation
-
-Use the global API when configuration changes affect parsers beyond one command.
+## Global parser cache
 
 ```csharp
-TypeParser.Invalidate(columns, ParserInvalidationMode.CheckUsage);
+int removed = TypeParser.Invalidate(columns, ParserInvalidationMode.CheckUsage);
 ```
 
-Use `InvalidateReferences` when owners should release one exact parser instance.
+`CheckUsage` leaves an exact parser alive when another cache still reports that it retains it.
 
 ```csharp
-TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+bool removed = TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
 ```
 
-Configuring mappings and parser makers during startup avoids runtime invalidation for normal application use.
+`InvalidateReferences` asks subscribed caches to release that exact parser instance.
+
+```csharp
+int removed = TypeParser.InvalidateAll(ParserInvalidationMode.InvalidateReferences);
+```
+
+All globally cached parsers can be removed with the same invalidation mode.
+
+```csharp
+bool disposed = TypeParser.Release(parser);
+```
+
+`Release` disposes the parser only when neither the global cache nor another subscribed cache still retains it.
+
+[TypeParser API](xref:Rinku.Mapping.TypeParser)

@@ -1,139 +1,164 @@
 # FAQ
 
-## Should a QueryCommand be created for every call?
-
-Keep reusable commands in `static readonly` fields.
+## How is a QueryCommand accessed
 
 ```csharp
 static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
 
 Album album = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
+// The application holds this QueryCommand directly.
 ```
-
-The template is parsed once. Per call values remain outside the command.
-
-## Can one command be shared across threads?
-
-Yes. Sharing is the intended use. Per call execution state comes from the parameter object or builder operation, while the command's reusable caches are guarded.
 
 ```csharp
-using DbConnection firstConnection = new SqlConnection(connectionString);
-using DbConnection secondConnection = new SqlConnection(connectionString);
-
-Album[] albums = await Task.WhenAll(GetAlbum.QueryAsync<Album>(firstConnection, new { albumId = 12 }), GetAlbum.QueryAsync<Album>(secondConnection, new { albumId = 46 }));
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+// The exact SQL string accesses the cached QueryCommand.
 ```
 
-Each execution uses its own connection and values while sharing `GetAlbum`.
+[SQL string cache](../running-queries/sql-string.md)
 
-## Can one command run across different providers?
+## Can one command be shared across threads
 
-That usage is unsupported. A command may retain mapping and parameter metadata learned from earlier executions. Declare a separate command for each provider.
+```csharp
+static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
+
+Album[] albums = await Task.WhenAll(
+    GetAlbum.QueryAsync<Album>((DbConnection)firstConnection, new { albumId = 12 }),
+    GetAlbum.QueryAsync<Album>((DbConnection)secondConnection, new { albumId = 46 }));
+```
+
+Per-call values stay outside the `QueryCommand`. Builder state is also held separately from the command.
+
+[Builders](../running-queries/builders.md)
+
+## Can one command run across different providers
+
+A `QueryCommand` can retain mapping and parameter metadata learned from a provider. A command shared across different providers is unsupported.
 
 ```csharp
 static readonly QueryCommand SqlServerAlbums = new("SELECT AlbumId AS Id, Title FROM albums");
 static readonly QueryCommand PostgreSqlAlbums = new("SELECT AlbumId AS Id, Title FROM albums");
 ```
 
-## Does Rinku rewrite named parameters for positional providers?
+[Parameter metadata](../running-queries/parameter-metadata.md) · [Cache control](../customization/caches.md)
 
-No. Keep the provider's positional placeholders and declare the variables in provider order.
+## Does Rinku rewrite named parameters for positional providers
 
 ```csharp
 var command = new QueryCommand("SELECT UserId, Name FROM users WHERE UserId = ? AND Status = ?", ["userId", "status"], CommandType.Text);
 ```
 
-See [positional parameters](../running-queries/values.md#positional-parameters) for the supported positional value forms.
+The placeholders remain provider syntax. The declared variables give Rinku the parameter order.
 
-## Why did the provider report a missing parameter?
+[Positional parameters](../running-queries/values.md#positional-variables)
 
-A plain parameter is required whenever its SQL remains.
+## Why did the provider report a missing parameter
+
+A plain variable remains required while its SQL remains.
 
 ```sql
 SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId
 ```
 
-Use a conditional variable when the condition should disappear with an absent value.
+A conditional variable removes its complete condition when its value is absent.
 
 ```sql
 SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = ?@albumId
 ```
 
-Without `albumId`, the complete optional condition disappears.
+Without `albumId` the SQL becomes.
 
 ```sql
 SELECT AlbumId AS Id, Title FROM albums
 ```
 
-## How can optional filters avoid WHERE 1=1?
+[Conditional variables](../conditional-sql/variables.md)
 
-Mark each optional value where its condition appears.
+## How can optional filters avoid WHERE 1=1
 
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND ReleaseYear >= ?@minimumYear
+```csharp
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND ReleaseYear >= ?@minimumYear");
+
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+// SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ```
 
-Supplying only `artistId` keeps only its matching condition.
+[Conditional variables](../conditional-sql/variables.md)
 
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
+## Why did Query<T> report no values
+
+An unwrapped result requests the first complete mapped value.
+
+```csharp
+static readonly QueryCommand FindAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
+
+Album album = FindAlbum.Query<Album>(cnn, new { albumId = 999 });
+// No complete Album produces RINKU4001.
 ```
 
-## Why did Query<T> report no values?
-
-With Rinku's default parser, an unwrapped `T` requires a first complete result.
+A wrapper can represent no returned value.
 
 ```csharp
 Optional<Album> album = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
 ```
 
-Use one of the included wrappers or add another [custom result parser](../customization/result-parsers.md) when no result is valid.
+[Result shapes](../running-queries/result-shapes.md)
 
-## Why did IN (?@ids_X) disappear?
-
-An empty collection counts as absent. The optional condition is removed instead of generating `IN ()`.
+## Why did IN with an empty collection disappear
 
 ```csharp
+static readonly QueryCommand FindAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (?@albumIds_X)");
+
 List<Album> albums = FindAlbums.Query<List<Album>>(cnn, new { albumIds = Array.Empty<int>() });
+// SELECT AlbumId AS Id, Title FROM albums
 ```
 
-```sql
-SELECT AlbumId AS Id, Title FROM albums
-```
+An empty collection is absent for the collection handler. A required `@albumIds_X` raises `RINKU2002` instead.
 
-Without `?`, the same empty required handler raises `RINKU2002`.
+[Collection expansion](../conditional-sql/collections.md) · [RINKU2002](errors.md#rinku2002-required-handler-value)
 
-## Why is a nested type unavailable?
-
-Under the default mapping system, a root result is an explicit request. A type reached only through another mapped value needs a registration before its construction paths can participate.
+## Why is a nested type unavailable
 
 ```csharp
 public record Artist(int Id, string Name) : IDbReadable;
 public record Album(int Id, string Title, Artist Artist);
 ```
 
-The [registration guide](../mapping/registration.md) shows the available ways to make that nested type readable.
+`Album` is the explicitly requested root. `Artist` becomes available for nested mapping through `IDbReadable`.
 
-## Why did joined rows produce several parent objects?
+The same registration can be made externally.
 
-Rows for one grouped result must be consecutive.
+```csharp
+public record Artist(int Id, string Name);
+
+TypeParsingInfo.GetOrAdd<Artist>();
+```
+
+[Registration](../mapping/registration.md)
+
+## Why did joined rows produce several parent objects
+
+Rows that fold into one parent group must be consecutive.
 
 ```sql
 SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumsId, al.Title AS AlbumsTitle FROM artists ar JOIN albums al ON al.ArtistId = ar.ArtistId ORDER BY ar.ArtistId
 ```
 
-See [grouping](../mapping/grouping.md) when the inferred boundary is not the intended one.
+The grouping page shows inferred boundaries, explicit keys, and custom grouping rules.
 
-## When are streamed output parameters available?
+[Grouping](../mapping/grouping.md)
 
-After the stream's enumerator is disposed, including when enumeration stops early.
+## When are streamed output parameters available
+
+Output values are available after the stream finishes or its enumerator is disposed.
 
 ```csharp
-static readonly QueryCommand ReadAndCountAlbums = QueryCommand.FromProc("ReadAndCountAlbums", setupConnection);
+QueryCommand readAndCountAlbums = QueryCommand.FromProc("ReadAndCountAlbums", cnn);
+IEnumerable<Album> albums = readAndCountAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command);
 
-IEnumerable<Album> albums = ReadAndCountAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command);
-
-using (command) {
-    using (IEnumerator<Album> iterator = albums.GetEnumerator()) {
+using (command)
+{
+    using (IEnumerator<Album> iterator = albums.GetEnumerator())
+    {
         if (iterator.MoveNext())
             Console.WriteLine(iterator.Current.Title);
     }
@@ -142,46 +167,65 @@ using (command) {
 }
 ```
 
-## Where should a Dapper user start?
+[Stored procedure output values](../running-queries/stored-procedures.md)
+
+## Where is the Dapper comparison
 
 [Coming from Dapper](dapper.md)
 
-## Does Tracking save changes to the database?
-
-No. Tracking keeps local original, edit, collection, validation, and metadata state. Persistence remains application code. See the [Tracking overview](../tracking/index.md).
-
-## Which connection should be used with a transaction?
-
-Pass the same open connection that created it.
+## Does Tracking save changes to the database
 
 ```csharp
-using DbConnection cnn = db.Open();
+Album original = new(12, "Blue", new Artist(7, "Miles"));
+IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
+edit.Set(nameof(Album.Title), "Kind of Blue");
+
+foreach (TrackingChange change in edit.GetChanges())
+    Console.WriteLine($"{change.Name} {change.OriginalValue} -> {change.Value}");
+```
+
+```csharp
+static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @Title WHERE AlbumId = @Id");
+
+using DbTransaction transaction = cnn.BeginTransaction();
+
+if (edit.HasChanges())
+    UpdateAlbum.Execute(cnn, edit, transaction: transaction);
+
+transaction.Commit();
+edit.ConfirmEdit();
+```
+
+[Tracking persistence](../tracking/persistence.md)
+
+## Which connection is used with a transaction
+
+Pass the same open connection that created the transaction.
+
+```csharp
 using DbTransaction transaction = cnn.BeginTransaction();
 
 UpdateAlbum.Execute(cnn, new { albumId = 12, title = "Updated" }, transaction: transaction);
 ```
 
-Rinku does not switch to `transaction.Connection` or validate that relationship. Provider errors report mismatched or completed transactions.
+Rinku passes the supplied connection and transaction to the provider.
 
-## How are several result sets read?
+[Execution context](../running-queries/execution-context.md)
+
+## How are several result sets read
 
 ```csharp
-public record Album(int Id, string Title) : IDbReadable;
-public record class ArtistWithAlbums(int Id, string Name) {
-    public List<Album> Albums { get; set; } = [];
-}
+static readonly QueryCommand GetDashboard = new("SELECT ArtistId AS Id, Name FROM artists WHERE ArtistId = @artistId; SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
 using MultiReader results = GetDashboard.ExecuteMultiReader(cnn, new { artistId = 7 });
 
-ArtistWithAlbums artist = results.Query<ArtistWithAlbums>();
-artist.Albums = results.Query<List<Album>>();
+Artist artist = results.Query<Artist>();
+List<Album> albums = results.Query<List<Album>>();
 ```
 
-See [multiple result sets](../running-queries/multiple-results.md) for ordered reads from one command.
+[Multiple result sets](../running-queries/multiple-results.md)
 
-## Which database can CodeGen inspect?
-
-Rinku Power Tools supports SQL Server, PostgreSQL, and SQLite.
+## Which databases can CodeGen inspect
 
 ```text
 SQL Server    SQL queries, SQL files, stored procedures
@@ -189,33 +233,30 @@ PostgreSQL    SQL queries, SQL files, stored procedures
 SQLite        SQL queries, SQL files
 ```
 
-Generated methods still return provider-neutral `DbCommand` values. See [code generation](../codegen/index.md) and [query sources](../codegen/queries.md).
+[CodeGen configuration](../codegen/configure.md) · [Query sources](../codegen/queries.md)
 
-## Do generated commands require the Rinku result parser?
-
-No. The generated method returns a normal `DbCommand`.
+## Do generated commands require a Rinku result parser
 
 ```csharp
 using DbCommand command = cnn.GetAlbumsByArtist(artistId: 7);
 using DbDataReader reader = command.ExecuteReader();
+// Generated methods return `DbCommand` instances.
 ```
-
-Rinku can also read the same command through a cached parser.
 
 ```csharp
-static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
+static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> AlbumsParser = new();
 
-List<GetAlbumsByArtistResult> albums = Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
+List<GetAlbumsByArtistResult> albums = AlbumsParser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
-See [generated commands](../codegen/generated-code.md).
+[Generated commands](../codegen/generated-code.md)
 
-## Why does a generated CodeGen file contain an error directive?
-
-A query failed while CodeGen was discovering or generating its command.
+## Why does generated CodeGen output contain an error directive
 
 ```csharp
 #error Query generation failed for method 'GetBrokenAlbums'
 ```
 
-Other valid query entries are still generated. Fix the failed query or its metadata and refresh the configuration again. See [refresh generated code](../codegen/refresh.md).
+The query named by the directive failed during discovery or generation. Other valid query entries can still be generated.
+
+[Refresh generated code](../codegen/refresh.md)

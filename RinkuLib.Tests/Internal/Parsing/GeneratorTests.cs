@@ -306,7 +306,7 @@ public class GeneratorTests {
 
 #if DEBUG
     [Fact]
-    public void The_debug_build_traces_each_instruction() {
+    public void The_debug_build_traces_each_instruction_when_opted_in() {
         var captured = new ConcurrentQueue<string>();
         var previous = Generator.Write;
         Generator.Write = s => { captured.Enqueue(s); previous(s); };

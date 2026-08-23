@@ -25,6 +25,7 @@ public class DynaObjectConverter : JsonConverter<DynaObject> {
 /// when the shape is not known ahead of time, it reads like a dictionary of the result's columns and
 /// serializes to JSON as one. Values keep their column types, read them with <see cref="Get{T}(string)"/>.
 /// </summary>
+[JsonConverter(typeof(DynaObjectConverter))]
 public abstract class DynaObject : IReadOnlyDictionary<string, object?>, IReadOnlyDictionary<string, int> {
     /// <summary>Writes the columns as JSON properties, used by the JSON converter.</summary>
     public abstract void WriteJsonProperties(Utf8JsonWriter writer, JsonSerializerOptions options);

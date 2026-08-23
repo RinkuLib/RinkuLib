@@ -1,6 +1,6 @@
-# Stored procedures and output values
+# Stored procedures
 
-Declare the procedure name and parameter names when the application already knows them.
+## Declare parameter names
 
 ```csharp
 static readonly QueryCommand GetAlbumsForArtist = new("GetAlbumsForArtist", ["artistId"]);
@@ -8,21 +8,31 @@ static readonly QueryCommand GetAlbumsForArtist = new("GetAlbumsForArtist", ["ar
 List<Album> albums = GetAlbumsForArtist.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
-This constructor uses `CommandType.StoredProcedure` by default.
+The command targets a stored procedure and carries the parameter names used by Rinku.
 
-## Discover procedure metadata
+## Discover provider metadata
 
 ```csharp
-QueryCommand renumberAlbums = QueryCommand.FromProc("RenumberAlbums", setupConnection);
+QueryCommand renumberAlbums = QueryCommand.FromProc("RenumberAlbums", cnn);
+
+renumberAlbums.Execute(cnn, new { albumId = 12 });
 ```
 
-`FromProc` reads the provider procedure metadata during setup and returns a reusable `QueryCommand`.
+`FromProc` reads the procedure parameter metadata exposed by the provider. The metadata is stored on the returned `QueryCommand`.
 
-The returned command does not keep the setup connection or temporary provider command.
-
-## Read an output parameter
+A known parameter list avoids that discovery step.
 
 ```csharp
+static readonly QueryCommand RenumberAlbums = new("RenumberAlbums", ["albumId", "moved"]);
+```
+
+[Parameter metadata](parameter-metadata.md)
+
+## Output values
+
+```csharp
+QueryCommand renumberAlbums = QueryCommand.FromProc("RenumberAlbums", cnn);
+
 renumberAlbums.Execute(cnn, out DbCommand command, new { albumId = 12 });
 
 using (command)
@@ -31,20 +41,49 @@ using (command)
 }
 ```
 
-The generated command is returned so provider output values can be read after execution.
+The output value is read from the executed command.
 
-## InputOutput parameters
-
-When a discovered `InputOutput` parameter needs an incoming value, create the command with `inputOutputHasDefault: false`.
+## Input output defaults
 
 ```csharp
-QueryCommand command = QueryCommand.FromProc("RenumberAlbums", setupConnection, inputOutputHasDefault: false);
+QueryCommand updateAlbum = QueryCommand.FromProc("UpdateAlbum", cnn, inputOutputHasDefault: false);
+// Discovered InputOutput parameters now require an incoming value.
 ```
 
-Supply the incoming value through the normal parameter object or builder.
+With the default `true`, discovered input output parameters can be omitted when the provider metadata allows Rinku to supply their default.
 
-## Return values and provider metadata
+## Materialize defaults on a bound command
 
-`FromProc` copies names, database types, sizes, directions, and return value metadata from the provider declaration.
+```csharp
+QueryCommand updateAlbum = QueryCommand.FromProc("UpdateAlbum", cnn);
 
-See [parameter metadata](parameter-metadata.md) when metadata is configured without procedure discovery.
+using DbCommand command = cnn.CreateCommand();
+var call = updateAlbum.StartBuilder(command);
+
+call.UseWith(new { albumId = 12 });
+call.SetDefaults();
+call.Execute();
+```
+
+`SetDefaults()` fills only missing parameters whose metadata can provide a default.
+
+[Builders](builders.md)
+
+## Discovered parameter metadata
+
+```csharp
+QueryCommand updateAlbum = QueryCommand.FromProc("UpdateAlbum", cnn);
+
+updateAlbum.Execute(cnn, out DbCommand command, new { albumId = 12 });
+
+using (command)
+{
+    DbParameter moved = (DbParameter)command.Parameters["@moved"];
+    Console.WriteLine(moved.Direction);
+    Console.WriteLine(moved.Size);
+}
+```
+
+`FromProc` carries provider parameter names, database types, sizes, directions, and return value metadata into the reusable command.
+
+[Parameter metadata](parameter-metadata.md)

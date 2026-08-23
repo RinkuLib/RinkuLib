@@ -1,6 +1,6 @@
 # Editable items
 
-A runtime tracking item reads accepted values until a member is changed.
+## Accepted and edited values
 
 ```csharp
 Album original = new(12, "Blue");
@@ -9,13 +9,12 @@ IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(origi
 string before = edit.Get<string>(nameof(Album.Title));
 
 edit.Set(nameof(Album.Title), "Kind of Blue");
-
 string after = edit.Get<string>(nameof(Album.Title));
 ```
 
-Reading a member does not start an edit. Setting a tracked member creates edit state when needed.
+Reading a member does not create edit state. Setting a tracked member creates it when needed.
 
-## Check edit state
+## Edit state
 
 ```csharp
 Console.WriteLine(edit.IsEditing);
@@ -27,16 +26,14 @@ Console.WriteLine(edit.IsEditing);
 
 `EnsureEditing()` creates the edit snapshot without changing a member.
 
-## Read the original
+## Accepted original
 
 ```csharp
 if (edit.TryGetOriginal(out Album accepted))
     Console.WriteLine(accepted.Title);
 ```
 
-The original represents the accepted value. It is separate from the current edit snapshot.
-
-## Inspect changed members
+## Current differences
 
 ```csharp
 edit.Set(nameof(Album.Title), "Kind of Blue");
@@ -45,9 +42,9 @@ foreach (TrackingChange change in edit.GetChanges())
     Console.WriteLine($"{change.Name} {change.OriginalValue} -> {change.Value}");
 ```
 
-Only members whose current value differs from the accepted value are returned. `GetChanges()` computes the current differences; it does not expose a history of every value assigned.
+`GetChanges()` compares current edited values with accepted values. It is not assignment history.
 
-Setting a member back to its accepted value removes the effective difference.
+Setting a value back removes that difference.
 
 ```csharp
 edit.Set(nameof(Album.Title), "Kind of Blue");
@@ -57,11 +54,7 @@ bool changed = edit.HasChanges();
 // false
 ```
 
-Use `HasChanges()` when only the presence of a change matters: `bool saveEnabled = edit.HasChanges();`
-
-## Use member indexes
-
-Resolve a name once when the same runtime member is read repeatedly.
+## Member indexes
 
 ```csharp
 int title = edit.GetIndex(nameof(Album.Title));
@@ -70,9 +63,9 @@ string value = edit.Get<string>(title);
 edit.Set(title, "Kind of Blue");
 ```
 
-Name access and index access use the same runtime member surface.
+Name access and index access target the same runtime member surface.
 
-## Cancel an edit
+## Cancel
 
 ```csharp
 edit.Set(nameof(Album.Title), "Kind of Blue");
@@ -82,9 +75,9 @@ string title = edit.Get<string>(nameof(Album.Title));
 // Blue
 ```
 
-`CancelEdit()` discards the current snapshot and returns reads to the accepted value.
+`CancelEdit()` discards the current snapshot.
 
-## Confirm an edit
+## Confirm
 
 ```csharp
 edit.Set(nameof(Album.Title), "Kind of Blue");
@@ -92,8 +85,7 @@ edit.ConfirmEdit();
 
 if (edit.TryGetOriginal(out Album accepted))
     Console.WriteLine(accepted.Title);
+// Kind of Blue
 ```
 
-`ConfirmEdit()` accepts the current edit. Confirm after the application has accepted the change, such as after a successful database update.
-
-See [persistence](persistence.md) for database examples.
+[Persistence](persistence.md)

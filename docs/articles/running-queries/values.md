@@ -1,128 +1,100 @@
 # Supplying values
 
-Readable public fields and properties supply values by name.
+## Object members
 
 ```csharp
-static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
+public record AlbumSearch(int ArtistId, string Title);
 
-Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
+static readonly QueryCommand SearchAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @ArtistId AND Title = @Title");
+
+List<Album> albums = SearchAlbum.Query<List<Album>>(cnn, new AlbumSearch(7, "Blue"));
 ```
 
-Names match without regard to case. Members that do not match a command variable are ignored.
+Public fields and properties supply matching variables. Names match without regard to case. Members that do not belong to the command are ignored.
 
 ```csharp
-Album album = GetAlbum.Query<Album>(cnn, new { ALBUMID = 1, unused = true });
-// ALBUMID supplies @albumId.
-// unused is ignored.
+var values = new { ARTISTID = 7, Title = "Blue", IgnoredByThisQuery = 123 };
+List<Album> albums = SearchAlbum.Query<List<Album>>(cnn, values);
 ```
 
-Classes, records, and structs can also supply values.
+## Struct values
 
 ```csharp
-public sealed class AlbumFilter
+public readonly record struct AlbumFilter(int ArtistId, string Title);
+
+AlbumFilter filter = new(7, "Blue");
+List<Album> albums = SearchAlbum.Query<List<Album>, AlbumFilter>(cnn, ref filter);
+```
+
+The `ref` overload supplies a struct without copying it into another parameter object.
+
+## Dictionary
+
+```csharp
+var values = new Dictionary<string, object?>
 {
-    public int AlbumId { get; init; }
-}
+    ["artistId"] = 7,
+    ["title"] = "Blue"
+};
 
-public record AlbumFilterRecord(int AlbumId);
-
-Album fromClass = GetAlbum.Query<Album>(cnn, new AlbumFilter { AlbumId = 1 });
-Album fromRecord = GetAlbum.Query<Album>(cnn, new AlbumFilterRecord(1));
+List<Album> albums = SearchAlbum.Query<List<Album>>(cnn, values);
 ```
 
-## Struct parameters
+## Application null and database NULL
+
+A `null` application value is absent by default.
 
 ```csharp
-public struct AlbumFilterStruct
-{
-    public int AlbumId { get; init; }
-}
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId");
 
-AlbumFilterStruct filter = new() { AlbumId = 1 };
-Album album = GetAlbum.Query<Album, AlbumFilterStruct>(cnn, ref filter);
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new { artistId = (int?)null });
+// SELECT AlbumId AS Id, Title FROM albums
 ```
 
-Use the `ref` overload when a large struct should not be copied.
-
-## Null means absent
+`DBNull.Value` supplies an explicit database `NULL`.
 
 ```csharp
-string? title = null;
-SearchAlbums.Query<List<Album>>(cnn, new { title });
-// @title is absent.
+static readonly QueryCommand ClearTitle = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+
+ClearTitle.Execute(cnn, new { albumId = 12, title = DBNull.Value });
 ```
 
-A missing required parameter leaves ordinary SQL unchanged. The provider then sees a missing parameter.
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE Title = @title
-```
-
-A missing conditional parameter removes the SQL that depends on it.
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE Title = ?@title
-```
-
-```sql
-SELECT AlbumId AS Id, Title FROM albums
-```
-
-See [conditional variables](../conditional-sql/variables.md) for values that decide whether SQL remains in the template.
-
-## Send database NULL
+`[UseDbNull]` can apply the same behavior to a nullable member.
 
 ```csharp
-ClearTitle.Execute(cnn, new { albumId = 1, title = DBNull.Value });
+public record AlbumTitleUpdate(int AlbumId, [property: UseDbNull] string? Title);
+
+static readonly QueryCommand UpdateTitle = new("UPDATE albums SET Title = @Title WHERE AlbumId = @AlbumId");
+UpdateTitle.Execute(cnn, new AlbumTitleUpdate(12, null));
 ```
 
-Use `DBNull.Value` when the parameter must exist and contain database `NULL`.
-
-A nullable member can use `[UseDbNull]` when `null` should mean database `NULL` for that member.
+It can also apply to every member of a parameter type.
 
 ```csharp
+[UseDbNull]
 public sealed class AlbumUpdate
 {
-    public int AlbumId { get; init; }
-
-    [UseDbNull]
+    public int? ArtistId { get; init; }
     public string? Title { get; init; }
 }
-
-ClearTitle.Execute(cnn, new AlbumUpdate { AlbumId = 1, Title = null });
 ```
 
-Put `[UseDbNull]` on the type when the rule should apply to every member.
-
-## Ignore empty text
+## Presence rules
 
 ```csharp
-public sealed class AlbumTitleSearch
-{
-    [NotNullOrWhitespace]
-    public string? Title { get; init; }
-}
+public record AlbumSearch([property: NotDefault] int ArtistId, [property: NotNullOrWhitespace] string? Title);
 
-SearchAlbums.Query<List<Album>>(cnn, new AlbumTitleSearch { Title = "   " });
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@ArtistId AND Title LIKE ?@Title");
+
+List<Album> albums = SearchAlbums.Query<List<Album>>(cnn, new AlbumSearch(0, "   "));
+// SELECT AlbumId AS Id, Title FROM albums
 ```
 
-`[NotNullOrWhitespace]` treats null, empty text, and whitespace as absent.
+`[NotDefault]` treats the member type default as absent. `[NotNullOrWhitespace]` treats null, empty text, and whitespace as absent.
 
-## Ignore default values
+[Custom parameter member rules](../customization/parameter-members.md)
 
-```csharp
-public sealed class AlbumYearSearch
-{
-    [NotDefault]
-    public int MinimumYear { get; init; }
-}
-
-SearchByYear.Query<List<Album>>(cnn, new AlbumYearSearch { MinimumYear = 0 });
-```
-
-`[NotDefault]` treats the member type default value as absent.
-
-## Supply conditional keys from a type
+## Boolean conditions from a value source
 
 ```csharp
 public sealed class AlbumReadOptions
@@ -131,52 +103,57 @@ public sealed class AlbumReadOptions
     public bool IncludeYear { get; init; }
 }
 
-ReadAlbums.Query<List<DynaObject>>(cnn, new AlbumReadOptions { IncludeYear = true });
+static readonly QueryCommand ReadAlbums = new("SELECT AlbumId AS Id, Title /*IncludeYear*/, ReleaseYear FROM albums");
+
+List<DynaObject> rows = ReadAlbums.Query<List<DynaObject>>(cnn, new AlbumReadOptions { IncludeYear = true });
 ```
 
-`[ForBoolCond]` turns the boolean member into a conditional key instead of a database parameter.
+`[ForBoolCond]` uses the boolean member as a condition key instead of a database parameter.
+
+A type can activate named conditions whenever the type is supplied.
 
 ```csharp
-[UsesBoolConds("IncludeYear")]
-public sealed class AlbumReportOptions
+[UsesBoolConds("CurrentOnly")]
+public sealed class CurrentAlbumFilter
 {
     public int? ArtistId { get; init; }
 }
+
+static readonly QueryCommand ReadCurrentAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@ArtistId AND /*CurrentOnly*/IsArchived = 0");
+
+List<Album> albums = ReadCurrentAlbums.Query<List<Album>>(cnn, new CurrentAlbumFilter { ArtistId = 7 });
 ```
 
-`[UsesBoolConds]` activates the named keys whenever that parameter type is used.
+[Conditional markers](../conditional-sql/markers.md)
 
-See [conditional markers](../conditional-sql/markers.md) for the SQL controlled by those keys.
-
-## Build values in steps
+## Builder sources
 
 ```csharp
-var search = SearchAlbums.StartBuilder();
-search.UseWith(new { ArtistId = 7 });
-search.UseWith(new { Title = "Blue" });
+var builder = SearchAlbums.StartBuilder();
+builder.UseWith(new { ArtistId = 7 });
+builder.UseWith(new { Title = "Blue%" });
 
-List<Album> albums = search.Query<List<Album>>(cnn);
+List<Album> albums = builder.Query<List<Album>>(cnn);
 ```
 
-Use a [builder](builders.md) when application logic decides values over several steps.
+[Builders](builders.md)
 
-## Positional parameters
+## Positional variables
 
 ```csharp
-public record User(int UserId, string Name);
+static readonly QueryCommand FindUser = CreateFindUser();
 
-var positional = new QueryCommand("SELECT UserId, Name FROM users WHERE UserId = ? AND Status = ?", ["userId", "status"], CommandType.Text);
+static QueryCommand CreateFindUser()
+{
+    QueryCommand command = new("SELECT UserId, Name FROM users WHERE UserId = ? AND Status = ?", ["userId", "status"], CommandType.Text);
+    command.UpdateParamCache(0, new PositionalDbParamInfo());
+    command.UpdateParamCache(1, new PositionalDbParamInfo());
+    return command;
+}
 
-positional.UpdateParamCache(0, new PositionalDbParamInfo());
-positional.UpdateParamCache(1, new PositionalDbParamInfo());
-
-var values = positional.StartBuilder();
-values.Use(0, 7);
-values.Use(1, "active");
-
-List<User> users = values.Query<List<User>>(cnn);
+var builder = FindUser.StartBuilder();
+builder.Use(0, 12);
+builder.Use(1, "A");
 ```
 
-Declare positional variables in provider order and configure their parameter metadata by index.
-
-See [parameter metadata](parameter-metadata.md) for explicit database types and directions. See [parameter customization](../customization/parameters.md) when the built in member rules are not enough.
+[Parameter metadata](parameter-metadata.md) · [Parameter customization](../customization/parameters.md)

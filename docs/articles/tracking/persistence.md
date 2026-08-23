@@ -1,15 +1,24 @@
 # Persistence
 
-Tracking reports changes. Application code decides how those changes are stored.
+```csharp
+public record Album(int Id, string Title);
 
-Confirm a tracked operation only after the matching persistence operation succeeds.
+static readonly QueryCommand InsertAlbum = new("INSERT INTO albums (Title) VALUES (@Title)");
+static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @Title WHERE AlbumId = @Id");
+static readonly QueryCommand DeleteAlbum = new("DELETE FROM albums WHERE AlbumId = @Id");
 
-## Save one edited item
+Album original = new(12, "Blue");
+List<Album> source = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
+TrackingList<IRuntimeTrackingItem<Album>> albums = source.ToTrackingList();
+```
+
+Tracking reports current operations. Database commands remain application code.
+
+## Edited item
 
 ```csharp
-static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @Title WHERE AlbumId = @Id");
-
 IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
+edit.Set(nameof(Album.Title), "Kind of Blue");
 
 if (edit.HasChanges())
 {
@@ -18,39 +27,37 @@ if (edit.HasChanges())
 }
 ```
 
-Generated tracking items can be used as query values when their projected members match the command parameters.
+The generated tracking item can supply its projected members as query values.
 
-## Cancel instead of saving
+[Runtime query projection](runtime.md#query-parameter-projection)
+
+## Cancel
 
 ```csharp
 edit.CancelEdit();
 ```
 
-Cancel discards the edit snapshot. It does not call the database.
+Cancel changes only tracking state. It does not execute a database command.
 
-## Save an added item
+## Added item
 
 ```csharp
-IRuntimeTrackingItem<Album> added = albums.Added[0];
+IRuntimeTrackingItem<Album> added = albums.Added.First();
 
 InsertAlbum.Execute(cnn, added);
 albums.Confirm(added);
 ```
 
-`Confirm()` confirms the active operation. An item that is still structurally new is confirmed as an addition.
-
-## Save a removed item
+## Removed item
 
 ```csharp
-IRuntimeTrackingItem<Album> removed = albums.Removed[0];
+IRuntimeTrackingItem<Album> removed = albums.Removed.First();
 
 DeleteAlbum.Execute(cnn, removed);
 albums.ConfirmDelete(removed);
 ```
 
-The removed item stays available until deletion is confirmed.
-
-## Save an edited existing item
+## Edited existing items
 
 ```csharp
 for (int i = 0; i < albums.Count; i++)
@@ -65,11 +72,7 @@ for (int i = 0; i < albums.Count; i++)
 }
 ```
 
-The list confirms the edit through its context. The item edit state is accepted when that confirmation succeeds.
-
-## Use a transaction
-
-Persist every operation first and confirm tracking state after the transaction commits.
+## Transaction
 
 ```csharp
 using DbTransaction tx = cnn.BeginTransaction();
@@ -94,17 +97,6 @@ tx.Commit();
 albums.ConfirmChanges();
 ```
 
-This keeps tracked state unchanged when the transaction fails before commit.
+Tracked state is confirmed after the transaction commits.
 
-See [execution context](../running-queries/execution-context.md) for transaction handling in queries.
-
-## Use application persistence code
-
-Tracking does not require SQL persistence. The same confirmation rule applies to another store or service.
-
-```csharp
-await repository.UpdateAsync(edit, cancellationToken);
-edit.ConfirmEdit();
-```
-
-The persistence mechanism and the confirmation point belong to the application.
+[Transactions](../running-queries/execution-context.md) · [Tracking lists](lists.md)

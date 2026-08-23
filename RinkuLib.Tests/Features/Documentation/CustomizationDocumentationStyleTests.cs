@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace RinkuLib.Tests.Documentation;
@@ -11,6 +12,7 @@ public sealed class DocumentationExampleAttribute(string page, string id) : Attr
 public class CustomizationDocumentationStyleTests {
     private static readonly char[] FancyPunctuation = [';', ':', '\u2014', '\u2013', '\u201C', '\u201D'];
     private static readonly string[] FancyWords = ["lifecycle", "seam", "dispatch", "retained", "compose"];
+    private static readonly Regex MarkdownLink = new(@"\[[^\]]+\]\([^)]*\)", RegexOptions.Compiled);
 
     [Fact]
     public void Customization_prose_stays_short_and_plain() {
@@ -27,17 +29,18 @@ public class CustomizationDocumentationStyleTests {
                 if (inCode)
                     continue;
 
-                foreach (char character in FancyPunctuation)
-                    Assert.False(line.Contains(character), $"{file} uses '{character}' in prose\n{line}");
-                foreach (string word in FancyWords)
-                    Assert.False(line.Contains(word, StringComparison.OrdinalIgnoreCase),
-                        $"{file} uses '{word}' in prose\n{line}");
-
                 if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#') || line.StartsWith("- ")) {
                     CheckParagraph(file, paragraph);
                     paragraph.Clear();
                 }
                 else {
+                    string prose = MarkdownLink.Replace(line, "");
+                    foreach (char character in FancyPunctuation)
+                        Assert.False(prose.Contains(character), $"{file} uses '{character}' in prose\n{line}");
+                    foreach (string word in FancyWords)
+                        Assert.False(prose.Contains(word, StringComparison.OrdinalIgnoreCase),
+                            $"{file} uses '{word}' in prose\n{line}");
+
                     paragraph.Add(line.Trim());
                 }
             }

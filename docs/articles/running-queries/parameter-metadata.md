@@ -1,27 +1,40 @@
 # Parameter metadata
 
-Rinku can learn parameter metadata from the provider after a command is prepared and executed.
+## Pin database metadata
 
 ```csharp
-static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+static readonly QueryCommand UpdateAlbum = CreateUpdateAlbum();
 
+static QueryCommand CreateUpdateAlbum()
+{
+    QueryCommand command = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+    command.UpdateParamCache("@title", TypedDbParamCache.Get(DbType.String));
+    return command;
+}
+
+UpdateAlbum.Execute(cnn, new { albumId = 12, title = "Kind of Blue" });
+```
+
+## Positional parameter metadata
+
+```csharp
+static readonly QueryCommand FindUser = CreateFindUser();
+
+static QueryCommand CreateFindUser()
+{
+    QueryCommand command = new("SELECT UserId, Name FROM users WHERE UserId = ? AND Status = ?", ["userId", "status"], CommandType.Text);
+    command.UpdateParamCache(0, new PositionalDbParamInfo());
+    command.UpdateParamCache(1, new PositionalDbParamInfo());
+    return command;
+}
+```
+
+## Provider learned metadata
+
+```csharp
 UpdateAlbum.Execute(cnn, new { albumId = 12, title = "Blue" });
-```
-
-Later calls can reuse learned database type information for the same command parameter.
-
-## Pin parameter metadata
-
-Configure a parameter when the provider must receive a specific database type or direction before the first execution.
-
-```csharp
-UpdateAlbum.UpdateParamCache("title", TypedDbParamCache.Get(DbType.String));
-```
-
-Use the index overload when the command is positional.
-
-```csharp
-positional.UpdateParamCache(0, new PositionalDbParamInfo());
+UpdateAlbum.Execute(cnn, new { albumId = 13, title = "Green" });
+// The second execution can reuse parameter metadata retained by UpdateAlbum.
 ```
 
 ## Reset learned metadata
@@ -30,18 +43,12 @@ positional.UpdateParamCache(0, new PositionalDbParamInfo());
 UpdateAlbum.Parameters.Reset();
 ```
 
-Reset the command parameter metadata after external schema or provider behavior changes make the learned values invalid.
-
-## Stored procedures
+## Stored procedure metadata
 
 ```csharp
-QueryCommand command = QueryCommand.FromProc("RenumberAlbums", setupConnection);
+QueryCommand updateAlbum = QueryCommand.FromProc("UpdateAlbum", cnn);
 ```
 
-`FromProc` copies provider declared types, sizes, directions, and return value metadata into the reusable command.
+`FromProc` copies the procedure parameter metadata exposed by the provider.
 
-See [stored procedures](stored-procedures.md) for output parameters and procedure command setup.
-
-## Custom parameter behavior
-
-Use [parameter customization](../customization/parameters.md) when a value needs conversion or custom binding. Use [parameter member rules](../customization/parameter-members.md) when parameter source members need different discovery behavior.
+[Stored procedures](stored-procedures.md) · [Custom parameter binding](../customization/parameters.md)

@@ -1,20 +1,16 @@
-# Map rows to objects
+# Object mapping
 
-A constructor can map columns by name.
+## Constructor mapping
 
 ```csharp
 public record Album(int Id, string Title);
 
-static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
-
-Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
 
-The root type is requested directly by `Query<Album>`. Nested types follow the registration rules described in [registration](registration.md).
+Constructor inputs are matched against returned columns.
 
 ## Writable members
-
-A parameterless type can use writable fields and properties.
 
 ```csharp
 public sealed class Album
@@ -23,8 +19,10 @@ public sealed class Album
     public string? Title { get; set; }
 }
 
-Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
+
+A parameterless construction can fill writable fields and properties.
 
 An `init` member cannot be assigned after parameterless construction.
 
@@ -35,15 +33,13 @@ public sealed class Album
     public string? Title { get; init; }
 }
 
-Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 // RINKU3001
 ```
 
-Use constructor parameters for those members.
+[RINKU3001](../reference/errors.md#rinku3001-no-parser-for-the-schema)
 
-## Constructor choice
-
-A usable parameterized constructor is preferred when both a parameterized and parameterless path are available.
+## Several construction paths
 
 ```csharp
 public sealed class Album
@@ -59,28 +55,15 @@ public sealed class Album
     public int Id { get; }
     public string Title { get; } = "";
 }
+
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
 
-The first construction path that can use the returned columns is selected. See [construction paths](construction-paths.md) for path order and explicit selection.
+A path participates when its required inputs can be satisfied by the returned shape.
+
+[Construction paths](construction-paths.md)
 
 ## Static factories
-
-A static factory can be a construction path.
-
-```csharp
-public interface IShape
-{
-    public static IShape FromCircle(double radius) => new Circle(radius);
-}
-
-public record Circle(double Radius) : IShape;
-
-static readonly QueryCommand GetShape = new("SELECT Radius FROM shapes WHERE ShapeId = @shapeId");
-
-IShape shape = GetShape.Query<IShape>(cnn, new { shapeId = 1 });
-```
-
-Several factories can support different row shapes.
 
 ```csharp
 public interface IShape
@@ -89,72 +72,40 @@ public interface IShape
     public static IShape FromRectangle(double width, double height) => new Rectangle(width, height);
 }
 
+public record Circle(double Radius) : IShape;
 public record Rectangle(double Width, double Height) : IShape;
+
+IShape circle = cnn.Query<IShape>("SELECT Radius FROM shapes WHERE ShapeId = @shapeId", new { shapeId = 1 });
+IShape rectangle = cnn.Query<IShape>("SELECT Width, Height FROM shapes WHERE ShapeId = @shapeId", new { shapeId = 2 });
 ```
 
-The returned columns decide which usable path wins.
+The returned shape determines which construction can participate.
 
-## Optional constructor values
-
-A default constructor parameter can make a shorter row shape valid.
+## Alternative construction
 
 ```csharp
 public record Album(int Id, string Title, string? Notes = null);
 
-Album shortRow = GetAlbum.Query<Album>(cnn);
-Album fullRow = GetAlbumWithNotes.Query<Album>(cnn);
+Album shortRow = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+Album fullRow = cnn.Query<Album>("SELECT AlbumId AS Id, Title, Notes FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
 
-Only a real runtime default on the selected construction path provides that fallback.
+The declared default provides a construction path when `Notes` is absent.
 
-## Column conversions
-
-Supported CLR conversions can adapt the database column type to the destination slot.
+The same mechanism lets a recursive shape terminate.
 
 ```csharp
-public record Totals(long Widened, int Narrowed);
+public record Employee(int Id, string Name, [Alt("Boss")] Employee? Manager = null) : IDbReadable;
 
-Totals totals = GetTotals.Query<Totals>(cnn);
+Employee employee = cnn.Query<Employee>("SELECT e.EmployeeId AS Id, e.Name, m.EmployeeId AS ManagerId, m.Name AS ManagerName, b.EmployeeId AS ManagerBossId, b.Name AS ManagerBossName FROM employees e LEFT JOIN employees m ON m.EmployeeId = e.ManagerId LEFT JOIN employees b ON b.EmployeeId = m.ManagerId WHERE e.EmployeeId = @employeeId", new { employeeId = 12 });
+// ManagerId maps another Employee.
+// ManagerBossId maps that Employee.Manager through Alt("Boss").
+// The deepest Employee finishes through the construction where Manager uses its default.
 ```
 
-Numeric conversions and user defined conversion operators can participate.
+[Recursive mapping](nesting.md) · [Construction paths](construction-paths.md)
 
-```csharp
-public readonly struct AlbumScore
-{
-    public double Value { get; }
-
-    private AlbumScore(double value) => Value = value;
-
-    public static explicit operator AlbumScore(double value) => new(value);
-}
-
-public record RankedAlbum(int Id, AlbumScore Score);
-```
-
-Use `[ExactType]` when the database column type must match the slot type.
-
-```csharp
-public record Amount([ExactType] int Value);
-```
-
-A `long` column cannot fill that slot.
-
-## Fill members after a constructor
-
-A parameterized constructor normally consumes only its parameters.
-
-```csharp
-public sealed class Album
-{
-    public Album(int id) => Id = id;
-
-    public int Id { get; }
-    public string? Title { get; set; }
-}
-```
-
-Use `[CanCompleteWithMembers]` when remaining columns should fill writable members.
+## Complete with writable members
 
 ```csharp
 public sealed class Album
@@ -165,31 +116,51 @@ public sealed class Album
     public int Id { get; }
     public string? Title { get; set; }
 }
+
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+// Id is consumed by the constructor.
+// Title fills the remaining writable member.
 ```
 
-A member does not consume a column already used by the constructor unless its reading rule allows reuse. See [reading order](reading-order.md).
+[Reading order](reading-order.md)
 
-## Recursive objects
-
-A recursive type can keep mapping while matching columns exist.
+## Conversions
 
 ```csharp
-public record User(int Id, string Name, [Alt("Boss")] User? Supervisor = null);
+public record Totals(long Widened, int Narrowed);
 
-User user = GetUser.Query<User>(cnn);
+Totals totals = cnn.Query<Totals>("SELECT CAST(12 AS int) AS Widened, CAST(34 AS bigint) AS Narrowed");
 ```
 
-Columns such as `SupervisorId`, `SupervisorName`, `SupervisorBossId`, and `SupervisorBossName` build successive levels.
+Supported CLR conversions can participate in a slot.
+
+```csharp
+public readonly struct AlbumScore
+{
+    public double Value { get; }
+    private AlbumScore(double value) => Value = value;
+    public static explicit operator AlbumScore(double value) => new(value);
+}
+
+public record RankedAlbum(int Id, AlbumScore Score);
+
+RankedAlbum album = cnn.Query<RankedAlbum>("SELECT AlbumId AS Id, Score FROM album_scores WHERE AlbumId = @albumId", new { albumId = 12 });
+```
+
+`[ExactType]` removes conversion for that slot.
+
+```csharp
+public record Amount([ExactType] int Value);
+// A returned long column cannot fill Value.
+```
 
 ## Unused columns
-
-Unused columns do not need to be mapped.
 
 ```csharp
 public record Album(int Id, string Title);
 
-Album album = GetAlbumAndArtistName.Query<Album>(cnn);
-// ArtistName is ignored.
+Album album = cnn.Query<Album>("SELECT AlbumId AS Id, Title, ArtistName FROM album_search WHERE AlbumId = @albumId", new { albumId = 12 });
+// ArtistName remains unused.
 ```
 
-See [nested objects](nesting.md), [database NULL](nulls.md), and [name rules](names.md) for common object mapping choices.
+[Name adaptation](names.md) · [Database NULL](nulls.md)

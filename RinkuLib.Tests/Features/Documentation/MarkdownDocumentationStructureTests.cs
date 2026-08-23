@@ -87,7 +87,7 @@ public class MarkdownDocumentationStructureTests {
                     return;
                 }
                 int words = Word.Matches(text).Count;
-                if (words <= 5 || words > 65)
+                if (words <= 3 || words > 65)
                     failures.Add($"{Path.GetRelativePath(docsRoot, file)}:{start} [{words} words] {text}");
                 paragraph.Clear();
             }

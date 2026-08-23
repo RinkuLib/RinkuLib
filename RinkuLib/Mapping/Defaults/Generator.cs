@@ -11,7 +11,8 @@ namespace Rinku.Mapping.Emission;
 /// </summary>
 public class Generator(ILGenerator generator, ColumnInfo[] cols) : ILGenerator {
 #pragma warning disable CA2211
-    internal static Action<string> Write = Console.WriteLine;
+    // Assign a sink here to opt into debug emission messages; the default is quiet.
+    internal static Action<string> Write = static _ => { };
 #pragma warning restore CA2211
     internal readonly ILGenerator Il = generator;
     internal readonly ColumnInfo[] Columns = cols;

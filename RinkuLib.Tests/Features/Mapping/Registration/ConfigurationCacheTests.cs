@@ -15,7 +15,7 @@ namespace RinkuLib.Tests.Mapping;
 [Collection("GlobalMappingConfiguration")]
 public class ConfigurationCacheTests {
     [Fact]
-    [DocumentationExample("parsers.md", "global-parser-invalidation")]
+    [DocumentationExample("result-parsers.md", "global-parser-invalidation")]
     public void Schema_invalidation_asks_a_retaining_command_before_disposal() {
         var maker = new DisposableValueMaker();
         TypeParser.TypeParserMakers.Insert(0, maker);
@@ -310,7 +310,7 @@ public class ConfigurationCacheTests {
     }
 
     [Fact]
-    [DocumentationExample("parsers.md", "parser-disposing-event")]
+    [DocumentationExample("result-parsers.md", "parser-disposing-event")]
     public void Disposing_event_reports_the_exact_parser_and_runs_before_disposal() {
         var maker = new DisposableValueMaker();
         TypeParser.TypeParserMakers.Insert(0, maker);
@@ -394,8 +394,8 @@ public class ConfigurationCacheTests {
     }
 
     [Fact]
-    [DocumentationExample("parsers.md", "custom-result-parser")]
-    [DocumentationExample("parsers.md", "register-result-parser")]
+    [DocumentationExample("result-parsers.md", "custom-result-parser")]
+    [DocumentationExample("result-parsers.md", "register-result-parser")]
     public void Documented_custom_Last_shape_reads_the_final_row() {
         var maker = new ReusingBaseTypeParserMaker([typeof(Last<>)], (definition, itemType, ref _) => typeof(LastParser<>).MakeGenericType(itemType));
         TypeParser.TypeParserMakers.Insert(0, maker);
@@ -429,7 +429,7 @@ public class ConfigurationCacheTests {
     }
 
     [Fact]
-    [DocumentationExample("parsers.md", "schema-independent-parser")]
+    [DocumentationExample("result-parsers.md", "schema-independent-parser")]
     public void Parser_decides_whether_different_schemas_share_one_global_entry() {
         var maker = new SchemaIndependentMaker();
         TypeParser.TypeParserMakers.Insert(0, maker);
@@ -467,7 +467,7 @@ public class ConfigurationCacheTests {
     }
 
     [Fact]
-    [DocumentationExample("parsers.md", "get-parser")]
+    [DocumentationExample("result-parsers.md", "get-parser")]
     public void Direct_parser_reads_a_reader_positioned_on_its_first_row() {
         ColumnInfo[] columns = [new("Value", typeof(int), false)];
         ITypeParser<CacheValue> parser = TypeParser.GetTypeParser<CacheValue>(columns);

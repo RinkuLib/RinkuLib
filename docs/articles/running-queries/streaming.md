@@ -1,62 +1,61 @@
 # Streaming
 
-Choose a buffered or streamed result shape based on how the rows will be consumed.
-
 ```csharp
-List<Album> list = GetAlbums.Query<List<Album>>(cnn);
-Album[] array = GetAlbums.Query<Album[]>(cnn);
-IEnumerable<Album> stream = GetAlbums.Query<IEnumerable<Album>>(cnn);
-IAsyncEnumerable<Album> asyncStream = GetAlbums.StreamQueryAsync<Album>(cnn);
+public record Album(int Id, string Title);
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId ORDER BY AlbumId");
 ```
 
-`List<T>` and arrays finish reading before `Query` returns.
-
-## Synchronous streaming
+## Synchronous stream
 
 ```csharp
-IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
+IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn, new { artistId = 7 });
 
 foreach (Album album in albums)
     Console.WriteLine(album.Title);
 ```
 
-The reader stays active during enumeration.
-
-If Rinku opened the connection, the connection stays in use until enumeration finishes or the enumerator is disposed. A connection that was already open stays open.
-
-## Stop early
+The reader remains active while the sequence is enumerated.
 
 ```csharp
-IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
+using IEnumerator<Album> e = GetAlbums.Query<IEnumerable<Album>>(cnn, new { artistId = 7 }).GetEnumerator();
 
-using (IEnumerator<Album> iterator = albums.GetEnumerator())
+while (e.MoveNext())
 {
-    if (iterator.MoveNext())
-        Console.WriteLine(iterator.Current.Title);
+    if (e.Current.Id == 12)
+        break;
+}
+// Disposing the enumerator disposes the active reader.
+```
+
+A connection opened for the stream remains in use until the reader is disposed. A connection that was already open stays open.
+
+[Connection lifetime](execution-context.md)
+
+## Async stream
+
+```csharp
+await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, new { artistId = 7 }, ct: cancellationToken))
+{
+    if (album.Id == 12)
+        break;
+}
+// Breaking the await foreach disposes the async enumerator.
+```
+
+## Output parameters
+
+```csharp
+QueryCommand findAlbums = QueryCommand.FromProc("FindAlbums", cnn);
+IEnumerable<Album> albums = findAlbums.Query<IEnumerable<Album>>(cnn, out DbCommand command, new { artistId = 7 });
+
+using (command)
+{
+    foreach (Album album in albums)
+        Console.WriteLine(album.Title);
+
+    int total = command.GetOutputValue<int>("@total");
+    // The stream is finished before the output value is read.
 }
 ```
 
-Disposing the enumerator disposes the active reader.
-
-## Async streaming
-
-```csharp
-await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken))
-    Console.WriteLine(album.Title);
-```
-
-Breaking the loop disposes the async enumerator.
-
-```csharp
-await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken))
-{
-    Console.WriteLine(album.Title);
-    break;
-}
-```
-
-## Output parameters and active commands
-
-A streamed result can keep output values unavailable until reader work has finished. Dispose or finish the stream before reading provider output parameters.
-
-See [stored procedures](stored-procedures.md) for output values and [execution context](execution-context.md) for connection lifetime.
+[Stored procedure output values](stored-procedures.md)

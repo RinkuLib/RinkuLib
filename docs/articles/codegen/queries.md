@@ -1,15 +1,10 @@
 # Add queries
 
-Open the configuration and add a query. Each entry produces one generated command method.
-
 ![Rinku Power Tools query manager](../../images/codegen/query-manager.png)
 
-The available command sources and parameter type suggestions follow the configuration database. SQL Server and PostgreSQL offer stored procedures. SQLite offers SQL queries and SQL files.
-
+Each query entry produces one generated command method.
 
 ## SQL text
-
-Choose `SQL Query` when the SQL belongs in the configuration.
 
 ```text
 Method Name    GetAlbumsByArtist
@@ -20,8 +15,6 @@ Command Type   SQL Query
 SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId
 ```
 
-The configuration stores the same query as `SQLQuery`.
-
 ```json
 {
   "MethodName": "GetAlbumsByArtist",
@@ -29,11 +22,9 @@ The configuration stores the same query as `SQLQuery`.
 }
 ```
 
-CodeGen inspects the command against the configured database and discovers the input parameters and returned columns.
+CodeGen inspects the command against the configured database to discover inputs and returned columns.
 
 ## Stored procedure
-
-Choose `Stored procedure` and select or enter the procedure name.
 
 ```text
 Method Name             ArchiveInvoices
@@ -48,11 +39,9 @@ Stored Procedure Name   dbo.ArchiveInvoices
 }
 ```
 
-Stored procedure suggestions come from the configured database connection.
+SQL Server and PostgreSQL expose stored procedure entries through the configured database connection.
 
 ## SQL file
-
-Choose `SQL File` when SQL should stay in its own file.
 
 ![Rinku Power Tools SQL file query controls](../../images/codegen/query-sql-file.png)
 
@@ -69,7 +58,7 @@ SQL File       Sql/GetOpenInvoices.sql
 }
 ```
 
-The file picker stores the path automatically. A file inside the project is stored as a project relative path. A file outside the project is stored as an absolute path.
+A file inside the project is stored as a project relative path. A file outside the project is stored as an absolute path.
 
 ```text
 C:\Projects\MyApp\Sql\GetOpenInvoices.sql
@@ -79,33 +68,19 @@ D:\SharedSql\GetOpenInvoices.sql
     -> D:\SharedSql\GetOpenInvoices.sql
 ```
 
-When `rinkupt.json` is edited directly, the stored value is authoritative. Relative means project owned and absolute means external.
+A relative file is copied to build and publish output at the same relative path. An absolute file stays absolute and is not copied.
 
-A relative file stays as the generated runtime key. The file is copied to build and publish output so the same relative path can be read from the application directory when the cache does not already contain a value.
+The generated command keeps the configured file reference.
 
-```text
-Sql/GetOpenInvoices.sql
-```
+[SQL files at runtime](generated-code.md#sql-files)
 
-An absolute file keeps its absolute path and is not copied into the application output.
-
-```text
-D:\SharedSql\GetOpenInvoices.sql
-```
-
-CodeGen reads the file during generation so it can inspect parameters and result columns. The generated command keeps the configured file reference instead of copying the SQL text into generated C#.
-
-At runtime the shared `RinkuPowerTools.SqlFiles` dictionary can replace or remove the current SQL for that key. See [Generated commands](generated-code.md) for the generated call and dictionary behavior.
-
-## Name a generated result
-
-Several returned columns normally generate a record named from the method.
+## Result name
 
 ```csharp
 public partial record GetAlbumsByArtistResult(int Id, string Title);
 ```
 
-Set `Result Set Name` when another name is clearer.
+A configured result set name changes that generated type name.
 
 ```text
 Method Name       GetAlbumsByArtist
@@ -116,11 +91,7 @@ Result Set Name   AlbumRow
 public partial record AlbumRow(int Id, string Title);
 ```
 
-See [Generated commands](generated-code.md) for result naming and scalar results.
-
-## Correct parameter metadata
-
-Most parameters are discovered from the database. Add a parameter correction when the discovered type or null behavior needs to be changed.
+## Parameter correction
 
 ```text
 Name          @cutoff
@@ -142,15 +113,19 @@ Is Nullable   false
 }
 ```
 
-A correction applies to the named discovered parameter. It does not replace the command definition.
+A correction updates metadata for the named discovered parameter.
 
-## Provider parameter behavior
+## PostgreSQL positional parameters
 
-SQL Server and PostgreSQL discover parameter metadata from the database when possible. PostgreSQL also preserves its native type name when common `DbType` metadata is not enough.
+```sql
+SELECT title FROM album WHERE artist_id = $1
+```
 
-PostgreSQL positional SQL is supported. `$1`, `$2`, and later parameters generate valid C# names such as `p1` and are added to the Npgsql parameter collection in positional order. Do not mix PostgreSQL positional parameters with named `@name` or `:name` parameters in the same query.
+The generated C# argument uses a valid name such as `p1`. The parameter is added in positional order.
 
-SQLite query parameters start untyped because SQLite does not declare parameter types. Add a correction when a generated argument should be strongly typed.
+[Generated PostgreSQL command](generated-code.md#postgresql-parameters)
+
+## SQLite untyped parameter
 
 ```json
 {
@@ -160,8 +135,17 @@ SQLite query parameters start untyped because SQLite does not declare parameter 
 }
 ```
 
-Without the correction, PowerTools keeps the parameter as `object?` and does not emit `DbType.Object`.
+Without a correction, an unresolved SQLite query parameter stays `object?` and the provider infers its runtime type.
+
+[Generated SQLite command](generated-code.md#sqlite-parameters)
+
 
 ## Remove a query
 
-Deleting a query and refreshing the configuration removes its generated method. See [Refresh generated code](refresh.md) for regeneration behavior.
+```text
+Delete query
+Refresh configuration
+Generated method is removed
+```
+
+[Refresh generated code](refresh.md)

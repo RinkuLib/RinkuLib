@@ -1,12 +1,10 @@
-# Group rows into results
+# Grouping
 
-Values before the first nested collection form the default group key.
+## Inferred parent values
 
 ```csharp
 public record Album(int Id, string Title) : IDbReadable;
 public record Artist(int Id, string Name, List<Album> Albums);
-
-List<Artist> artists = GetArtists.Query<List<Artist>>(cnn);
 ```
 
 ```text
@@ -16,13 +14,11 @@ Id  Name    AlbumsId  AlbumsTitle
 2   Queen   20        Jazz
 ```
 
-The first two rows keep the same parent values and build one `Artist`. The third row starts another.
+Values mapped before the first nested multi-row value form the default parent boundary. The first two rows remain one `Artist`. The third row starts another.
 
-Rows for one group must stay consecutive.
+Rows for one group stay consecutive.
 
-## Choose the key
-
-Use `[GroupKey]` when specific mapped values should decide the boundary.
+## Explicit key
 
 ```csharp
 public record Invoice(List<int> LineIds, [GroupKey] int InvoiceId);
@@ -35,32 +31,26 @@ LineIds  InvoiceId
 20       101
 ```
 
-Several `[GroupKey]` values form one compound key.
+Several key values form one compound key.
 
 ```csharp
 public record OrderLine([GroupKey] int OrderId, [GroupKey] int ProductId, List<string> Serials);
 ```
 
-Grouping uses `EqualityComparer<T>.Default` for ordinary key values.
+Ordinary key values use `EqualityComparer<T>.Default`.
 
-## Group by a column that is not stored
-
-Use `[GroupKeyColumns]` when the boundary column should not become a result member.
+## Boundary column without a member
 
 ```csharp
 [GroupKeyColumns("CustomerId")]
 public record CustomerInvoices(string CustomerName, List<int> InvoiceIds);
+
+List<CustomerInvoices> customers = cnn.Query<List<CustomerInvoices>>("SELECT CustomerId, CustomerName, InvoiceId AS InvoiceIds FROM invoices ORDER BY CustomerId");
 ```
 
-```sql
-SELECT CustomerId, CustomerName, InvoiceId AS InvoiceIds FROM invoices ORDER BY CustomerId
-```
+`CustomerId` participates in the boundary without becoming a result member.
 
-`CustomerId` controls grouping without becoming a property on `CustomerInvoices`.
-
-## Use a method as the boundary
-
-A group method can replace normal equality grouping.
+## Boundary method
 
 ```csharp
 public record ShipmentBatch([Alt("ShippedAt")] DateTime Start, List<string> Items) : IDbReadable
@@ -74,24 +64,22 @@ public record ShipmentBatch([Alt("ShippedAt")] DateTime Start, List<string> Item
 }
 ```
 
-The method receives saved group state and the current row value. It returns whether the row stays in the group and the next saved state.
+The method receives saved boundary state and the current row value. It returns whether the row stays in the group and the next saved state.
 
-Use `[GroupKeyMethod]` when the method belongs to one constructor instead of the whole type.
+A construction can carry its own method rule.
 
 ```csharp
 public sealed class ShipmentBatch : IDbReadable
 {
-    [GroupKeyMethod(nameof(WithinSevenDays))]
+    [GroupKeyMethod(nameof(WithinSameDay))]
     public ShipmentBatch(DateTime start, List<string> items) { }
 
-    public static (bool Same, DateTime Next) WithinSevenDays(DateTime saved, DateTime current)
+    public static (bool Same, DateTime Next) WithinSameDay(DateTime saved, DateTime current)
         => (saved.Date == current.Date, current);
 }
 ```
 
-## Configure grouping during setup
-
-The built in grouping rules can be assigned without attributes.
+## Setup registration
 
 ```csharp
 TypeParsingInfoHelper.SetGroupKey<Playlist>(nameof(Playlist.Id));
@@ -100,29 +88,32 @@ TypeParsingInfoHelper.SetGroupKeyColumns<ImportRow>("AccountId", "Currency");
 TypeParsingInfoHelper.SetGroupKeyMethod<MonthlyReport>(nameof(MonthlyReport.ByMonth));
 ```
 
-Remove an assigned rule when the type should return to its declared or inferred behavior.
-
 ```csharp
 TypeParsingInfoHelper.ClearGroupKey<Playlist>();
 ```
 
-## Custom grouping rules
+## Rule order
 
-Implement `IGroupingRule` only when key values and boundary methods cannot express the required rule.
+```csharp
+[GroupKeyColumns("Region")]
+public sealed class Sale : IDbReadable
+{
+    public Sale([GroupKey] DateTime date, List<decimal> amounts) { }
+    public Sale(string region, List<decimal> amounts) { }
+}
+```
 
-The custom rule only needs to expose the boundary behavior. The parser and execution state remain owned by Rinku.
+A rule on the selected construction is tried before the type rule. The type rule is tried before inferred grouping. A custom rule can return no boundary so negotiation continues to the next source.
 
-See the [API reference](../../api/index.md) for the interface contract. Keep custom grouping setup with the other type registration code described in [advanced type registration](../customization/type-registration.md).
+An application-defined boundary can implement [`IGroupingRule`](xref:Rinku.Mapping.IGroupingRule).
 
-## Invalid grouping shapes
-
-A multi row value with no usable boundary raises `RINKU3002`.
+## Missing boundary
 
 ```csharp
 public record Report(List<int> Rows, int Total);
 
-Report report = GetReport.Query<Report>(cnn);
-// RINKU3002
+Report report = cnn.Query<Report>("SELECT RowValue AS Rows, Total FROM report_rows ORDER BY RowNumber");
+// RINKU3002 when no usable parent boundary can be negotiated.
 ```
 
-See [collection mapping](collections.md) for the shapes that require a boundary.
+[Multi-row mapping](collections.md) · [RINKU3002](../reference/errors.md#rinku3002-missing-group-boundary)

@@ -1,10 +1,4 @@
-# Rinku documentation
-
-Rinku is a micro ORM for .NET built on ADO.NET. SQL stays explicit instead of being generated from an object model. Rinku adapts between database-facing and .NET-facing shapes so both sides can keep the form that fits them best.
-
-## Overview
-
-[Start with the Rinku overview](overview.md) for the main workflow: queries, result shapes, mapping, conditional SQL, customization, and tracking.
+# Rinku
 
 ## Install
 
@@ -15,39 +9,41 @@ dotnet add package Rinku
 ## First query
 
 ```csharp
-public record Album(int Id, string Title) : IDbReadable;
+public record Album(int Id, string Title);
 
 static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
 
 List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
 ```
 
-## Documentation map
+[Overview](overview.md)
+
+## Documentation
 
 ### Running queries
 
-[Execute and query SQL](https://rinkulib.github.io/RinkuLib/articles/running-queries/execution.html) · [Supplying values](https://rinkulib.github.io/RinkuLib/articles/running-queries/values.html) · [Builders](https://rinkulib.github.io/RinkuLib/articles/running-queries/builders.html) · [Result shapes](https://rinkulib.github.io/RinkuLib/articles/running-queries/result-shapes.html) · [Async](https://rinkulib.github.io/RinkuLib/articles/running-queries/async.html) · [Streaming](https://rinkulib.github.io/RinkuLib/articles/running-queries/streaming.html) · [Execution context](https://rinkulib.github.io/RinkuLib/articles/running-queries/execution-context.html) · [Multiple result sets](https://rinkulib.github.io/RinkuLib/articles/running-queries/multiple-results.html) · [Stored procedures](https://rinkulib.github.io/RinkuLib/articles/running-queries/stored-procedures.html) · [Existing DbCommand](https://rinkulib.github.io/RinkuLib/articles/running-queries/dbcommand.html) · [Fixed result schema](https://rinkulib.github.io/RinkuLib/articles/running-queries/fixed-result-schema.html) · [Raw readers](https://rinkulib.github.io/RinkuLib/articles/running-queries/readers.html) · [SQL-string shortcuts](https://rinkulib.github.io/RinkuLib/articles/running-queries/sql-string.html) · [IDbConnection support](https://rinkulib.github.io/RinkuLib/articles/running-queries/idbconnection.html) · [Parameter metadata](https://rinkulib.github.io/RinkuLib/articles/running-queries/parameter-metadata.html)
+[Execution](running-queries/execution.md) · [Result shapes](running-queries/result-shapes.md) · [Values](running-queries/values.md) · [Builders](running-queries/builders.md) · [Async](running-queries/async.md) · [Streaming](running-queries/streaming.md) · [Stored procedures](running-queries/stored-procedures.md) · [Multiple results](running-queries/multiple-results.md)
 
 ### Mapping
 
-[Objects](https://rinkulib.github.io/RinkuLib/articles/mapping/objects.html) · [Construction paths](https://rinkulib.github.io/RinkuLib/articles/mapping/construction-paths.html) · [Nested objects](https://rinkulib.github.io/RinkuLib/articles/mapping/nesting.html) · [Collections](https://rinkulib.github.io/RinkuLib/articles/mapping/collections.html) · [Grouping](https://rinkulib.github.io/RinkuLib/articles/mapping/grouping.html) · [Adapt names](https://rinkulib.github.io/RinkuLib/articles/mapping/names.html) · [Database NULL](https://rinkulib.github.io/RinkuLib/articles/mapping/nulls.html) · [Tuples](https://rinkulib.github.io/RinkuLib/articles/mapping/tuples.html) · [Dynamic rows](https://rinkulib.github.io/RinkuLib/articles/mapping/dynamic-rows.html) · [Reading order](https://rinkulib.github.io/RinkuLib/articles/mapping/reading-order.html) · [Registration](https://rinkulib.github.io/RinkuLib/articles/mapping/registration.html)
+[Objects](mapping/objects.md) · [Recursive mapping](mapping/nesting.md) · [Name adaptation](mapping/names.md) · [Construction](mapping/construction-paths.md) · [Multi-row mapping](mapping/collections.md) · [Grouping](mapping/grouping.md) · [Tuples](mapping/tuples.md) · [Dynamic rows](mapping/dynamic-rows.md) · [Database NULL](mapping/nulls.md)
 
 ### Conditional SQL
 
-[Variables](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/variables.html) · [Collections](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/collections.html) · [Markers](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/markers.html) · [Dynamic projection](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/dynamic-projection.html) · [Handlers](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/handlers.html) · [Template syntax](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/template-syntax.html) · [Cheat sheet](https://rinkulib.github.io/RinkuLib/articles/conditional-sql/cheatsheet.html)
+[Variables](conditional-sql/variables.md) · [Markers](conditional-sql/markers.md) · [Collections](conditional-sql/collections.md) · [Dynamic projection](conditional-sql/dynamic-projection.md) · [Handlers](conditional-sql/handlers.md) · [Cheat sheet](conditional-sql/cheatsheet.md)
 
 ### Advanced customization
 
-[Overview](https://rinkulib.github.io/RinkuLib/articles/customization/index.html) · [Type registrations](https://rinkulib.github.io/RinkuLib/articles/customization/type-registration.html) · [Mapping slot rules](https://rinkulib.github.io/RinkuLib/articles/customization/slot-rules.html) · [Multi-row mappings](https://rinkulib.github.io/RinkuLib/articles/customization/multi-row.html) · [Complete result parsers](https://rinkulib.github.io/RinkuLib/articles/customization/result-parsers.html) · [Parameter source rules](https://rinkulib.github.io/RinkuLib/articles/customization/parameter-members.html) · [Parameter binding](https://rinkulib.github.io/RinkuLib/articles/customization/parameters.html) · [Method caller](https://rinkulib.github.io/RinkuLib/articles/customization/method-caller.html) · [Conditional SQL handlers](https://rinkulib.github.io/RinkuLib/articles/customization/conditional-sql.html) · [Cache control](https://rinkulib.github.io/RinkuLib/articles/customization/caches.html)
+[Customization](customization/index.md) · [Type registration](customization/type-registration.md) · [Multi-row mapping](customization/multi-row.md) · [Result parsers](customization/result-parsers.md) · [Parameters](customization/parameters.md) · [Method caller](customization/method-caller.md) · [Caches](customization/caches.md)
 
 ### Code generation
 
-[Overview](https://rinkulib.github.io/RinkuLib/articles/codegen/index.html) · [Configure](https://rinkulib.github.io/RinkuLib/articles/codegen/configure.html) · [Add queries](https://rinkulib.github.io/RinkuLib/articles/codegen/queries.html) · [Generated code](https://rinkulib.github.io/RinkuLib/articles/codegen/generated-code.html) · [Refresh](https://rinkulib.github.io/RinkuLib/articles/codegen/refresh.html) · [Configuration reference](https://rinkulib.github.io/RinkuLib/articles/codegen/configuration.html) · [Analyzers and code fixes](https://rinkulib.github.io/RinkuLib/articles/codegen/analyzers.html)
+[Code generation](codegen/index.md) · [Configure](codegen/configure.md) · [Queries](codegen/queries.md) · [Generated code](codegen/generated-code.md) · [Refresh](codegen/refresh.md) · [Analyzers](codegen/analyzers.md)
 
 ### Tracking
 
-[Overview](https://rinkulib.github.io/RinkuLib/articles/tracking/index.html) · [Editable items](https://rinkulib.github.io/RinkuLib/articles/tracking/items.html) · [Tracking lists](https://rinkulib.github.io/RinkuLib/articles/tracking/lists.html) · [Runtime tracking](https://rinkulib.github.io/RinkuLib/articles/tracking/runtime.html) · [Binding](https://rinkulib.github.io/RinkuLib/articles/tracking/binding.html) · [Validation and metadata](https://rinkulib.github.io/RinkuLib/articles/tracking/validation.html) · [Persistence](https://rinkulib.github.io/RinkuLib/articles/tracking/persistence.html)
+[Tracking](tracking/index.md) · [Runtime tracking](tracking/runtime.md) · [Items](tracking/items.md) · [Lists](tracking/lists.md) · [Binding](tracking/binding.md) · [Validation](tracking/validation.md) · [Persistence](tracking/persistence.md)
 
 ### Reference
 
-[Coming from Dapper](https://rinkulib.github.io/RinkuLib/articles/reference/dapper.html) · [FAQ](https://rinkulib.github.io/RinkuLib/articles/reference/faq.html) · [Errors](https://rinkulib.github.io/RinkuLib/articles/reference/errors.html) · [Performance](https://rinkulib.github.io/RinkuLib/articles/reference/performance.html) · [API reference](https://rinkulib.github.io/RinkuLib/api/index.html)
+[Coming from Dapper](reference/dapper.md) · [Errors](reference/errors.md) · [FAQ](reference/faq.md) · [Performance](reference/performance.md)

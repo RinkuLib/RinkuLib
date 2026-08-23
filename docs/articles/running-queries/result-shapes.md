@@ -1,150 +1,134 @@
 # Result shapes
 
-The requested type chooses the result behavior.
-
 ```csharp
-Album first = GetAlbums.Query<Album>(cnn);
-Optional<Album> maybe = GetAlbums.Query<Optional<Album>>(cnn);
-Single<Album> exactlyOne = GetAlbums.Query<Single<Album>>(cnn);
-List<Album> all = GetAlbums.Query<List<Album>>(cnn);
-IEnumerable<Album> stream = GetAlbums.Query<IEnumerable<Album>>(cnn);
+public record Album(int Id, string Title);
+public record NestedAlbum(int Id, string Title) : IDbReadable;
+public record Artist(int Id, string Name, List<NestedAlbum> Albums);
+
+const string albumsSql = "SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId";
+const string albumSql = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
 ```
+
+The requested result type controls how complete mapped values are consumed.
 
 ## First result
 
 ```csharp
-Album album = GetAlbums.Query<Album>(cnn);
-// No result raises RINKU4001.
+Album album = cnn.Query<Album>(albumsSql);
 ```
 
-A complete mapped result can consume several database rows when the type contains a grouped nested collection.
+Only the first complete mapped `Album` is returned.
+
+A complete mapped value can itself consume several database rows.
+
+```csharp
+const string artistSql = "SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS AlbumsId, al.Title AS AlbumsTitle FROM artists ar JOIN albums al ON al.ArtistId = ar.ArtistId WHERE ar.ArtistId = @artistId ORDER BY ar.ArtistId";
+
+Artist artist = cnn.Query<Artist>(artistSql, new { artistId = 7 });
+// Artist is one complete result even when Albums folds several rows.
+```
+
+[Multi-row mapping](../mapping/collections.md)
 
 ## First result or none
 
 ```csharp
-Optional<Album> result = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
-
-if (result.HasValue)
-{
-    Album album = result;
-    Console.WriteLine(album.Title);
-}
+Album? album = cnn.Query<Optional<Album>>(albumSql, new { albumId = 999 });
 ```
 
-A reference type can also be read directly as a nullable value.
+For a value type the struct wrapper carries the absent state.
 
 ```csharp
-Album? album = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
-```
-
-Use `OptionalStruct<T>` for a value type.
-
-```csharp
-int? count = FindCount.Query<OptionalStruct<int>>(cnn);
+int? count = cnn.Query<OptionalStruct<int>>("SELECT COUNT(*) FROM albums WHERE 1 = 0");
 ```
 
 ## Exactly one result
 
 ```csharp
-Album album = GetAlbum.Query<Single<Album>>(cnn);
-// No result raises RINKU4001.
-// A second result raises RINKU4002.
+Album album = cnn.Query<Single<Album>>(albumSql, new { albumId = 12 });
+// No complete result produces RINKU4001.
+// A second complete result produces RINKU4002.
 ```
 
 ## Zero or one result
 
 ```csharp
-Album? album = FindAlbum.Query<SingleOrDefault<Album>>(cnn, new { albumId = 999 });
-// A second result raises RINKU4002.
-```
-
-Use `SingleOrDefaultStruct<T>` for value types.
-
-```csharp
-int? count = FindCount.Query<SingleOrDefaultStruct<int>>(cnn);
+Album? album = cnn.Query<SingleOrDefault<Album>>(albumSql, new { albumId = 999 });
+int? count = cnn.Query<SingleOrDefaultStruct<int>>("SELECT COUNT(*) FROM albums WHERE 1 = 0");
 ```
 
 ## Buffered collections
 
 ```csharp
-List<Album> list = GetAlbums.Query<List<Album>>(cnn);
-Album[] array = GetAlbums.Query<Album[]>(cnn);
+List<Album> list = cnn.Query<List<Album>>(albumsSql);
+Album[] array = cnn.Query<Album[]>(albumsSql);
 ```
 
-No rows produces an empty list or array.
+No complete results produce an empty collection.
 
 ## Synchronous stream
 
 ```csharp
-IEnumerable<Album> albums = GetAlbums.Query<IEnumerable<Album>>(cnn);
+IEnumerable<Album> albums = cnn.Query<IEnumerable<Album>>(albumsSql);
 
 foreach (Album album in albums)
     Console.WriteLine(album.Title);
 ```
 
-The command remains active while the sequence is being enumerated. See [streaming](streaming.md).
+[Streaming lifetime](streaming.md)
 
 ## Present database NULL
 
 ```csharp
-string? title = GetNullableTitle.Query<MaybeNull<string>>(cnn);
-int? year = GetNullableYear.Query<int?>(cnn);
+string? title = cnn.Query<MaybeNull<string>>("SELECT Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+int? year = cnn.Query<int?>("SELECT ReleaseYear FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+// A row is required. Database NULL is accepted.
 ```
 
-These shapes accept a present database `NULL`. No result still raises `RINKU4001`.
-
-## No result or database NULL
+## No row or database NULL
 
 ```csharp
-OptionalNullable<string> title = FindNullableTitle.Query<OptionalNullable<string>>(cnn);
-OptionalNullableStruct<int> year = FindNullableYear.Query<OptionalNullableStruct<int>>(cnn);
+OptionalNullable<string> title = cnn.Query<OptionalNullable<string>>("SELECT Title FROM albums WHERE AlbumId = @albumId", new { albumId = 999 });
+OptionalNullableStruct<int> year = cnn.Query<OptionalNullableStruct<int>>("SELECT ReleaseYear FROM albums WHERE AlbumId = @albumId", new { albumId = 999 });
 ```
 
-These shapes accept both no result and a present database `NULL`.
+No returned row and a returned database `NULL` remain separate states.
+
+[Database NULL](../mapping/nulls.md)
 
 ## Exactly one result including database NULL
 
 ```csharp
-Single<MaybeNull<string>> title = GetOneNullableTitle.Query<Single<MaybeNull<string>>>(cnn);
-Single<int?> year = GetOneNullableYear.Query<Single<int?>>(cnn);
+Single<MaybeNull<string>> title = cnn.Query<Single<MaybeNull<string>>>("SELECT Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
+Single<int?> year = cnn.Query<Single<int?>>("SELECT ReleaseYear FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
-
-The outer `Single<T>` still checks the result count.
 
 ## At most one result including database NULL
 
 ```csharp
-SingleOrDefaultNullable<string> title = FindOneNullableTitle.Query<SingleOrDefaultNullable<string>>(cnn);
-SingleOrDefaultNullableStruct<int> year = FindOneNullableYear.Query<SingleOrDefaultNullableStruct<int>>(cnn);
+SingleOrDefaultNullable<string> title = cnn.Query<SingleOrDefaultNullable<string>>("SELECT Title FROM albums WHERE AlbumId = @albumId", new { albumId = 999 });
+SingleOrDefaultNullableStruct<int> year = cnn.Query<SingleOrDefaultNullableStruct<int>>("SELECT ReleaseYear FROM albums WHERE AlbumId = @albumId", new { albumId = 999 });
 ```
-
-Receiving a second result raises the `RINKU4002` error.
 
 ## Scalars
 
 ```csharp
-int count = CountAlbums.Query<int>(cnn);
+int count = cnn.Query<int>("SELECT COUNT(*) FROM albums");
 ```
-
-The default scalar registration reads the first column.
 
 ## Tuples
 
 ```csharp
-(int id, string title) = GetAlbumSummary.Query<(int, string)>(cnn);
+(int id, string title) = cnn.Query<(int, string)>("SELECT AlbumId, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
 
-See [tuples](../mapping/tuples.md) for sequential reading and repeated mapped types.
+[Tuple mapping](../mapping/tuples.md)
 
 ## Runtime result type
 
-Use a runtime `Type` when the result shape is selected dynamically.
-
 ```csharp
-Type resultType = typeof(Album);
-object? result = parser.Query(resultType, command);
+Type resultType = typeof(List<Album>);
+object? result = cnn.Query(resultType, albumsSql);
 ```
 
-See [fixed result schema](fixed-result-schema.md) for the non generic `CachedTypeParser` and its runtime type overloads.
-
-Use [database NULL](../mapping/nulls.md) for column null behavior. Use [custom result parsers](../customization/result-parsers.md) when the built in result count shapes do not describe the required behavior.
+[Fixed result schema](fixed-result-schema.md) · [Custom complete result parsers](../customization/result-parsers.md)

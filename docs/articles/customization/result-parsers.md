@@ -1,14 +1,33 @@
 # Complete result parsers
 
-A complete result parser is useful when a result type changes how rows are consumed rather than how one row is mapped.
+## Reuse the single value wrapper parsers
 
-## `Last<T>`
+```csharp
+public readonly record struct Maybe<T>(T? Value) : IWrapping<Maybe<T>, T> where T : class
+{
+    public static Maybe<T> Make(T value) => new(value);
+}
+
+var maybeMaker = new ReusingBaseTypeParserMaker(
+    [typeof(Maybe<>)],
+    (definition, itemType, ref _) => typeof(OptionalTypeParser<,>).MakeGenericType(definition.MakeGenericType(itemType), itemType),
+    (definition, itemType, ref _) => typeof(FastOptionalTypeParser<,>).MakeGenericType(definition.MakeGenericType(itemType), itemType));
+
+TypeParser.TypeParserMakers.Insert(0, maybeMaker);
+```
+
+```csharp
+Maybe<Album> album = GetAlbums.Query<Maybe<Album>>(cnn);
+```
+
+[`IWrapping<TSelf, T>`](xref:Rinku.IWrapping`2) provides the value construction used by the wrapper parsers.
+
+## Last value
 
 ```csharp
 public readonly record struct Last<T>(T Value);
 
-public sealed class LastParser<T>(ITypeParser<T> inner)
-    : BaseTypeParser<Last<T>>
+public sealed class LastParser<T>(ITypeParser<T> inner) : BaseTypeParser<Last<T>>
 {
     public override CommandBehavior Behavior => inner.Behavior & ~CommandBehavior.SingleRow;
 
@@ -38,15 +57,15 @@ public sealed class LastParser<T>(ITypeParser<T> inner)
 }
 ```
 
-Register the wrapper during application startup.
+Register the complete result parser maker during setup.
 
 ```csharp
-var lastParserMaker = new ReusingBaseTypeParserMaker([typeof(Last<>)], (definition, itemType, ref _) => typeof(LastParser<>).MakeGenericType(itemType));
+var lastParserMaker = new ReusingBaseTypeParserMaker(
+    [typeof(Last<>)],
+    (definition, itemType, ref _) => typeof(LastParser<>).MakeGenericType(itemType));
 
 TypeParser.TypeParserMakers.Insert(0, lastParserMaker);
 ```
-
-The result can then be requested like any other result shape.
 
 ```csharp
 static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
@@ -55,26 +74,24 @@ Last<Album> last = GetAlbums.Query<Last<Album>>(cnn);
 Album album = last.Value;
 ```
 
-`Album` still uses its normal row mapping. `Last<T>` only changes how complete `T` values are consumed.
+`Album` still uses its mapping. `Last<T>` changes how complete `T` values are consumed.
 
 ## Schema compatibility
-
-The parser decides whether a cached instance can read another schema.
 
 ```csharp
 public override bool CanParse(ColumnInfo[] schema) => inner.CanParse(schema);
 ```
 
-Return `true` only for schemas that both the sync and async parser can read safely.
+The cached parser reports which returned schemas it can parse.
 
-## Registration changes after queries ran
-
-Register parser makers before queries are used whenever possible.
-
-If a registration changes after a command already cached parsers, invalidate the affected command.
+## Registration change after a parser was cached
 
 ```csharp
 GetAlbums.InvalidateParsers(QueryParserInvalidationScope.Global);
 ```
 
-See [Cache control](caches.md) for the available invalidation scopes.
+[Cache control](caches.md)
+
+## Reader holding result parsers
+
+Custom streamed results use [`IReaderHoldingParser<T>`](xref:Rinku.Mapping.Parsers.IReaderHoldingParser`1). Reader completion behavior is represented by [`IReaderDone`](xref:Rinku.Mapping.Parsers.IReaderDone).

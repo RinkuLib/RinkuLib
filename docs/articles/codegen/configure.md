@@ -1,12 +1,10 @@
 # Configure CodeGen
 
-The configuration manager writes a `rinkupt.json` file in the project.
-
 ![Rinku Power Tools configuration manager](../../images/codegen/configuration-manager.png)
 
-The database selector defaults to `Auto detect`. Use SQL Server, PostgreSQL, or SQLite explicitly when the connection string is ambiguous or when you want the configuration to pin a provider.
+The configuration manager writes `rinkupt.json` in the project.
 
-A common configuration reads the connection string from `appsettings.json`.
+## JSON connection source
 
 ```json
 {
@@ -25,21 +23,32 @@ A common configuration reads the connection string from `appsettings.json`.
 }
 ```
 
-The extraction path walks through JSON properties using `:` between each name.
+`ConnectionExtractionPath` walks JSON properties with `:` between names.
 
-## Test the connection
+## Connection check
 
 ```text
 Connection Source     JSON Configuration File
-Relative File Path   appsettings.json
-JSON Path             ConnectionStrings:Default
+Relative File Path    appsettings.json
+JSON Path              ConnectionStrings:Default
 ```
 
-`Show Connection String` resolves the same source and displays the value that CodeGen will use.
+`Show Connection String` resolves the configured source. `Test Connection` opens the resolved connection through the selected or inferred provider.
 
-`Test Connection` uses the selected provider, or the provider inferred from that resolved value.
+## Database provider
 
-## Choose the output
+The database selector supports automatic detection and explicit providers.
+
+```json
+{
+  "Database": "Sqlite",
+  "RawConnectionString": "Data Source=mydatabase"
+}
+```
+
+Supported provider values are shown in the [configuration reference](configuration.md#database-provider).
+
+## Output
 
 ```text
 Output Path    Data/Generated
@@ -47,15 +56,19 @@ Namespace      MyApp.Data
 Internal       false
 ```
 
-The output path is relative to the project. When no namespace is supplied, CodeGen derives it from the project namespace and the output path.
+The output path is project relative. Without an explicit namespace, CodeGen derives one from the project namespace and output path.
 
-The internal option changes the generated command class between `public` and `internal`.
+```json
+{
+  "OutputPath": "Data/Generated",
+  "Namespace": "MyApp.Data",
+  "IsInternal": true
+}
+```
 
-## Use more than one configuration
+`IsInternal` changes the generated command class accessibility.
 
-The default configuration is stored as `rinkupt.json`.
-
-A named configuration uses its name in the file name.
+## Named configurations
 
 ```text
 rinkupt.json
@@ -63,29 +76,9 @@ rinkupt.Reporting.json
 rinkupt.Admin.json
 ```
 
-A configuration name must be a valid C# identifier. Named configurations keep independent connection settings, query lists, output paths, and generated command files.
+Each file keeps its own connection source, queries, output path, and generated command file.
 
-## Connection sources
-
-The configuration manager currently exposes these sources.
-
-| Source | Target | Extraction value |
-| --- | --- | --- |
-| Raw Connection String | The connection string | None |
-| Environment Variable | Variable name | None |
-| JSON Configuration File | Relative JSON path | JSON property path |
-| XML or Config File | Relative XML path | XPath |
-| .env File | Relative file path | Variable name |
-| INI File | Relative file path | Key path |
-| MSBuild Project File | Relative project path | Property name |
-| .NET User Secrets | Relative project path | JSON property path |
-| Launch Settings | Project file path | Profile and variable name |
-
-The file based targets are resolved from the project directory.
-
-A raw connection string is stored directly in the configuration file. The other sources resolve the value when CodeGen runs.
-
-### Environment variable
+## Environment variable
 
 ```json
 {
@@ -93,7 +86,7 @@ A raw connection string is stored directly in the configuration file. The other 
 }
 ```
 
-### XML
+## XML
 
 ```json
 {
@@ -102,7 +95,7 @@ A raw connection string is stored directly in the configuration file. The other 
 }
 ```
 
-### Dot env
+## Dot env
 
 ```json
 {
@@ -111,7 +104,7 @@ A raw connection string is stored directly in the configuration file. The other 
 }
 ```
 
-### INI
+## INI
 
 ```json
 {
@@ -120,7 +113,7 @@ A raw connection string is stored directly in the configuration file. The other 
 }
 ```
 
-### MSBuild property
+## MSBuild property
 
 ```json
 {
@@ -129,7 +122,7 @@ A raw connection string is stored directly in the configuration file. The other 
 }
 ```
 
-### User secrets
+## User secrets
 
 ```json
 {
@@ -138,9 +131,9 @@ A raw connection string is stored directly in the configuration file. The other 
 }
 ```
 
-The project file must contain a `UserSecretsId`.
+The project file supplies the `UserSecretsId` used by this source.
 
-### Launch settings
+## Launch settings
 
 ```json
 {
@@ -149,4 +142,6 @@ The project file must contain a `UserSecretsId`.
 }
 ```
 
-The first value selects the launch profile. The second value selects an environment variable from that profile.
+The first path segment selects the launch profile. The second selects its environment variable.
+
+[Configuration file](configuration.md) · [Add queries](queries.md)

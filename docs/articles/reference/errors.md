@@ -1,46 +1,52 @@
 # Errors
 
-Every Rinku exception carries a code. The code prefixes the message and its `HelpLink` identifies the matching error entry.
+Every Rinku exception has a code. The code is also available through `RinkuException.Code` and the matching documentation entry is exposed through `HelpLink`.
 
 ```csharp
-try {
-    Album album = GetAlbum.Query<Album>(cnn);
+public record Album(int Id, string Title);
+static readonly QueryCommand GetAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
+
+try
+{
+    Album album = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
 }
-catch (RinkuException error) {
+catch (RinkuException error)
+{
     logger.LogError("{Code} {Message} {Help}", error.Code, error.Message, error.HelpLink);
 }
 ```
 
-Catch one family or match one code.
+A family can be caught directly and one code can be matched.
 
 ```csharp
-catch (RinkuReadException error)
-    when (error.Code == ErrorCodes.NoRows) {
+catch (RinkuReadException error) when (error.Code == ErrorCodes.NoRows)
+{
     return null;
 }
 ```
 
-| Family | Codes | Raised while |
-| --- | --- | --- |
-| `RinkuTemplateException` | `RINKU1###` | Reading a query template. |
-| `RinkuBindingException` | `RINKU2###` | Preparing an execution command. |
-| `RinkuMappingException` | `RINKU3###` | Building a parser for a type and schema. |
-| `RinkuReadException` | `RINKU4###` | Reading through a parser. |
-| `RinkuConfigurationException` | `RINKU5###` | Configuring mapping or value behavior. |
-| `RinkuTrackingException` | `RINKU6###` | Copying or editing a tracked value. |
-| `RinkuInternalException` | `RINKU9###` | Checking an internal invariant. |
+| Family | Codes |
+| --- | --- |
+| `RinkuTemplateException` | `RINKU1###` |
+| `RinkuBindingException` | `RINKU2###` |
+| `RinkuMappingException` | `RINKU3###` |
+| `RinkuReadException` | `RINKU4###` |
+| `RinkuConfigurationException` | `RINKU5###` |
+| `RinkuTrackingException` | `RINKU6###` |
+| `RinkuInternalException` | `RINKU9###` |
 
-Every exception family in the table derives from `RinkuException`.
+Each family derives from `RinkuException`.
 
 ## Template errors
 
 ### RINKU1001 query too short
 
-The template contains fewer than two characters.
-
 ```csharp
-var command = new QueryCommand("x"); // RINKU1001
+QueryCommand command = new("x");
+// RINKU1001
 ```
+
+The query template needs at least two characters.
 
 ### RINKU1002 unclosed comment
 
@@ -48,12 +54,12 @@ var command = new QueryCommand("x"); // RINKU1001
 SELECT /*IncludeTitle Title FROM albums
 ```
 
-Close the marker or literal comment.
-
 ```sql
 SELECT /*IncludeTitle*/Title FROM albums
 SELECT /*~ application note */Title FROM albums
 ```
+
+[Template syntax](../conditional-sql/template-syntax.md)
 
 ### RINKU1003 empty condition key
 
@@ -62,12 +68,14 @@ SELECT /**/Title FROM albums
 SELECT /*Visible&*/Title FROM albums
 ```
 
-Both sides of an `&` or `|` operator need a key.
-
 ```sql
 SELECT /*Visible*/Title FROM albums
 SELECT /*Visible&Published*/Title FROM albums
 ```
+
+Each condition operand needs a key.
+
+[Markers](../conditional-sql/markers.md)
 
 ### RINKU1004 unknown handler suffix
 
@@ -75,13 +83,13 @@ SELECT /*Visible&Published*/Title FROM albums
 SELECT AlbumId AS Id FROM albums WHERE AlbumId IN (@albumIds_Q)
 ```
 
-Use a registered suffix. Collection expansion uses `_X`.
-
 ```sql
 SELECT AlbumId AS Id FROM albums WHERE AlbumId IN (@albumIds_X)
 ```
 
-See [value handlers](../conditional-sql/handlers.md) for the supported suffix handler flow.
+`_X` is the built in collection expansion suffix. Application handlers can register other suffixes.
+
+[Value handlers](../conditional-sql/handlers.md) · [Custom handlers](../customization/conditional-sql.md)
 
 ### RINKU1005 condition variable not in the query
 
@@ -89,17 +97,19 @@ See [value handlers](../conditional-sql/handlers.md) for the supported suffix ha
 SELECT AlbumId AS Id FROM albums WHERE /*@missing*/IsArchived = 0
 ```
 
-A marker beginning with the variable character must name a variable that appears in the template.
+A variable marker must name a variable in the template.
 
 ```sql
 SELECT AlbumId AS Id FROM albums WHERE /*@albumId*/AlbumId = @albumId
 ```
 
-A custom key needs no matching variable.
+A custom condition key is independent from query variables.
 
 ```sql
 SELECT AlbumId AS Id FROM albums WHERE /*Current*/IsArchived = 0
 ```
+
+[Markers](../conditional-sql/markers.md)
 
 ### RINKU1006 unbalanced scope
 
@@ -110,13 +120,16 @@ SELECT CASE WHEN IsArchived = 1 THEN 0 ELSE 1 END END FROM albums
 
 A closing parenthesis or `END` has no matching open scope.
 
+[Template syntax](../conditional-sql/template-syntax.md)
+
 ### RINKU1007 scope too deep
 
-Parentheses, `CASE`, and `BEGIN` share a maximum nesting depth of 63.
-
 ```text
-64 nested scopes -> RINKU1007
+64 nested parentheses, CASE blocks, or BEGIN blocks
+RINKU1007
 ```
+
+The template parser supports 63 nested scopes.
 
 ### RINKU1008 projection only construct
 
@@ -124,47 +137,51 @@ Parentheses, `CASE`, and `BEGIN` share a maximum nesting depth of 63.
 SELECT AlbumId AS Id!, Title FROM albums
 ```
 
-`!` after a projected column is valid only in `?SELECT`.
+The same marker is valid in a dynamic projection.
 
 ```sql
 ?SELECT AlbumId AS Id!, Title FROM albums
 ```
 
-See [dynamic projection](../conditional-sql/dynamic-projection.md) for projection syntax and generated SQL.
+[Dynamic projection](../conditional-sql/dynamic-projection.md)
 
 ## Binding errors
 
 ### RINKU2001 no connection
 
-```csharp
-DbCommand command = CreateUnboundCommand();
-command.CommandText = "SELECT AlbumId AS Id FROM albums";
-
-Album album = parser.Query(command); // RINKU2001
+```text
+command.Connection == null
+parser.Query(command)
+RINKU2001
 ```
 
-Create the command from a connection or assign its connection before execution.
+A command executed through Rinku needs a connection.
 
 ```csharp
-DbCommand command = cnn.CreateCommand();
+using DbCommand command = cnn.CreateCommand();
 command.CommandText = "SELECT AlbumId AS Id FROM albums";
-
 Album album = parser.Query(command);
 ```
+
+[Existing DbCommand](../running-queries/dbcommand.md)
 
 ### RINKU2002 required handler value
 
 ```csharp
 static readonly QueryCommand ById = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (@albumIds_X)");
-
-List<Album> albums = ById.Query<List<Album>>(cnn); // RINKU2002
+List<Album> albums = ById.Query<List<Album>>(cnn);
+// RINKU2002
 ```
 
-Supply a nonempty value or make the handler conditional.
+A conditional handler can disappear with an absent value.
 
-```sql
-SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (?@albumIds_X)
+```csharp
+static readonly QueryCommand ById = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId IN (?@albumIds_X)");
+List<Album> albums = ById.Query<List<Album>>(cnn);
+// SELECT AlbumId AS Id, Title FROM albums
 ```
+
+[Collection expansion](../conditional-sql/collections.md)
 
 ### RINKU2003 handler value type
 
@@ -178,40 +195,55 @@ values.Use("@skip", 46);
 values.Use("@skip", "46");
 ```
 
+The handler decides which value types it accepts.
+
+[Value handlers](../conditional-sql/handlers.md)
+
 ### RINKU2004 invalid parameter at index
 
-A caller created `IDbCommand` returned something that is not an `IDbDataParameter` from its parameter collection. Normal providers reject that item when it is added.
-
 ```text
-command.Parameters[index] -> object that is not IDbDataParameter -> RINKU2004
+command.Parameters[index]
+object is not IDbDataParameter
+RINKU2004
 ```
+
+This can occur with an application supplied `IDbCommand` implementation whose parameter collection returns an invalid item.
+
+[Existing DbCommand](../running-queries/dbcommand.md)
 
 ### RINKU2005 value not set
 
 ```csharp
-var handler = MultiVariableHandler.Build("@albumIds");
+MultiVariableHandler handler = MultiVariableHandler.Build("@albumIds");
 object? state = null;
-
-handler.Update(command, ref state, new[] { 2, 5 }); // RINKU2005
+handler.Update(command, ref state, new[] { 2, 5 });
+// RINKU2005
 ```
 
-`Update` requires state previously created by `SaveUse`. Builders perform those operations in order. This error normally comes from driving a `SpecialHandler` directly.
+`Update` expects state created by `SaveUse`. Builders perform that sequence for query execution.
+
+[Custom conditional SQL](../customization/conditional-sql.md)
 
 ### RINKU2006 type carries no size
 
 ```csharp
-SizedDbParamCache.Get(DbType.Int32, 100); // RINKU2006
+SizedDbParamCache.Get(DbType.Int32, 100);
+// RINKU2006
 ```
 
-Use size only with text, binary, XML, and fixed length database types.
+Size metadata applies to database types that carry a size.
+
+```csharp
+SizedDbParamCache.Get(DbType.String, 100);
+```
+
+[Parameter metadata](../running-queries/parameter-metadata.md)
 
 ## Mapping errors
 
 ### RINKU3001 no parser for the schema
 
-The returned columns cannot satisfy any construction path for the requested type.
-
-For example, the returned names may not match the requested type.
+The returned columns must satisfy one construction path for the requested type.
 
 ```sql
 SELECT AlbumId, AlbumTitle FROM albums
@@ -219,62 +251,64 @@ SELECT AlbumId, AlbumTitle FROM albums
 
 ```csharp
 public record Album(int Id, string Title);
+// AlbumId and AlbumTitle do not match Id and Title.
 ```
 
-An SQL alias can adapt those names without changing the type.
+The SQL can adapt the names.
 
 ```sql
 SELECT AlbumId AS Id, AlbumTitle AS Title FROM albums
 ```
 
-When the SQL cannot change, the type can accept the database names instead.
+The type can adapt the names instead.
 
 ```csharp
 public record Album([Alt("AlbumId")] int Id, [Alt("AlbumTitle")] string Title);
 ```
 
-A returned column may also have an incompatible type.
-
-```csharp
-public record Session(int Id, Guid Token);
-// RINKU3001 when Token is an integer column.
-```
-
-The same error occurs when a nested type has not been registered.
-
-```csharp
-public record Artist(int Id, string Name);
-public record Album(int Id, string Title, Artist Artist);
-```
+A nested type also needs a mapping registration when it is reached through another type.
 
 ```csharp
 public record Artist(int Id, string Name) : IDbReadable;
+public record Album(int Id, string Title, Artist Artist);
 ```
 
-See [objects](../mapping/objects.md), [names](../mapping/names.md), and [registration](../mapping/registration.md).
+[Objects](../mapping/objects.md) · [Names](../mapping/names.md) · [Registration](../mapping/registration.md)
 
 ### RINKU3002 missing group boundary
 
 ```csharp
 public record Report(List<int> Rows, int Total);
-
-Report report = GetReport.Query<Report>(cnn); // RINKU3002
+static readonly QueryCommand GetReport = new("SELECT RowId AS Rows, COUNT(*) OVER () AS Total FROM report_rows ORDER BY RowId");
+Report report = GetReport.Query<Report>(cnn);
+// RINKU3002 when no usable parent boundary can be negotiated.
 ```
 
-A multi row value has no usable boundary separating one complete `Report` from the next. Put stable scalar values before the first multi row value or configure a [grouping rule](../mapping/grouping.md).
+A multi-row mapping needs a boundary for one complete parent value.
+
+[Grouping](../mapping/grouping.md)
 
 ### RINKU3003 group key matched no column
 
 ```csharp
-throw new RinkuConfigurationException(ErrorCodes.GroupKeyUnmapped, "the required AccountId key matched no column");
+[GroupKeyColumns("AccountId")]
+public record AccountSummary(string Name, List<int> InvoiceIds);
 ```
 
-A grouping rule raises this when its key is mandatory and the schema cannot supply it. A rule that wants Rinku to try the next grouping option returns `null` instead.
+```sql
+SELECT Name, InvoiceId AS InvoiceIds FROM invoices
+-- AccountId is missing, RINKU3003.
+```
+
+The required grouping key must match the returned schema.
+
+[Grouping](../mapping/grouping.md)
 
 ### RINKU3004 conflicting grouping rules
 
 ```csharp
-public class Batch {
+public sealed class Batch
+{
     [GroupKeyMethod(nameof(ByWindow))]
     public Batch([GroupKey] int id, List<string> items) { }
 
@@ -282,172 +316,216 @@ public class Batch {
 }
 ```
 
-The constructor declares both equality key and method grouping at the same level. Keep one rule family there. See [grouping precedence](../mapping/grouping.md).
+The same construction declares two grouping rule families.
+
+[Grouping](../mapping/grouping.md)
 
 ## Reading errors
 
 ### RINKU4001 no results
 
 ```csharp
-Album album = FindAlbum.Query<Album>(cnn); // RINKU4001
+static readonly QueryCommand FindAlbum = new("SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
+
+Album album = FindAlbum.Query<Album>(cnn, new { albumId = 999 });
+// RINKU4001 when no complete Album is returned.
 ```
 
-Choose a shape that represents absence when no result is valid.
+A result shape can represent absence.
 
 ```csharp
-Optional<Album> album = FindAlbum.Query<Optional<Album>>(cnn);
-List<Album> albums = FindAlbum.Query<List<Album>>(cnn);
+Optional<Album> album = FindAlbum.Query<Optional<Album>>(cnn, new { albumId = 999 });
+List<Album> albums = FindAlbum.Query<List<Album>>(cnn, new { albumId = 999 });
 ```
+
+[Result shapes](../running-queries/result-shapes.md)
 
 ### RINKU4002 result shape refused the results
 
 ```csharp
-Album album = GetAlbum.Query<Single<Album>>(cnn);
+Album album = GetAlbum.Query<Single<Album>>(cnn, new { albumId = 12 });
 // RINKU4002 when a second complete Album exists.
 ```
 
-`Single<T>` and the single or default shapes reject a second result. See [result shapes](../running-queries/result-shapes.md).
+[Single result shapes](../running-queries/result-shapes.md)
 
 ### RINKU4003 database NULL not allowed
 
 ```csharp
 public record Album(int Id, int ReleaseYear);
-// NULL ReleaseYear -> RINKU4003
+// NULL ReleaseYear produces RINKU4003.
 ```
 
 ```csharp
 public record Album(int Id, int? ReleaseYear);
 ```
 
-Reference types accept database `NULL` by default. `[NotNull]` makes a reference slot reject it. See [database NULL](../mapping/nulls.md).
+[Database NULL](../mapping/nulls.md)
 
 ### RINKU4004 cannot convert
 
 ```csharp
 static readonly QueryCommand GetTitle = new("SELECT Title FROM albums WHERE AlbumId = @albumId");
-
-int title = GetTitle.ExecuteScalar<int>(cnn, new { albumId = 12 }); // RINKU4004
+int title = GetTitle.ExecuteScalar<int>(cnn, new { albumId = 12 });
+// RINKU4004 when Title cannot be converted to int.
 ```
-
-Ask for the returned type or change the returned value.
 
 ```csharp
 string title = GetTitle.ExecuteScalar<string>(cnn, new { albumId = 12 });
 ```
 
-When a previously accepted conversion rejects one particular value, its own exception remains visible. Invalid `Guid` text can therefore raise `FormatException` directly.
+[Construction and conversion](../mapping/construction-paths.md)
 
 ### RINKU4005 cannot read a dynamic column
 
 ```csharp
-Version invalidId = row.Get<Version>("Id"); // RINKU4005 for an integer column
+Version invalidId = row.Get<Version>("Id");
+// RINKU4005 for an integer Id column.
+
 int id = row.Get<int>("Id");
 ```
 
-See [dynamic rows](../mapping/dynamic-rows.md) for runtime row access and name comparison.
+[Dynamic rows](../mapping/dynamic-rows.md)
 
 ## Configuration errors
 
 ### RINKU5001 type not usable by this parsing info
 
-A `TypeParsingInfo` was asked to handle a type it does not support. Custom implementations report this from their type validation. See [type registrations](../customization/type-registration.md) for the user facing registration path.
+A custom `TypeParsingInfo` can reject a target type it does not support.
+
+[Type registration](../customization/type-registration.md)
 
 ### RINKU5002 construction shape not usable
 
-An offered constructor or factory has the wrong static, generic, parameter, or return shape.
-
 ```csharp
-static class BoxFactory {
+static class BoxFactory
+{
     public static Box<T> Create<T>(T value) => new(value);
 }
 ```
 
-See [constructors and factories](../mapping/construction-paths.md#add-a-constructor-or-factory) for supported factory shapes and registration.
+An offered constructor or factory must have a construction shape that the target mapping can use.
+
+[Construction paths](../mapping/construction-paths.md)
 
 ### RINKU5003 unusable member
 
 ```csharp
-public class Row {
+public class Row
+{
     public int Id { get; }
 }
 
-TypeParsingInfo.GetOrAdd<Row>().AddMember(typeof(Row).GetProperty(nameof(Row.Id))!); // RINKU5003
+PropertyInfo id = typeof(Row).GetProperty(nameof(Row.Id)) ?? throw new InvalidOperationException();
+TypeParsingInfo.GetOrAdd<Row>().AddMember(id);
+// RINKU5003 because Id has no setter.
 ```
 
-Added members must be writable fields, settable properties, or usable setter methods.
+[Mapping slot rules](../customization/slot-rules.md)
 
 ### RINKU5004 target type mismatch
 
 ```csharp
 TypeParsingInfo info = TypeParsingInfo.GetOrAdd<Album>();
-info.AddPossibleConstruction(typeof(Payment).GetConstructors()[0]); // RINKU5004
+ConstructorInfo paymentConstructor = typeof(Payment).GetConstructors()[0];
+info.AddPossibleConstruction(paymentConstructor);
+// RINKU5004
 ```
 
-The path builds a different target type.
+The registered construction builds a different target type.
+
+[Construction paths](../mapping/construction-paths.md)
 
 ### RINKU5005 construction from a foreign generic type
 
-Move an open generic factory from a generic host to a nongeneric host.
+An open generic construction cannot be taken from an unrelated generic host.
+
+A non generic host can expose a generic factory.
 
 ```csharp
-static class BoxFactory {
+static class BoxFactory
+{
     public static Box<T> Create<T>(T value) => new(value);
 }
 ```
 
+[Construction paths](../mapping/construction-paths.md)
+
 ### RINKU5006 attribute on the wrong member type
 
 ```csharp
-public class Options {
-    [ForBoolCond] public int IncludeDeleted { get; init; }
+public class Options
+{
+    [ForBoolCond]
+    public int IncludeDeleted { get; init; }
 }
+// RINKU5006
 ```
 
 ```csharp
-public class Options {
-    [ForBoolCond] public bool IncludeDeleted { get; init; }
+public class Options
+{
+    [ForBoolCond]
+    public bool IncludeDeleted { get; init; }
 }
 ```
+
+[Parameter members](../customization/parameter-members.md)
 
 ### RINKU5007 operation unsupported for this type
 
 ```csharp
-JsonSerializer.Deserialize<DynaObject>("{}", options); // RINKU5007
+JsonSerializer.Deserialize<DynaObject>("{}", options);
+// RINKU5007
 ```
 
-`DynaObject` gets its shape from a live result schema. It can be serialized but cannot be reconstructed without that schema.
+`DynaObject` gets its shape from a result schema and can be serialized after it has that shape.
+
+[Dynamic rows](../mapping/dynamic-rows.md)
 
 ## Tracking errors
 
 ### RINKU6001 no copy strategy
 
-The tracking materializer could not create a usable runtime shape for the requested
-item. Check the tracking contract and ensure every required member has a supported
-source or explicit runtime binding. See the [tracking overview](../tracking/index.md).
+The runtime tracking materializer could not build the requested tracked shape.
+
+[Runtime tracking](../tracking/runtime.md)
 
 ### RINKU6002 copy method not usable
 
-The requested tracking member has a source method or property that does not match its declared value type. Bind a compatible member or provide a matching runtime capability. See [runtime tracking](../tracking/runtime.md) for member configuration.
+A configured tracking source method or property does not match the tracked member value type.
+
+[Tracking items](../tracking/items.md) · [Runtime tracking](../tracking/runtime.md)
 
 ### RINKU6003 no current value
 
-A tracked slot was read for display while holding no current value.
-
 ```text
-tracked slot has no current value -> display reads the slot -> RINKU6003
+tracked slot has no current value
+slot is read for display
+RINKU6003
 ```
+
+[Tracking items](../tracking/items.md)
 
 ### RINKU6004 no factory for a new item
 
 ```csharp
 IBindingList binding = tracked;
-binding.AddNew(); // RINKU6004
+binding.AddNew();
+// RINKU6004 when no new item factory or AddingNew handler provides an item.
 ```
 
-Set a new item factory or handle `AddingNew` before calling `AddNew`.
+[Tracking binding](../tracking/binding.md)
 
 ## Internal errors
 
 ### RINKU9001 internal invariant
 
-This reports a library bug rather than an invalid application call. Report it with the stack trace, query template, target type, and result schema when available. Use the [RinkuLib issue tracker](https://github.com/RinkuLib/RinkuLib/issues) when the error is reproducible.
+`RINKU9001` reports an internal Rinku invariant failure.
+
+```text
+RINKU9001
+include the stack trace, query template, target type, and result schema when available
+```
+
+[GitHub issues](https://github.com/RinkuLib/RinkuLib/issues)

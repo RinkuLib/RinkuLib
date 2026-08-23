@@ -1,39 +1,36 @@
 # Existing DbCommand
 
-Use `CachedTypeParser<T>` when a `DbCommand` already exists and the same result schema will be parsed repeatedly.
+## Create a command with context
 
-The cache is normally kept beside the command factory.
+`DbConnection.GetCommand` creates a provider command and applies the transaction and timeout before the command is configured.
 
 ```csharp
-public record Album(int Id, string Title);
-public record AlbumSummary(int Id, string Title);
+using DbTransaction transaction = cnn.BeginTransaction();
+using DbCommand command = cnn.GetCommand(transaction, timeout: 30);
 
-static readonly CachedTypeParser<Album> GetAlbumParser = new();
-
-public static class AlbumCommands
-{
-    public static DbCommand GetAlbum(DbConnection cnn, int albumId)
-    {
-        DbCommand command = cnn.CreateCommand();
-        command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
-
-        DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "@albumId";
-        parameter.Value = albumId;
-        command.Parameters.Add(parameter);
-
-        return command;
-    }
-}
-
-Album album = GetAlbumParser.Query(AlbumCommands.GetAlbum(cnn, 12));
+command.CommandText = "UPDATE albums SET Title = @title WHERE AlbumId = @albumId";
+transaction.Commit();
 ```
 
-The cache keeps reusable parser and schema information. It does not keep per call parser state.
+## Cached parser
 
-The command can come from application code, generated code, a stored procedure wrapper, or another component. Another command can use the same cache when it returns a compatible schema for `Album`.
+```csharp
+static readonly CachedTypeParser<Album> AlbumParser = new();
 
-For example, the same parser can consume a generated command.
+using DbCommand command = cnn.CreateCommand();
+command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId";
+
+DbParameter parameter = command.CreateParameter();
+parameter.ParameterName = "@albumId";
+parameter.Value = 12;
+command.Parameters.Add(parameter);
+
+Album album = AlbumParser.Query(command, disposeCommand: false);
+```
+
+`CachedTypeParser<T>` keeps reusable schema and parser information. Reader state remains per execution.
+
+A generated command uses the same parser surface.
 
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> AlbumsParser = new();
@@ -41,95 +38,82 @@ static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> AlbumsParser = n
 List<GetAlbumsByArtistResult> albums = AlbumsParser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
-See [code generation](../codegen/index.md) for generated `DbCommand` methods.
+[Code generation](../codegen/index.md)
 
-When one returned schema can be read as several result types, use the non generic `CachedTypeParser`.
-
-```csharp
-static readonly CachedTypeParser GetAlbumSchemaParser = new();
-
-Album album = GetAlbumSchemaParser.Query<Album>(AlbumCommands.GetAlbum(cnn, 12));
-AlbumSummary summary = GetAlbumSchemaParser.Query<AlbumSummary>(AlbumCommands.GetAlbum(cnn, 12));
-```
-
-The first query learns the schema. See [fixed result schema](fixed-result-schema.md) for explicit schemas and runtime result types.
-
-A command factory that returns several rows naturally gets its own matching cache.
+## One schema and several result types
 
 ```csharp
-static readonly CachedTypeParser<List<Album>> GetAlbumsParser = new();
+public record AlbumSummary(int Id, string Title);
 
-public static class AlbumListCommands
-{
-    public static DbCommand GetAlbums(DbConnection cnn, int artistId)
-    {
-        DbCommand command = cnn.CreateCommand();
-        command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId ORDER BY AlbumId";
+static readonly CachedTypeParser AlbumSchemaParser = new();
 
-        DbParameter parameter = command.CreateParameter();
-        parameter.ParameterName = "@artistId";
-        parameter.Value = artistId;
-        command.Parameters.Add(parameter);
+using DbCommand first = cnn.CreateCommand();
+first.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 12";
+Album album = AlbumSchemaParser.Query<Album>(first);
 
-        return command;
-    }
-}
-
-List<Album> albums = GetAlbumsParser.Query(AlbumListCommands.GetAlbums(cnn, 12));
+using DbCommand second = cnn.CreateCommand();
+second.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 46";
+AlbumSummary summary = AlbumSchemaParser.Query<AlbumSummary>(second);
 ```
+
+The non generic cache keeps one result schema and can keep parsers for several result types over that schema.
+
+[Fixed result schema](fixed-result-schema.md)
 
 ## Execute an existing command
 
 ```csharp
-using DbCommand updateCommand = cnn.CreateCommand();
-updateCommand.CommandText = "UPDATE albums SET Title = 'Blue' WHERE AlbumId = 1";
+using DbCommand command = cnn.CreateCommand();
+command.CommandText = "UPDATE albums SET Title = 'Blue' WHERE AlbumId = 12";
 
-int affected = updateCommand.Execute(disposeCommand: false);
+int affected = command.Execute(disposeCommand: false);
 ```
 
-A scalar value can use a long lived parser cache.
+A scalar can use a cached parser.
 
 ```csharp
-static readonly CachedTypeParser<int> CountAlbumsParser = new();
+static readonly CachedTypeParser<int> CountParser = new();
 
-using DbCommand countCommand = cnn.CreateCommand();
-countCommand.CommandText = "SELECT COUNT(*) FROM albums";
+using DbCommand command = cnn.CreateCommand();
+command.CommandText = "SELECT COUNT(*) FROM albums";
 
-int count = CountAlbumsParser.Query(countCommand, disposeCommand: false);
+int count = CountParser.Query(command, disposeCommand: false);
 ```
 
-Or it can use `ExecuteScalar<T>`.
+Or the command can execute the scalar directly.
 
 ```csharp
-int count = countCommand.ExecuteScalar<int>(disposeCommand: false);
+int count = command.ExecuteScalar<int>(disposeCommand: false);
 ```
 
 ## Command ownership
 
-The command remains caller owned when `disposeCommand` is false.
-
 ```csharp
-Album album = GetAlbumParser.Query(command, disposeCommand: false);
-// command is still available.
+Album album = AlbumParser.Query(command, disposeCommand: false);
+// command remains caller owned.
 ```
 
-Pass true when the execution call should dispose it.
-
 ```csharp
-Album album = GetAlbumParser.Query(command, disposeCommand: true);
+Album album = AlbumParser.Query(command, disposeCommand: true);
+// the parser call disposes command.
 ```
 
-## Reuse one command with a builder
+## Bound builder
 
 ```csharp
+static readonly QueryCommand InsertAlbum = new("INSERT INTO albums (ArtistId, Title) VALUES (@ArtistId, @Title)");
+
+public readonly record struct AlbumInsert(int ArtistId, string Title);
+
+AlbumInsert[] albums = [new(7, "Blue"), new(7, "Green")];
 using DbCommand command = cnn.CreateCommand();
 var batch = InsertAlbum.StartBuilder(command);
 
-foreach (Album album in albums)
+foreach (AlbumInsert album in albums)
 {
     batch.UseWith(album);
     batch.Execute();
 }
 ```
 
-See [builders](builders.md) for mutable per execution values.
+[Builders](builders.md)
