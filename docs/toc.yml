@@ -2,3 +2,7 @@
   href: articles/index.md
 - name: API
   href: api/
+- name: GitHub
+  href: https://github.com/RinkuLib/RinkuLib
+- name: NuGet
+  href: https://www.nuget.org/packages/Rinku
