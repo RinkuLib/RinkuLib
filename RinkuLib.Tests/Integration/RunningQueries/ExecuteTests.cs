@@ -14,6 +14,7 @@ public class ExecuteTestsFixture : DBFixture<SqlConnection> {
     public QueryCommand InsertAndGetId = new("INSERT INTO #Simple (Val) VALUES (@Val); SELECT SCOPE_IDENTITY();");
     public QueryCommand SelectNull = new("SELECT ID FROM #Simple WHERE ID = 100");
 }
+[Collection(DatabaseIntegrationCollection.Name)]
 public class ExecuteTests(ExecuteTestsFixture fixture) : IClassFixture<ExecuteTestsFixture> {
     private readonly ExecuteTestsFixture Fixture = fixture;
 

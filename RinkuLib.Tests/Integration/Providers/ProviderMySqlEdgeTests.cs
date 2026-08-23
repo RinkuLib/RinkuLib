@@ -7,6 +7,7 @@ namespace RinkuLib.Tests.TestContainers;
 
 public sealed class ProviderMySqlEdgeFixture : DBFixture<MySqlConnection>;
 
+[Collection(DatabaseIntegrationCollection.Name)]
 public sealed class ProviderMySqlEdgeTests(ProviderMySqlEdgeFixture fixture)
     : IClassFixture<ProviderMySqlEdgeFixture> {
     [Fact]

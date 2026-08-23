@@ -171,11 +171,13 @@ public abstract class ConditionalSqlSuite {
     }
 }
 
+[Collection(DatabaseIntegrationCollection.Name)]
 public class ConditionalSqlOnSqlServer(SqlServerConditionalFixture Fixture)
     : ConditionalSqlSuite, IClassFixture<SqlServerConditionalFixture> {
     protected override DbConnection Connect() => Fixture.GetConnection();
 }
 
+[Collection(DatabaseIntegrationCollection.Name)]
 public class ConditionalSqlOnPostgres(PostgresConditionalFixture Fixture)
     : ConditionalSqlSuite, IClassFixture<PostgresConditionalFixture> {
     protected override DbConnection Connect() => Fixture.GetConnection();

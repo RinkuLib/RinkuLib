@@ -15,6 +15,7 @@ public sealed class ProviderPostgresEdgeFixture : DBFixture<NpgsqlConnection>;
 /// <summary>
 /// A provider-native PostgreSQL array parameter supplied through Rinku's complete parameter takeover API.
 /// </summary>
+[Collection(DatabaseIntegrationCollection.Name)]
 public sealed class ProviderPostgresEdgeTests(ProviderPostgresEdgeFixture fixture)
     : IClassFixture<ProviderPostgresEdgeFixture> {
     [Fact]

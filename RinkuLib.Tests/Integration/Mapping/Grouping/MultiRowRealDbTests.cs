@@ -45,6 +45,7 @@ public class MultiRowDbFixture : DBFixture<SqlConnection> {
     }
 }
 
+[Collection(DatabaseIntegrationCollection.Name)]
 public class MultiRowRealDbTests(MultiRowDbFixture fixture) : IClassFixture<MultiRowDbFixture> {
     private readonly MultiRowDbFixture Fixture = fixture;
 
@@ -257,6 +258,7 @@ public class MultiRowPostgresFixture : DBFixture<NpgsqlConnection> {
     }
 }
 
+[Collection(DatabaseIntegrationCollection.Name)]
 public class MultiRowPostgresTests(MultiRowPostgresFixture fixture) : IClassFixture<MultiRowPostgresFixture> {
     private readonly MultiRowPostgresFixture Fixture = fixture;
 

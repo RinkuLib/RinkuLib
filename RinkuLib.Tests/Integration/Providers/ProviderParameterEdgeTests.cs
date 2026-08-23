@@ -14,6 +14,7 @@ public sealed class ProviderParameterEdgeFixture : DBFixture<SqlConnection>;
 /// Provider-sensitive parameter cases expressed through Rinku's parameter metadata entrypoints.
 /// The SQL Server assertions are only the observation; the binding choice stays in Rinku metadata.
 /// </summary>
+[Collection(DatabaseIntegrationCollection.Name)]
 public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixture)
     : IClassFixture<ProviderParameterEdgeFixture> {
     [Fact]

@@ -34,6 +34,7 @@ public class AsyncTestsFixture : DBFixture<SqlConnection> {
     public QueryCommand Select_Nothing_Int = new("select 1 where 1=0");
     public QueryCommand Select_Nothing_Str = new("select 'Test' where 1=0");
 }
+[Collection(DatabaseIntegrationCollection.Name)]
 public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFixture> {
     private readonly AsyncTestsFixture Fixture = Fixture;
 
