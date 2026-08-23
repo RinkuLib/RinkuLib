@@ -66,6 +66,20 @@ public class MarkdownDocumentationStructureTests {
     }
 
     [Fact]
+    public void Documentation_exposes_repository_and_package_links() {
+        string docsRoot = FindDocsRoot();
+        const string github = "https://github.com/RinkuLib/RinkuLib";
+        const string nuget = "https://www.nuget.org/packages/Rinku";
+
+        string toc = File.ReadAllText(Path.Combine(docsRoot, "toc.yml")).Replace("\r\n", "\n");
+        string index = File.ReadAllText(Path.Combine(docsRoot, "articles", "index.md"));
+
+        Assert.Contains($"- name: GitHub\n  href: {github}", toc, StringComparison.Ordinal);
+        Assert.Contains($"- name: NuGet\n  href: {nuget}", toc, StringComparison.Ordinal);
+        Assert.Contains($"[GitHub]({github}) · [NuGet]({nuget})", index, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Prose_uses_readable_paragraph_lengths() {
         string docsRoot = FindDocsRoot();
         var failures = new List<string>();

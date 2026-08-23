@@ -1,5 +1,7 @@
 # Rinku
 
+[GitHub](https://github.com/RinkuLib/RinkuLib) · [NuGet](https://www.nuget.org/packages/Rinku)
+
 ## Install
 
 ```bash
