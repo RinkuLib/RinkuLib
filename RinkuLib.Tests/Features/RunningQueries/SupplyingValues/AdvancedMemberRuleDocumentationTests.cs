@@ -97,7 +97,7 @@ public class AdvancedMemberRuleDocumentationTests {
     }
 
     [Fact]
-    [DocumentationExample("custom-member-rules.md", "method-condition")]
+    [DocumentationExample("parameter-members.md", "method-condition")]
     public void Method_condition_controls_direct_and_builder_usage() {
         using var query = new QueryCommand("SELECT * FROM tracks WHERE Composer = ?@Composer");
 
@@ -110,7 +110,7 @@ public class AdvancedMemberRuleDocumentationTests {
     }
 
     [Fact]
-    [DocumentationExample("custom-member-rules.md", "condition-emitter")]
+    [DocumentationExample("parameter-members.md", "condition-emitter")]
     public void Custom_condition_emitter_uses_only_positive_values() {
         using var query = new QueryCommand("SELECT * FROM tracks WHERE Price >= ?@MinPrice");
 
@@ -120,7 +120,7 @@ public class AdvancedMemberRuleDocumentationTests {
     }
 
     [Fact]
-    [DocumentationExample("custom-member-rules.md", "complete-emitter")]
+    [DocumentationExample("parameter-members.md", "complete-emitter")]
     public void Complete_emitter_controls_direct_and_use_with_roads() {
         using var query = new QueryCommand("SELECT * FROM tracks WHERE Name = ?@Name");
 
@@ -133,7 +133,7 @@ public class AdvancedMemberRuleDocumentationTests {
     }
 
     [Fact]
-    [DocumentationExample("custom-member-rules.md", "type-member-rules")]
+    [DocumentationExample("parameter-members.md", "type-member-rules")]
     public void Member_rule_overrides_the_type_default() {
         using var query = new QueryCommand("SELECT * FROM tracks WHERE Composer = ?@Composer AND Name = ?@Name");
 

@@ -1,6 +1,6 @@
-# Nested objects
+# Recursive mapping
 
-Prefix nested columns with the member name.
+## Member paths
 
 ```csharp
 public record Artist(int Id, string Name) : IDbReadable;
@@ -8,65 +8,68 @@ public record Album(int Id, string Title, Artist Artist);
 
 static readonly QueryCommand GetAlbum = new("SELECT al.AlbumId AS Id, al.Title, ar.ArtistId AS ArtistId, ar.Name AS ArtistName FROM albums al JOIN artists ar ON ar.ArtistId = al.ArtistId WHERE al.AlbumId = @albumId");
 
-Album album = GetAlbum.Query<Album>(cnn, new { albumId = 1 });
+Album album = GetAlbum.Query<Album>(cnn, new { albumId = 12 });
+// Id fills album.Id.
+// ArtistId fills album.Artist.Id.
+// ArtistName fills album.Artist.Name.
 ```
 
-`Id` fills `Album.Id`. `ArtistId` fills `Album.Artist.Id`. `ArtistName` fills `Album.Artist.Name`.
-
-This query uses aliases because the SQL is convenient to shape here. When returned names should stay unchanged, use the same [name rules](names.md) from the .NET side or setup registration.
-
-## Register nested types
-
-A type reached through another mapped object must be readable.
-
-```csharp
-public record Artist(int Id, string Name) : IDbReadable;
-```
-
-Or register it during application setup.
-
-```csharp
-TypeParsingInfo.GetOrAdd<Artist>();
-```
-
-Without a readable registration, the nested construction path is unavailable.
-
-See [registration](registration.md) for changing mapping rules without modifying the mapped type.
-
-## More than one level
-
-Every member name adds another prefix segment.
+The same mapping process continues through deeper type shapes.
 
 ```csharp
 public record Country(int Id, string Name) : IDbReadable;
 public record Address(string City, Country Country) : IDbReadable;
 public record Customer(int Id, string Name, Address BillingAddress);
+
+Customer customer = cnn.Query<Customer>("SELECT c.CustomerId AS Id, c.Name, a.City AS BillingAddressCity, co.CountryId AS BillingAddressCountryId, co.Name AS BillingAddressCountryName FROM customers c JOIN addresses a ON a.AddressId = c.BillingAddressId JOIN countries co ON co.CountryId = a.CountryId WHERE c.CustomerId = @customerId", new { customerId = 12 });
 ```
 
-```text
-Id
-Name
-BillingAddressCity
-BillingAddressCountryId
-BillingAddressCountryName
-```
-
-## Accept another prefix
-
-Use `[Alt]` when the SQL uses another name for a nested member.
+## Name adaptation inside the path
 
 ```csharp
-public record Address(string City, string PostalCode) : IDbReadable;
-public record Customer(int Id, string Name, [Alt("ShipTo")] Address ShippingAddress);
+public record Address([Alt("Postal")] int Zip, string City) : IDbReadable;
+public record Person(int Id, Address Home);
+
+Person person = cnn.Query<Person>("SELECT PersonId AS Id, PostalCode AS HomePostal, City AS HomeCity FROM people WHERE PersonId = @personId", new { personId = 12 });
+// HomePostal reaches Home.Zip.
 ```
 
-Both `ShippingAddressCity` and `ShipToCity` can match the nested path.
+[Name adaptation](names.md)
 
-See [name rules](names.md) for deeper prefix changes.
+## Same type again
 
-## Missing nested rows
+```csharp
+public record Employee(int Id, string Name, [Alt("Boss")] Employee? Manager = null) : IDbReadable;
 
-A left join can return database `NULL` for every child column. Put `[AbortOnNull]` on the child identity and make the containing member nullable.
+static readonly QueryCommand GetEmployee = new("SELECT e.EmployeeId AS Id, e.Name, m.EmployeeId AS ManagerId, m.Name AS ManagerName, b.EmployeeId AS ManagerBossId, b.Name AS ManagerBossName FROM employees e LEFT JOIN employees m ON m.EmployeeId = e.ManagerId LEFT JOIN employees b ON b.EmployeeId = m.ManagerId WHERE e.EmployeeId = @employeeId");
+
+Employee employee = GetEmployee.Query<Employee>(cnn, new { employeeId = 12 });
+// Manager is another Employee.
+// Manager.Manager is another Employee.
+// The deepest Employee can finish through the construction path where Manager uses its default.
+```
+
+The recursive type does not need a special recursion mapping. Construction only needs an alternative that can finish when no deeper matching shape is available.
+
+[Construction paths](construction-paths.md)
+
+## Readable nested types
+
+```csharp
+public record Artist(int Id, string Name) : IDbReadable;
+```
+
+The same mapping registration can live outside the type.
+
+```csharp
+public record Artist(int Id, string Name);
+
+TypeParsingInfo.GetOrAdd<Artist>();
+```
+
+[Registration](registration.md)
+
+## Missing nested value
 
 ```csharp
 public record Album([AbortOnNull] int Id, string Title) : IDbReadable;
@@ -74,9 +77,9 @@ public record Artist(int Id, string Name, Album? LatestAlbum);
 
 static readonly QueryCommand GetArtist = new("SELECT ar.ArtistId AS Id, ar.Name, al.AlbumId AS LatestAlbumId, al.Title AS LatestAlbumTitle FROM artists ar LEFT JOIN albums al ON al.AlbumId = ar.LatestAlbumId WHERE ar.ArtistId = @artistId");
 
-Artist artist = GetArtist.Query<Artist>(cnn, new { artistId = 1 });
+Artist artist = GetArtist.Query<Artist>(cnn, new { artistId = 7 });
+// NULL LatestAlbumId aborts Album construction.
+// LatestAlbum receives the missing nested value.
 ```
 
-When `LatestAlbumId` is database `NULL`, construction of `Album` stops and `LatestAlbum` becomes null.
-
-See [database NULL](nulls.md) for null propagation through deeper objects.
+[Database NULL](nulls.md)

@@ -1,59 +1,57 @@
-# IDbConnection support
-
-The connection based execution methods also accept `IDbConnection`.
+# IDbConnection
 
 ```csharp
-static List<Album> LoadAlbums(IDbConnection cnn)
-{
-    List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
-    RenameAlbum.Execute(cnn, new { albumId = 1, title = "Blue" });
-    return albums;
-}
+public record Album(int Id, string Title);
+
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
 ```
 
-SQL string shortcuts use the same interface.
+## Query
 
 ```csharp
-static List<Album> LoadAlbums(IDbConnection cnn)
-    => cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
+IDbConnection connection = cnn;
+List<Album> albums = GetAlbums.Query<List<Album>>(connection, new { artistId = 7 });
 ```
 
-## Transactions
+## SQL string access
 
 ```csharp
-cnn.Open();
-using IDbTransaction transaction = cnn.BeginTransaction();
+IDbConnection connection = cnn;
+List<Album> albums = connection.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId", new { artistId = 7 });
+```
 
-RenameAlbum.Execute(cnn, new { albumId = 1, title = "Blue" }, transaction: transaction);
+## Transaction
 
+```csharp
+IDbConnection connection = cnn;
+connection.Open();
+
+using IDbTransaction transaction = connection.BeginTransaction();
+UpdateAlbum.Execute(connection, new { albumId = 12, title = "Kind of Blue" }, transaction: transaction);
 transaction.Commit();
 ```
 
-Use a transaction created by the same connection.
-
-## Get the generated IDbCommand
+## Raw command
 
 ```csharp
-RenameAlbum.Execute(cnn, out IDbCommand command, new { albumId = 1, title = "Blue" });
+IDataReader reader = GetAlbums.ExecuteReader(connection, out IDbCommand command, new { artistId = 7 });
 
 using (command)
+using (reader)
 {
-    Console.WriteLine(command.Parameters.Count);
+    while (reader.Read())
+        Console.WriteLine(reader.GetString(1));
 }
 ```
 
-This form is useful for output values and provider command details.
-
-## Async behavior
-
-If the runtime connection is a `DbConnection`, the `IDbConnection` overload can use its real async methods.
+## Async runtime behavior
 
 ```csharp
-IDbConnection cnn = new SqlConnection(connectionString);
-
-List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, new { artistId = 7 }, ct: cancellationToken);
+IDbConnection connection = sqlConnection;
+List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(connection, new { artistId = 7 }, ct: cancellationToken);
 ```
 
-If the runtime object only implements `IDbConnection`, Rinku falls back to the synchronous provider operation and returns through the async method. Cancellation cannot interrupt that synchronous provider work.
+A runtime `DbConnection` uses the provider async path. A runtime value that only implements `IDbConnection` uses the synchronous interface fallback.
 
-See [execution context](execution-context.md) for connection opening and closing rules.
+[Async execution](async.md)

@@ -1,55 +1,41 @@
-# Tuples
+# Tuple mapping
 
-Tuple elements read from left to right.
-
-```csharp
-static readonly QueryCommand GetAlbumSummary = new("SELECT AlbumId, Title FROM albums WHERE AlbumId = @albumId");
-
-(int id, string title) = GetAlbumSummary.Query<(int, string)>(cnn, new { albumId = 1 });
-```
-
-The first element reads the first compatible column. The next element continues after it.
-
-## Tuple names do not map columns
+## Sequential columns
 
 ```csharp
-(int number, string text) = GetAlbumSummary.Query<(int DifferentName, string AlsoDifferent)>(cnn, new { albumId = 1 });
+(int id, string title) = cnn.Query<(int, string)>("SELECT AlbumId, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
 
-Tuple element names are for the C# caller. They do not change database column matching.
+Tuple slots read sequentially. C# tuple element names do not change database column matching.
 
-Use an object when the result should map by names.
-
-## Keep a value beside an object
+## Scalar beside a mapped type
 
 ```csharp
 public record Album(int Id, string Title) : IDbReadable;
 
-static readonly QueryCommand GetAlbumWithArtistId = new("SELECT ArtistId, AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId");
-
-(int artistId, Album album) = GetAlbumWithArtistId.Query<(int, Album)>(cnn, new { albumId = 1 });
+(int artistId, Album album) = cnn.Query<(int, Album)>("SELECT ArtistId, AlbumId AS Id, Title FROM albums WHERE AlbumId = @albumId", new { albumId = 12 });
 ```
 
-The scalar value is read first. `Album` maps the remaining columns by name.
+The scalar consumes the first column. `Album` maps from the remaining columns.
 
-## Read the same type twice
+## Same mapped type twice
 
 ```csharp
 public record Employee(int Id, string Name) : IDbReadable;
 
-static readonly QueryCommand GetEmployeeAndManager = new("SELECT e.EmployeeId AS Id, e.Name, m.EmployeeId AS Id, m.Name FROM employees e JOIN employees m ON m.EmployeeId = e.ManagerId WHERE e.EmployeeId = @employeeId");
-
-(Employee employee, Employee manager) = GetEmployeeAndManager.Query<(Employee, Employee)>(cnn, new { employeeId = 1 });
+(Employee employee, Employee manager) = cnn.Query<(Employee, Employee)>("SELECT e.EmployeeId AS Id, e.Name, m.EmployeeId AS Id, m.Name FROM employees e JOIN employees m ON m.EmployeeId = e.ManagerId WHERE e.EmployeeId = @employeeId", new { employeeId = 12 });
 ```
 
-The first `Employee` claims the first `Id` and `Name`. The second one continues from the next pair.
+The first `Employee` claims the first matching pair. The second continues from the next unused columns.
 
-## Tuples in collections
+## Tuple inside a multi-row result
 
 ```csharp
-List<(int ArtistId, Album Album)> rows = GetAlbumsWithArtistIds.Query<List<(int, Album)>>(cnn);
+public record Album(int Id, string Title) : IDbReadable;
+
+List<(int ArtistId, Album Album)> rows = cnn.Query<List<(int, Album)>>("SELECT ArtistId, AlbumId AS Id, Title FROM albums ORDER BY ArtistId, AlbumId");
 ```
 
-A collection of tuples repeats the same sequential shape for each row.
+The collection repeats the same tuple mapping for each element.
 
-See [reading order](reading-order.md) for attributes that change sequential slot behavior.
+[Reading order](reading-order.md) · [Multi-row mapping](collections.md)

@@ -1,8 +1,6 @@
 # Parameter binding
 
-Use a custom `DbParamInfo` when an application value needs a different database value or parameter metadata.
-
-This example stores a list of names as one string.
+## Convert an application value
 
 ```csharp
 public readonly record struct Names(IReadOnlyList<string> Items);
@@ -11,37 +9,50 @@ sealed class NamesParamInfo : ConvertedDbParamInfo<Names>
 {
     protected override object ConvertValue(Names value) => string.Join(',', value.Items);
 
-    protected override void ConfigureParameter(IDbDataParameter parameter) => parameter.DbType = DbType.String;
+    protected override void ConfigureParameter(IDbDataParameter parameter)
+        => parameter.DbType = DbType.String;
 }
 ```
 
-Attach the strategy to the command once.
+The command can hold that parameter strategy.
 
 ```csharp
 static readonly QueryCommand SaveSearch = new("INSERT INTO saved_searches (Names) VALUES (@names)");
 
 SaveSearch.UpdateParamCache("@names", new NamesParamInfo());
+SaveSearch.Execute(cnn, new { names = new Names(["Blue", "Live"]) });
+// @names contains Blue,Live.
 ```
 
-Use the application type normally at execution time.
+[Parameter metadata](../running-queries/parameter-metadata.md)
+
+## Learn metadata from an existing command
 
 ```csharp
-int inserted = SaveSearch.Execute(cnn, new
-{
-    names = new Names(["Blue", "Live"])
-});
+static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+
+using DbCommand providerCommand = cnn.CreateCommand();
+providerCommand.CommandText = "UPDATE albums SET Title = @title WHERE AlbumId = @albumId";
+
+DbParameter albumId = providerCommand.CreateParameter();
+albumId.ParameterName = "@albumId";
+albumId.DbType = DbType.Int32;
+providerCommand.Parameters.Add(albumId);
+
+DbParameter title = providerCommand.CreateParameter();
+title.ParameterName = "@title";
+title.DbType = DbType.String;
+title.Size = 200;
+providerCommand.Parameters.Add(title);
+
+UpdateAlbum.UpdateCache(providerCommand);
 ```
 
-```sql
-INSERT INTO saved_searches (Names) VALUES (@names)
--- @names contains Blue,Live
-```
+`UpdateCache` reads parameter metadata through the registered parameter metadata getters.
 
-See [Parameter metadata](../running-queries/parameter-metadata.md) when only `DbType`, size, direction, or another normal parameter setting needs to change.
+A provider can add another metadata reader through [`IDbParamInfoGetter.ParamGetterMakers`](xref:Rinku.Querying.IDbParamInfoGetter.ParamGetterMakers).
 
-## Shape a parameter object
-
-Parameter source attributes change which members are exposed and which names they use.
+## Change exposed parameter names
 
 ```csharp
 public sealed class EmployeeArgs
@@ -55,31 +66,29 @@ public sealed class EmployeeArgs
 }
 ```
 
-Flatten a nested object when the SQL expects its values at the same level.
+## Flatten another parameter object
 
 ```csharp
 public sealed class UpdateArgs
 {
+    public int EmployeeId { get; init; }
+
     [NestedParameters("Employee")]
     public EmployeeArgs Employee { get; init; } = new();
 }
 ```
 
 ```csharp
+static readonly QueryCommand UpdateEmployee = new("UPDATE employees SET Name = @EmployeeName WHERE EmployeeId = @EmployeeId");
+
 UpdateEmployee.Execute(cnn, new UpdateArgs
 {
-    Employee = new EmployeeArgs
-    {
-        Name = "Ana"
-    }
+    EmployeeId = 12,
+    Employee = new EmployeeArgs { Name = "Ana" }
 });
 ```
 
-## Equal priority conflicts
-
-Two flattened members at the same depth are ambiguous by default.
-
-Use `ParameterConflictBehavior.TakeOne` only when either value is acceptable.
+## Same priority conflict
 
 ```csharp
 public sealed class SearchTermA
@@ -113,27 +122,21 @@ search.UseWith(new SearchArgs
 });
 
 object? value = search["@Value"];
-// Either value may be selected
+// TakeOne allows either value at the same priority.
 ```
 
-A direct member still has priority over a flattened member.
+A direct member has priority over a flattened member.
 
-## Provider metadata readers
+[Parameter member rules](parameter-members.md)
 
-A provider can add an `IDbParamInfoGetter` when Rinku cannot read its parameter metadata with the built in rules.
+## Provider metadata reader
 
-Register the getter maker during application startup.
+[`IDbParamInfoGetter.ParamGetterMakers`](xref:Rinku.Querying.IDbParamInfoGetter.ParamGetterMakers) contains the provider metadata readers tried for a command.
 
-```csharp
-static bool MakeGetter(IDbCommand command, out IDbParamInfoGetter getter)
-{
-    getter = null!;
-    return false;
-}
+[`DbParameterDefaults`](xref:Rinku.Querying.DbParameterDefaults) supplies the application wide fallback when no provider reader claims the command. Its contract is [`IDbParameterDefaults`](xref:Rinku.Querying.IDbParameterDefaults).
 
-IDbParamInfoGetter.ParamGetterMakers.Add(MakeGetter);
-```
+## Nested custom parameter access
 
-The maker should return `false` for command types it does not understand.
+[`PathAccessorEmitterBase`](xref:Rinku.Querying.Parameters.PathAccessorEmitterBase) keeps a custom member rule path aware when the member is reached through `NestedParameters`. The lower level contract is [`IPathAccessorEmitter`](xref:Rinku.Querying.Parameters.IPathAccessorEmitter).
 
-Use this extension point only for provider metadata discovery. Normal command specific metadata should use `UpdateParamCache`.
+Command specific binding remains on [`DbParamInfo`](xref:Rinku.Querying.DbParamInfo).

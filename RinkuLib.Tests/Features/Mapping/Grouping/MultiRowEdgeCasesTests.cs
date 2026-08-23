@@ -129,7 +129,7 @@ public class MultiRowEdgeCasesTests {
     }
 
     [Fact]
-    [DocumentationExample("custom-multi-row-types.md", "aggregate-multi-row")]
+    [DocumentationExample("multi-row.md", "aggregate-multi-row")]
     public void An_aggregate_folds_every_row_into_one_value() {
         ColumnInfo[] cols = [new("Amount", typeof(double), false)];
         var parser = TypeParser.GetTypeParser<Average>(cols);

@@ -1,57 +1,65 @@
 # Method caller
 
-`MethodCaller` creates a delegate with the signature the caller wants around an existing method.
+## Target method
 
-The first delegate argument can supply several method parameters through the normal Rinku parameter mapping rules. Later delegate arguments can supply selected method parameters directly.
+```csharp
+public static class AlbumCommands
+{
+    static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+
+    public static Task<int> SaveAlbum(DbConnection cnn, int albumId, string title, CancellationToken cancellationToken)
+        => UpdateAlbum.ExecuteAsync(cnn, new { albumId, title }, ct: cancellationToken);
+}
+```
+
+## Adapt the delegate
 
 ```csharp
 public record SaveAlbumArgs(int AlbumId, string Title);
 
-MethodInfo method = typeof(AlbumStore).GetMethod(nameof(AlbumStore.SaveAlbum))
-    ?? throw new InvalidOperationException();
+MethodInfo method = typeof(AlbumCommands).GetMethod(nameof(AlbumCommands.SaveAlbum))
+    ?? throw new InvalidOperationException("SaveAlbum was not found.");
 
-Func<SaveAlbumArgs, CancellationToken, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, CancellationToken, Task<int>>>(method, CallerParameter<CancellationToken>.ByType());
+Func<SaveAlbumArgs, DbConnection, CancellationToken, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, DbConnection, CancellationToken, Task<int>>>(
+    method,
+    CallerParameter<DbConnection>.ByType(),
+    CallerParameter<CancellationToken>.ByType());
 
-int affected = await save(new SaveAlbumArgs(12, "Blue"), cancellationToken);
+int affected = await save(new SaveAlbumArgs(12, "Blue"), cnn, cancellationToken);
 ```
 
-For this example the mapped source supplies `albumId` and `title`. The second delegate argument supplies the `CancellationToken` directly.
+The first delegate argument supplies mapped method parameters through the parameter source system. The later arguments supply parameters selected by the caller bindings.
 
-See [parameter source rules](parameter-members.md) for the mapping rules used by the first delegate argument.
+[Parameter source rules](parameter-members.md)
 
-## Match a caller argument by type
-
-Use `ByType()` when one otherwise unbound method parameter has the exact caller argument type.
+## Match by type
 
 ```csharp
-Func<SaveAlbumArgs, CancellationToken, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, CancellationToken, Task<int>>>(method, CallerParameter<CancellationToken>.ByType());
+CallerParameter<CancellationToken>.ByType();
 ```
 
-A type match uses the exact type. No match leaves that caller argument unused. More than one available match is ambiguous.
+A type binding matches an otherwise unbound target parameter with the exact caller argument type.
 
-## Match a caller argument by name
-
-Use `Named` when the target parameter name is the useful distinction.
+## Match by name
 
 ```csharp
-Func<SaveAlbumArgs, int, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, int, Task<int>>>(method, CallerParameter<int>.Named("userId"));
+CallerParameter<int>.Named("userId");
 ```
 
-A named caller binding takes precedence over type only matching.
+A named binding targets the method parameter with that name.
 
-A missing named target leaves that caller argument unused. This lets one delegate shape work with methods that do not all consume every caller supplied value.
-
-## Mix mapped and caller supplied values
+## Mix direct and mapped inputs
 
 ```csharp
-Func<SaveAlbumArgs, int, CancellationToken, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, int, CancellationToken, Task<int>>>(method, CallerParameter<int>.Named("userId"), CallerParameter<CancellationToken>.ByType());
+Func<SaveAlbumArgs, int, CancellationToken, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, int, CancellationToken, Task<int>>>(
+    method,
+    CallerParameter<int>.Named("userId"),
+CallerParameter<CancellationToken>.ByType());
 ```
 
-Caller supplied parameters take precedence over values that could also come from the mapped source.
+Caller supplied bindings take precedence over a value that could also come from the mapped source.
 
-## Return values
-
-The delegate return type follows the target method return shape.
+## Return shape
 
 ```csharp
 Func<SaveAlbumArgs, int> syncCall;
@@ -59,14 +67,39 @@ Func<SaveAlbumArgs, Task<int>> taskCall;
 Func<SaveAlbumArgs, ValueTask<int>> valueTaskCall;
 ```
 
-There is no separate asynchronous Method Caller model. Choose the delegate return type that matches the method being wrapped.
+The delegate return type follows the wrapped method return shape.
 
-## Mapped values must be usable
+[`MethodCaller`](xref:Rinku.MethodCaller)
 
-If a target parameter is assigned to the mapped source but that value is not currently usable, invocation fails instead of silently replacing it.
+## Binding details
+
+A type binding uses the exact target parameter type. No match leaves that caller argument unused. More than one available exact match is ambiguous.
+
+```csharp
+CallerParameter<CancellationToken>.ByType();
+```
+
+A named binding takes precedence over type matching. A missing named target also leaves that caller argument unused.
+
+```csharp
+CallerParameter<int>.Named("userId");
+```
+
+A caller supplied binding takes precedence over a value that could also come from the mapped source.
+
+```csharp
+Func<SaveAlbumArgs, int, CancellationToken, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, int, CancellationToken, Task<int>>>(
+    method,
+    CallerParameter<int>.Named("userId"),
+    CallerParameter<CancellationToken>.ByType());
+```
+
+The first delegate argument has a fixed compile time source type. Runtime derived types do not switch the parameter source mapping.
+
+## Unusable mapped value
 
 ```csharp
 Func<SaveAlbumArgs, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, Task<int>>>(method);
 ```
 
-The mapped source type is fixed by the first delegate argument. Method Caller does not switch mapping behavior from the runtime type of that argument.
+If a target parameter is assigned to the mapped source but the current source value is not usable, invocation fails. It is not silently replaced by another source.

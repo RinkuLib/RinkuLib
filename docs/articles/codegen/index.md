@@ -1,30 +1,55 @@
 # Code generation
 
-Rinku Power Tools reads configured database commands and generates typed `DbCommand` methods and result records.
-
 ![Rinku Power Tools project menu](../../images/codegen/project-menu.png)
+
 ![Rinku Power Tools configuration manager](../../images/codegen/configuration-manager.png)
+
 ![Rinku Power Tools query manager](../../images/codegen/query-manager.png)
+
+A configured database command generates a typed `DbCommand` method and result metadata.
 
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> AlbumParser = new();
 
-using SqlConnection cnn = new(connectionString);
-
 List<GetAlbumsByArtistResult> albums = AlbumParser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
-The generated method creates a normal `DbCommand`. Rinku can read it through a cached parser, or application code can execute it directly.
-
-A query stored in `SQLFile` remains a runtime file reference in generated C# rather than embedding the SQL text.
+The generated method returns a `DbCommand`.
 
 ```csharp
 using DbCommand command = cnn.GetAlbumsByArtist(artistId: 7);
 using DbDataReader reader = command.ExecuteReader();
 ```
 
-Schema discovery supports SQL Server, PostgreSQL, and SQLite. PowerTools normally infers the provider from the resolved connection string. A configuration can set the database explicitly when a connection string is ambiguous.
+[Configure](configure.md) · [Add queries](queries.md) · [Generated commands](generated-code.md) · [Refresh](refresh.md)
 
-The `Rinku` package also ships compile-time analyzers and code fixes; PowerTools is not required. [Analyzers and code fixes](analyzers.md) covers schema tracking, constructor contracts, and method invocation generation.
+## SQL file command
 
-[Configure](configure.md) · [Add queries](queries.md) · [Generated commands](generated-code.md) · [Refresh](refresh.md) · [Configuration reference](configuration.md) · [Analyzers and code fixes](analyzers.md)
+```json
+{
+  "MethodName": "GetAlbums",
+  "SQLFile": "Sql/GetAlbums.sql"
+}
+```
+
+```csharp
+using DbCommand command = cnn.GetAlbums();
+```
+
+The generated command reads the current SQL through `RinkuPowerTools.GetSqlFile`.
+
+[SQL file generation and runtime replacement](generated-code.md#sql-files)
+
+## Analyzers
+
+```csharp
+/// <Schema LastUpdated="2026-08-21T14:00Z" />
+public partial record GetAlbumResult(int Id, string Title);
+
+/// <BasedOn cref="GetAlbumResult" LastUpdated="2026-08-21T14:00Z" />
+public record AlbumDto(int Id, string Title);
+```
+
+The analyzers ship in the `Rinku` package. Power Tools is not required for them.
+
+[Analyzers and code fixes](analyzers.md)

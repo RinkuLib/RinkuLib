@@ -1,29 +1,35 @@
-# Registration
+# Mapping registration
 
-A root result type is an explicit request.
+## Explicit root result
 
 ```csharp
-Invoice invoice = GetInvoice.Query<Invoice>(cnn);
+public record Invoice(int Id, decimal Total);
+
+Invoice invoice = cnn.Query<Invoice>("SELECT InvoiceId AS Id, Total FROM invoices WHERE InvoiceId = @invoiceId", new { invoiceId = 12 });
 ```
 
-Nested types must be readable before their construction paths can participate.
+The root type is explicit in the requested result shape.
 
-## Register from the type
-
-Implement `IDbReadable` on a nested type.
+## Type reached through the shape
 
 ```csharp
 public record Customer(int Id, string Name) : IDbReadable;
 public record Invoice(int Id, Customer Customer);
 
-Invoice invoice = GetInvoice.Query<Invoice>(cnn);
+Invoice invoice = cnn.Query<Invoice>("SELECT i.InvoiceId AS Id, c.CustomerId AS CustomerId, c.Name AS CustomerName FROM invoices i JOIN customers c ON c.CustomerId = i.CustomerId WHERE i.InvoiceId = @invoiceId", new { invoiceId = 12 });
 ```
 
-Without the marker or another registration, the nested `Customer` path is unavailable.
+`Customer` participates as a nested mapping through `IDbReadable`.
 
-## Register construction parameter types
+The same registration can live in setup code.
 
-Use `[AreReadable]` on a constructor or factory when its parameter types should become readable.
+```csharp
+public record Customer(int Id, string Name);
+
+TypeParsingInfo.GetOrAdd<Customer>();
+```
+
+## AreReadable
 
 ```csharp
 public record Customer(int Id, string Name);
@@ -32,24 +38,20 @@ public record Customer(int Id, string Name);
 public record Invoice(int Id, Customer Customer);
 ```
 
-Use `[AreReadable]` on the type when the rule should apply to its immediate construction parameters and writable members.
+The construction parameter types for that construction become readable.
+
+A type-level attribute applies to immediate construction parameters and writable members.
 
 ```csharp
 [AreReadable]
 public record Invoice(int Id, Customer Customer);
 ```
 
-The rule applies one level at a time.
+Mapping continues recursively from there. Each later type participates through its own registration and construction.
 
-## Register during application setup
+[Recursive mapping](nesting.md)
 
-```csharp
-TypeParsingInfo.GetOrAdd<Customer>();
-```
-
-Do setup registration before queries start. Parsers already built from older registration state keep their existing behavior.
-
-## Registration does not guarantee a usable path
+## Registration and construction are separate
 
 ```csharp
 public sealed class Attachment : IDbReadable
@@ -59,8 +61,16 @@ public sealed class Attachment : IDbReadable
 }
 ```
 
-Registration makes the type available. A specific construction path still needs columns and readable slot types that can satisfy it.
+The type is readable. A particular construction still needs a returned shape that satisfies its inputs.
 
-## Application wide conventions
+[Construction paths](construction-paths.md)
 
-Use [advanced type registration](../customization/type-registration.md) when the application should change mapping defaults without attributes on every model.
+## Setup timing
+
+```csharp
+TypeParsingInfo.GetOrAdd<Customer>();
+```
+
+Parsers already built from earlier registrations keep their existing mapping until invalidated.
+
+[Cache control](../customization/caches.md) · [Type registration](../customization/type-registration.md)

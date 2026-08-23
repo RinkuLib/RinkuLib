@@ -170,15 +170,12 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
 
     [Fact]
     public async Task TestLongOperationWithCancellation() {
-        CancellationTokenSource cancel = new(TimeSpan.FromSeconds(5));
         using var cnn = Fixture.GetConnection();
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var task = Fixture.QueryWithDelay.QueryAsync<string>(cnn, ct: cancel.Token);
-        try {
-            await task.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-        }
-        catch (Exception ex) {
-            Assert.Equal("SqlException", ex.GetType().Name);
-        }
+        var ex = await Assert.ThrowsAnyAsync<Exception>(async () =>
+            await task.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken));
+        Assert.Equal("SqlException", ex.GetType().Name);
     }
     
     [Fact]

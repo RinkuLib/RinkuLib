@@ -1,20 +1,23 @@
 # Reading order
 
-Normal objects search unused columns by name.
+## Named object slots
 
 ```csharp
 public record Person(int Id, string Name, string? Email = null);
 
 static readonly QueryCommand GetPerson = new("SELECT Name, LastLogin AS Note, PersonId AS Id FROM people WHERE PersonId = @personId");
 
-Person person = GetPerson.Query<Person>(cnn, new { personId = 1 });
+Person person = GetPerson.Query<Person>(cnn, new { personId = 12 });
+// Name and Id are found by name.
+// Note remains unused.
+// Email keeps its default.
 ```
-
-`Name` and `Id` are found even though they are not beside each other. `Note` stays unused. `Email` keeps its default.
 
 A required slot with no matching column makes that construction path unusable.
 
-## Tuples read from left to right
+[Construction paths](construction-paths.md)
+
+## Sequential tuple slots
 
 ```csharp
 public record Order(int Id, decimal Total) : IDbReadable;
@@ -22,41 +25,56 @@ public record Customer(int Id, string Name) : IDbReadable;
 
 static readonly QueryCommand GetOrder = new("SELECT o.OrderId AS Id, o.Total, c.CustomerId AS Id, c.Name FROM orders o JOIN customers c ON c.CustomerId = o.CustomerId WHERE o.OrderId = @orderId");
 
-(Order order, Customer customer) = GetOrder.Query<(Order, Customer)>(cnn, new { orderId = 1 });
+(Order order, Customer customer) = GetOrder.Query<(Order, Customer)>(cnn, new { orderId = 12 });
 ```
 
-The first object claims its columns. The next tuple element begins after those consumed columns.
+The first tuple slot claims its columns. The next slot continues from the remaining columns.
 
-See [tuples](tuples.md) for positional result shapes that use the same reading order rules.
+[Tuples](tuples.md)
 
 ## Require the next column
-
-Use `[CanNotLookAnywhere]` when a slot must not search past the next available column.
 
 ```csharp
 public record Entry(int Id, [CanNotLookAnywhere] int? Code = null);
 ```
 
-If the next unused column does not match `Code`, the slot keeps its default instead of searching later columns.
+If the next unused column does not match `Code`, that slot does not search later columns.
 
-## Search later columns in a sequential shape
-
-Use `[CanLookAnywhere]` when one sequential slot may search later unused columns.
+## Search later from a sequential slot
 
 ```csharp
 public record struct Address([CanLookAnywhere] int Zip, string City) : IDbReadable;
 ```
 
-This is useful when a tuple element contains an unrelated gap before its first matching column.
+`Zip` may search later unused columns even when the containing shape is being read sequentially.
 
 ## Reuse a column
-
-Use `[MayReuseCol]` when a slot may read a column without marking it consumed.
 
 ```csharp
 public record Entry([MayReuseCol] int Id, int CopyOfId);
 ```
 
-A later compatible slot can then use the same column.
+The `Id` slot can read a column without marking it consumed, so a later compatible slot can reuse it.
 
-These attributes affect usage behavior only. Use [slot rule customization](../customization/slot-rules.md) when an application needs a new rule instead of the built in choices.
+## Apply a rule to the complete subtree
+
+```csharp
+public record Address(int Zip, string City) : IDbReadable;
+public record Person(int Id, [CanLookAnywhereSubtree] Address Address);
+```
+
+`CanLookAnywhereSubtree` lets every slot inside `Address` search later unused columns. `CanLookAnywhere` changes only the first claim made by the nested value.
+
+```csharp
+public record Person(int Id, [CanNotLookAnywhereSubtree] Address Address);
+```
+
+`CanNotLookAnywhereSubtree` keeps sequential reading through the complete nested value.
+
+```csharp
+public record Person(int Id, [MayReuseColSubtree] Address Address);
+```
+
+`MayReuseColSubtree` keeps every column claimed by `Address` reusable.
+
+[Custom slot rules](../customization/slot-rules.md)

@@ -190,7 +190,7 @@ public class MultiRowTests {
     // --- keyed grouping ---------------------------------------------------------------------------------
 
     [Fact]
-    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
+    [DocumentationExample("multi-row.md", "built-in-multi-row")]
     public void A_keyed_list_groups_children_under_each_parent() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<Parent>>(cols);
@@ -783,7 +783,7 @@ public class MultiRowTests {
     public sealed record HashParent([property: GroupKey] int Id, string Name, HashSet<Child> Children) : IDbReadable;
 
     [Fact]
-    [DocumentationExample("custom-multi-row-types.md", "hashset-multi-row")]
+    [DocumentationExample("multi-row.md", "hashset-multi-row")]
     public void A_user_registered_HashSet_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<HashParent>>(cols);
@@ -800,7 +800,7 @@ public class MultiRowTests {
     }
 
     [Fact]
-    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
+    [DocumentationExample("multi-row.md", "built-in-multi-row")]
     public void A_built_in_array_member_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<ArrayParent>>(cols);
@@ -817,7 +817,7 @@ public class MultiRowTests {
     }
 
     [Fact]
-    [DocumentationExample("custom-multi-row-types.md", "built-in-multi-row")]
+    [DocumentationExample("multi-row.md", "built-in-multi-row")]
     public void A_built_in_IEnumerable_member_maps_and_holds_the_full_elements() {
         var cols = ParentCols();
         var parser = TypeParser.GetTypeParser<List<EnumerableParent>>(cols);

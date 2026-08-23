@@ -1,6 +1,6 @@
 # Generated commands
 
-Each configured query generates a `DbCommand` extension method.
+## DbCommand method
 
 ```json
 {
@@ -8,8 +8,6 @@ Each configured query generates a `DbCommand` extension method.
   "SQLQuery": "SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId"
 }
 ```
-
-The generated method has this shape.
 
 ```csharp
 public static partial class DbCommands
@@ -19,18 +17,15 @@ public static partial class DbCommands
         DbCommand command = connection.CreateCommand();
         command.CommandText = @"SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId";
         command.CommandType = CommandType.Text;
-
         command.Add("@artistId", DbType.Int32, artistId);
         return command;
     }
 }
 ```
 
-The exact parameter type, size, precision, scale, direction, and null handling come from discovered database metadata when the provider exposes it. SQLite parameters remain value inferred unless a configuration correction supplies a type.
+Discovered metadata controls generated parameter type, size, precision, scale, direction, and null handling when the provider exposes those values.
 
-## SQL files stay referenced
-
-An `SQLFile` is inspected during generation, but its SQL is not copied into the generated command method.
+## SQL files
 
 ```json
 {
@@ -38,8 +33,6 @@ An `SQLFile` is inspected during generation, but its SQL is not copied into the 
   "SQLFile": "Sql/GetAlbums.sql"
 }
 ```
-
-The generated method keeps the configured path and gets the current SQL through `RinkuPowerTools.GetSqlFile`.
 
 ```csharp
 public static partial class DbCommands
@@ -54,49 +47,44 @@ public static partial class DbCommands
 }
 ```
 
-The shared generated support file contains the existing command extensions and the runtime SQL state.
+The generated support type keeps the runtime SQL cache.
+
+The configured `SQLFile` path stays as the dictionary key. Keys are case insensitive.
 
 ```csharp
 public static class RinkuPowerTools
 {
     public static readonly ConcurrentDictionary<string, string> SqlFiles = new(StringComparer.OrdinalIgnoreCase);
 
-    public static string GetSqlFile(string path) => SqlFiles.GetOrAdd(path, static path => File.ReadAllText(Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path)));
-
-    // Generated DbCommand extension methods are also in this class.
+    public static string GetSqlFile(string path)
+        => SqlFiles.GetOrAdd(path, static path => File.ReadAllText(Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path)));
 }
 ```
 
-Application code can access the same dictionary directly.
+Application code can replace the current SQL for a key.
 
 ```csharp
 RinkuPowerTools.SqlFiles["Sql/GetAlbums.sql"] = replacementSql;
 ```
 
-The next generated command uses the replacement value without reading the file.
-
-Remove an entry when the next command should reload the file.
+Application code can remove the cached value so the next command reads the file again.
 
 ```csharp
 RinkuPowerTools.SqlFiles.TryRemove("Sql/GetAlbums.sql", out _);
-
 using DbCommand command = cnn.GetAlbums();
 ```
 
-`SqlFiles` uses case insensitive keys. The configured path itself remains the key and PowerTools does not normalize it at runtime.
-
-Relative paths are read from `AppContext.BaseDirectory` only when the dictionary does not already contain the key. CodeGen copies relative SQL files to build and publish output with the same relative path.
-
-Absolute paths remain absolute and are not copied.
+Relative paths are read from `AppContext.BaseDirectory` when no cached value exists. Relative project files are copied to build and publish output at the same relative path. Absolute paths remain absolute and are not copied.
 
 ```csharp
 RinkuPowerTools.SqlFiles[@"D:\SharedSql\GetAlbums.sql"] = replacementSql;
 ```
 
-A dictionary change affects commands created afterward. A `DbCommand` that was already created keeps its current `CommandText`.
+A command already created keeps the `CommandText` it received. Changing the dictionary affects commands created afterward.
 
-Changing SQL at runtime does not regenerate parameters or result records. The new SQL is expected to remain compatible with the generated command contract.
-## Use the command with Rinku
+Runtime SQL replacement does not regenerate parameters or result records.
+
+## Parse a generated command
 
 ```csharp
 static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
@@ -104,36 +92,30 @@ static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
 List<GetAlbumsByArtistResult> albums = Parser.Query(cnn.GetAlbumsByArtist(artistId: 7));
 ```
 
-The generated command is a normal `DbCommand`, so it is not tied to the Rinku result parser.
+The same generated command can be executed directly.
 
 ```csharp
 using DbCommand command = cnn.GetAlbumsByArtist(artistId: 7);
 using DbDataReader reader = command.ExecuteReader();
 ```
 
-See [existing DbCommand](../running-queries/dbcommand.md) for the Rinku parser forms that accept a command directly.
+[Existing DbCommand](../running-queries/dbcommand.md)
 
-## Result records
-
-A query with several returned columns generates a partial record.
+## Result record
 
 ```csharp
 /// <Schema LastUpdated="2026-08-21T14:00Z" />
 public partial record GetAlbumsByArtistResult(int Id, string Title);
 ```
 
-The timestamp changes when the inspected result shape changes. CodeGen preserves an unchanged generated record, including its existing timestamp.
-
-The `Rinku` package analyzers can use that timestamp from application code.
+The schema timestamp changes when the inspected result shape changes. An unchanged record keeps its existing timestamp.
 
 ```csharp
 /// <BasedOn cref="GetAlbumsByArtistResult" LastUpdated="2026-08-21T14:00Z" />
 public record AlbumDto(int Id, string Title);
 ```
 
-See [Analyzers and code fixes](analyzers.md) for `BasedOn`, `MatchConstructor`, constructor generation, and method invocation generation.
-
-Add application behavior in another partial declaration instead of editing the generated file.
+Application members can live in another partial declaration.
 
 ```csharp
 public partial record GetAlbumsByArtistResult
@@ -142,13 +124,9 @@ public partial record GetAlbumsByArtistResult
 }
 ```
 
-## Scalar results
+[Schema analyzers](analyzers.md)
 
-A query that returns one simple column does not need a result record.
-
-`int`, `long`, `short`, `byte`, `string`, `Guid`, `bool`, `decimal`, `double`, `DateTime`, and `float` are supported scalar result types, including nullable forms.
-
-Nullable forms of these types use the same scalar behavior.
+## Scalar result
 
 ```sql
 SELECT COUNT(*) FROM albums WHERE ArtistId = @artistId
@@ -156,15 +134,12 @@ SELECT COUNT(*) FROM albums WHERE ArtistId = @artistId
 
 ```csharp
 static readonly CachedTypeParser<int> CountParser = new();
-
 int count = CountParser.Query(cnn.CountAlbumsByArtist(artistId: 7));
 ```
 
-The generated method still returns a `DbCommand`. The generated command metadata records that the result shape is `int`.
+Scalar result metadata is generated without a result record. Nullable forms use the same scalar path.
 
-## Commands without a result
-
-A command with no result columns generates only the command method.
+## Command without returned columns
 
 ```sql
 DELETE FROM albums WHERE AlbumId = @albumId
@@ -177,27 +152,20 @@ int affected = command.ExecuteNonQuery();
 
 ## Several result sets
 
-The generated command can contain SQL that returns several result sets. CodeGen generates result information for the first result set.
-
 ```sql
 SELECT ArtistId AS Id, Name FROM artists WHERE ArtistId = @artistId;
 SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId;
 ```
 
-The generated method still returns the complete `DbCommand`.
+CodeGen records generated result information for the first result set. The command still contains the complete SQL.
 
 ```csharp
 using DbCommand command = cnn.GetArtistAndAlbums(artistId: 7);
 using DbDataReader reader = command.ExecuteReader();
-
 reader.NextResult();
 ```
 
-See [multiple result sets](../running-queries/multiple-results.md) for the Rinku result reader when the command is represented by a `QueryCommand`.
-
-## Database names that are not C# names
-
-CodeGen cleans names that cannot be used directly in C# and keeps the database name with `TrueName`.
+## Database name that is not a C# name
 
 ```sql
 SELECT AlbumId, Title AS [Album Title] FROM albums
@@ -209,9 +177,7 @@ public partial record AlbumRow(int AlbumId, [TrueName("Album Title")] string Alb
 
 The generated support file defines `TrueNameAttribute` for the project.
 
-## Nullable parameters
-
-Nullable inputs send `DBNull.Value` when the C# value is null.
+## Nullable input
 
 ```csharp
 public static partial class DbCommands
@@ -226,12 +192,12 @@ public static partial class DbCommands
 ```
 
 ```csharp
-DbCommand command = cnn.FindAlbums(title: null);
+using DbCommand command = cnn.FindAlbums(title: null);
 ```
 
-## PostgreSQL native parameter types
+## PostgreSQL parameters
 
-PostgreSQL metadata can carry a native database type name in addition to `DbType`. The generated method keeps the shared `DbParameter` creation path and then applies the exact type to the Npgsql parameter.
+PostgreSQL native type metadata can be applied after the common `DbParameter` creation path.
 
 ```csharp
 object payload = "{}";
@@ -241,9 +207,9 @@ if (p_payload is not Npgsql.NpgsqlParameter npgsql_p_payload)
 npgsql_p_payload.DataTypeName = "jsonb";
 ```
 
-The application already needs Npgsql to create the PostgreSQL connection. Native typing is emitted only for PostgreSQL parameters whose metadata contains a PostgreSQL type name.
+Native PostgreSQL type names are emitted when discovered metadata carries a type that common `DbType` metadata cannot represent completely.
 
-For positional PostgreSQL SQL, the SQL keeps `$1`, `$2`, and later placeholders while the generated parameters are unnamed and added in position order.
+Positional SQL keeps its placeholders. Named and positional parameter forms are not mixed in one generated query.
 
 ```sql
 SELECT title FROM album WHERE artist_id = $1
@@ -257,7 +223,6 @@ public static partial class DbCommands
         DbCommand command = connection.CreateCommand();
         command.CommandText = @"SELECT title FROM album WHERE artist_id = $1";
         command.CommandType = CommandType.Text;
-
         command.Add("", DbType.Int32, p1);
         return command;
     }
@@ -266,7 +231,7 @@ public static partial class DbCommands
 
 ## SQLite parameters
 
-An unresolved SQLite parameter does not force `DbType.Object`.
+An unresolved SQLite parameter stays value inferred.
 
 ```csharp
 public static partial class DbCommands
@@ -276,40 +241,32 @@ public static partial class DbCommands
         DbCommand command = connection.CreateCommand();
         command.CommandText = @"SELECT Id, Title FROM Album WHERE Id = $id";
         command.CommandType = CommandType.Text;
-
         command.Add("$id", (object?)id ?? DBNull.Value);
         return command;
     }
 }
 ```
 
-A parameter correction can make the generated argument and `DbType` explicit.
+[Parameter corrections](queries.md#parameter-correction)
 
-## Output parameters
-
-Parameters that return a value expose their generated `DbParameter` through an `out` argument.
-
-An input and output parameter keeps its input value and also returns the parameter instance. SQL Server and PostgreSQL stored procedure output parameters use this shape when the provider reports that direction.
+## Output parameter
 
 ```csharp
 int counter = 0;
 using DbCommand command = cnn.UpdateCounter(counter, out DbParameter out_counter);
 command.ExecuteNonQuery();
-
 object updatedCounter = out_counter.Value;
 ```
 
-A pure output parameter only needs the `out DbParameter` argument.
+Pure output parameters expose only the `out DbParameter` argument. Input output parameters keep the input argument and expose the generated parameter through `out`.
 
 ## Output files
-
-The default configuration generates `DbCommands.rinku.cs` when no command class name is supplied.
 
 ```text
 .PowerTools.rinku.cs
 Data/Generated/DbCommands.rinku.cs
 ```
 
-The support file is created at the project root. It contains `TrueNameAttribute` and the public `RinkuPowerTools` class with the shared command extensions and SQL file dictionary.
+The support file lives at the project root. The command file uses the configured output path.
 
-See [Configure CodeGen](configure.md) for output path and namespace settings.
+[Configure](configure.md) · [Refresh](refresh.md)

@@ -1,138 +1,134 @@
-# Build from application logic
-
-Create a builder for one execution flow.
+# Builders
 
 ```csharp
-static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@ArtistId AND Title LIKE ?@Title AND /*CurrentOnly*/IsArchived = 0");
+static readonly QueryCommand SearchAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = ?@artistId AND Title LIKE ?@title AND /*CurrentOnly*/IsArchived = 0");
 
 var search = SearchAlbums.StartBuilder();
-
-if (artistId is int id)
-    search.Use("@ArtistId", id);
-
-if (!string.IsNullOrWhiteSpace(title))
-    search.Use("@Title", title);
-
-if (!canSeeArchived)
-    search.Use("CurrentOnly");
+search.Use("@artistId", 7);
+search.Use("CurrentOnly");
 
 List<Album> albums = search.Query<List<Album>>(cnn);
 ```
 
-A builder holds mutable values and active conditions. It references the reusable `QueryCommand` but does not put per call state on that command.
+The builder holds the values and active conditions for one execution flow. The `QueryCommand` stays reusable.
 
-Create a separate builder for each independent or concurrent execution flow.
-
-## Start from an object
-
-```csharp
-public sealed class AlbumSearch
-{
-    public int? ArtistId { get; init; }
-
-    [NotNullOrWhitespace]
-    public string? Title { get; init; }
-}
-
-var search = SearchAlbums.StartBuilder();
-search.UseWith(new AlbumSearch { ArtistId = 7, Title = "Blue" });
-```
-
-`UseWith` supplies every usable member from the source.
-
-## Override one value
+## Add values
 
 ```csharp
 var search = SearchAlbums.StartBuilder();
-search.UseWith(filter);
+search.UseWith(new { artistId = 7 });
+search.UseWith(new { title = "Blue%" });
 
-if (restrictedArtistId is int artistId)
-    search.Use("@ArtistId", artistId);
+List<Album> albums = search.Query<List<Album>>(cnn);
 ```
 
-Put manual values after `UseWith` when they should win for that builder state.
-
-## Combine several sources
+A later source changes only the values it supplies.
 
 ```csharp
 var search = SearchAlbums.StartBuilder();
-search.UseWith(new { ArtistId = 7 });
-search.UseWith(new { Title = "Blue" });
-// Both values are present.
+search.UseWith(new Dictionary<string, object?> { ["artistId"] = 7, ["title"] = "Blue%" });
+search.UseWith(new Dictionary<string, object?> { ["artistId"] = 12 });
+
+Console.WriteLine(search["@artistId"]); // 12
+Console.WriteLine(search["@title"]);    // Blue%
 ```
 
-A later source changes the values it controls. Unrelated values stay in the builder.
-
-A dictionary changes only keys present in that call.
+A struct can be supplied by reference.
 
 ```csharp
+public readonly record struct AlbumSearch(int ArtistId, string Title);
+
 var search = SearchAlbums.StartBuilder();
-search.UseWith(new Dictionary<string, object?> { ["ArtistId"] = 7, ["Title"] = "Blue" });
-search.UseWith(new Dictionary<string, object?> { ["ArtistId"] = 12 });
-// ArtistId is 12.
-// Title is still Blue.
+AlbumSearch filter = new(7, "Blue%");
+search.UseWith(ref filter);
 ```
 
-## Check whether a key exists
+## Seed a builder
 
 ```csharp
-if (!search.Use("@ArtistId", 12))
-    throw new InvalidOperationException("The command has no ArtistId parameter");
-
-bool foundCondition = search.Use("CurrentOnly");
-bool missing = search.Use("@Unknown", 1);
+var search = SearchAlbums.StartBuilder(("@artistId", 7), ("@title", "Blue%"));
 ```
 
-`Use` returns whether the builder could use the supplied key.
+The seeded values use the same builder state as later `Use` and `UseWith` calls.
 
-## Materialize default capable parameters
-
-A builder bound to a live command keeps defaults explicit.
+## Conditions
 
 ```csharp
-QueryCommand renumberAlbums = QueryCommand.FromProc("RenumberAlbums", setupConnection);
-
-using DbCommand command = cnn.CreateCommand();
-var call = renumberAlbums.StartBuilder(command);
-
-call.UseWith(new { albumId = 12 });
-call.SetDefaults();
-call.Execute();
+bool enabled = search.Use("CurrentOnly");
+bool disabled = search.UnUse("CurrentOnly");
 ```
 
-`SetDefaults()` fills only missing parameters whose parameter metadata can provide a default. Values already supplied to the builder stay in place.
-
-`UseWith` does not call `SetDefaults()` for you. Execution does not call it either.
-
-Calling `SetDefaults()` again does not duplicate defaults that are already materialized.
-
-When a default changes which conditional variables are active, the bound command text is refreshed from the current builder state.
-
-See [parameter metadata](parameter-metadata.md) for reusable parameter metadata and [stored procedures](stored-procedures.md) for discovered output parameters.
-
-## Remove or reset values
+`Use` and `UnUse` return `false` when the supplied name is not a condition owned by the command.
 
 ```csharp
-search.Use("@ArtistId", 1);
-search.Remove("@ArtistId");
+bool foundParameter = search.Use("@artistId", 12);
+bool missingParameter = search.Use("@unknown", 12);
+```
+
+The value overload returns `false` when the supplied name is not a value slot owned by the command.
+
+[Conditional markers](../conditional-sql/markers.md)
+
+## Inspect the current state
+
+```csharp
+object? artistId = search["@artistId"];
+string sql = search.GetQueryText();
+```
+
+`GetQueryText()` parses the template from the current builder state without executing it.
+
+## Remove and reset
+
+```csharp
+search.Remove("@title");
+search.UnUse("CurrentOnly");
 search.Reset();
 ```
 
-`Remove` clears one builder key. `Reset` clears the builder state.
+`Remove` clears one key. `Reset` clears the complete builder state.
 
-## Bind a builder to one DbCommand
+## Bind to a DbCommand
 
 ```csharp
+static readonly QueryCommand InsertAlbum = new("INSERT INTO albums (ArtistId, Title) VALUES (@ArtistId, @Title)");
+
+public readonly record struct AlbumInsert(int ArtistId, string Title);
+
+AlbumInsert[] albums = [new(7, "Blue"), new(7, "Green")];
 using DbCommand command = cnn.CreateCommand();
 var batch = InsertAlbum.StartBuilder(command);
 
-foreach (Album album in albums)
+foreach (AlbumInsert album in albums)
 {
     batch.UseWith(album);
     batch.Execute();
 }
 ```
 
-A bound builder reuses the caller owned `DbCommand`. Bound execution does not need a connection argument because the command already owns its connection and transaction.
+The bound builder keeps the same caller owned `DbCommand` while values change.
 
-See [existing DbCommand](dbcommand.md) for command ownership. See [conditional SQL](../conditional-sql/variables.md) for the markers controlled by builder values and keys.
+A bound builder can also be seeded.
+
+```csharp
+using DbCommand command = cnn.CreateCommand();
+var batch = InsertAlbum.StartBuilder(command, ("@ArtistId", 7), ("@Title", "Blue"));
+batch.Execute();
+```
+
+## Materialize known defaults
+
+```csharp
+QueryCommand updateAlbum = QueryCommand.FromProc("UpdateAlbum", cnn);
+
+using DbCommand command = cnn.CreateCommand();
+var call = updateAlbum.StartBuilder(command);
+
+call.UseWith(new { albumId = 12 });
+call.SetDefaults();
+call.Execute();
+```
+
+`SetDefaults()` exists on the builder bound to a live command. It fills missing parameters whose metadata can provide a default. Existing builder values stay in place.
+
+[Stored procedures](stored-procedures.md) · [Parameter metadata](parameter-metadata.md) · [Existing DbCommand](dbcommand.md)

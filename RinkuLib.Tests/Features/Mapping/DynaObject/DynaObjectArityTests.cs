@@ -51,8 +51,7 @@ public class DynaObjectArityTests {
     public void Json_writes_every_column(int arity) {
         var (cols, row) = Make(arity);
         var dyna = Rows.ParseOne<DynaObject>(cols, row);
-        var options = new System.Text.Json.JsonSerializerOptions { Converters = { new DynaObjectConverter() } };
-        var json = System.Text.Json.JsonSerializer.Serialize(dyna, options);
+        var json = System.Text.Json.JsonSerializer.Serialize(dyna);
         for (int i = 0; i < arity; i++)
             Assert.Contains($"\"Col{i + 1}\":{(i + 1) * 10}", json);
     }

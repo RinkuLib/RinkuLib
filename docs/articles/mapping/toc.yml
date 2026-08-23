@@ -1,12 +1,12 @@
-- name: Map rows to objects
+- name: Object mapping
   href: objects.md
-- name: Nested objects
+- name: Recursive mapping
   href: nesting.md
-- name: Collections
+- name: Multi-row mapping
   href: collections.md
 - name: Grouping
   href: grouping.md
-- name: Adapt names
+- name: Name adaptation
   href: names.md
 - name: Database NULL
   href: nulls.md

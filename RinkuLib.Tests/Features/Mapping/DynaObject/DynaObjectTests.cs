@@ -353,17 +353,15 @@ public class DynaObjectTests {
     public void Json_converter_writes_names_and_values() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
         var row = Rows.ParseOne<DynaObject>(cols, 5, "Roy");
-        var options = new System.Text.Json.JsonSerializerOptions { Converters = { new DynaObjectConverter() } };
-        var json = System.Text.Json.JsonSerializer.Serialize(row, options);
+        var json = System.Text.Json.JsonSerializer.Serialize(row);
         Assert.Contains("\"Id\":5", json);
         Assert.Contains("\"Name\":\"Roy\"", json);
     }
 
     [Fact]
     public void Json_converter_does_not_read_back() {
-        var options = new System.Text.Json.JsonSerializerOptions { Converters = { new DynaObjectConverter() } };
         Refusals.Raises(ErrorCodes.OperationNotSupportedForType,
-            () => System.Text.Json.JsonSerializer.Deserialize<DynaObject>("{}", options));
+            () => System.Text.Json.JsonSerializer.Deserialize<DynaObject>("{}"));
     }
 
     /// <summary>

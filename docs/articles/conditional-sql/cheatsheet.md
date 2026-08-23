@@ -1,4 +1,4 @@
-# Cheat sheet
+# Conditional SQL cheat sheet
 
 ## Optional value
 
@@ -6,7 +6,7 @@
 WHERE ArtistId = ?@artistId
 ```
 
-Missing or `null` removes the surrounding condition.
+[Conditional variables](variables.md)
 
 ## Named marker
 
@@ -18,13 +18,15 @@ WHERE /*ByArtist*/ ArtistId = @artistId
 builder.Use("ByArtist");
 ```
 
+[Markers](markers.md)
+
 ## Parameter marker
 
 ```sql
 WHERE /*@artistId*/ ArtistId = @artistId
 ```
 
-The SQL follows the presence of `artistId`.
+[Markers](markers.md)
 
 ## Marker logic
 
@@ -34,7 +36,7 @@ The SQL follows the presence of `artistId`.
 /*!A*/
 ```
 
-`&` means AND, `|` means OR, and `!` means NOT.
+[Markers](markers.md)
 
 ## Collection
 
@@ -42,7 +44,7 @@ The SQL follows the presence of `artistId`.
 WHERE AlbumId IN (@ids_X)
 ```
 
-The collection is expanded into database parameters.
+[Collection expansion](collections.md)
 
 ## Optional collection
 
@@ -50,7 +52,7 @@ The collection is expanded into database parameters.
 WHERE AlbumId IN (?@ids_X)
 ```
 
-An empty or missing collection removes the condition.
+[Collection expansion](collections.md)
 
 ## Numeric text
 
@@ -58,7 +60,7 @@ An empty or missing collection removes the condition.
 OFFSET @skip_N ROWS
 ```
 
-The value is written as invariant numeric SQL text.
+[Value handlers](handlers.md)
 
 ## Quoted text
 
@@ -66,7 +68,7 @@ The value is written as invariant numeric SQL text.
 ORDER BY @name_S
 ```
 
-The value is quoted and embedded into the SQL text.
+[Value handlers](handlers.md)
 
 ## Raw text
 
@@ -74,7 +76,7 @@ The value is quoted and embedded into the SQL text.
 ORDER BY @orderBy_R
 ```
 
-The value is embedded without escaping. Use only application controlled values.
+[Value handlers](handlers.md)
 
 ## Dynamic projection
 
@@ -86,7 +88,7 @@ The value is embedded without escaping. Use only application controlled values.
 FROM albums
 ```
 
-`!` keeps a projection entry even when it was not selected.
+[Dynamic projection](dynamic-projection.md)
 
 ## Projection group
 
@@ -98,20 +100,21 @@ FROM albums
 FROM albums
 ```
 
-Selecting `Artist` keeps both grouped columns.
+[Dynamic projection](dynamic-projection.md)
 
 ## Optional modifier
 
 ```sql
 ???Distinct DISTINCT
-?SELECT AlbumId AS Id!, Title
-FROM albums
+?SELECT AlbumId AS Id!, Title FROM albums
 ```
 
-## Keep a normal block comment
+[Dynamic projection](dynamic-projection.md)
+
+## Normal block comment
 
 ```sql
 /*~ sent to the database */
 ```
 
-See [Conditional variables](variables.md), [Markers](markers.md), [Collections](collections.md), and [Dynamic projection](dynamic-projection.md) for complete examples.
+[Template syntax](template-syntax.md)

@@ -1,82 +1,62 @@
-# Transactions timeouts and cancellation
+# Execution context
 
-Create a transaction from the same connection used for the command.
+```csharp
+static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums WHERE ArtistId = @artistId");
+static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @title WHERE AlbumId = @albumId");
+static readonly QueryCommand InsertAudit = new("INSERT INTO album_audit (AlbumId) VALUES (@albumId)");
+```
+
+## Transaction
 
 ```csharp
 using DbTransaction transaction = cnn.BeginTransaction();
 
 UpdateAlbum.Execute(cnn, new { albumId = 12, title = "Kind of Blue" }, transaction: transaction);
+InsertAudit.Execute(cnn, new { albumId = 12 }, transaction: transaction);
 
 transaction.Commit();
 ```
 
-Several Rinku operations can share the same transaction.
+The caller owns the transaction.
+
+## Timeout
 
 ```csharp
-AddAlbum.Execute(cnn, new { title = "Blue", artistId = 7 }, transaction: transaction);
-UpdateArtist.Execute(cnn, new { artistId = 7, modifiedAt = DateTime.UtcNow }, transaction: transaction);
-
-transaction.Commit();
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 }, timeout: 30);
+// DbCommand.CommandTimeout receives 30.
 ```
 
-The caller still commits or rolls back the transaction.
+Omitting the timeout keeps the provider default. Passing zero assigns zero.
 
-## Set a timeout
+## Cancellation
 
 ```csharp
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn, timeout: 60);
+List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, new { artistId = 7 }, ct: cancellationToken);
 ```
 
-`timeout` is assigned to `DbCommand.CommandTimeout` in seconds.
+The token is passed to provider async operations.
 
-Omitting it leaves the provider default unchanged.
+[Async execution](async.md)
+
+## Closed connection
 
 ```csharp
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
+await using SqlConnection cnn = new(connectionString);
+
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+// Rinku opens the closed connection for the operation and closes it afterward.
 ```
 
-An explicit zero is still assigned.
+## Already open connection
 
 ```csharp
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn, timeout: 0);
+await using SqlConnection cnn = new(connectionString);
+await cnn.OpenAsync(cancellationToken);
+
+List<Album> albums = GetAlbums.Query<List<Album>>(cnn, new { artistId = 7 });
+// cnn stays open because it was already open.
 ```
 
-The provider decides what zero means.
+A streamed operation keeps its reader active until enumeration ends.
 
-## Cancel async work
-
-```csharp
-List<Album> albums = await GetAlbums.QueryAsync<List<Album>>(cnn, ct: cancellationToken);
-```
-
-```csharp
-await foreach (Album album in GetAlbums.StreamQueryAsync<Album>(cnn, ct: cancellationToken))
-    Console.WriteLine(album.Title);
-```
-
-The token is passed to async provider operations where the provider exposes them.
-
-## Connection ownership
-
-A closed connection is opened for the operation and closed again after Rinku owned work finishes.
-
-```csharp
-using DbConnection cnn = new SqlConnection(connectionString);
-
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
-// cnn is closed again.
-```
-
-An already open connection remains open.
-
-```csharp
-using DbConnection cnn = new SqlConnection(connectionString);
-cnn.Open();
-
-List<Album> albums = GetAlbums.Query<List<Album>>(cnn);
-// cnn is still open.
-```
-
-Streaming keeps the operation active until enumeration finishes or the enumerator is disposed. See [streaming](streaming.md).
-
-See [IDbConnection support](idbconnection.md) when the connection is typed through the older ADO.NET interface.
+[Streaming](streaming.md)
