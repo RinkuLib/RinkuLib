@@ -14,6 +14,7 @@ public class MultiResultSetFixture : DBFixture<SqlConnection> {
 /// Checks the multi-reader binds parameters and filters each result set to its own rows. Seeds ids 1
 /// to 5 and asks each set for a non-first id (2 and 4), so a query that dropped the parameter shows up.
 /// </summary>
+[Collection(DatabaseIntegrationCollection.Name)]
 public class MultiResultSetTests(MultiResultSetFixture Fixture) : IClassFixture<MultiResultSetFixture> {
     private readonly MultiResultSetFixture Fixture = Fixture;
 
