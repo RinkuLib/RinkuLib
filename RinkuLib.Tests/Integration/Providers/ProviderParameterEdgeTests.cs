@@ -69,6 +69,8 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
         await cnn.OpenAsync(ct);
 
         await using (var setup = cnn.CreateCommand()) {
+            setup.CommandText = "IF OBJECT_ID(N'dbo.ProviderSum', N'P') IS NOT NULL DROP PROCEDURE dbo.ProviderSum; IF TYPE_ID(N'dbo.ProviderIntList') IS NOT NULL DROP TYPE dbo.ProviderIntList;";
+            await setup.ExecuteNonQueryAsync(ct);
             setup.CommandText = "CREATE TYPE dbo.ProviderIntList AS TABLE (Value INT NOT NULL);";
             await setup.ExecuteNonQueryAsync(ct);
             setup.CommandText = "CREATE PROCEDURE dbo.ProviderSum @ids dbo.ProviderIntList READONLY AS SELECT SUM(Value) FROM @ids;";
@@ -82,7 +84,7 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
         }
         finally {
             await using var cleanup = cnn.CreateCommand();
-            cleanup.CommandText = "DROP PROCEDURE dbo.ProviderSum; DROP TYPE dbo.ProviderIntList;";
+            cleanup.CommandText = "IF OBJECT_ID(N'dbo.ProviderSum', N'P') IS NOT NULL DROP PROCEDURE dbo.ProviderSum; IF TYPE_ID(N'dbo.ProviderIntList') IS NOT NULL DROP TYPE dbo.ProviderIntList;";
             await cleanup.ExecuteNonQueryAsync(ct);
         }
     }
@@ -94,6 +96,8 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
         await cnn.OpenAsync(ct);
 
         await using (var setup = cnn.CreateCommand()) {
+            setup.CommandText = "IF OBJECT_ID(N'dbo.ProviderDataTableSum', N'P') IS NOT NULL DROP PROCEDURE dbo.ProviderDataTableSum; IF TYPE_ID(N'dbo.ProviderDataTableList') IS NOT NULL DROP TYPE dbo.ProviderDataTableList;";
+            await setup.ExecuteNonQueryAsync(ct);
             setup.CommandText = "CREATE TYPE dbo.ProviderDataTableList AS TABLE (Value INT NOT NULL);";
             await setup.ExecuteNonQueryAsync(ct);
             setup.CommandText = "CREATE PROCEDURE dbo.ProviderDataTableSum @ids dbo.ProviderDataTableList READONLY AS SELECT SUM(Value) FROM @ids;";
@@ -113,7 +117,7 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
         }
         finally {
             await using var cleanup = cnn.CreateCommand();
-            cleanup.CommandText = "DROP PROCEDURE dbo.ProviderDataTableSum; DROP TYPE dbo.ProviderDataTableList;";
+            cleanup.CommandText = "IF OBJECT_ID(N'dbo.ProviderDataTableSum', N'P') IS NOT NULL DROP PROCEDURE dbo.ProviderDataTableSum; IF TYPE_ID(N'dbo.ProviderDataTableList') IS NOT NULL DROP TYPE dbo.ProviderDataTableList;";
             await cleanup.ExecuteNonQueryAsync(ct);
         }
     }
@@ -125,6 +129,8 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
         await cnn.OpenAsync(ct);
 
         await using (var setup = cnn.CreateCommand()) {
+            setup.CommandText = "IF OBJECT_ID(N'dbo.ProviderEmptySum', N'P') IS NOT NULL DROP PROCEDURE dbo.ProviderEmptySum; IF TYPE_ID(N'dbo.ProviderEmptyIntList') IS NOT NULL DROP TYPE dbo.ProviderEmptyIntList;";
+            await setup.ExecuteNonQueryAsync(ct);
             setup.CommandText = "CREATE TYPE dbo.ProviderEmptyIntList AS TABLE (Value INT NOT NULL);";
             await setup.ExecuteNonQueryAsync(ct);
             setup.CommandText = "CREATE PROCEDURE dbo.ProviderEmptySum @ids dbo.ProviderEmptyIntList READONLY AS SELECT SUM(Value) FROM @ids;";
@@ -138,7 +144,7 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
         }
         finally {
             await using var cleanup = cnn.CreateCommand();
-            cleanup.CommandText = "DROP PROCEDURE dbo.ProviderEmptySum; DROP TYPE dbo.ProviderEmptyIntList;";
+            cleanup.CommandText = "IF OBJECT_ID(N'dbo.ProviderEmptySum', N'P') IS NOT NULL DROP PROCEDURE dbo.ProviderEmptySum; IF TYPE_ID(N'dbo.ProviderEmptyIntList') IS NOT NULL DROP TYPE dbo.ProviderEmptyIntList;";
             await cleanup.ExecuteNonQueryAsync(ct);
         }
     }
@@ -150,6 +156,8 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
         await cnn.OpenAsync(ct);
 
         await using (var setup = cnn.CreateCommand()) {
+            setup.CommandText = "IF OBJECT_ID(N'dbo.ProviderLabelSum', N'P') IS NOT NULL DROP PROCEDURE dbo.ProviderLabelSum; IF TYPE_ID(N'dbo.ProviderLabeledIntList') IS NOT NULL DROP TYPE dbo.ProviderLabeledIntList;";
+            await setup.ExecuteNonQueryAsync(ct);
             setup.CommandText = "CREATE TYPE dbo.ProviderLabeledIntList AS TABLE (Value INT NOT NULL);";
             await setup.ExecuteNonQueryAsync(ct);
             setup.CommandText = "CREATE PROCEDURE dbo.ProviderLabelSum @ids dbo.ProviderLabeledIntList READONLY, @label nvarchar(20) AS SELECT Value, @label AS Label FROM @ids;";
@@ -174,7 +182,7 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
         }
         finally {
             await using var cleanup = cnn.CreateCommand();
-            cleanup.CommandText = "DROP PROCEDURE dbo.ProviderLabelSum; DROP TYPE dbo.ProviderLabeledIntList;";
+            cleanup.CommandText = "IF OBJECT_ID(N'dbo.ProviderLabelSum', N'P') IS NOT NULL DROP PROCEDURE dbo.ProviderLabelSum; IF TYPE_ID(N'dbo.ProviderLabeledIntList') IS NOT NULL DROP TYPE dbo.ProviderLabeledIntList;";
             await cleanup.ExecuteNonQueryAsync(ct);
         }
     }
