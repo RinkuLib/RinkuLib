@@ -936,10 +936,10 @@ IEnumerable<Album> albums = cnn.Query<Album>(command);
 // Rinku
 QueryCommand getAlbums = ConnectionQueryExtensions.GetOrCreateCommand(sql);
 List<Album> albums = getAlbums.Query<List<Album>>(cnn, parameters);
-getAlbums.InvalidateParsers();
+getAlbums.InvalidateParsers(parser => parser.Type == typeof(Album));
 ```
 
-`CommandFlags.NoCache` and `InvalidateParsers()` do not perform the same operation. The Rinku call removes learned result parsers after the execution. The SQL string still resolves through its cached `QueryCommand`.
+`CommandFlags.NoCache` and the type-filtered `InvalidateParsers` call do not perform the same operation. The Rinku call removes the learned `Album` result parser after the execution. The SQL string still resolves through its cached `QueryCommand`.
 
 [SQL string cache](../running-queries/sql-string.md) · [Cache control](../customization/caches.md)
 

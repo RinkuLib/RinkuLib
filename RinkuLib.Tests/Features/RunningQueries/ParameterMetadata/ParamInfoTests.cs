@@ -8,7 +8,7 @@ using Xunit;
 
 #pragma warning disable CS0618 // These tests intentionally exercise the legacy System.Data.SqlClient provider.
 
-namespace RinkuLib.Tests.Queries;
+namespace RinkuLib.Tests.Features.RunningQueries.ParameterMetadata;
 
 /// <summary>
 /// A command whose parameters are named rather than read out of its text, the form a stored procedure needs
@@ -76,7 +76,7 @@ public class NamedVariableCommandTests {
 
     [Fact]
     public void A_blank_name_is_rejected() {
-        Refusals.Raises(ErrorCodes.EmptyConditionKey, () => new QueryCommand("dbo.P", ["Id", " "]));
+        Refusals.Raises(ErrorCodes.EmptyConditionKey, () => _ = new QueryCommand("dbo.P", ["Id", " "]));
     }
 
     /// <summary>A procedure taking nothing still needs its name and its reading.</summary>
@@ -107,7 +107,7 @@ public class ParamInfoTests {
         var cmd = Cmd();
         object boxed = 41;
         Assert.True(info.SaveUse("@p", cmd, ref boxed));
-        var p = Assert.IsAssignableFrom<IDbDataParameter>(boxed);
+        var p = Assert.IsType<IDbDataParameter>(boxed, exactMatch: false);
         Assert.Equal(41, p.Value);
 
         object? current = boxed;
@@ -215,7 +215,7 @@ public class ParamInfoTests {
 
         var cmd = Cmd();
         var state = info.SetDefault("@p", cmd);
-        Assert.IsAssignableFrom<IDbDataParameter>(state);
+        Assert.IsType<IDbDataParameter>(state, exactMatch: false);
         Assert.Single(cmd.Parameters);
         Assert.Equal(ParameterDirection.Output, ((IDbDataParameter)cmd.Parameters[0]!).Direction);
     }

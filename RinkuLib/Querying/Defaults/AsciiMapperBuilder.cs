@@ -26,7 +26,7 @@ internal struct AsciiMapperBuilder {
     private readonly MaskedCharComparer CharComparer;
     public readonly static BitCounter NoCounter = new();
     private static readonly Comparer<string>[] LengthComparers = [
-        null!, null!,
+        Comparer<string>.Default, Comparer<string>.Default,
         Comparer<string>.Create((a, b) => MakeKey(a, 3) - MakeKey(b, 3)),
         Comparer<string>.Create((a, b) => MakeKey(a, 7) - MakeKey(b, 7)),
         Comparer<string>.Create((a, b) => MakeKey(a, 15) - MakeKey(b, 15)),
@@ -46,8 +46,9 @@ internal struct AsciiMapperBuilder {
             this.CharIndex = CharIndex;
             this.Mask = Mask;
         }
-        public int Compare(string? a, string? b) 
-            => (ToLower(a![CharIndex]) & Mask) - (ToLower(b![CharIndex]) & Mask);
+        public int Compare(string? a, string? b)
+            => (ToLower((a ?? throw new ArgumentNullException(nameof(a)))[CharIndex]) & Mask)
+                - (ToLower((b ?? throw new ArgumentNullException(nameof(b)))[CharIndex]) & Mask);
     }
     private static MaskedCharComparer? SharedComparer;
     internal AsciiMapperBuilder(Span<string> Keys) {
@@ -61,7 +62,7 @@ internal struct AsciiMapperBuilder {
         var res = FillMapping(int.MaxValue, length, Encode(255, LengthMask, ushort.MaxValue));
         Interlocked.CompareExchange(ref SharedComparer, CharComparer, null);
         ArrayPool<string>.Shared.Return(UsedKeys);
-        UsedKeys = null!;
+        UsedKeys = [];
         uint[] newArr = new uint[MaxReserved];
         Array.Copy(Steps, newArr, MaxReserved);
         ArrayPool<uint>.Shared.Return(Steps);

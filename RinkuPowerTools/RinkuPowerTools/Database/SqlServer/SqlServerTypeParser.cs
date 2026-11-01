@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace RinkuPowerTools;
+namespace RinkuPowerTools.Database.SqlServer;
 
 internal static class SqlServerTypeParser {
     public static ProviderTypeInfo Parse(string rawType) {

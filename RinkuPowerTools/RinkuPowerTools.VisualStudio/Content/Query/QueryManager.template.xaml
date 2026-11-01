@@ -1,26 +1,27 @@
-﻿<DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:styles="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
+              xmlns:colors="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
               xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
               xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
     <StackPanel Orientation="Vertical">
-        <StackPanel Margin="0,0,0,12">
-            <TextBlock Text="Method Name" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <StackPanel Style="{StaticResource FieldGroup}">
+            <Label Content="Method Name" FontWeight="SemiBold"/>
             <TextBox Text="{Binding EditMethodName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-            <TextBlock Text="{Binding MethodNameError}" Foreground="#E11D48" Margin="2,3,0,0" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding MethodNameError}" Style="{StaticResource ValidationMessage}" />
         </StackPanel>
 
-        <StackPanel Margin="0,0,0,12">
-            <TextBlock Text="Command Type" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <StackPanel Style="{StaticResource FieldGroup}">
+            <Label Content="Command Type" FontWeight="SemiBold"/>
             <ComboBox SelectedValue="{Binding EditTargetType, Mode=TwoWay}"
                   SelectedValuePath="Value" DisplayMemberPath="Description"
-                  ItemsSource="{Binding TargetTypeValues}" Height="26"/>
+                  ItemsSource="{Binding TargetTypeValues}"/>
         </StackPanel>
 
-        <StackPanel Margin="0,0,0,12">
-            <TextBlock Text="{Binding TargetLabel}" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <StackPanel Style="{StaticResource FieldGroup}">
+            <Label Content="{Binding TargetLabel}" FontWeight="SemiBold" />
 
-            <TextBox Visibility="{Binding TextModeVisibility}" Text="{Binding EditTarget, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                     MinHeight="100" AcceptsReturn="True" TextWrapping="Wrap" AcceptsTab="True" VerticalScrollBarVisibility="Auto" />
+            <TextBox Visibility="{Binding TextModeVisibility}" Text="{Binding EditTarget, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinLines="4" AcceptsReturn="True" TextWrapping="Wrap" AcceptsTab="True" VerticalScrollBarVisibility="Auto" />
 
             <ComboBox Visibility="{Binding StoredProcedureModeVisibility}"
                     Text="{Binding EditTarget, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -33,58 +34,66 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBox Grid.Column="0" Text="{Binding EditTarget, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                <Button Grid.Column="1" Content="Browse..." Command="{Binding BrowseSQLFileCommand}" Margin="6,0,0,0" Padding="12,0"/>
+                <Button Grid.Column="1" Content="Browse..." Command="{Binding BrowseSQLFileCommand}"/>
             </Grid>
-            <TextBlock Text="{Binding TargetError}" Foreground="#E11D48" Margin="2,3,0,0" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding TargetError}" Style="{StaticResource ValidationMessage}" />
         </StackPanel>
 
-        <StackPanel Margin="0,0,0,12">
-            <TextBlock Text="Result set name (optional)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <StackPanel Style="{StaticResource FieldGroup}">
+            <Label Content="Result set name (optional)" FontWeight="SemiBold"/>
             <TextBox Text="{Binding EditResultSetName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
         </StackPanel>
 
-        <Grid Margin="0,4,0,6">
+        <StackPanel Style="{StaticResource FieldGroup}">
+            <CheckBox Content="Generate before/after hooks" IsChecked="{Binding EditGenerateHooks, Mode=TwoWay}"/>
+        </StackPanel>
+
+        <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Parameter Corrections (Optional)" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            <Button Grid.Column="1" Content="+ Add Parameter Override" Command="{Binding AddParameterCommand}" Height="22" Padding="8,0,8,0"/>
+            <Label Grid.Column="0" Content="Parameter corrections (optional)" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="+ Add correction" Command="{Binding AddParameterCommand}"/>
         </Grid>
 
-        <ItemsControl ItemsSource="{Binding EditParameters}" Margin="0,4,0,0" HorizontalContentAlignment="Stretch">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}" Padding="4,6,4,6" Margin="0,0,0,4">
-                        <Grid>
+        <StackPanel Margin="{StaticResource FooterGap}" Grid.IsSharedSizeScope="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="ParameterType" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="ParameterNullable" />
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="ParameterAction" />
+                </Grid.ColumnDefinitions>
+                <Label Grid.Column="0" Content="Parameter name" FontWeight="SemiBold" />
+                <Label Grid.Column="1" Content="SQL type" FontWeight="SemiBold" Margin="{StaticResource ColumnGap}" />
+                <Label Grid.Column="2" Content="Default" FontWeight="SemiBold" Margin="{StaticResource ColumnGap}" ToolTip="Optional C# default expression, such as null, true, 10 or a quoted string. Leave blank to keep the argument required." />
+                <Label Grid.Column="3" Content="Nullable" FontWeight="SemiBold" HorizontalAlignment="Center" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding EditParameters}" HorizontalContentAlignment="Stretch">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="{StaticResource FieldGroupGap}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="ParameterType" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="ParameterNullable" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="ParameterAction" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                                <TextBlock Text="Parameter Name" FontSize="10" Opacity="0.6" Margin="2,0,0,2"/>
-                                <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Stretch"/>
-                            </StackPanel>
-
-                            <StackPanel Grid.Column="1" Margin="0,0,16,0">
-                                <TextBlock Text="Type Override" FontSize="10" Opacity="0.6" Margin="2,0,0,2"/>
-                                <ComboBox IsEditable="True" IsReadOnly="False" Height="24" VerticalContentAlignment="Center" 
-                                    Text="{Binding Type, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                    ItemsSource="{Binding DataContext.ParameterTypeSuggestions, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
-                            </StackPanel>
-
-                            <CheckBox Grid.Column="2" IsChecked="{Binding IsNullable, Mode=TwoWay}" IsThreeState="True" VerticalAlignment="Center" Margin="0,12,16,0">
-                                <TextBlock Text="Nullable" Margin="6,0,0,0" VerticalAlignment="Center" FontSize="11" Opacity="0.7"/>
-                            </CheckBox>
-
-                            <Button Grid.Column="3" Content="Remove" Padding="8,2,8,2" Height="24" Margin="0,12,0,0" VerticalAlignment="Center" 
-                                    Command="{Binding DataContext.DeleteParameterCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" />
+                            <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" VerticalAlignment="Stretch" />
+                            <ComboBox Grid.Column="1" Margin="{StaticResource ColumnGap}" IsEditable="True" IsReadOnly="False" VerticalContentAlignment="Center" VerticalAlignment="Stretch"
+                                      Text="{Binding Type, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      ItemsSource="{Binding DataContext.ParameterTypeSuggestions, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                            <TextBox Grid.Column="2" Margin="{StaticResource ColumnGap}" Text="{Binding DefaultValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Stretch" ToolTip="C# expression. Blank means required; null means an optional null default." />
+                            <CheckBox Grid.Column="3" IsChecked="{Binding IsNullable, Mode=TwoWay}" IsThreeState="True" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                      ToolTip="Indeterminate uses SQL discovery; checked permits NULL; unchecked disallows NULL." />
+                            <Button Grid.Column="4" Content="Remove" VerticalAlignment="Stretch" Command="{Binding DataContext.DeleteParameterCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" />
                         </Grid>
-                    </Border>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
     </StackPanel>
 </DataTemplate>

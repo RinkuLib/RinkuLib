@@ -1,8 +1,10 @@
-- name: Docs
+- name: RinkuLib
   href: articles/index.md
-- name: API
-  href: api/
-- name: GitHub
-  href: https://github.com/RinkuLib/RinkuLib
+- name: CodeGen
+  href: articles/codegen/index.md
 - name: NuGet
   href: https://www.nuget.org/packages/Rinku
+- name: GitHub
+  href: https://github.com/RinkuLib/RinkuLib
+- name: API
+  href: api/index.md

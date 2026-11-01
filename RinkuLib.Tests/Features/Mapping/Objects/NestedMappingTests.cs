@@ -4,7 +4,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Objects;
 
 /// <summary>
 /// Complex members map from prefixed columns (<c>ContentsWeight</c> fills <c>Contents.Weight</c>),
@@ -231,7 +231,8 @@ public class NestedMappingTests {
 
 public record struct Parcel([AbortOnNull] int TrackingId, double Weight) : IDbReadable;
 public class RoutingLabel : IDbReadable {
-    [NotNull] public string ServiceLevel { get; set; } = null!;
+    [NotNull] 
+        public string ServiceLevel { get; set; } = null!;
     public string? Notes { get; set; }
 }
 public class Delivery(int shipmentId, Parcel? contents, RoutingLabel routing) : IDbReadable {
@@ -248,7 +249,6 @@ public record class ChainMiddleNullable(int ID, ChainBottom? Bottom) : IDbReadab
 public record class ChainTopCollapsing(int ID, ChainMiddleCollapsing Middle) : IDbReadable;
 public record class ChainMiddleCollapsing(int ID, [AbortOnNull] ChainBottom Bottom) : IDbReadable;
 public record struct ChainBottom([AbortOnNull] int ID, string Name) : IDbReadable;
-
 public enum Money { CAD = 1, EUR = 2, GBP = 3 }
 public record struct Cost<T>([AbortOnNull] T Amount, Money Currency) : IDbReadable where T : struct;
 [method: CanCompleteWithMembers]

@@ -4,7 +4,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Objects;
 
 /// <summary>
 /// Classes and records map by name: constructor parameters first, settable members after, with
@@ -94,7 +94,8 @@ public class ObjectMappingTests {
 
     [Fact]
     public void Schema_can_come_from_the_type_itself() {
-        var parser = TypeParser.GetTypeParser<AccountSchema, AccountSchema>(out var cols);
+        var cols = SchemaExtractor.FromType(typeof(AccountSchema));
+        var parser = TypeParser.GetTypeParser<AccountSchema>(cols);
         Assert.Equal(7, cols.Length);
         using var reader = Rows.Reader(cols, [2, "A", "a@b.c", DBNull.Value, DBNull.Value, DBNull.Value, false]);
         reader.Read();
@@ -182,7 +183,8 @@ public record struct UserWithDefault(int Id, string Name, int Code = 0);
 public record struct UserWithCustomDefault(int Id, string Name, int Code = -1);
 public class GuardedLabel : IDbReadable {
     public int Id { get; set; }
-    [NotNull] public string Label { get; set; } = null!;
+    [NotNull] 
+        public string Label { get; set; } = null!;
 }
 public class FieldBag {
     public int Id;

@@ -1,12 +1,12 @@
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace RinkuLib.Tests.Documentation;
+namespace RinkuLib.Tests.Features.Documentation;
 
-public class MarkdownDocumentationStructureTests {
-    static readonly Regex MarkdownLink = new(@"\[[^\]]+\]\(([^)]+)\)");
-    static readonly Regex FrontMatter = new(@"\A---\r?\n(?<body>.*?)\r?\n---(?:\r?\n|\z)", RegexOptions.Singleline);
-    static readonly Regex Word = new(@"[\p{L}\p{N}][\p{L}\p{N}'’-]*");
+public partial class MarkdownDocumentationStructureTests {
+    static readonly Regex MarkdownLink = MyRegex();
+    static readonly Regex FrontMatter = FrontMatterRegex();
+    static readonly Regex Word = WordRegex();
 
     [Fact]
     public void Pages_and_navigation_reference_existing_files() {
@@ -18,7 +18,7 @@ public class MarkdownDocumentationStructureTests {
             string relative = Path.GetRelativePath(docsRoot, file);
             if (TryGetRedirectUrl(content, out string? redirectUrl)) {
                 string path = redirectUrl.Split('#', 2)[0];
-                if (!Regex.IsMatch(path, @"^https?://")) {
+                if (!HttpUrlRegex().IsMatch(path)) {
                     if (path.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
                         path = Path.ChangeExtension(path, ".md");
                     else if (path.EndsWith('/'))
@@ -29,14 +29,14 @@ public class MarkdownDocumentationStructureTests {
                 }
             }
             else {
-                int titles = Regex.Matches(content, @"(?m)^# (?!#).+$").Count;
+                int titles = TitleRegex().Count(content);
                 if (titles != 1)
                     failures.Add($"{relative} must contain exactly one level-one heading; found {titles}.");
             }
 
             foreach (Match match in MarkdownLink.Matches(content)) {
                 string link = match.Groups[1].Value.Trim();
-                if (Regex.IsMatch(link, @"^(https?://|mailto:|xref:|#)"))
+                if (ExternalLinkRegex().IsMatch(link))
                     continue;
                 string path = link.Split('#', 2)[0];
                 if (path.Length == 0)
@@ -49,11 +49,11 @@ public class MarkdownDocumentationStructureTests {
 
         foreach (string toc in Directory.EnumerateFiles(docsRoot, "toc.yml", SearchOption.AllDirectories)) {
             foreach (string line in File.ReadLines(toc)) {
-                Match match = Regex.Match(line, @"^\s*href:\s*(.+?)\s*$");
+                Match match = TocHrefRegex().Match(line);
                 if (!match.Success)
                     continue;
                 string href = match.Groups[1].Value.Trim('"', '\'');
-                if (Regex.IsMatch(href, @"^(https?://|#)"))
+                if (TocExternalLinkRegex().IsMatch(href))
                     continue;
                 string path = href.Split('#', 2)[0];
                 string target = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(toc)!, path));
@@ -100,7 +100,7 @@ public class MarkdownDocumentationStructureTests {
                     paragraph.Clear();
                     return;
                 }
-                int words = Word.Matches(text).Count;
+                int words = Word.Count(text);
                 if (words <= 3 || words > 65)
                     failures.Add($"{Path.GetRelativePath(docsRoot, file)}:{start} [{words} words] {text}");
                 paragraph.Clear();
@@ -115,7 +115,7 @@ public class MarkdownDocumentationStructureTests {
                 }
                 if (inFence)
                     continue;
-                if (string.IsNullOrWhiteSpace(line) || Regex.IsMatch(line, @"^\s*(#|[-*+] |\d+\. |\||<)")) {
+                if (string.IsNullOrWhiteSpace(line) || ProseBoundaryRegex().IsMatch(line)) {
                     CheckParagraph();
                     continue;
                 }
@@ -135,7 +135,7 @@ public class MarkdownDocumentationStructureTests {
             remaining = remaining[4..].Trim();
         remaining = remaining.TrimEnd('.');
         return remaining.Split(" · ", StringSplitOptions.RemoveEmptyEntries)
-            .All(part => part.StartsWith("[") && part.Contains("](", StringComparison.Ordinal) && part.EndsWith(")"));
+            .All(part => part.StartsWith('[') && part.Contains("](", StringComparison.Ordinal) && part.EndsWith(')'));
     }
 
     [Fact]
@@ -174,7 +174,7 @@ public class MarkdownDocumentationStructureTests {
     static bool TryGetRedirectUrl(string content, out string redirectUrl) {
         Match frontMatter = FrontMatter.Match(content);
         if (frontMatter.Success) {
-            Match redirect = Regex.Match(frontMatter.Groups["body"].Value, @"(?m)^redirect_url:\s*(.+?)\s*$");
+            Match redirect = RedirectUrlRegex().Match(frontMatter.Groups["body"].Value);
             if (redirect.Success) {
                 redirectUrl = redirect.Groups[1].Value.Trim('"', '\'');
                 return true;
@@ -183,4 +183,34 @@ public class MarkdownDocumentationStructureTests {
         redirectUrl = "";
         return false;
     }
+
+    [GeneratedRegex(@"\[[^\]]+\]\(([^)]+)\)")]
+    private static partial Regex MyRegex();
+
+    [GeneratedRegex(@"\A---\r?\n(?<body>.*?)\r?\n---(?:\r?\n|\z)", RegexOptions.Singleline)]
+    private static partial Regex FrontMatterRegex();
+
+    [GeneratedRegex(@"[\p{L}\p{N}][\p{L}\p{N}'’-]*")]
+    private static partial Regex WordRegex();
+
+    [GeneratedRegex(@"^https?://")]
+    private static partial Regex HttpUrlRegex();
+
+    [GeneratedRegex(@"(?m)^# (?!#).+$")]
+    private static partial Regex TitleRegex();
+
+    [GeneratedRegex(@"^(https?://|mailto:|xref:|#)")]
+    private static partial Regex ExternalLinkRegex();
+
+    [GeneratedRegex(@"^\s*href:\s*(.+?)\s*$")]
+    private static partial Regex TocHrefRegex();
+
+    [GeneratedRegex(@"^(https?://|#)")]
+    private static partial Regex TocExternalLinkRegex();
+
+    [GeneratedRegex(@"^\s*(#|[-*+] |\d+\. |\||<)")]
+    private static partial Regex ProseBoundaryRegex();
+
+    [GeneratedRegex(@"(?m)^redirect_url:\s*(.+?)\s*$")]
+    private static partial Regex RedirectUrlRegex();
 }

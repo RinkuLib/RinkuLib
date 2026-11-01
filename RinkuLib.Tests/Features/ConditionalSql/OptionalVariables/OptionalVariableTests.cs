@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.OptionalVariables;
 
 /// <summary>
 /// The <c>?@Var</c> marker makes a variable optional: its footprint drops out of the SQL when no value

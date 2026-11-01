@@ -16,21 +16,18 @@ public sealed class CachedTypeParser : IDisposable {
     private readonly record struct ParserKey(Type Type, INullColHandler NullColHandler);
 
     private sealed class CacheBridge<T>(CachedTypeParser owner, ICache? userCache = null) : ICacheGivingParser<T> {
-        private readonly CachedTypeParser _owner = owner;
-        private readonly ICache? _userCache = userCache;
-
-        public CommandBehavior Behavior => _owner.GetBehavior<T>();
+        public CommandBehavior Behavior => owner.HasSchema ? owner.Get<T>().Behavior : CommandBehavior.SingleResult;
 
         public ITypeParser<T> UpdateCache(IDbCommand cmd, DbDataReader reader) {
-            var parser = _owner.Learn<T>(reader);
-            _userCache?.UpdateCache(cmd);
+            var parser = (ITypeParser<T>)owner.Learn(typeof(T), reader);
+            userCache?.UpdateCache(cmd);
             return parser;
         }
 
         public async ValueTask<ITypeParser<T>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default) {
-            var parser = _owner.Learn<T>(reader);
-            if (_userCache is not null)
-                await _userCache.UpdateCacheAsync(cmd, ct).ConfigureAwait(false);
+            var parser = (ITypeParser<T>)owner.Learn(typeof(T), reader);
+            if (userCache is not null)
+                await userCache.UpdateCacheAsync(cmd, ct).ConfigureAwait(false);
             return parser;
         }
     }
@@ -78,28 +75,7 @@ public sealed class CachedTypeParser : IDisposable {
     public static CachedTypeParser From<TSchema>() => new(TypeSchema<TSchema>.Schema);
 
     /// <summary>Gets the parser for <typeparamref name="T"/> over this cache's fixed schema.</summary>
-    public ITypeParser<T> Get<T>(INullColHandler? nullColHandler = null) {
-        var schema = Volatile.Read(ref _schema)
-            ?? throw new InvalidOperationException("The schema is not known until this CachedTypeParser runs its first query.");
-        nullColHandler ??= TypeParser.GetDefaultNullColHandler<T>();
-        var key = new ParserKey(typeof(T), nullColHandler);
-        lock (TypeParser.TypeParserMakers) {
-            lock (this) {
-                if (Volatile.Read(ref _disposed) != 0)
-                    throw new ObjectDisposedException(nameof(CachedTypeParser));
-                if (_parsers.TryGetValue(key, out var existing))
-                    return (ITypeParser<T>)existing;
-
-                var parser = TypeParser.GetTypeParser<T>(schema, nullColHandler);
-                if (!_subscribedToParserDisposing) {
-                    TypeParser.ParserDisposing += OnParserDisposing;
-                    _subscribedToParserDisposing = true;
-                }
-                _parsers.Add(key, parser);
-                return parser;
-            }
-        }
-    }
+    public ITypeParser<T> Get<T>(INullColHandler? nullColHandler = null) => (ITypeParser<T>)Get(typeof(T), nullColHandler);
 
     /// <summary>Gets the parser for a runtime result type over this cache's fixed schema.</summary>
     public ITypeParser Get(Type type, INullColHandler? nullColHandler = null) {
@@ -110,8 +86,7 @@ public sealed class CachedTypeParser : IDisposable {
         var key = new ParserKey(type, nullColHandler);
         lock (TypeParser.TypeParserMakers) {
             lock (this) {
-                if (Volatile.Read(ref _disposed) != 0)
-                    throw new ObjectDisposedException(nameof(CachedTypeParser));
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, nameof(CachedTypeParser));
                 if (_parsers.TryGetValue(key, out var existing))
                     return existing;
 
@@ -168,62 +143,45 @@ public sealed class CachedTypeParser : IDisposable {
             ? cmd.StreamQueryAsync(Get<T>(), disposeCommand: disposeCommand, ct: ct)
             : cmd.StreamQueryAsync(new CacheBridge<T>(this), disposeCommand, ct);
 
-    private CommandBehavior GetBehavior<T>() => HasSchema ? Get<T>().Behavior : CommandBehavior.SingleResult;
-
-    private ITypeParser<T> Learn<T>(DbDataReader reader) {
-        if (!HasSchema) {
-            var discoveredSchema = reader.GetColumnsFast();
-            lock (this) {
-                if (Volatile.Read(ref _disposed) != 0)
-                    throw new ObjectDisposedException(nameof(CachedTypeParser));
-                _schema ??= [.. discoveredSchema];
-            }
-        }
-        return Get<T>();
-    }
     private ITypeParser Learn(Type type, DbDataReader reader) {
         if (!HasSchema) {
             var discoveredSchema = reader.GetColumnsFast();
             lock (this) {
-                if (Volatile.Read(ref _disposed) != 0)
-                    throw new ObjectDisposedException(nameof(CachedTypeParser));
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, nameof(CachedTypeParser));
                 _schema ??= [.. discoveredSchema];
             }
         }
         return Get(type);
     }
 
-    /// <summary>Forgets the parser for <typeparamref name="T"/> held by this cache.</summary>
-    /// <returns><see langword="true"/> when a parser was removed.</returns>
-    public bool Invalidate<T>(INullColHandler? nullColHandler = null) {
-        nullColHandler ??= TypeParser.GetDefaultNullColHandler<T>();
-        ITypeParser? parser;
+    /// <summary>Forgets the learned schema and every result parser held by this cache.</summary>
+    /// <remarks>The next query learns a new schema from its reader.</remarks>
+    /// <returns><see langword="true"/> when this cache held a schema or parser.</returns>
+    public bool Invalidate() {
+        List<ITypeParser> parsers;
+        bool hadState;
         lock (this) {
-            if (!_parsers.Remove(new(typeof(T), nullColHandler), out parser))
-                return false;
-            UnsubscribeWhenEmpty();
+            hadState = _schema is not null || _parsers.Count != 0;
+            parsers = DetachParsersNoLock();
+            Volatile.Write(ref _schema, null);
         }
-        TypeParser.TryDisposeParser(parser, ParserInvalidationMode.CheckUsage);
-        return true;
+        ReleaseParsers(parsers);
+        return hadState;
     }
 
-    /// <summary>Forgets every parser held by this cache.</summary>
-    /// <returns>The number of distinct parsers removed.</returns>
-    public int Invalidate() {
-        List<ITypeParser> parsers;
-        lock (this) {
-            if (_parsers.Count == 0)
-                return 0;
-            parsers = [];
-            foreach (var parser in _parsers.Values)
-                if (!parsers.Any(held => ReferenceEquals(held, parser)))
-                    parsers.Add(parser);
-            _parsers.Clear();
-            UnsubscribeWhenEmpty();
-        }
+    private List<ITypeParser> DetachParsersNoLock() {
+        var parsers = new List<ITypeParser>(_parsers.Count);
+        foreach (var parser in _parsers.Values)
+            if (!parsers.Any(held => ReferenceEquals(held, parser)))
+                parsers.Add(parser);
+        _parsers.Clear();
+        UnsubscribeWhenEmpty();
+        return parsers;
+    }
+
+    private static void ReleaseParsers(List<ITypeParser> parsers) {
         for (int i = 0; i < parsers.Count; i++)
             TypeParser.TryDisposeParser(parsers[i], ParserInvalidationMode.CheckUsage);
-        return parsers.Count;
     }
 
     private void OnParserDisposing(object? sender, ParserDisposingEventArgs args) {
@@ -235,9 +193,8 @@ public sealed class CachedTypeParser : IDisposable {
                 args.Cancel = true;
                 return;
             }
-            foreach (var key in _parsers.Where(pair => ReferenceEquals(pair.Value, args.Parser)).Select(pair => pair.Key).ToArray())
-                _parsers.Remove(key);
-            UnsubscribeWhenEmpty();
+            DetachParsersNoLock();
+            Volatile.Write(ref _schema, null);
         }
     }
 

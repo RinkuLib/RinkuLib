@@ -6,7 +6,7 @@ using Rinku;
 using Rinku.Querying.Parameters;
 using Xunit;
 
-namespace Rinku.Querying.Tests;
+namespace RinkuLib.Tests.Parameters;
 
 public sealed class MethodCallerTests {
     private interface IEmployeeArgs {
@@ -21,7 +21,6 @@ public sealed class MethodCallerTests {
     }
 
     private static string Format(int Id, string Name) => $"{Id}:{Name}";
-
     [Fact]
     public void Caller_maps_against_the_delegate_source_type_exactly() {
         MethodInfo method = typeof(MethodCallerTests).GetMethod(nameof(Format), BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -42,7 +41,6 @@ public sealed class MethodCallerTests {
     }
 
     private static Task<int> WithoutCancellation(int Id) => Task.FromResult(Id);
-
     [Fact]
     public async Task Caller_argument_can_be_unused_when_target_method_does_not_want_it() {
         MethodInfo method = typeof(MethodCallerTests).GetMethod(nameof(WithoutCancellation), BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -51,7 +49,6 @@ public sealed class MethodCallerTests {
     }
 
     private static int AmbiguousInts(int UserId, int CompanyId) => UserId * 100 + CompanyId;
-
     [Fact]
     public void Type_only_caller_binding_throws_when_more_than_one_target_parameter_matches() {
         MethodInfo method = typeof(MethodCallerTests).GetMethod(nameof(AmbiguousInts), BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -60,7 +57,6 @@ public sealed class MethodCallerTests {
 
     private interface ICompanyArgs { int CompanyId { get; } }
     private sealed class CompanyArgs : ICompanyArgs { public int CompanyId { get; init; } }
-
     [Fact]
     public void Caller_parameter_can_select_its_target_by_name() {
         MethodInfo method = typeof(MethodCallerTests).GetMethod(nameof(AmbiguousInts), BindingFlags.Static | BindingFlags.NonPublic)!;

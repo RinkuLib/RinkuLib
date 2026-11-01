@@ -1,10 +1,15 @@
 using System.Data;
 using System.Data.Common;
+#if NET9_0_OR_GREATER
+using GateLock = System.Threading.Lock;
+#else
+using GateLock = System.Object;
+#endif
 
 namespace Rinku.Querying.Defaults;
 
 internal static class DirectionalParamInfoCache {
-    private static readonly object Gate = new();
+    private static readonly GateLock Gate = new();
     private readonly record struct Key(byte Kind, ParameterDirection Direction, DbType Type,
         int Size, byte Precision, byte Scale, bool HasDefault);
     private readonly record struct Entry(Key Key, DbParamInfo Info);

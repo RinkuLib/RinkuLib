@@ -3,7 +3,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Names;
 
 /// <summary>
 /// Naming attributes widen or narrow how a slot finds its column: <c>[Alt]</c> adds names,

@@ -1,11 +1,6 @@
 # Tracking lists
 
-```csharp
-public record Album(int Id, string Title);
-
-List<Album> existingAlbums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
-static readonly QueryCommand DeleteAlbum = new("DELETE FROM albums WHERE AlbumId = @Id");
-```
+The examples use the `existingAlbums` and `ITrackingItem<Album>` setup from the [tracking overview](index.md).
 
 ## Structural tracking with a concrete type
 
@@ -24,46 +19,50 @@ Console.WriteLine(albums.RemovedCount);
 ## Structural and member tracking together
 
 ```csharp
-TrackingList<IRuntimeTrackingItem<Album>> albums = existingAlbums.ToTrackingList();
+TrackingList<ITrackingItem<Album>> editableAlbums = existingAlbums.ToTrackingList();
 
-albums[0].Set(nameof(Album.Title), "Kind of Blue");
+editableAlbums[0].Set(nameof(Album.Title), "Kind of Blue");
 ```
 
-Member changes belong to the items. Structural changes belong to the list.
+Member changes belong to the items. Structural changes belong to the list, and the list exposes both as pending work.
+
+`RevertChanges()` discards pending item edits, unconfirmed additions and pending removals. It does not undo confirmed changes or restore an earlier ordering: surviving items keep their current order, and restored removals are appended. Revert uses the list's own state; an external original collection or bind-back callback is not required.
 
 ```csharp
-bool structural = albums.HasChanges;
-bool memberEdit = albums[0].HasChanges();
+bool pending = editableAlbums.HasChanges;
+
+foreach ((ITrackingItem<Album> item, bool isInsert) in editableAlbums.GetChanged())
+    Console.WriteLine(isInsert ? "Insert" : "Update");
 ```
 
 ## AddNew
 
 ```csharp
-IRuntimeTrackingItem<Album> item = albums.AddNew();
+ITrackingItem<Album> item = editableAlbums.AddNew();
 item.Set(nameof(Album.Title), "New album");
 
-Console.WriteLine(albums.IsAddedAt(albums.Count - 1));
-```
+Console.WriteLine(editableAlbums.IsAddedAt(editableAlbums.Count - 1));
 
-```csharp
-if (albums.CanAddNew)
-    albums.AddNew();
+if (editableAlbums.CanAddNew)
+    editableAlbums.AddNew();
 ```
 
 An already created item can also be inserted.
 
 ```csharp
-albums.Add(edit);
-albums.Insert(0, edit);
+ITrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(new Album(15, "Edit"));
+editableAlbums.Add(edit);
+// Or insert it at a specific index instead:
+// editableAlbums.Insert(0, edit);
 ```
 
 ## Remove
 
 ```csharp
-IRuntimeTrackingItem<Album> removed = albums[0];
-albums.RemoveAt(0);
+ITrackingItem<Album> removed = editableAlbums[0];
+editableAlbums.RemoveAt(0);
 
-Console.WriteLine(albums.RemovedCount);
+Console.WriteLine(editableAlbums.RemovedCount);
 ```
 
 An accepted removed item remains in `Removed` until deletion is confirmed. Removing an item that is still a new addition cancels that addition instead.
@@ -71,18 +70,17 @@ An accepted removed item remains in `Removed` until deletion is confirmed. Remov
 ## Restore
 
 ```csharp
-IRuntimeTrackingItem<Album> removed = albums.Removed[0];
-albums.Restore(removed);
-```
+ITrackingItem<Album> removed = editableAlbums.Removed[0];
+editableAlbums.RestoreAt(removedIndex: 0, index: 1);
 
-```csharp
-albums.RestoreAt(0, 2);
+// Or restore by item and append it to the active list.
+// editableAlbums.Restore(removed);
 ```
 
 ## Move
 
 ```csharp
-albums.Move(0, 3);
+editableAlbums.Move(0, 1);
 ```
 
 Moving changes active order without creating an addition or removal.
@@ -90,60 +88,72 @@ Moving changes active order without creating an addition or removal.
 ## Replace
 
 ```csharp
-albums[2] = replacement;
+Album replacement = new(14, "Replacement");
+ITrackingItem<Album> replacementItem = RuntimeTracking.Default<Album>().Create(replacement);
+editableAlbums[0] = replacementItem;
 ```
 
-The configured comparer determines whether the replacement represents the same item.
-
-```csharp
-TrackingList<AlbumRow> rows = new(existingRows, comparer: EqualityComparer<AlbumRow>.Default);
-```
+The list comparer determines whether the replacement is equivalent to the previous item. The default comparer compares the item objects; provide a comparer when logical identity should use a different rule.
 
 ## Enumerate structural changes
 
 ```csharp
-foreach (IRuntimeTrackingItem<Album> item in albums.Added)
+foreach (ITrackingItem<Album> item in editableAlbums.Added)
     Console.WriteLine(item.Get<string>(nameof(Album.Title)));
 
-foreach (IRuntimeTrackingItem<Album> item in albums.Removed)
+foreach (ITrackingItem<Album> item in editableAlbums.Removed)
     Console.WriteLine(item.Get<int>(nameof(Album.Id)));
 ```
 
 ## Confirm one active operation
 
 ```csharp
-bool confirmed = albums.ConfirmAt(0);
+bool confirmed = editableAlbums.ConfirmAt(0);
 ```
 
 The specific operations are also exposed.
 
 ```csharp
-albums.ConfirmAddedAt(0);
-albums.ConfirmEditAt(1);
+editableAlbums.ConfirmAddedAt(0);
+editableAlbums.ConfirmEditAt(1);
 ```
 
 ## Confirm a deletion
 
 ```csharp
-IRuntimeTrackingItem<Album> removed = albums.Removed[0];
-
-DeleteAlbum.Execute(cnn, removed);
-albums.ConfirmDelete(removed);
+ITrackingItem<Album> removed = editableAlbums.Removed[0];
+editableAlbums.ConfirmDelete(removed);
 ```
 
 ## Confirm current operations
 
 ```csharp
-bool allConfirmed = albums.ConfirmChanges();
+bool allConfirmed = editableAlbums.ConfirmChanges();
 ```
 
 [Persistence](persistence.md)
 
-## Concrete item type
+## Item confirmation capabilities
+
+`TrackingList<T>` confirms item-owned state directly when `T` implements the corresponding capability.
 
 ```csharp
-IEnumerable<AlbumRow> rows = existingRows;
-TrackingList<AlbumRow> tracked = new(rows);
+public sealed class AlbumRow : ICanInsert, ICanUpdate, ICanDelete
+{
+    public bool ConfirmInsert() => true;
+    public bool ConfirmUpdate() => true;
+    public bool ConfirmDelete() => true;
+}
 ```
 
-Application-defined list behavior can be supplied through <xref:Rinku.Tracking.ITrackingListContext`1>.
+When a capability is absent, confirmation succeeds without an item-level action. `IEditable` supplies insertion and update confirmation. Deletion remains independent through `ICanDelete`.
+
+## Confirmation subscriptions
+
+Successful confirmations can be observed independently of item confirmation.
+
+```csharp
+using IDisposable subscription = editableAlbums.SubscribeConfirmations(onAdded: (index, item) => Console.WriteLine($"Added at {index}"), onUpdated: (index, item) => Console.WriteLine($"Updated at {index}"), onDeleted: item => Console.WriteLine("Deleted"));
+```
+
+Added and updated callbacks receive the active index. Deleted callbacks receive only the deleted item. Callbacks run after the operation is confirmed.

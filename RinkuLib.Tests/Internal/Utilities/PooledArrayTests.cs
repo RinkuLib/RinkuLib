@@ -1,7 +1,7 @@
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Utilities;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// <see cref="PooledArray{T}"/> is a growable buffer over pool-rented storage.

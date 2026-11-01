@@ -8,7 +8,7 @@ using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.DbParsing;
+namespace RinkuLib.Tests.Internal.Parsing;
 
 /// <summary>
 /// The two properties the multi-row emit stands on: an emitted method on a state struct reaches non-public
@@ -16,7 +16,6 @@ namespace RinkuLib.Tests.DbParsing;
 /// because the state is a struct on the stack.
 /// </summary>
 public class MultiRowEmitInternalsTests {
-
     public sealed class PrivateSettable {
         private PrivateSettable() { }
         public string City { get; private set; } = "";
@@ -101,7 +100,8 @@ public class MultiRowEmitInternalsTests {
     [Fact]
     public void A_scalar_multi_row_parse_allocates_nothing_for_the_machinery() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
-        var parser = Assert.IsType<DefaultTypeParserMaker>(TypeParser.DefaultTypeParserMaker).ForceMultiRow<int>(TypeParser.GetDefaultNullColHandler<int>(), cols);
+        Assert.IsType<DefaultTypeParserMaker>(TypeParser.DefaultTypeParserMaker);
+        var parser = DefaultTypeParserMaker.ForceMultiRow<int>(TypeParser.GetDefaultNullColHandler<int>(), cols);
         var reader = new EndlessIntReader();
 
         for (int i = 0; i < 1000; i++)

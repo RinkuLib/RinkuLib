@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 
 namespace Rinku.Tracking;
 
@@ -9,8 +9,13 @@ public interface IOriginal<TOriginal>
     bool TryGetOriginal([MaybeNullWhen(false)] out TOriginal original);
 }
 
+/// <summary>Supplies an accepted original after persistence succeeds.</summary>
+public interface IOriginalWriter<in TOriginal> {
+    void SetOriginal(TOriginal original);
+}
+
 /// <summary>Controls an editable snapshot.</summary>
-public interface IEditable
+public interface IEditable : ICanInsert, ICanUpdate
 {
     /// <summary>Gets whether an edit snapshot exists.</summary>
     bool IsEditing { get; }
@@ -20,4 +25,7 @@ public interface IEditable
     bool ConfirmEdit();
     /// <summary>Discards the current edit snapshot.</summary>
     bool CancelEdit();
+
+    bool ICanInsert.ConfirmInsert() => ConfirmEdit();
+    bool ICanUpdate.ConfirmUpdate() => ConfirmEdit();
 }

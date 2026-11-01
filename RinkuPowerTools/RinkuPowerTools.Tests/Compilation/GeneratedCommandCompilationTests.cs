@@ -13,7 +13,7 @@ public class GeneratedCommandCompilationTests
     {
         using var temp = new TempDirectory();
         const string key = "Sql/GetAlbums.sql";
-        var generated = await GeneratorTestHelper.GenerateAsync(
+        var (_, commandCode, supportCode) = await GeneratorTestHelper.GenerateAsync(
             temp.Path,
             new QuerySetting
             {
@@ -23,7 +23,7 @@ public class GeneratedCommandCompilationTests
             },
             new DiscoveredSchema("SELECT AlbumId, Title FROM albums", [], []));
 
-        Assembly assembly = GeneratedAssemblyCompiler.Compile(generated.SupportCode, generated.CommandCode);
+        Assembly assembly = GeneratedAssemblyCompiler.Compile(supportCode, commandCode);
         Type supportType = assembly.GetType("TestApp.RinkuPowerTools")
             ?? throw new InvalidOperationException("Generated RinkuPowerTools type was not found.");
         object? fieldValue = supportType.GetField("SqlFiles", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);

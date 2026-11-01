@@ -28,8 +28,12 @@ public sealed class RuntimeTrackingTypeDefinition<TOriginal>
     public IReadOnlyList<IRuntimeTrackingTypeEmitter<TOriginal>> TypeEmitters => _typeEmitters;
     /// <summary>Gets the generated method definitions.</summary>
     public IReadOnlyList<RuntimeTrackingMethodDefinition<TOriginal>> Methods => _methods;
-    /// <summary>Gets or sets the factory for provisional original values.</summary>
-    public Func<TOriginal>? NewOriginalFactory { get; set; }
+    /// <summary>Gets or sets the typed initializer for a new edit.</summary>
+    public Delegate? NewItemInitializer { get; set; }
+    public Action<ITrackingItem<TOriginal>>? ConfirmedPolicy { get; set; }
+    public Action<ITrackingItem<TOriginal>>? RevertedPolicy { get; set; }
+    public Func<ITrackingItem<TOriginal>, TOriginal>? InsertConfirmation { get; set; }
+    public Func<ITrackingItem<TOriginal>, TOriginal>? UpdateConfirmation { get; set; }
     /// <summary>Gets or sets the original storage emitter.</summary>
     public IRuntimeOriginalStorageEmitter<TOriginal> OriginalStorage { get; set; }
 
@@ -117,7 +121,7 @@ public sealed class RuntimeTrackingTypeDefinition<TOriginal>
 public sealed class RuntimeTrackingMemberDefinition<TOriginal>
 {
     private readonly List<RuntimeTrackingMetadataSource> _metadataSources = [];
-    private readonly List<RuntimeInterfacePropertyRequirement> _requirements = [];
+    private readonly List<PropertyInfo> _requirements = [];
 
     internal RuntimeTrackingMemberDefinition(string name, Type valueType)
     {
@@ -139,7 +143,8 @@ public sealed class RuntimeTrackingMemberDefinition<TOriginal>
     public RuntimeTrackingMemberEmitter<TOriginal>? Emitter { get; set; }
     /// <summary>Gets the metadata sources for the generated property.</summary>
     public IReadOnlyList<RuntimeTrackingMetadataSource> MetadataSources => _metadataSources;
-    internal IReadOnlyList<RuntimeInterfacePropertyRequirement> Requirements => _requirements;
+    internal IReadOnlyList<PropertyInfo> Requirements => _requirements;
+    internal Delegate? CreateOnEdit { get; set; }
 
     /// <summary>Adds a property metadata source.</summary>
     public void AddMetadataSource(MemberInfo source, bool inheritedOnly = false)
@@ -153,7 +158,7 @@ public sealed class RuntimeTrackingMemberDefinition<TOriginal>
     {
         if (property.PropertyType != ValueType)
             throw new InvalidOperationException($"Interface property {property} requires {property.PropertyType}, while runtime member '{Name}' is {ValueType}.");
-        _requirements.Add(new RuntimeInterfacePropertyRequirement(property));
+        _requirements.Add(property);
     }
 
     internal void Validate()
@@ -161,14 +166,17 @@ public sealed class RuntimeTrackingMemberDefinition<TOriginal>
         RuntimeTrackingMemberEmitter<TOriginal> emitter = Emitter
             ?? throw new InvalidOperationException($"Runtime member '{Name}' ({ValueType}) has no emitter. Configure how it is read/stored before generation.");
 
+        if (CreateOnEdit is not null && (ValueType.IsValueType || !emitter.CanWrite || emitter.UsesSnapshot))
+            throw new InvalidOperationException($"Member '{Name}' requires writable direct reference storage for creation on edit.");
+
         if (!emitter.CanRead)
             throw new InvalidOperationException($"Runtime member '{Name}' has no readable implementation.");
 
         for (int i = 0; i < _requirements.Count; i++)
         {
-            RuntimeInterfacePropertyRequirement requirement = _requirements[i];
-            if (requirement.NeedsSetter && !emitter.CanWrite)
-                throw new InvalidOperationException($"Runtime member '{Name}' cannot satisfy setter {requirement.Property.DeclaringType}.{requirement.Property.Name}.");
+            PropertyInfo requirement = _requirements[i];
+            if (requirement.SetMethod is not null && !emitter.CanWrite)
+                throw new InvalidOperationException($"Runtime member '{Name}' cannot satisfy setter {requirement.DeclaringType}.{requirement.Name}.");
         }
     }
 }
@@ -188,13 +196,6 @@ public readonly record struct RuntimeTrackingMetadataSource
     /// <summary>Gets whether only inherited attributes apply.</summary>
     public bool InheritedOnly { get; }
 }
-
-internal readonly record struct RuntimeInterfacePropertyRequirement(PropertyInfo Property)
-{
-    internal bool NeedsGetter => Property.GetMethod is not null;
-    internal bool NeedsSetter => Property.SetMethod is not null;
-}
-
 
 /// <summary>Describes one generated method.</summary>
 public sealed class RuntimeTrackingMethodDefinition<TOriginal>

@@ -11,7 +11,6 @@ namespace RinkuLib.Tests.Infrastructure;
 public sealed class SqliteDb : IDisposable {
     private readonly string _path;
     public readonly string ConnectionString;
-
     static SqliteDb() => SQLitePCL.Batteries.Init();
 
     public SqliteDb() {
@@ -44,7 +43,6 @@ public sealed class SqliteDb : IDisposable {
 
     /// <summary>A closed connection to the database.</summary>
     public SqliteConnection GetConnection() => new(ConnectionString);
-
     /// <summary>An open connection to the database.</summary>
     public SqliteConnection Open() {
         var cnn = GetConnection();

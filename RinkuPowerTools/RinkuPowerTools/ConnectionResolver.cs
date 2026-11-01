@@ -23,8 +23,8 @@ public static class ConnectionResolver {
             ConnectionSourceType.MsBuildProject => await ParseMsBuildProjectAsync(GetAbsoluteFilePath(), extractionPath, ct),
             ConnectionSourceType.NetUserSecrets => await ParseNetUserSecretsAsync(GetAbsoluteFilePath(), extractionPath, ct),
             ConnectionSourceType.LaunchSettings => await ParseLaunchSettingsAsync(projectDirectory, extractionPath, ct),
-            ConnectionSourceType.VsDataConnection => await ParseVsDataConnectionAsync(target, ct),
-            ConnectionSourceType.CloudSecret => await ParseCloudSecretAsync(target, extractionPath, ct),
+            ConnectionSourceType.VsDataConnection => ParseVsDataConnection(target),
+            ConnectionSourceType.CloudSecret => ParseCloudSecret(target, extractionPath),
             _ => throw new NotSupportedException($"Connection source '{sourceType}' is not supported.")
         };
     }
@@ -46,7 +46,7 @@ public static class ConnectionResolver {
                 throw new Exception($"JSON path '{jsonPath}' could not be resolved in {filePath}.");
         }
 
-        return element.ValueKind == JsonValueKind.String ? element.GetString()! : element.GetRawText();
+        return element.ValueKind == JsonValueKind.String ? element.GetString() ?? string.Empty : element.GetRawText();
     }
 
     private static async Task<string> ParseXmlAsync(string filePath, string? xPath, CancellationToken ct) {
@@ -188,14 +188,12 @@ public static class ConnectionResolver {
         throw new Exception($"Environment variable '{varName}' not found in profile '{profile}'.");
     }
 
-    private static Task<string> ParseVsDataConnectionAsync(string connectionName, CancellationToken ct) {
-        throw new NotSupportedException("Visual Studio Server Explorer connections require the Visual Studio brokered service and are not available to this resolver.");
-    }
+    private static string ParseVsDataConnection(string connectionName) => throw new NotSupportedException($"Visual Studio Server Explorer connection '{connectionName}' requires the Visual Studio brokered service and is not available to this resolver.");
 
-    private static Task<string> ParseCloudSecretAsync(string vaultUri, string? secretName, CancellationToken ct) {
+    private static string ParseCloudSecret(string vaultUri, string? secretName) {
         if (string.IsNullOrWhiteSpace(secretName))
             throw new ArgumentException("Cloud Vault requires a secret name.");
 
-        throw new NotSupportedException("Cloud Key Vault resolution requires an application-provided Azure credential integration.");
+        throw new NotSupportedException($"Cloud Key Vault '{vaultUri}' requires an application-provided Azure credential integration.");
     }
 }

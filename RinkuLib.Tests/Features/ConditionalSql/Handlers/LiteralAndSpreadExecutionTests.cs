@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.ConditionalSql.Handlers;
+namespace RinkuLib.Tests.Features.ConditionalSql.Handlers;
 
 /// <summary>
 /// End-to-end coverage of literal handlers and collection spreads against a real database.

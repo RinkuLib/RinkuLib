@@ -6,6 +6,7 @@ public class ConfigFileNameTests
     [InlineData("rinkupt.json")]
     [InlineData("rinkupt.Reporting.json")]
     [InlineData("RINKUPT.Admin.JSON")]
+    [InlineData("rinku.ENUM.json")]
     [InlineData(@"C:\Project\rinkupt.json")]
     public void ConfigFileName_AcceptsSupportedNames(string path)
     {
@@ -16,6 +17,7 @@ public class ConfigFileNameTests
     [InlineData("rinkupt.Reporting.Other.json")]
     [InlineData("rinkupt.txt")]
     [InlineData("other.json")]
+    [InlineData("otherrinkupt.json")]
     public void ConfigFileName_RejectsOtherNames(string path)
     {
         Assert.DoesNotMatch(SharedRegex.ConfigFileName(), path);

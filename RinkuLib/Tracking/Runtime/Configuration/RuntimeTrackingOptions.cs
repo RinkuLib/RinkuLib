@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
+using System.Linq.Expressions;
 using System.Reflection;
-using System.Reflection.Emit;
+using Rinku.Tracking.Runtime.Configuration;
+using Rinku.Tracking.Runtime.Emit;
+using Rinku.Tracking.Runtime.Model;
 
 namespace Rinku.Tracking.Runtime;
 
@@ -23,6 +26,7 @@ public sealed class RuntimeTrackingOptions<TOriginal>
 {
     private readonly List<IRuntimeTrackingOption<TOriginal>> _options = [];
     private readonly ConcurrentDictionary<Type, Lazy<object>> _registrations = new();
+    private RuntimeTrackingOptions<TOriginal>? _bindingOptions;
     private bool _frozen;
 
     /// <summary>Creates a runtime tracking option set.</summary>
@@ -54,23 +58,60 @@ public sealed class RuntimeTrackingOptions<TOriginal>
         return Add(new RuntimeInterfaceOption<TOriginal>(typeof(TContract)));
     }
 
-    /// <summary>Adds options for a member.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> Member(string name, Type valueType)
-    {
-        var option = new RuntimeTrackingMemberOptions<TOriginal>(name, valueType, Changing);
+    /// <summary>Adds typed options for a member.</summary>
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> Member<TValue>(string name) {
+        var option = new RuntimeTrackingMemberOptions<TOriginal, TValue>(name, Changing);
         Add(option);
         return option;
     }
 
-    /// <summary>Adds typed options for a member.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> Member<TValue>(string name) => Member(name, typeof(TValue));
-
-    /// <summary>Sets the factory for provisional original values.</summary>
-    public RuntimeTrackingOptions<TOriginal> WithNewOriginal(Func<TOriginal> factory)
-    {
-        ArgumentNullException.ThrowIfNull(factory);
-        return Add(new RuntimeNewOriginalOption<TOriginal>(factory));
+    /// <summary>Configures a member and continues the option chain.</summary>
+    public RuntimeTrackingOptions<TOriginal> Member<TValue>(string name, Action<RuntimeTrackingMemberOptions<TOriginal, TValue>> configure) {
+        ArgumentNullException.ThrowIfNull(configure);
+        configure(Member<TValue>(name));
+        return this;
     }
+
+    /// <summary>Configures a selected member and implements its interface when an interface is selected.</summary>
+    public RuntimeTrackingOptions<TOriginal> Member<TContract, TValue>(Expression<Func<TContract, TValue>> selector, Action<RuntimeTrackingMemberOptions<TOriginal, TValue>> configure) {
+        ArgumentNullException.ThrowIfNull(selector);
+        ArgumentNullException.ThrowIfNull(configure);
+        if (selector.Body is not MemberExpression { Member: PropertyInfo or FieldInfo } member || member.Expression != selector.Parameters[0])
+            throw new ArgumentException("Select a direct instance property or field.", nameof(selector));
+        if (!typeof(TContract).IsInterface && typeof(TContract) != typeof(TOriginal))
+            throw new ArgumentException("Select a member of the original type or an interface contract.", nameof(selector));
+        Member(member.Member.Name, configure);
+        return typeof(TContract).IsInterface ? Apply<TContract>() : this;
+    }
+
+    /// <summary>Initializes editable values without constructing an accepted original.</summary>
+    public RuntimeTrackingOptions<TOriginal> InitializeNew<TEdit>(Action<TEdit> initialize) {
+        ArgumentNullException.ThrowIfNull(initialize);
+        return Add(new RuntimeNewItemOption<TOriginal, TEdit>(initialize));
+    }
+
+    /// <summary>Runs a policy after accepting edited values.</summary>
+    public RuntimeTrackingOptions<TOriginal> OnConfirm(Action<ITrackingItem<TOriginal>> policy) {
+        ArgumentNullException.ThrowIfNull(policy);
+        return Add(new RuntimeLifecycleOption<TOriginal>(policy, true));
+    }
+
+    /// <summary>Runs a policy after reverting edited values, including directly stored members.</summary>
+    public RuntimeTrackingOptions<TOriginal> OnRevert(Action<ITrackingItem<TOriginal>> policy) {
+        ArgumentNullException.ThrowIfNull(policy);
+        return Add(new RuntimeLifecycleOption<TOriginal>(policy, false));
+    }
+
+    /// <summary>Configures how confirmation creates or updates the accepted original.</summary>
+    public RuntimeTrackingOptions<TOriginal> ConfirmUsing(Func<ITrackingItem<TOriginal>, TOriginal> confirm, TrackingConfirmation? operation = null) {
+        ArgumentNullException.ThrowIfNull(confirm);
+        if (operation is not null and not TrackingConfirmation.Insert and not TrackingConfirmation.Update)
+            throw new ArgumentOutOfRangeException(nameof(operation));
+        return Add(new RuntimeConfirmationOption<TOriginal>(confirm, operation));
+    }
+    public RuntimeTrackingOptions<TOriginal> ConstructOnConfirm(ConstructorInfo? constructor = null) => ConfirmUsing(TrackingConstruction.Constructor<TOriginal>(constructor));
+    /// <summary>Constructs an original only on insertion; updates keep normal in-place snapshot confirmation.</summary>
+    public RuntimeTrackingOptions<TOriginal> ConstructOnInsert(ConstructorInfo? constructor = null) => ConfirmUsing(TrackingConstruction.Constructor<TOriginal>(constructor), TrackingConfirmation.Insert);
 
     /// <summary>Treats a null original reference as unavailable.</summary>
     public RuntimeTrackingOptions<TOriginal> UseNullAsMissingOriginal()
@@ -87,6 +128,22 @@ public sealed class RuntimeTrackingOptions<TOriginal>
                 : option);
         }
         return clone;
+    }
+
+    internal RuntimeTrackingRegistration<TOriginal, TEdit> GetBindingRegistration<TEdit>() {
+        if (_options.Contains(Binding.RuntimeBindingOption<TOriginal>.Instance)) return GetRegistration<TEdit>();
+        _frozen = true;
+        var binding = Volatile.Read(ref _bindingOptions);
+        if (binding is null)
+            lock (_registrations) {
+                binding = _bindingOptions;
+                if (binding is null) {
+                    binding = CloneUnfrozen();
+                    binding.Add(Binding.RuntimeBindingOption<TOriginal>.Instance);
+                    Volatile.Write(ref _bindingOptions, binding);
+                }
+            }
+        return binding.GetRegistration<TEdit>();
     }
 
     /// <summary>Gets or creates a registration for an interface contract.</summary>
@@ -108,7 +165,7 @@ public sealed class RuntimeTrackingOptions<TOriginal>
         var type = new RuntimeTrackingTypeDefinition<TOriginal>(contract);
         for (int i = 0; i < _options.Count; i++) _options[i].Apply(type);
         new RuntimeInterfaceOption<TOriginal>(contract).Apply(type);
-        type.NewOriginalFactory ??= RuntimeNewOriginalFactory<TOriginal>.Default;
+        new RuntimeInterfaceOption<TOriginal>(typeof(ITrackingItem<TOriginal>)).Apply(type);
         type.Validate();
         return type;
     }
@@ -120,48 +177,69 @@ public sealed class RuntimeTrackingOptions<TOriginal>
 }
 
 /// <summary>Provides ordered options for one generated member.</summary>
-public sealed class RuntimeTrackingMemberOptions<TOriginal> : IRuntimeTrackingOption<TOriginal>, IRuntimeTrackingOptionCloneable<TOriginal>
+public sealed class RuntimeTrackingMemberOptions<TOriginal, TValue> : IRuntimeTrackingOption<TOriginal>, IRuntimeTrackingOptionCloneable<TOriginal>
 {
     private readonly string _name;
-    private readonly Type _valueType;
     private readonly Action _changing;
+    private Action<ITrackingItem<TOriginal>>? _confirmed;
+    private Action<ITrackingItem<TOriginal>>? _reverted;
+    public string Name => _name;
     private readonly List<Action<RuntimeTrackingMemberConfigurator>> _changes = [];
 
-    internal RuntimeTrackingMemberOptions(string name, Type valueType, Action changing)
+    internal RuntimeTrackingMemberOptions(string name, Action changing)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(valueType);
         _name = name;
-        _valueType = valueType;
         _changing = changing;
     }
 
     /// <summary>Makes the member read-only.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> ReadOnly() => Change(static member => member.ReadOnly());
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> ReadOnly() => Change(static member => member.ReadOnly());
     /// <summary>Enables nested editing.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> NestedEdit(NestedEditMode mode = NestedEditMode.InPlace) => Change(member => member.NestedEdit(mode));
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> NestedEdit(NestedEditMode mode = NestedEditMode.InPlace) => Change(member => member.NestedEdit(mode));
     /// <summary>Stores the member directly on the generated item.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> Direct() => Change(static member => member.Direct());
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> Direct() => Change(static member => member.Direct());
     /// <summary>Stores a direct value in the edit snapshot.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> SnapshotValue() => Change(static member => member.SnapshotValue());
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> SnapshotValue() => Change(static member => member.SnapshotValue());
+    /// <summary>Creates a missing direct reference value when editing first starts.</summary>
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> CreateOnEdit(Func<TValue> factory) {
+        ArgumentNullException.ThrowIfNull(factory);
+        return Change(member => member.CreateOnEdit(factory));
+    }
     /// <summary>Removes the member from generation.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> Ignore() => Change(static member => member.Ignore());
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> Ignore() => Change(static member => member.Ignore());
     /// <summary>Sets whether a CLR property is exposed.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> Expose(bool exposed = true) => Change(member => member.Expose(exposed));
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> Expose(bool exposed = true) => Change(member => member.Expose(exposed));
     /// <summary>Sets whether runtime access includes the member.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> RuntimeAccess(bool enabled = true) => Change(member => member.RuntimeAccess(enabled));
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> RuntimeAccess(bool enabled = true) => Change(member => member.RuntimeAccess(enabled));
     /// <summary>Sets whether parameter projection includes the member.</summary>
-    public RuntimeTrackingMemberOptions<TOriginal> Parameters(bool enabled = true) => Change(member => member.Parameters(enabled));
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> Parameters(bool enabled = true) => Change(member => member.Parameters(enabled));
+
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> OnConfirm(Action<ITrackingItem<TOriginal>> policy) {
+        ArgumentNullException.ThrowIfNull(policy);
+        _changing();
+        _confirmed += policy;
+        return this;
+    }
+
+    public RuntimeTrackingMemberOptions<TOriginal, TValue> OnRevert(Action<ITrackingItem<TOriginal>> policy) {
+        ArgumentNullException.ThrowIfNull(policy);
+        _changing();
+        _reverted += policy;
+        return this;
+    }
 
     /// <inheritdoc/>
     public void Apply(RuntimeTrackingTypeDefinition<TOriginal> type)
     {
-        RuntimeTrackingMemberDefinition<TOriginal> member = type.GetOrAddMember(_name, _valueType);
+        RuntimeTrackingMemberDefinition<TOriginal> member = type.GetOrAddMember(_name, typeof(TValue));
         RuntimeTrackingMemberConfigurator configurator = RuntimeTrackingMemberConfigurator.Create(type, member);
         for (int i = 0; i < _changes.Count; i++) _changes[i](configurator);
+        type.ConfirmedPolicy += _confirmed;
+        type.RevertedPolicy += _reverted;
     }
 
-    private RuntimeTrackingMemberOptions<TOriginal> Change(Action<RuntimeTrackingMemberConfigurator> change)
+    private RuntimeTrackingMemberOptions<TOriginal, TValue> Change(Action<RuntimeTrackingMemberConfigurator> change)
     {
         _changing();
         _changes.Add(change);
@@ -170,7 +248,7 @@ public sealed class RuntimeTrackingMemberOptions<TOriginal> : IRuntimeTrackingOp
 
     IRuntimeTrackingOption<TOriginal> IRuntimeTrackingOptionCloneable<TOriginal>.CloneOption(Action changing)
     {
-        var clone = new RuntimeTrackingMemberOptions<TOriginal>(_name, _valueType, changing);
+        var clone = new RuntimeTrackingMemberOptions<TOriginal, TValue>(_name, changing) { _confirmed = _confirmed, _reverted = _reverted };
         clone._changes.AddRange(_changes);
         return clone;
     }
@@ -187,16 +265,9 @@ public sealed class RuntimeTrackingMemberConfigurator
     private readonly Action<bool> _expose;
     private readonly Action<bool> _runtimeAccess;
     private readonly Action<bool> _parameters;
+    private readonly Action<Delegate> _createOnEdit;
 
-    private RuntimeTrackingMemberConfigurator(
-        Action ignore,
-        Action readOnly,
-        Action<NestedEditMode> nested,
-        Action direct,
-        Action snapshotValue,
-        Action<bool> expose,
-        Action<bool> runtimeAccess,
-        Action<bool> parameters)
+    private RuntimeTrackingMemberConfigurator(Action ignore, Action readOnly, Action<NestedEditMode> nested, Action direct, Action snapshotValue, Action<bool> expose, Action<bool> runtimeAccess, Action<bool> parameters, Action<Delegate> createOnEdit)
     {
         _ignore = ignore;
         _readOnly = readOnly;
@@ -206,6 +277,7 @@ public sealed class RuntimeTrackingMemberConfigurator
         _expose = expose;
         _runtimeAccess = runtimeAccess;
         _parameters = parameters;
+        _createOnEdit = createOnEdit;
     }
 
     /// <summary>Removes the member from generation.</summary>
@@ -224,6 +296,7 @@ public sealed class RuntimeTrackingMemberConfigurator
     public void RuntimeAccess(bool enabled = true) => _runtimeAccess(enabled);
     /// <summary>Sets whether parameter projection includes the member.</summary>
     public void Parameters(bool enabled = true) => _parameters(enabled);
+    public void CreateOnEdit<TValue>(Func<TValue> factory) => _createOnEdit(factory);
 
     internal static RuntimeTrackingMemberConfigurator Create<TOriginal>(RuntimeTrackingTypeDefinition<TOriginal> type, RuntimeTrackingMemberDefinition<TOriginal> member)
     {
@@ -231,42 +304,30 @@ public sealed class RuntimeTrackingMemberConfigurator
             () => type.RemoveMember(member.Name),
             () => MakeReadOnly(member),
             mode => MakeNested(member, mode),
-            () => { member.Emitter = new RuntimeDirectFieldEmitter<TOriginal>(); member.IncludeInParameters = false; },
-            () => { member.Emitter = new RuntimeDirectSnapshotEmitter<TOriginal>(); member.IncludeInParameters = false; },
+            () => member.Emitter = new RuntimeDirectFieldEmitter<TOriginal>(),
+            () => member.Emitter = new RuntimeDirectSnapshotEmitter<TOriginal>(),
             exposed => member.ExposeProperty = exposed,
             enabled => member.IncludeInRuntimeAccess = enabled,
-            enabled => member.IncludeInParameters = enabled);
+            enabled => member.IncludeInParameters = enabled,
+            factory => {
+                if (factory.GetType() != typeof(Func<>).MakeGenericType(member.ValueType))
+                    throw new ArgumentException($"Factory must return {member.ValueType} for member '{member.Name}'.");
+                member.CreateOnEdit = factory;
+            });
     }
 
     private static void MakeReadOnly<TOriginal>(RuntimeTrackingMemberDefinition<TOriginal> member)
     {
-        if (member.Emitter is RuntimeOriginalSnapshotEmitter<TOriginal> original)
-        {
-            member.Emitter = original.AsReadOnly();
-            return;
-        }
-        if (member.Emitter is RuntimeNestedSnapshotEmitter<TOriginal> nested)
-        {
-            member.Emitter = new RuntimeOriginalReadOnlyEmitter<TOriginal>(nested.Access);
-            return;
-        }
         if (member.Emitter is null) return;
-        throw new InvalidOperationException($"Runtime member '{member.Name}' cannot be made original-read-only from emitter {member.Emitter.GetType()}.");
+        if (member.Emitter is IRuntimeReadOnlyEmitter<TOriginal> configurable) member.Emitter = configurable.AsReadOnly();
+        else throw new InvalidOperationException($"Runtime member '{member.Name}' cannot be made read-only from emitter {member.Emitter.GetType()}.");
     }
 
     private static void MakeNested<TOriginal>(RuntimeTrackingMemberDefinition<TOriginal> member, NestedEditMode mode)
     {
-        RuntimeOriginalMemberAccess access = member.Emitter switch
-        {
-            RuntimeOriginalSnapshotEmitter<TOriginal> original => original.Access,
-            RuntimeOriginalReadOnlyEmitter<TOriginal> readOnly => readOnly.Access,
-            RuntimeNestedSnapshotEmitter<TOriginal> nested => nested.Access,
-            _ => throw new InvalidOperationException($"Runtime member '{member.Name}' must be original-backed before nested editing can be configured.")
-        };
-        member.Emitter = new RuntimeNestedSnapshotEmitter<TOriginal>(access, mode);
+        if (member.Emitter is IRuntimeNestedEmitter<TOriginal> configurable) member.Emitter = configurable.WithNestedEdit(mode);
+        else throw new InvalidOperationException($"Runtime member '{member.Name}' does not support nested editing.");
     }
-
-
 }
 
 internal sealed class RuntimeOriginalDiscoveryOption<TOriginal> : IRuntimeTrackingOption<TOriginal>
@@ -293,8 +354,7 @@ internal sealed class RuntimeOriginalDiscoveryOption<TOriginal> : IRuntimeTracki
     {
         RuntimeOriginalMemberAccess access = RuntimeOriginalMemberAccess.Create(source);
         RuntimeTrackingMemberDefinition<TOriginal> member = type.GetOrAddMember(source.Name, access.ValueType);
-        if (member.Emitter is null)
-            member.Emitter = access.CanWrite
+        member.Emitter ??= access.CanWrite
                 ? new RuntimeOriginalSnapshotEmitter<TOriginal>(access)
                 : new RuntimeOriginalReadOnlyEmitter<TOriginal>(access);
         RuntimeTrackingMetadataSources.AddOriginal(member, source);
@@ -353,9 +413,8 @@ internal sealed class RuntimeInterfaceOption<TOriginal>(Type contract) : IRuntim
     }
 }
 
-internal sealed class RuntimeNewOriginalOption<TOriginal>(Func<TOriginal> factory) : IRuntimeTrackingOption<TOriginal>
-{
-    public void Apply(RuntimeTrackingTypeDefinition<TOriginal> type) => type.NewOriginalFactory = factory;
+internal sealed class RuntimeNewItemOption<TOriginal, TEdit>(Action<TEdit> initialize) : IRuntimeTrackingOption<TOriginal> {
+    public void Apply(RuntimeTrackingTypeDefinition<TOriginal> type) => type.NewItemInitializer = initialize;
 }
 
 internal sealed class RuntimeOriginalStorageOption<TOriginal>(IRuntimeOriginalStorageEmitter<TOriginal> storage) : IRuntimeTrackingOption<TOriginal>
@@ -363,29 +422,18 @@ internal sealed class RuntimeOriginalStorageOption<TOriginal>(IRuntimeOriginalSt
     public void Apply(RuntimeTrackingTypeDefinition<TOriginal> type) => type.OriginalStorage = storage;
 }
 
-internal static class RuntimeNewOriginalFactory<TOriginal>
-{
-    internal static readonly Func<TOriginal>? Default = Build();
+internal sealed class RuntimeConfirmationOption<TOriginal>(Func<ITrackingItem<TOriginal>, TOriginal> confirm, TrackingConfirmation? operation) : IRuntimeTrackingOption<TOriginal> {
+    public void Apply(RuntimeTrackingTypeDefinition<TOriginal> type) {
+        new RuntimeInterfaceOption<TOriginal>(typeof(ITrackingItem<TOriginal>)).Apply(type);
+        if (operation is null or TrackingConfirmation.Insert) type.InsertConfirmation = confirm;
+        if (operation is null or TrackingConfirmation.Update) type.UpdateConfirmation = confirm;
+    }
+}
 
-    private static Func<TOriginal>? Build()
-    {
-        Type type = typeof(TOriginal);
-        if (type.IsAbstract || type.IsInterface) return null;
-        var method = new DynamicMethod($"RuntimeTracking_New_{type.Name}", type, Type.EmptyTypes, typeof(RuntimeNewOriginalFactory<TOriginal>).Module, true);
-        ILGenerator il = method.GetILGenerator();
-        if (type.IsValueType)
-        {
-            LocalBuilder value = il.DeclareLocal(type);
-            il.Emit(OpCodes.Ldloca, value);
-            il.Emit(OpCodes.Initobj, type);
-            il.Emit(OpCodes.Ldloc, value);
-            il.Emit(OpCodes.Ret);
-            return method.CreateDelegate<Func<TOriginal>>();
-        }
-        ConstructorInfo? constructor = type.GetConstructor(Type.EmptyTypes);
-        if (constructor is null) return null;
-        il.Emit(OpCodes.Newobj, constructor);
-        il.Emit(OpCodes.Ret);
-        return method.CreateDelegate<Func<TOriginal>>();
+internal sealed class RuntimeLifecycleOption<TOriginal>(Action<ITrackingItem<TOriginal>> policy, bool confirm) : IRuntimeTrackingOption<TOriginal> {
+    public void Apply(RuntimeTrackingTypeDefinition<TOriginal> type) {
+        new RuntimeInterfaceOption<TOriginal>(typeof(ITrackingItem<TOriginal>)).Apply(type);
+        if (confirm) type.ConfirmedPolicy += policy;
+        else type.RevertedPolicy += policy;
     }
 }

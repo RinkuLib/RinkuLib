@@ -1,5 +1,7 @@
 # Cache control
 
+The examples use an open `DbConnection` named `cnn` and a result type such as `Album`.
+
 ## Command lifetime
 
 `QueryCommand` is reusable and can be shared when its lifetime is the application. Dispose a command that owns a shorter-lived cache when that scope ends.
@@ -18,15 +20,16 @@ Disposal invalidates the command's parsers and parameter accessors, releases its
 ```csharp
 static readonly QueryCommand GetAlbums = new("SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
 
-int removed = GetAlbums.InvalidateParsers();
+int removed = GetAlbums.InvalidateParsers(static _ => true);
 ```
 
-The overload without a scope removes the command references and removes a parser globally only when no other command still uses it.
+The predicate selects the command's cached parsers. The default scope removes command references and removes a parser globally only when no other command still uses it.
 
 ```csharp
-GetAlbums.InvalidateParsers(QueryParserInvalidationScope.Local);
-GetAlbums.InvalidateParsers(QueryParserInvalidationScope.GlobalIfUnused);
-GetAlbums.InvalidateParsers(QueryParserInvalidationScope.Global);
+GetAlbums.InvalidateParsers(static _ => true, QueryParserInvalidationScope.Local);
+GetAlbums.InvalidateParsers(static _ => true, QueryParserInvalidationScope.GlobalIfUnused);
+GetAlbums.InvalidateParsers(static _ => true, QueryParserInvalidationScope.Global);
+GetAlbums.InvalidateParsers(parser => parser.Type == typeof(Album), QueryParserInvalidationScope.GlobalIfUnused);
 ```
 
 ```text
@@ -35,10 +38,16 @@ GlobalIfUnused  also remove the global parser when no other command uses it
 Global          remove the parser globally and clear command references to it
 ```
 
-One exact parser can be invalidated through the same scopes.
+One exact parser can be selected through the same predicate.
 
 ```csharp
-GetAlbums.InvalidateParser(parser, QueryParserInvalidationScope.GlobalIfUnused);
+GetAlbums.InvalidateParsers(candidate => ReferenceEquals(candidate, parser), QueryParserInvalidationScope.GlobalIfUnused);
+```
+
+The predicate can select one type while leaving other result types cached.
+
+```csharp
+GetAlbums.InvalidateParsers(parser => parser.Type == typeof(Album));
 ```
 
 ## Parameter accessors
@@ -103,28 +112,47 @@ command.CommandText = "SELECT AlbumId AS Id, Title FROM albums WHERE AlbumId = 1
 Album album = SchemaParser.Query<Album>(command, disposeCommand: false);
 DynaObject row = SchemaParser.Query<DynaObject>(command, disposeCommand: false);
 
-SchemaParser.Invalidate<Album>();
-// The DynaObject parser remains cached.
+SchemaParser.Invalidate();
+// The schema and both result parsers are forgotten together.
 ```
+
+The non-generic cache treats its learned schema and all parsers as one package. Its next query
+learns the schema from its reader again.
 
 [Fixed result schema](../running-queries/fixed-result-schema.md)
 
 ## Global parser cache
 
+The examples use a known result schema and a parser obtained from the global cache.
+
 ```csharp
-int removed = TypeParser.Invalidate(columns, ParserInvalidationMode.CheckUsage);
+ColumnInfo[] columns = TypeSchema<Album>.Schema;
+ITypeParser<Album> parser = TypeParser.GetTypeParser<Album>(columns);
+```
+
+A predicate can match a schema, a result type, an exact parser instance, or any combination of those conditions.
+
+```csharp
+int removed = TypeParser.Invalidate(parser => parser.CanParse(columns), ParserInvalidationMode.CheckUsage);
 ```
 
 `CheckUsage` leaves an exact parser alive when another cache still reports that it retains it.
 
 ```csharp
-bool removed = TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+int removed = TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
 ```
 
 `InvalidateReferences` asks subscribed caches to release that exact parser instance.
 
+The same predicate can select both type and schema.
+
 ```csharp
-int removed = TypeParser.InvalidateAll(ParserInvalidationMode.InvalidateReferences);
+int removed = TypeParser.Invalidate(parser => parser.Type == typeof(Album), ParserInvalidationMode.CheckUsage);
+int matching = TypeParser.Invalidate(parser => parser.Type == typeof(Album) && parser.CanParse(columns), ParserInvalidationMode.CheckUsage);
+```
+
+```csharp
+int removed = TypeParser.Invalidate(static _ => true, ParserInvalidationMode.InvalidateReferences);
 ```
 
 All globally cached parsers can be removed with the same invalidation mode.

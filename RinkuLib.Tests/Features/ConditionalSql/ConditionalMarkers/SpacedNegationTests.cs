@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.ConditionalMarkers;
 
 /// <summary>
 /// A <c>!</c> takes the rest of the marker as its key, spaces included, so where the space falls decides

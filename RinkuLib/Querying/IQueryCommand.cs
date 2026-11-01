@@ -42,8 +42,8 @@ public interface IQueryCommand {
     public Mapper Mapper { get; }
     /// <summary> The first slot for a literal-injection handler. Slots below it carry parameter values. </summary>
     public int StartBaseHandlers { get; }
-    /// <summary> The first slot for a special handler, the ones that expand into several parameters. </summary>
+    /// <summary>The first slot for a special handler that expands into several parameters.</summary>
     public int StartSpecialHandlers { get; }
-    /// <summary> The first slot for a toggle-only condition, the ones that carry no value. </summary>
+    /// <summary>The first slot for a toggle-only condition that carries no value.</summary>
     public int StartBoolCond { get; }
 }

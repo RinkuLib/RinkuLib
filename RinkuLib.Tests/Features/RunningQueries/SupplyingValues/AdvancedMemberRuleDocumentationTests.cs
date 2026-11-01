@@ -1,11 +1,11 @@
 using System.Data;
 using System.Reflection;
 using System.Reflection.Emit;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Building;
+namespace RinkuLib.Tests.Features.RunningQueries.SupplyingValues;
 
 /// <summary>Executable examples for docs/articles/running-queries/custom-member-rules.md.</summary>
 public class AdvancedMemberRuleDocumentationTests {
@@ -41,7 +41,6 @@ public class AdvancedMemberRuleDocumentationTests {
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
     private sealed class PositiveNumberAttribute : AccessorEmitterHandler {
         private static readonly PositiveNumberEmitter Emitter = new();
-
         public override IAccessorEmitter? GetMemberEmitter(
             char varChar, int index, Type type, MemberInfo member, Mapper mapper)
             => index < 0 ? null : Emitter;

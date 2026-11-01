@@ -3,7 +3,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.ConstructionPaths;
 
 /// <summary>
 /// How discovery walks a type's constructors: which one becomes the parameterless fallback, which are
@@ -63,17 +63,15 @@ public class ConstructionDiscoveryTests {
     }
 
     public record Reuse(int Shared, [Alt("Shared")][MayReuseCol] int Again) : IDbReadable;
-
     public record ReuseWithoutAlt(int Shared, [MayReuseCol] int Again) : IDbReadable;
-
     public record ReuseBeforeOwner([Alt("Shared")][MayReuseCol] int Copy, int Shared) : IDbReadable;
-
     public record NestedReuseBeforeTail(
-        [MayReuseCol] NestedReuseValues Child,
-        [NoName] Dictionary<string, object> Tail) : IDbReadable;
+        [MayReuseCol] NestedReuseValues 
+            Child,
+        [NoName] Dictionary<string, object> 
+            Tail) : IDbReadable;
 
     public record NestedReuseValues(int A, int B) : IDbReadable;
-
     public record SequentialReuse(
         int Shared,
         [Alt("Shared")][CanNotLookAnywhere][MayReuseCol] int Again) : IDbReadable;

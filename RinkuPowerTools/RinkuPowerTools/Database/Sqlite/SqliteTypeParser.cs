@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace RinkuPowerTools;
+namespace RinkuPowerTools.Database.Sqlite;
 
 internal static class SqliteTypeParser {
     public static ProviderTypeInfo Parse(string rawType) {

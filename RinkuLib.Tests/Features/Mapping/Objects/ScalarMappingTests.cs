@@ -1,10 +1,10 @@
 using Rinku.Mapping;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Objects;
 
 /// <summary>
 /// A scalar <c>T</c> reads the first column, converting between provider and requested types when
@@ -150,7 +150,6 @@ public sealed class ExactMember : IDbReadable {
 }
 
 public sealed record RuntimeExact(int Value);
-
 public enum SampleColor { Red = 1, Green = 2, Blue = 3 }
 
 public record struct WrappedAmount(int Amount) {

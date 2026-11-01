@@ -3,10 +3,12 @@ using System.Data.Common;
 using Rinku;
 using Rinku.Internal;
 using Rinku.Mapping;
+using RinkuLib.Tests.Features.RunningQueries.Index;
+using RinkuLib.Tests.Features.RunningQueries.ResultShapes;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.SqlString;
 
 /// <summary>
 /// The string-based connection extensions parse the SQL once into a shared cached
@@ -17,7 +19,6 @@ public class ConnectionExtensionTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private const string CountSql = "SELECT COUNT(*) FROM Users";
     private const string InsertSql = "INSERT INTO Scratch (Val) VALUES (@Val)";
     private const string ActiveNamesSql = "SELECT Name FROM Users WHERE IsActive = @Active ORDER BY ID";
-
     [Fact]
     public void Same_sql_reuses_one_cached_command() {
         var first = ConnectionQueryExtensions.GetOrCreateCommand("SELECT 'cache-probe'");

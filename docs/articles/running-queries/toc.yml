@@ -24,6 +24,8 @@
   href: readers.md
 - name: SQL string shortcuts
   href: sql-string.md
+- name: SQL files as commands
+  href: sql-files.md
 - name: IDbConnection support
   href: idbconnection.md
 - name: Parameter metadata

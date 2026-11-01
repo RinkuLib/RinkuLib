@@ -46,7 +46,7 @@ internal class SpreadUsageEmitter(Type targetType, MemberInfo member) {
     private readonly MemberInfo _member = member;
 
     private static readonly MethodInfo HasElementMethod =
-        typeof(SpreadUsage).GetMethod(nameof(SpreadUsage.HasElement), [typeof(object)])!;
+        Rinku.Mapping.TypeExtensions.Require(typeof(SpreadUsage).GetMethod(nameof(SpreadUsage.HasElement), [typeof(object)]), nameof(HasElementMethod));
 
     public void Emit(ILGenerator il, int sourceArgument) {
         AccessorEmitter.EmitMemberLoad(il, TargetType, _member, sourceArgument);

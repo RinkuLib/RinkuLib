@@ -109,7 +109,7 @@ Without `Namespace`, the generated namespace is derived from the project namespa
 ```
 
 ```csharp
-internal static class DbCommands
+internal static partial class DbCommands
 {
 }
 ```

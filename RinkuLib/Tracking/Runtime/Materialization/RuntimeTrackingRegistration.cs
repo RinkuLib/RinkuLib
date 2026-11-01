@@ -1,63 +1,45 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Reflection.Emit;
+using Rinku.Tracking.Runtime.Emit;
 
 namespace Rinku.Tracking.Runtime;
 
-/// <summary>Cached generated type plus direct construction/context factories.</summary>
+/// <summary>Cached generated type plus direct construction factories.</summary>
 public sealed class RuntimeTrackingRegistration<TOriginal, TEdit>
 {
     private readonly Func<TOriginal, TEdit> _create;
-    private readonly Func<TOriginal, bool, TEdit> _createWithState;
-    private readonly Func<TOriginal>? _newOriginal;
+    private readonly Func<TEdit> _createNew;
+    private readonly Action<TEdit>? _initializeNew;
 
-    private RuntimeTrackingRegistration(
-        Type generatedType,
-        Func<TOriginal, TEdit> create,
-        Func<TOriginal, bool, TEdit> createWithState,
-        Func<TOriginal>? newOriginal)
+    private RuntimeTrackingRegistration(Type generatedType, Func<TOriginal, TEdit> create, Func<TEdit> createNew, Action<TEdit>? initializeNew)
     {
         GeneratedType = generatedType;
         _create = create;
-        _createWithState = createWithState;
-        _newOriginal = newOriginal;
+        _createNew = createNew;
+        _initializeNew = initializeNew;
     }
 
     /// <summary>Gets the generated CLR type.</summary>
     public Type GeneratedType { get; }
-    /// <summary>Gets whether a new item can be created.</summary>
-    public bool CanCreateNew => _newOriginal is not null;
 
     /// <summary>Creates an edit for an accepted original.</summary>
     public TEdit Create(TOriginal original) => _create(original);
 
-    /// <summary>Creates a new edit with a provisional original.</summary>
-    public TEdit CreateNew()
-    {
-        Func<TOriginal> factory = _newOriginal
-            ?? throw new NotSupportedException($"{typeof(TOriginal)} has no configured new-original factory or public parameterless constructor.");
-        return _createWithState(factory(), true);
-    }
+    /// <summary>Creates a new edit without an accepted original.</summary>
+    public TEdit CreateNew() => CreateNew(null);
 
-    /// <summary>Creates a generated item context without a source list.</summary>
-    public ITrackingListContext<TEdit> CreateContext() => new RuntimeGeneratedTrackingListContext<TOriginal, TEdit>(this);
-
-    /// <summary>Creates a context suited to the supplied source.</summary>
-    public ITrackingListContext<TEdit> CreateContext(IEnumerable<TOriginal> source)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        return source is IList<TOriginal> list
-            ? new RuntimeIndexedTrackingListContext<TOriginal, TEdit>(list, this)
-            : CreateContext();
+    /// <summary>Creates a new edit and applies caller-supplied initial values.</summary>
+    public TEdit CreateNew(Action<TEdit>? initialize) {
+        TEdit item = _createNew();
+        _initializeNew?.Invoke(item);
+        initialize?.Invoke(item);
+        return item;
     }
 
     internal static RuntimeTrackingRegistration<TOriginal, TEdit> Build(RuntimeTrackingTypeDefinition<TOriginal> definition)
     {
         RuntimeTrackingEmissionResult<TOriginal> emitted = RuntimeTrackingTypeEmitter<TOriginal, TEdit>.Build(definition);
-        return new(
-            emitted.Type,
-            CreateExisting(emitted.ExistingCtor),
-            CreateWithState(emitted.StateCtor),
-            definition.NewOriginalFactory);
+        return new(emitted.Type, CreateExisting(emitted.ExistingCtor), CreateNewFactory(emitted.NewCtor), definition.NewItemInitializer is null ? null : definition.NewItemInitializer as Action<TEdit> ?? throw new InvalidOperationException($"The new-item initializer must accept {typeof(TEdit)}."));
     }
 
     private static Func<TOriginal, TEdit> CreateExisting(ConstructorInfo constructor)
@@ -70,14 +52,15 @@ public sealed class RuntimeTrackingRegistration<TOriginal, TEdit>
         return method.CreateDelegate<Func<TOriginal, TEdit>>();
     }
 
-    private static Func<TOriginal, bool, TEdit> CreateWithState(ConstructorInfo constructor)
+    private static Func<TEdit> CreateNewFactory(ConstructorInfo constructor)
     {
-        var method = new DynamicMethod($"CreateState_{constructor.DeclaringType?.Name}", typeof(TEdit), [typeof(TOriginal), typeof(bool)], typeof(RuntimeTrackingRegistration<TOriginal, TEdit>).Module, true);
+        var method = new DynamicMethod($"CreateNew_{constructor.DeclaringType?.Name}", typeof(TEdit), Type.EmptyTypes, typeof(RuntimeTrackingRegistration<TOriginal, TEdit>).Module, true);
         ILGenerator il = method.GetILGenerator();
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Ldarg_1);
         il.Emit(OpCodes.Newobj, constructor);
+        il.Emit(OpCodes.Dup);
+        il.Emit(OpCodes.Callvirt, typeof(IEditable).GetMethod(nameof(IEditable.EnsureEditing))!);
+        il.Emit(OpCodes.Pop);
         il.Emit(OpCodes.Ret);
-        return method.CreateDelegate<Func<TOriginal, bool, TEdit>>();
+        return method.CreateDelegate<Func<TEdit>>();
     }
 }

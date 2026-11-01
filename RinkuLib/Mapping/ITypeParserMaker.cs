@@ -85,12 +85,3 @@ public interface ITypeParserMaker {
         return false;
     }
 }
-
-/// <summary>
-/// Tests whether a parser produced by a maker can serve another schema. The parser cache knows only this
-/// capability. the maker remains responsible for deciding what makes two generated parsers equivalent.
-/// </summary>
-public interface ITypeParserSchemaMatcher {
-    /// <summary>Returns whether <paramref name="parser"/> accepts <paramref name="schema"/>.</summary>
-    bool CanParse<T>(ITypeParser<T> parser, ColumnInfo[] schema);
-}

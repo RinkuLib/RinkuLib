@@ -22,7 +22,6 @@ public class FakeParameter : DbParameter {
 
 public class FakeParameterCollection : DbParameterCollection {
     public readonly List<FakeParameter> Items = [];
-
     public override int Count => Items.Count;
     public override object SyncRoot => this;
     public override int Add(object value) {
@@ -65,7 +64,6 @@ public class FakeParameterCollection : DbParameterCollection {
 public class FakeCommand : DbCommand {
     public new readonly FakeParameterCollection Parameters = [];
     public List<FakeParameter> BoundParameters => Parameters.Items;
-
     public override string? CommandText { get; set; }
     public override int CommandTimeout { get; set; }
     public override CommandType CommandType { get; set; }

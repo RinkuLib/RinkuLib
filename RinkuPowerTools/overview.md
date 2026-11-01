@@ -1,6 +1,6 @@
 # Rinku Power Tools
 
-Generate strongly typed ADO.NET code directly from SQL in Visual Studio.
+Generate strongly typed ADO.NET code directly from SQL in Visual Studio or from the command line.
 
 Rinku Power Tools lets you define SQL queries, stored procedures, and SQL files using a Visual Studio interface. It generates C# methods that create fully configured `DbCommand` instances with parameters already defined and bound.
 
@@ -9,10 +9,20 @@ This removes repetitive ADO.NET boilerplate while keeping your SQL explicit and 
 ## How it works
 
 1. Configure a database connection for your project.
-2. Create a query, stored procedure, or SQL file from Visual Studio.
+2. Create a query, stored procedure, or SQL file from Visual Studio or the CLI.
 3. Rinku Power Tools inspects the query and its result shape.
 4. Generated C# code provides typed command methods and result records.
 5. Refresh the generated code whenever the SQL changes.
+
+The same shared implementation can be refreshed from a terminal with the CLI:
+
+```bash
+rinku refresh
+rinku refresh dev
+rinku refresh --default
+```
+
+`rinku refresh` refreshes every valid `rinkupt*.json` configuration beside the selected project and succeeds as a no-op when none exist. The companion `RinkuPowerTools.Cli.Build` package runs that all-configurations refresh before compilation and skips design-time builds.
 
 For example, a query named `GetUsers` can generate a method like:
 
@@ -76,7 +86,11 @@ The extension can resolve database connections from common .NET project sources,
 
 Rinku Power Tools is designed to work with the [Rinku NuGet package](https://www.nuget.org/packages/Rinku/), which provides mapping, materialization, and query execution features.
 
-The generated code also works with plain ADO.NET and any `DbConnection`. Rinku is optional.
+Generated command factories and result records also work with plain ADO.NET and any `DbConnection`,
+without a Rinku reference. The shared `.PowerTools.rinku.cs` file provides the ADO.NET helpers,
+`SchemaAttribute` and command result metadata. Schema timestamps are stored as UTC `DateTime` values.
+Application-owned schema links use the existing `Rinku.Mapping.BasedOnAttribute` from Rinku;
+PowerTools does not duplicate that attribute. The shared support file has no reload timestamp.
 
 ## Learn more
 

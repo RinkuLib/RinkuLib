@@ -1,10 +1,10 @@
 using System.Data;
 
-namespace RinkuPowerTools;
+namespace RinkuPowerTools.Database.PostgreSql;
 
 internal static class PostgreSqlTypeParser {
     public static ProviderTypeInfo Parse(string rawType) {
-        TryParse(rawType, out ProviderTypeInfo type);
+        _ = TryParse(rawType, out ProviderTypeInfo type);
         return type;
     }
 

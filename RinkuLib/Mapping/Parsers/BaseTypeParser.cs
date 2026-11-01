@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
+using Rinku.Mapping.Parsers.Defaults;
 
 namespace Rinku.Mapping.Parsers;
 
@@ -10,7 +11,7 @@ namespace Rinku.Mapping.Parsers;
 /// </summary>
 public abstract class BaseTypeParser<T> : ITypeParser<T> {
     /// <inheritdoc/>
-    public virtual void Dispose() { }
+    public virtual void Dispose() => GC.SuppressFinalize(this);
     bool ITypeParser<T>.InternalProtect => true;
     /// <inheritdoc/>
     public abstract bool CanParse(ColumnInfo[] schema);

@@ -5,6 +5,7 @@ using Rinku.Mapping;
 using Rinku.Querying;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
+using Rinku.Mapping.Parsers.Defaults;
 
 namespace Rinku;
 /// <summary>Runs and reads a database command that the caller created.</summary>
@@ -25,6 +26,11 @@ public static class DBCommandExtensions {
     }
 
     extension(DbCommand cmd) {
+        /// <summary>Reads using the shared parser for this result type. Supply a parser explicitly for a separately configured result shape.</summary>
+        public T Query<T>(bool disposeCommand = true) => cmd.Query(CachedTypeParser<T>.Default, disposeCommand);
+        /// <summary>Reads asynchronously using the shared parser for this result type.</summary>
+        public Task<T> QueryAsync<T>(bool disposeCommand = true, CancellationToken ct = default) => cmd.QueryAsync(CachedTypeParser<T>.Default, disposeCommand, ct);
+
         /// <summary>Finds the parameter that receives the stored procedure's return value.</summary>
         /// <exception cref="KeyNotFoundException">The command has no return-value parameter.</exception>
         public DbParameter GetReturnParameter() {
@@ -89,7 +95,7 @@ public static class DBCommandExtensions {
                 if (wasClosed)
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                 var res = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                cache?.UpdateCache(cmd);
+                if (cache is not null) await cache.UpdateCacheAsync(cmd, ct).ConfigureAwait(false);
                 return res;
             }
             finally {
@@ -138,7 +144,7 @@ public static class DBCommandExtensions {
                 if (wasClosed)
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                 var res = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-                cache?.UpdateCache(cmd);
+                if (cache is not null) await cache.UpdateCacheAsync(cmd, ct).ConfigureAwait(false);
                 return res.Parse<T>();
             }
             finally {
@@ -158,21 +164,22 @@ public static class DBCommandExtensions {
         public DbDataReader ExecuteReader(CommandBehavior behavior = default, ICache? cache = null) {
             var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
             var wasClosed = cnn.State != ConnectionState.Open;
-            DbDataReader reader;
+            DbDataReader? reader = null;
             try {
                 if (wasClosed) {
                     cnn.Open();
                     behavior |= CommandBehavior.CloseConnection;
                 }
                 reader = cmd.ExecuteReader(behavior);
+                cache?.UpdateCache(cmd);
+                return reader;
             }
             catch {
+                reader?.Dispose();
                 if (wasClosed && cnn.State != ConnectionState.Closed)
                     cnn.Close();
                 throw;
             }
-            cache?.UpdateCache(cmd);
-            return reader;
         }
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
@@ -183,21 +190,22 @@ public static class DBCommandExtensions {
         public async Task<DbDataReader> ExecuteReaderAsync(CommandBehavior behavior = default, ICache? cache = null, CancellationToken ct = default) {
             var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
             var wasClosed = cnn.State != ConnectionState.Open;
-            DbDataReader reader;
+            DbDataReader? reader = null;
             try {
                 if (wasClosed) {
                     await cnn.OpenAsync(ct).ConfigureAwait(false);
                     behavior |= CommandBehavior.CloseConnection;
                 }
                 reader = await cmd.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+                if (cache is not null) await cache.UpdateCacheAsync(cmd, ct).ConfigureAwait(false);
+                return reader;
             }
             catch {
+                if (reader is not null) await reader.DisposeAsync().ConfigureAwait(false);
                 if (wasClosed && cnn.State != ConnectionState.Closed)
                     await cnn.CloseAsync().ConfigureAwait(false);
                 throw;
             }
-            cache?.UpdateCache(cmd);
-            return reader;
         }
         /// <summary>
         /// Executes the <see cref="MultiReader"/> of the <see cref="DbCommand"/>.
@@ -363,7 +371,7 @@ public static class DBCommandExtensions {
             var makers = TypeParser.TypeParserMakers;
             for (int i = 0; i < makers.Count; i++)
                 if (makers[i].TryColdStart(type, cmd, cache, disposeCommand, out var cold))
-                    return cold!;
+                    return cold ?? throw new InvalidOperationException("The cold-start maker reported success without producing a result.");
             var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -389,7 +397,7 @@ public static class DBCommandExtensions {
             var makers = TypeParser.TypeParserMakers;
             for (int i = 0; i < makers.Count; i++)
                 if (makers[i].TryColdStartAsync(type, cmd, cache, disposeCommand, ct, out var cold))
-                    return await cold!.ConfigureAwait(false);
+                    return await (cold ?? throw new InvalidOperationException("The cold-start maker reported success without producing a task.")).ConfigureAwait(false);
             var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -600,7 +608,7 @@ public static class DBCommandExtensions {
         public DbDataReader ExecuteReader(CommandBehavior behavior = default, ICache? cache = null) {
             var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
             var wasClosed = cnn.State != ConnectionState.Open;
-            DbDataReader reader;
+            DbDataReader? reader = null;
             try {
                 if (wasClosed) {
                     cnn.Open();
@@ -608,14 +616,15 @@ public static class DBCommandExtensions {
                 }
                 var r = cmd.ExecuteReader(behavior);
                 reader = WrappedBasicReader.Wrap(r);
+                cache?.UpdateCache(cmd);
+                return reader;
             }
             catch {
+                reader?.Dispose();
                 if (wasClosed && cnn.State != ConnectionState.Closed)
                     cnn.Close();
                 throw;
             }
-            cache?.UpdateCache(cmd);
-            return reader;
         }
         /// <summary>
         /// Executes the reader of the <see cref="DbCommand"/>.
@@ -720,7 +729,7 @@ public static class DBCommandExtensions {
             var makers = TypeParser.TypeParserMakers;
             for (int i = 0; i < makers.Count; i++)
                 if (makers[i].TryColdStart(type, cmd, cache, disposeCommand, out var cold))
-                    return cold!;
+                    return cold ?? throw new InvalidOperationException("The cold-start maker reported success without producing a result.");
             var cnn = cmd.Connection ?? throw new RinkuNoConnectionException();
             var wasClosed = cnn.State != ConnectionState.Open;
             DbDataReader? reader = null;
@@ -745,7 +754,7 @@ public static class DBCommandExtensions {
             var makers = TypeParser.TypeParserMakers;
             for (int i = 0; i < makers.Count; i++)
                 if (makers[i].TryColdStartAsync(type, cmd, cache, disposeCommand, ct, out var cold))
-                    return cold!;
+                    return cold ?? throw new InvalidOperationException("The cold-start maker reported success without producing a result.");
             return Task.FromResult(cmd.Query(type, cache, disposeCommand));
         }
     }

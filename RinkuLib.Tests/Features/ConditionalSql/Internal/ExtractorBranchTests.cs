@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.Internal;
 
 /// <summary>
 /// Targets the scanner branches the broader suites leave half-covered: dynamic-projection column-name
@@ -96,7 +96,7 @@ public class ExtractorBranchTests {
     [Fact]
     public void Always_marker_inside_deeper_parens_is_rejected() {
         Refusals.Raises(ErrorCodes.ProjectionOnlyConstruct,
-            () => new QueryCommand("?SELECT a, fn(x!, y) AS B FROM t"));
+            () => _ = new QueryCommand("?SELECT a, fn(x!, y) AS B FROM t"));
     }
 
     [Fact]
@@ -203,7 +203,7 @@ public class ExtractorBranchTests {
     [Fact]
     public void Marker_on_a_variable_that_does_not_exist_is_rejected() {
         var ex = Refusals.Raises(ErrorCodes.ConditionVariableNotInQuery,
-            () => new QueryCommand("SELECT a FROM t WHERE /*@Nope*/x = 1"));
+            () => _ = new QueryCommand("SELECT a FROM t WHERE /*@Nope*/x = 1"));
         Assert.Contains("@Nope", ex.Message);
     }
 

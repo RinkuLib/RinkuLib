@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<Version>0.0.0.2</Version>
+		<Version>0.0.1.18</Version>
 		<TargetFramework>net8.0-windows</TargetFramework>
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<ImplicitUsings>enable</ImplicitUsings>
@@ -9,11 +9,12 @@
 		<NoWarn>$(NoWarn);VSEXTPREVIEW_PROJECTQUERY_PROPERTIES_BUILDPROPERTIES</NoWarn>
 		<UseWPF>true</UseWPF>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-		<CompilerPath>$(SolutionDir)RinkuPowerTools.Compiler\bin\$(Configuration)\net10.0\RinkuPowerTools.Compiler.exe</CompilerPath>
-		<XamlGenDir>$(IntermediateOutputPath)RinkuXamlGen</XamlGenDir>
+		<CompilerPath>$(MSBuildThisFileDirectory)..\RinkuPowerTools.Compiler\bin\$(Configuration)\net10.0\RinkuPowerTools.Compiler.dll</CompilerPath>
 	</PropertyGroup>
 
 	<ItemGroup>
+		<Content Include="Editor\**\*" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\RinkuPowerTools.SqlEditor\bin\$(Configuration)\net472\RinkuPowerTools.SqlEditor.vsix" Link="Editor\RinkuPowerTools.SqlEditor.vsix" CopyToOutputDirectory="PreserveNewest" />
 		<PackageReference Include="Microsoft.VisualStudio.Extensibility" Version="17.*" />
 		<PackageReference Include="Microsoft.VisualStudio.Extensibility.Sdk" Version="17.14.40608" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.VisualStudio.Extensibility.Build" Version="17.14.40608" PrivateAssets="all" />
@@ -21,27 +22,25 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\RinkuPowerTools\RinkuPowerTools.csproj" />
+        <ProjectReference Include="..\RinkuPowerTools.SqlEditor\RinkuPowerTools.SqlEditor.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;TargetFramework" />
+        <ProjectReference Include="..\RinkuPowerTools.Compiler\RinkuPowerTools.Compiler.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
 	</ItemGroup>
 
-	<Target Name="RunRinkuCompiler" BeforeTargets="BeforeCompile">
-		<Message Importance="high" Text="Running RinkuXamlCompiler..." />
-		<MakeDir Directories="$(XamlGenDir)" />
-		<Exec Command="&quot;$(CompilerPath)&quot; &quot;$(ProjectDir)Shell\ListManagementShell.xaml&quot; &quot;$(ProjectDir)Content&quot; &quot;$(XamlGenDir)&quot; --recursive --pattern .template.xaml" />
-	</Target>
-	<Target Name="CleanRinkuXamlGen" AfterTargets="Clean">
-		<RemoveDir Directories="$(XamlGenDir)" />
-	</Target>
-
-	<ItemGroup>
-		<EmbeddedResource Include="$(XamlGenDir)\**\*.xaml">
-			<LogicalName>
-				RinkuPowerTools.VisualStudio.%(Filename).xaml
-			</LogicalName>
-		</EmbeddedResource>
-		<Page Remove="$(XamlGenDir)\**\*.xaml" />
-	</ItemGroup>
+    <Target Name="RunRinkuCompiler" BeforeTargets="AssignTargetPaths" DependsOnTargets="ResolveProjectReferences" Condition="'$(DesignTimeBuild)' != 'true'">
+        <PropertyGroup><XamlGenDir>$(IntermediateOutputPath)RinkuXamlGen</XamlGenDir></PropertyGroup>
+        <Exec Command="dotnet &quot;$(CompilerPath)&quot; &quot;$(MSBuildProjectDirectory)\Shell\ListManagementShell.xaml&quot; &quot;$(MSBuildProjectDirectory)\Content&quot; &quot;$(XamlGenDir)&quot; --recursive --pattern .template.xaml" />
+        <ItemGroup>
+            <_RinkuGeneratedXaml Include="$(XamlGenDir)\**\*.xaml" />
+            <EmbeddedResource Include="@(_RinkuGeneratedXaml)">
+                <LogicalName>RinkuPowerTools.VisualStudio.%(_RinkuGeneratedXaml.Filename).xaml</LogicalName>
+            </EmbeddedResource>
+            <Page Remove="$(XamlGenDir)\**\*.xaml" />
+            <FileWrites Include="$(XamlGenDir)\**\*.xaml" />
+        </ItemGroup>
+    </Target>
 	<ItemGroup>
 		<Page Remove="Shell\ListManagementShell.xaml" />
+        <Page Remove="Content\**\*.template.xaml" />
 	</ItemGroup>
 
 </Project>

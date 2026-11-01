@@ -1,25 +1,19 @@
 # Binding
 
+The examples use the `Album`, `IAlbumEdit`, and `existingAlbums` setup from the [tracking overview](index.md).
+
+## Default binding list
+
 ```csharp
-using Rinku.Tracking.Binding;
-
-public record Album(int Id, string Title);
-
-List<Album> source = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
-BindingTrackingList<IRuntimeTrackingItem<Album>> albums = source.ToBindingList();
+BindingTrackingList<ITrackingItem<Album>> albums = existingAlbums.ToBindingList();
 ```
 
-The binding list adds binding behavior around the same generated edit and structural tracking state.
+The binding list exposes the same member and structural changes through `IBindingList` notifications.
 
 ## Typed contract
 
 ```csharp
-public interface IAlbumEdit : IRuntimeTrackingItem<Album>
-{
-    int Id { get; }
-    string Title { get; set; }
-}
-
+BindingList<Album> source = new(existingAlbums);
 BindingTrackingList<IAlbumEdit> albums = source.ToBindingList<Album, IAlbumEdit>();
 albums[0].Title = "Kind of Blue";
 ```
@@ -28,10 +22,18 @@ albums[0].Title = "Kind of Blue";
 
 ```csharp
 BindingList<Album> source = new(existingAlbums);
-BindingTrackingList<IRuntimeTrackingItem<Album>> albums = source.ToBindingList();
+BindingTrackingList<ITrackingItem<Album>> albums = source.ToBindingList();
 ```
 
-An `IList<TOriginal>` source uses a source-aware tracking context.
+When the source implements `IList<TOriginal>`, successful confirmations are applied back to that source.
+
+The materialization overload attaches BindBack automatically for an `IList<TOriginal>` source. The same behavior can be attached explicitly and detached through its disposable subscription.
+
+```csharp
+RuntimeTrackingRegistration<Album, IAlbumEdit> registration = RuntimeTracking.CreateOptions<Album, IAlbumEdit>().GetRegistration<IAlbumEdit>();
+TrackingList<IAlbumEdit> edits = new(source.Select(registration.Create));
+using IDisposable binding = edits.BindBack(source);
+```
 
 ## Custom runtime options
 
@@ -42,7 +44,24 @@ options.Member<int>(nameof(Album.Id)).ReadOnly();
 BindingTrackingList<IAlbumEdit> albums = source.ToBindingList<Album, IAlbumEdit>(options);
 ```
 
-Binding materialization applies binding support to a copy of the supplied runtime options.
+The supplied options remain reusable without binding-specific changes.
+
+## Asynchronous loading
+
+An async stream can be materialized directly into its final tracking storage:
+
+```csharp
+BindingTrackingList<IAlbumEdit> albums = await originals.ToBindingListAsync<Album, IAlbumEdit>(options, cancellationToken);
+```
+
+No intermediate original list is required. Failed or cancelled materialization disposes the incomplete tracking list. `ToTrackingListAsync` provides the same operation without requiring component-model binding.
+
+With Rinku.More, a consuming `QueryAsync` overload can return that source while keeping the command and connection open until consumption completes:
+
+```csharp
+var albums = await database.QueryAsync<Album, BindingTrackingList<IAlbumEdit>>(DbCommands.LoadAlbums,
+    (originals, token) => originals.ToBindingListAsync<Album, IAlbumEdit>(options, token), cancellationToken);
+```
 
 ## Structural operations
 
@@ -57,3 +76,5 @@ Console.WriteLine(albums.RemovedCount);
 ```
 
 [Tracking lists](lists.md)
+
+`BindBack` consumes `ITrackingConfirmations<out T>`, which exposes read-only items and accepted-operation subscriptions. Implementations do not need to inherit `TrackingList<T>`.

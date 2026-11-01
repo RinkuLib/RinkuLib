@@ -1,6 +1,6 @@
 using System.Data.Common;
 
-namespace Rinku.Mapping.Parsers;
+namespace Rinku.Mapping.Parsers.Defaults;
 
 internal static class ResultSetDrainer {
     public static void Drain(DbDataReader reader) {

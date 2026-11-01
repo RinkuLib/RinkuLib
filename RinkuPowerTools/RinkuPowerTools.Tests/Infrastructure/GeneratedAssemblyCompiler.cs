@@ -7,7 +7,9 @@ namespace RinkuPowerTools.Tests.Infrastructure;
 
 internal static class GeneratedAssemblyCompiler
 {
-    public static Assembly Compile(params string[] sources)
+    public static Assembly Compile(params string[] sources) => Compile(null, sources);
+
+    public static Assembly Compile(Assembly? additionalReference, params string[] sources)
     {
         var syntaxTrees = new SyntaxTree[sources.Length];
         for (int i = 0; i < sources.Length; i++)
@@ -24,6 +26,8 @@ internal static class GeneratedAssemblyCompiler
             typeof(Microsoft.Data.SqlClient.SqlConnection).Assembly.Location,
             typeof(Microsoft.Data.Sqlite.SqliteConnection).Assembly.Location
         };
+        if (additionalReference is not null)
+            paths.Add(additionalReference.Location);
 
         var references = new MetadataReference[paths.Count];
         int referenceIndex = 0;

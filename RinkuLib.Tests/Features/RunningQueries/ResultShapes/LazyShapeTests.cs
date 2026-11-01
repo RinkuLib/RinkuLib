@@ -4,7 +4,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.ResultShapes;
 
 /// <summary>
 /// The lazy and buffered result shapes over real readers: <c>IEnumerable&lt;T&gt;</c> streams while
@@ -14,7 +14,6 @@ public class LazyShapeTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand Names = new("SELECT Name FROM Users ORDER BY ID");
     private static readonly QueryCommand UsersQuery = new("SELECT ID, Name, Email FROM Users ORDER BY ID");
     private static readonly QueryCommand NoRows = new("SELECT Name FROM Users WHERE 1 = 0");
-
     [Fact]
     public void Lazy_enumerable_of_scalars_yields_all_rows() {
         using var cnn = Db.GetConnection();

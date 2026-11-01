@@ -1,3 +1,5 @@
 # API reference
 
-This section contains the generated API reference for Rinku.
+The generated API references for the Rinku packages are available here:
+
+- [Rinku API](rinku/index.md)

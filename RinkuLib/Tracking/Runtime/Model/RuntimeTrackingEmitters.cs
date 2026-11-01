@@ -3,6 +3,19 @@ using System.Reflection.Emit;
 
 namespace Rinku.Tracking.Runtime;
 
+/// <summary>Optional member mode implemented by any emitter that can provide a read-only version.</summary>
+public interface IRuntimeReadOnlyEmitter<TOriginal>
+{
+    /// <summary>Creates a member emitter that prevents editing.</summary>
+    RuntimeTrackingMemberEmitter<TOriginal> AsReadOnly();
+}
+/// <summary>Optional member mode implemented by any emitter that can provide nested editing.</summary>
+public interface IRuntimeNestedEmitter<TOriginal>
+{
+    /// <summary>Creates a member emitter with the requested nested editing mode.</summary>
+    RuntimeTrackingMemberEmitter<TOriginal> WithNestedEdit(NestedEditMode mode);
+}
+
 /// <summary>Expandable second-phase type contribution attached by first-phase options.</summary>
 public interface IRuntimeTrackingTypeEmitter<TOriginal>
 {
@@ -13,8 +26,8 @@ public interface IRuntimeTrackingTypeEmitter<TOriginal>
 }
 
 /// <summary>
-/// Per-member emitter selected during configuration. The final emitter determines whether the member is snapshot-backed,
-/// direct TEdit state, read-only original state, nested draft state, or something custom.
+/// Per-member emitter selected during configuration. The emitter defines the member's storage, access, and
+/// confirmation behavior for the generated tracking type.
 /// </summary>
 public abstract class RuntimeTrackingMemberEmitter<TOriginal>
 {
@@ -24,6 +37,8 @@ public abstract class RuntimeTrackingMemberEmitter<TOriginal>
     public abstract bool CanWrite { get; }
     /// <summary>Gets whether the member uses snapshot storage.</summary>
     public abstract bool UsesSnapshot { get; }
+    /// <summary>Gets whether the member participates in change comparison independently of snapshot storage.</summary>
+    public virtual bool TracksChanges => UsesSnapshot;
 
     /// <summary>Defines storage for the member.</summary>
     protected internal abstract void DefineStorage(RuntimeTrackingMemberEmitContext<TOriginal> context);
@@ -47,7 +62,7 @@ public abstract class RuntimeTrackingMemberEmitter<TOriginal>
     protected internal virtual void EmitEditValueAsObject(RuntimeTrackingMemberEmitContext<TOriginal> context, ILGenerator il)
         => EmitBoxedDefault(context.Member.ValueType, il);
     /// <summary>Gets nested members exposed through runtime paths.</summary>
-    protected internal virtual IReadOnlyList<MemberInfo> GetNestedRuntimePathMembers() => Array.Empty<MemberInfo>();
+    protected internal virtual IReadOnlyList<MemberInfo> GetNestedRuntimePathMembers() => [];
 
     private static void EmitBoxedDefault(Type type, ILGenerator il)
     {

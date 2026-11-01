@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.ConditionalMarkers;
 
 /// <summary>
 /// The worked examples from <c>docs/articles/conditional-sql/conditional-markers.md</c>, kept in sync so the

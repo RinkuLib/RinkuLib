@@ -2,12 +2,12 @@ using System.Data;
 using Rinku.Mapping.Defaults;
 using Rinku.Mapping;
 using Rinku.Querying;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Objects;
 
 [Collection("GlobalMappingConfiguration")]
 public class ConstructionAndVisibilityTests {

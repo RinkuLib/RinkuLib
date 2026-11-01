@@ -17,13 +17,12 @@ public class BaseTypeInfo : ScalarTypeParsingInfo {
     /// <inheritdoc/>
     protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter,
         ColumnInfo column, int ordinal) {
-        ITypeConverter? converter;
         bool found = parameter.RequireExactType
-            ? ITypeConverter.TryGetExactConverter(column.Type, targetType, out converter)
+            ? ITypeConverter.TryGetExactConverter(column.Type, targetType, out ITypeConverter? converter)
             : ITypeConverter.TryGetConverter(column.Type, targetType, out converter);
         if (!found)
             return null;
-        return new ConvertedScalarPlan(parentType, converter!, parameter.NameComparer.GetDefaultName(),
+        return new ConvertedScalarPlan(parentType, converter ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "A converter was not returned for a successful lookup."), parameter.NameComparer.GetDefaultName(),
             parameter.NullColHandler, ordinal);
     }
 }

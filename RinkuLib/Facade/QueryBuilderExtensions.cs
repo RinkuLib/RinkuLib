@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using Rinku.Facade;
 using Rinku.Querying;
 using Rinku.Mapping.Parsers;
 

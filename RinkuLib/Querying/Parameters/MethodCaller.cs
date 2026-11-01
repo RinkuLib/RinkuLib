@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Linq.Expressions;
 using Rinku.Mapping;
 using Rinku.Querying.Parameters;
 
@@ -35,13 +36,13 @@ public sealed class CallerParameter<T> : CallerParameter {
 
     /// <summary>
     /// Matches one otherwise-unbound target parameter whose type is exactly <typeparamref name="T"/>.
-    /// No match is allowed. The caller argument is simply ignored when absent. Multiple matches are ambiguous and throw.
+    /// No match is allowed. The caller argument is ignored when absent. Multiple matches are ambiguous and throw.
     /// </summary>
     public static CallerParameter<T> ByType() => TypeOnly;
 
     /// <summary>
     /// Supplies the named target parameter directly. When the target method does not contain that parameter,
-    /// the caller argument is simply ignored so the same delegate shape can be reused across compatible methods.
+    /// the caller argument is ignored so the same delegate shape can be reused across compatible methods.
     /// </summary>
     public static CallerParameter<T> Named(string parameterName)
         => new(string.IsNullOrWhiteSpace(parameterName)
@@ -58,6 +59,34 @@ public sealed class CallerParameter<T> : CallerParameter {
 /// It does not choose a different mapping after creation.
 /// </remarks>
 public static class MethodCaller {
+    /// <summary>Selects a static target method from a method-group delegate without invoking it.</summary>
+    public static TDelegate Create<TDelegate>(Delegate method, params CallerParameter[] callerParameters) where TDelegate : Delegate
+    {
+        ArgumentNullException.ThrowIfNull(method);
+        if (!method.Method.IsStatic)
+        {
+            throw new ArgumentException("Select instance methods through MethodInfo or a call expression; their instance is the mapped source.", nameof(method));
+        }
+        return Create<TDelegate>(method.Method, callerParameters);
+    }
+
+    /// <summary>Resolves the exact method selected by a call expression, without executing it.</summary>
+    public static TDelegate Create<TDelegate>(Expression<Action> method, params CallerParameter[] callerParameters) where TDelegate : Delegate
+    {
+        ArgumentNullException.ThrowIfNull(method);
+        return Create<TDelegate>(method.Body is MethodCallExpression call ? call.Method : throw new ArgumentException(nameof(MethodCallExpression), nameof(method)), callerParameters);
+    }
+
+    /// <summary>Maps the source to the only public constructor of the delegate's return type.</summary>
+    public static TDelegate CreateConstructor<TDelegate>(params CallerParameter[] callerParameters) where TDelegate : Delegate {
+        Type result = typeof(TDelegate).GetMethod(nameof(Action.Invoke))!.ReturnType;
+        ConstructorInfo[] constructors = result.GetConstructors();
+        return constructors.Length == 1 ? Create<TDelegate>(constructors[0], callerParameters) : throw new AmbiguousMatchException($"Select a constructor explicitly for {result}; it has {constructors.Length} public constructors.");
+    }
+
+    /// <summary>Maps the source and explicit caller arguments to a constructor.</summary>
+    public static TDelegate Create<TDelegate>(ConstructorInfo constructor, params CallerParameter[] callerParameters) where TDelegate : Delegate => Create<TDelegate>((MethodBase)constructor, callerParameters);
+
     /// <summary>
     /// Generates a caller. The first delegate argument is the mapped source.
     /// Every later argument is caller-supplied. Without <paramref name="callerParameters"/>, caller-supplied arguments match target parameters by exact type.
@@ -68,8 +97,9 @@ public static class MethodCaller {
     /// Optional positional configuration for the delegate arguments after the mapped source. Supply either none
     /// (all match by exact type), or one entry for every caller-supplied delegate argument.
     /// </param>
-    public static TDelegate Create<TDelegate>(MethodInfo method, params CallerParameter[] callerParameters)
-        where TDelegate : Delegate {
+    public static TDelegate Create<TDelegate>(MethodInfo method, params CallerParameter[] callerParameters) where TDelegate : Delegate => Create<TDelegate>((MethodBase)method, callerParameters);
+
+    private static TDelegate Create<TDelegate>(MethodBase method, CallerParameter[] callerParameters) where TDelegate : Delegate {
         ArgumentNullException.ThrowIfNull(method);
         callerParameters ??= [];
 
@@ -78,15 +108,17 @@ public static class MethodCaller {
         ParameterInfo[] delegateParameters = invoke.GetParameters();
         if (delegateParameters.Length == 0)
             throw new NotSupportedException("A generated method caller requires a mapped source as its first delegate argument.");
-        if (delegateParameters.Any(static p => p.ParameterType.IsByRef))
-            throw new NotSupportedException("ref/in/out parameters are not supported by the generated caller yet.");
+        if (delegateParameters.Any(static p => p.ParameterType.IsByRef && !p.IsOut))
+            throw new NotSupportedException("Caller ref/in parameters are not supported by the generated caller yet.");
         if (method.ContainsGenericParameters)
             throw new NotSupportedException("Open generic methods cannot be used by a generated caller.");
         ParameterInfo[] targetParameters = method.GetParameters();
-        if (targetParameters.Any(static p => p.ParameterType.IsByRef))
-            throw new NotSupportedException("Target ref/in/out parameters are not supported by the generated caller yet.");
+        if (targetParameters.Any(static p => p.ParameterType.IsByRef && !p.IsOut))
+            throw new NotSupportedException("Target ref/in parameters are not supported by the generated caller yet.");
 
         Type sourceType = delegateParameters[0].ParameterType;
+        if (sourceType.IsByRef)
+            throw new NotSupportedException("The mapped source cannot be an output parameter.");
         if (sourceType.IsValueType)
             throw new NotSupportedException("Value-type mapped sources are not supported by MethodCaller yet. Use a reference/interface source.");
 
@@ -94,13 +126,27 @@ public static class MethodCaller {
         if (callerParameters.Length != 0 && callerParameters.Length != callerCount)
             throw new ArgumentException($"The delegate has {callerCount} caller-supplied argument(s), but {callerParameters.Length} caller parameter configuration(s) were supplied.", nameof(callerParameters));
 
-        ValidateReturn(method.ReturnType, invoke.ReturnType);
-        ValidateInstanceTarget(method, sourceType);
+        Type returnType = method is ConstructorInfo ? method.DeclaringType! : ((MethodInfo)method).ReturnType;
+        ValidateReturn(returnType, invoke.ReturnType);
+        if (method is MethodInfo instanceMethod)
+            ValidateInstanceTarget(instanceMethod, sourceType);
 
         var callerBindings = ResolveCallerBindings(delegateParameters, targetParameters, callerParameters);
+        for (int caller = 1; caller < delegateParameters.Length; caller++)
+            if (delegateParameters[caller].IsOut) {
+                bool matched = false;
+                for (int target = 0; target < targetParameters.Length; target++)
+                    if (callerBindings[target] == caller - 1 && targetParameters[target].IsOut)
+                        matched = true;
+                if (!matched)
+                    throw new InvalidOperationException($"Caller output '{delegateParameters[caller].Name}' has no matching target output.");
+            }
         var mappedNames = new List<string>(targetParameters.Length);
+        var mappedTypes = new List<Type>(targetParameters.Length);
         var bindings = new MethodArgumentBinding[targetParameters.Length];
         for (int i = 0; i < targetParameters.Length; i++) {
+            if (targetParameters[i].IsOut)
+                continue;
             if (callerBindings[i] >= 0) {
                 bindings[i] = MethodArgumentBinding.Caller(callerBindings[i]);
                 continue;
@@ -109,6 +155,7 @@ public static class MethodCaller {
                 ?? throw new NotSupportedException($"Target parameter #{i} on '{method}' does not expose a name.");
             int mapperIndex = mappedNames.Count;
             mappedNames.Add(name);
+            mappedTypes.Add(targetParameters[i].ParameterType);
             bindings[i] = MethodArgumentBinding.Mapped(mapperIndex);
         }
 
@@ -116,13 +163,13 @@ public static class MethodCaller {
         try {
             ParameterAccessorGenerator.StackAccessor? stackAccessor = mapper is null
                 ? null
-                : ParameterAccessorGenerator.CreateStack(sourceType, mapper);
+                : ParameterAccessorGenerator.CreateStack(sourceType, mapper, mappedTypes.ToArray());
 
             if (stackAccessor is not null)
                 ValidateMappedBindings(stackAccessor, targetParameters, bindings, sourceType, method);
 
             var dm = new DynamicMethod($"Call_{method.DeclaringType?.Name}_{method.Name}_{typeof(TDelegate).Name}",
-                invoke.ReturnType, delegateParameters.Select(static p => p.ParameterType).ToArray(),
+                invoke.ReturnType, [.. delegateParameters.Select(static p => p.ParameterType)],
                 typeof(MethodCaller).Module, skipVisibility: true);
             ILGenerator il = dm.GetILGenerator();
             ParameterAccessorGenerator.StackAccessorEmission? emission = stackAccessor?.Begin(il);
@@ -143,14 +190,21 @@ public static class MethodCaller {
                 }
             }
 
-            if (!method.IsStatic)
+            if (method is MethodInfo { IsStatic: false })
                 il.Emit(OpCodes.Ldarg_0); // instance method implemented by the mapped source itself
 
             for (int i = 0; i < bindings.Length; i++) {
                 MethodArgumentBinding binding = bindings[i];
                 Type targetType = targetParameters[i].ParameterType;
+                if (targetParameters[i].IsOut) {
+                    if (callerBindings[i] >= 0)
+                        il.Emit(OpCodes.Ldarg, callerBindings[i] + 1);
+                    else
+                        il.Emit(OpCodes.Ldloca, il.DeclareLocal(targetType.GetElementType()!));
+                    continue;
+                }
                 if (binding.IsMapped) {
-                    emission!.EmitValue(binding.Index);
+                    (emission ?? throw new InvalidOperationException("A mapped parameter has no value emitter.")).EmitValue(binding.Index);
                     Type sourceValueType = emission.GetValueType(binding.Index)
                         ?? throw MissingMappedSource(sourceType, targetParameters[i], method);
                     EmitConversion(il, sourceValueType, targetType, $"mapped parameter '{targetParameters[i].Name}'");
@@ -163,8 +217,13 @@ public static class MethodCaller {
                 }
             }
 
-            il.Emit(method.IsStatic || !method.IsVirtual ? OpCodes.Call : OpCodes.Callvirt, method);
-            EmitConversion(il, method.ReturnType, invoke.ReturnType, "return value");
+            if (method is ConstructorInfo constructor)
+                il.Emit(OpCodes.Newobj, constructor);
+            else {
+                var target = (MethodInfo)method;
+                il.Emit(target.IsStatic || !target.IsVirtual ? OpCodes.Call : OpCodes.Callvirt, target);
+            }
+            EmitConversion(il, returnType, invoke.ReturnType, "return value");
             il.Emit(OpCodes.Ret);
             return dm.CreateDelegate<TDelegate>();
         }
@@ -173,11 +232,11 @@ public static class MethodCaller {
         }
     }
 
-    private static readonly MethodInfo MissingParameterExceptionMethod = typeof(MethodCaller)
-        .GetMethod(nameof(CreateMissingParameterException), BindingFlags.Static | BindingFlags.NonPublic)!;
+    private static readonly MethodInfo MissingParameterExceptionMethod = Rinku.Mapping.TypeExtensions.Require(typeof(MethodCaller)
+        .GetMethod(nameof(CreateMissingParameterException), BindingFlags.Static | BindingFlags.NonPublic), nameof(MissingParameterExceptionMethod));
 
-    private static Exception CreateMissingParameterException(string name)
-        => new InvalidOperationException($"Mapped method parameter '{name}' is not currently usable from the supplied source.");
+    private static InvalidOperationException CreateMissingParameterException(string name)
+        => new($"Mapped method parameter '{name}' is not currently usable from the supplied source.");
 
     private static int[] ResolveCallerBindings(ParameterInfo[] delegateParameters, ParameterInfo[] targetParameters, CallerParameter[] configurations) {
         var targetBindings = new int[targetParameters.Length];
@@ -191,7 +250,7 @@ public static class MethodCaller {
                 CallerParameter config = configurations[i]
                     ?? throw new ArgumentNullException(nameof(configurations), $"Caller parameter configuration #{i} is null.");
                 Type delegateType = delegateParameters[i + 1].ParameterType;
-                if (config.ValueType != delegateType)
+                if (config.ValueType != (delegateParameters[i + 1].IsOut ? delegateType.GetElementType() : delegateType))
                     throw new ArgumentException($"Caller configuration #{i} describes {config.ValueType}, but delegate argument #{i + 1} is {delegateType}.", nameof(configurations));
                 effective[i] = config;
             }
@@ -221,7 +280,7 @@ public static class MethodCaller {
                 if (targetBindings[targetIndex] >= 0 || targetParameters[targetIndex].ParameterType != callerType)
                     continue;
                 if (match >= 0)
-                    throw new InvalidOperationException($"Caller argument #{callerIndex + 1} ({callerType}) matches more than one target parameter by type. Use {nameof(CallerParameter<int>)}.{nameof(CallerParameter<int>.Named)}(...) to select one explicitly.");
+                    throw new InvalidOperationException($"Caller argument #{callerIndex + 1} ({callerType}) matches more than one target parameter by type. Use {nameof(CallerParameter<>)}.{nameof(CallerParameter<>.Named)}(...) to select one explicitly.");
                 match = targetIndex;
             }
             if (match >= 0) targetBindings[match] = callerIndex;
@@ -237,19 +296,17 @@ public static class MethodCaller {
         return -1;
     }
 
-    private static void ValidateMappedBindings(ParameterAccessorGenerator.StackAccessor accessor, ParameterInfo[] targetParameters, MethodArgumentBinding[] bindings, Type sourceType, MethodInfo method) {
+    private static void ValidateMappedBindings(ParameterAccessorGenerator.StackAccessor accessor, ParameterInfo[] targetParameters, MethodArgumentBinding[] bindings, Type sourceType, MethodBase method) {
         for (int i = 0; i < bindings.Length; i++) {
             if (!bindings[i].IsMapped) continue;
-            Type? valueType = accessor.GetValueType(bindings[i].Index);
-            if (valueType is null)
-                throw MissingMappedSource(sourceType, targetParameters[i], method);
+            Type? valueType = accessor.GetValueType(bindings[i].Index) ?? throw MissingMappedSource(sourceType, targetParameters[i], method);
             EnsureConvertible(valueType, targetParameters[i].ParameterType,
                 $"mapped source for '{targetParameters[i].Name}'");
         }
     }
 
-    private static Exception MissingMappedSource(Type sourceType, ParameterInfo parameter, MethodInfo method)
-        => new InvalidOperationException($"Parameter '{parameter.Name}' on '{method}' cannot be resolved from {sourceType} and is not supplied by the caller.");
+    private static InvalidOperationException MissingMappedSource(Type sourceType, ParameterInfo parameter, MethodBase method)
+        => new($"Parameter '{parameter.Name}' on '{method}' cannot be resolved from {sourceType} and is not supplied by the caller.");
 
     private static void ValidateInstanceTarget(MethodInfo method, Type sourceType) {
         if (method.IsStatic) return;

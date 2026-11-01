@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 using Rinku.Mapping;
@@ -6,21 +5,14 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.DbParsing;
+namespace RinkuLib.Tests.Internal.Parsing;
 
 /// <summary>
 /// The <see cref="Generator"/> wrapper forwards every ILGenerator operation to the real generator, so
-/// code emitted through it runs exactly as written; the debug build logs each instruction on the way.
+/// code emitted through it runs exactly as written.
 /// </summary>
 public class GeneratorTests {
-    static readonly ColumnInfo[] Cols = [new("First", typeof(int), false)];
-
-    static Generator Wrap(ILGenerator il) =>
-#if DEBUG
-        new(il, Cols);
-#else
-        new(il);
-#endif
+    static Generator Wrap(ILGenerator il) => new(il);
 
     static (Generator G, DynamicMethod M) Method(Type returnType, params Type[] args) {
         var method = new DynamicMethod($"gen_{Guid.NewGuid():N}", returnType, args, typeof(GeneratorTests).Module);
@@ -69,7 +61,7 @@ public class GeneratorTests {
         var one = g.DefineLabel();
         var fallout = g.DefineLabel();
         g.Emit(OpCodes.Ldarg_0);
-        g.Emit(OpCodes.Switch, new[] { zero, one });
+        g.Emit(OpCodes.Switch, [zero, one]);
         g.Emit(OpCodes.Br, fallout);
         g.MarkLabel(zero);
         g.Emit(OpCodes.Ldstr, "zero");
@@ -98,7 +90,7 @@ public class GeneratorTests {
     }
 
     [Fact]
-    public void Ldc_I4_logs_the_probable_column_for_small_indexes() {
+    public void Ldc_I4_for_small_indexes_still_emits_the_value() {
         var (g, m) = Method(typeof(int));
         g.Emit(OpCodes.Ldc_I4, 0);
         g.Emit(OpCodes.Ldc_I4, 900);
@@ -126,7 +118,6 @@ public class GeneratorTests {
     }
 
     public static int SevenTimes(int x) => 7 * x;
-
     [Fact]
     public void A_managed_calli_goes_through_a_function_pointer() {
         var (g, m) = Method(typeof(int));
@@ -154,7 +145,6 @@ public class GeneratorTests {
     public static int Nine() => 9;
     public static readonly NativeInt KeepAlive = Nine;
     public static readonly IntPtr NativeNine = Marshal.GetFunctionPointerForDelegate(KeepAlive);
-
     [Fact]
     public void An_unmanaged_calli_goes_through_a_native_thunk() {
         var (g, m) = Method(typeof(int));
@@ -304,22 +294,4 @@ public class GeneratorTests {
         Refusals.Raises(ErrorCodes.TargetTypeMismatch, () => new ParsableConverter(typeof(GeneratorTests)).EmitConversion(g2, typeof(string)));
     }
 
-#if DEBUG
-    [Fact]
-    public void The_debug_build_traces_each_instruction_when_opted_in() {
-        var captured = new ConcurrentQueue<string>();
-        var previous = Generator.Write;
-        Generator.Write = s => { captured.Enqueue(s); previous(s); };
-        try {
-            var (g, m) = Method(typeof(int));
-            g.Emit(OpCodes.Ldc_I4, 0);
-            g.Emit(OpCodes.Ret);
-            Assert.Equal(0, m.CreateDelegate<Func<int>>()());
-        }
-        finally {
-            Generator.Write = previous;
-        }
-        Assert.Contains(captured, s => s.Contains("probable index for First"));
-    }
-#endif
 }

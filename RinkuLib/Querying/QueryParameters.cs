@@ -12,7 +12,7 @@ public sealed class QueryParameters : IDbParamCache {
     /// <summary>The binding strategy learned for each plain parameter.</summary>
     public ReadOnlySpan<DbParamInfo> VariablesInfo => _variablesInfo;
     internal SpecialHandler[] _specialHandlers;
-    /// <summary>The special handlers, the ones that expand into several parameters.</summary>
+    /// <summary>The handlers that expand one logical value into several parameters.</summary>
     public ReadOnlySpan<SpecialHandler> SpecialHandlers => _specialHandlers;
     internal int[] _nonCachedIndexes;
     internal int NbNonCached => _nonCachedIndexes.Length;
@@ -116,12 +116,10 @@ public sealed class QueryParameters : IDbParamCache {
         Interlocked.Exchange(ref _nonCachedIndexes, nonCachedIndexes[..total].ToArray());
     }
     /// <summary>
-    /// Whether this run uses a parameter whose provider metadata is not settled yet, so the command still has
-    /// something to learn on this pass.
+    /// Whether this run uses a parameter whose provider metadata is not cached yet.
     /// </summary>
     /// <remarks>
-    /// Every run asks this, and a command that has settled answers from the one read that finds the list
-    /// empty.
+    /// A command can skip metadata discovery when this returns <see langword="false"/>.
     /// </remarks>
     public bool NeedToCache(object?[] variables) {
         var pending = _nonCachedIndexes;

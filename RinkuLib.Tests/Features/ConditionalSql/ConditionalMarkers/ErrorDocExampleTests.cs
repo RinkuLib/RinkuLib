@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.ConditionalMarkers;
 
 /// <summary>
 /// The templates the error reference names, run as written, so the code each is filed under stays true.
@@ -29,7 +29,7 @@ public class ErrorDocExampleTests {
     [InlineData("SELECT TrackId!, Name FROM tracks", ErrorCodes.ProjectionOnlyConstruct)]
     [InlineData("SELECT a FROM t WHERE /*@Nope*/x = 1", ErrorCodes.ConditionVariableNotInQuery)]
     public void The_broken_example_raises_the_code_it_is_filed_under(string sql, string code)
-        => Refusals.Raises(code, () => new QueryCommand(sql));
+        => Refusals.Raises(code, () => _ = new QueryCommand(sql));
 
     [Theory]
     [InlineData("SELECT /*IncludeEmail*/Email, Name FROM Users")]
@@ -59,10 +59,10 @@ public class ErrorDocExampleTests {
     [Fact]
     public void Nesting_reaches_63_scopes_and_stops_there() {
         Assert.NotNull(new QueryCommand(Nested(63)));
-        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => new QueryCommand(Nested(64)));
+        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => _ = new QueryCommand(Nested(64)));
 
         Assert.NotNull(new QueryCommand(NestedCase(63)));
-        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => new QueryCommand(NestedCase(64)));
+        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => _ = new QueryCommand(NestedCase(64)));
     }
 
     /// <summary>
@@ -78,7 +78,7 @@ public class ErrorDocExampleTests {
 
         Assert.DoesNotContain("(", NestedCase(63));
         Assert.NotNull(new QueryCommand(NestedCase(63)));
-        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => new QueryCommand(NestedCase(64)));
+        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => _ = new QueryCommand(NestedCase(64)));
     }
 
     static string Mixed(int cases, int parens)
@@ -93,8 +93,8 @@ public class ErrorDocExampleTests {
     [Fact]
     public void Case_and_parentheses_share_one_depth_budget() {
         Assert.NotNull(new QueryCommand(Mixed(31, 32)));
-        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => new QueryCommand(Mixed(32, 32)));
-        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => new QueryCommand(Mixed(31, 33)));
+        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => _ = new QueryCommand(Mixed(32, 32)));
+        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => _ = new QueryCommand(Mixed(31, 33)));
 
         Assert.NotNull(new QueryCommand(Mixed(63, 0)));
         Assert.NotNull(new QueryCommand(Mixed(0, 63)));

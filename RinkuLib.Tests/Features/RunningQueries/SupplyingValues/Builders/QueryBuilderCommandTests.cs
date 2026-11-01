@@ -5,7 +5,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Building;
+namespace RinkuLib.Tests.Features.RunningQueries.SupplyingValues.Builders;
 
 /// <summary>
 /// The live-command builder: every value change is synced onto the bound command's parameters on the
@@ -14,7 +14,6 @@ namespace RinkuLib.Tests.Building;
 public class QueryBuilderCommandTests {
     private const string Template = "SELECT ID FROM Users WHERE IsActive = ?@Active AND Status = ?@Status";
     private const string SpreadTemplate = "SELECT * FROM Tasks WHERE CategoryID IN (?@Cats_X)";
-
     private static (QueryBuilderCommand<DbCommand> Builder, FakeCommand Cmd) StartBuilder(string template) {
         var cmd = new FakeCommand { Connection = new FakeConnection() };
         var builder = new QueryCommand(template).StartBuilder((DbCommand)cmd);

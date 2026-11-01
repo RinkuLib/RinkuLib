@@ -6,10 +6,10 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Rinku.Mapping.Defaults;
 using Rinku.Mapping.Parsers;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace RinkuLib.Tests.DbParsing;
+namespace RinkuLib.Tests.Features.Mapping.Grouping;
 
 /// <summary>
 /// Edge cases and outside-in extensibility of the multi-row road: custom group boundaries written entirely
@@ -18,7 +18,6 @@ namespace RinkuLib.Tests.DbParsing;
 /// the collapse path. Every test checks the whole materialised graph.
 /// </summary>
 public class MultiRowEdgeCasesTests {
-
     static MultiRowEdgeCasesTests() {
         ((ICanUpdateGroupKey)TypeParsingInfo.ForceGet(typeof(StepHolder))).GroupKey = new StepMaker("Value", 10);
         ((ICanUpdateGroupKey)TypeParsingInfo.ForceGet(typeof(ParityHolder))).GroupKey = new ParityMaker("Seed");
@@ -29,7 +28,7 @@ public class MultiRowEdgeCasesTests {
         TypeParsingInfo.AddOrSet(typeof(ExternalBucket<>), new ExternalMultiRowInfo(new MultiRowTypeParsingInfo(
             typeof(ExternalBucket<>).GetConstructor(Type.EmptyTypes)!,
             typeof(List<>).GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .First(m => m.Name == nameof(List<int>.Add) && m.GetParameters().Length == 1),
+                .First(m => m.Name == nameof(List<>.Add) && m.GetParameters().Length == 1),
             null)));
     }
 
@@ -45,9 +44,7 @@ public class MultiRowEdgeCasesTests {
         public Average Finish() => new(Count == 0 ? 0 : Sum / Count, Count);
     }
     public readonly record struct Average(double Mean, int Count);
-
     public sealed class ExternalBucket<T> : List<T> { }
-
     [Fact]
     public void A_fold_requires_an_add_method_to_declare_its_element_type() {
         var error = Assert.Throws<RinkuConfigurationException>(() => new MultiRowTypeParsingInfo(
@@ -91,7 +88,6 @@ public class MultiRowEdgeCasesTests {
     }
 
     public sealed record ExternalCompositeValue(int Value) : IDbReadable;
-
     [Fact]
     public void An_external_simple_plan_can_be_nested_in_the_default_composite_plan() {
         TypeParsingInfo.AddOrSet(typeof(ExternalCompositeValue), new ExternalCompositeInfo(typeof(ExternalCompositeValue)));
@@ -807,6 +803,7 @@ public class MultiRowEdgeCasesTests {
         Assert.Equal([new NullableAlbum(null, null)], result[0].Albums);
     }
 
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Parameter)]
     public sealed class ThrowOnNullElementAttribute : Attribute, INullColHandlerMaker {
         public INullColHandler MakeColHandler(Type type, string? name, object[] attributes, object? param) => NotNullHandle.Instance;
     }
@@ -1187,9 +1184,11 @@ public class MultiRowEdgeCasesTests {
     }
 
     public sealed class TypeKeyConflict : IDbReadable {
-        [GroupKey] public int Id { get; set; }
+        [GroupKey] 
+            public int Id { get; set; }
         public List<MultiRowTests.Child> Children { get; set; } = [];
-        [GroupKey] public static (bool Same, int Next) Key(int stored, int id) => (id == stored, id);
+        [GroupKey] 
+            public static (bool Same, int Next) Key(int stored, int id) => (id == stored, id);
     }
 
     [Fact]
@@ -1208,7 +1207,8 @@ public class MultiRowEdgeCasesTests {
         }
         public string Label { get; }
         public List<int> Marks { get; }
-        [GroupKey] public int Track { get; set; }
+        [GroupKey] 
+            public int Track { get; set; }
     }
 
     [Fact]
@@ -1235,7 +1235,8 @@ public class MultiRowEdgeCasesTests {
         }
         public string Holder { get; }
         public List<int> Entries { get; }
-        [GroupKey] public int Number { get; }
+        [GroupKey] 
+            public int Number { get; }
     }
 
     [Fact]
@@ -1453,17 +1454,17 @@ public class MultiRowEdgeCasesTests {
     // --- collapse path -----------------------------------------------------------------------------------
 
     public sealed record KeyedPoint([property: GroupKey] int Id, string Name) : IDbReadable;
-
     [Fact]
     public void An_all_simple_type_collapses_and_its_key_does_not_span() {
         ColumnInfo[] cols = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
-        var parser = Assert.IsType<DefaultTypeParserMaker>(TypeParser.DefaultTypeParserMaker).ForceMultiRow<KeyedPoint>(TypeParser.GetDefaultNullColHandler<KeyedPoint>(), cols);
+        Assert.IsType<DefaultTypeParserMaker>(TypeParser.DefaultTypeParserMaker);
+        var parser = DefaultTypeParserMaker.ForceMultiRow<KeyedPoint>(TypeParser.GetDefaultNullColHandler<KeyedPoint>(), cols);
         using var reader = Rows.Reader(cols, [1, "one"], [1, "two"]);
         reader.Read();
 
-        var first = parser.Parse(reader);
-        Assert.True(first.CanContinue);
-        Assert.Equal(new KeyedPoint(1, "one"), first.Result);
+        var (CanContinue, Result) = parser.Parse(reader);
+        Assert.True(CanContinue);
+        Assert.Equal(new KeyedPoint(1, "one"), Result);
         var second = parser.Parse(reader);
         Assert.False(second.CanContinue);
         Assert.Equal(new KeyedPoint(1, "two"), second.Result);
@@ -1478,7 +1479,8 @@ public class MultiRowEdgeCasesTests {
         }
         public string Data { get; }
         public List<int> Values { get; }
-        [GroupKey] public int Id { get; }
+        [GroupKey] 
+            public int Id { get; }
     }
 
     [Fact]
@@ -1548,7 +1550,8 @@ public class MultiRowEdgeCasesTests {
             Data = data;
             Values = values;
         }
-        [GroupKey] public T Key { get; }
+        [GroupKey] 
+            public T Key { get; }
         public string Data { get; }
         public List<int> Values { get; }
     }
@@ -1600,7 +1603,8 @@ public class MultiRowEdgeCasesTests {
         }
         public string Data { get; }
         public List<int> Values { get; }
-        [GroupKey] public static readonly int GroupId = 0;
+        [GroupKey] 
+            public static readonly int GroupId = 0;
     }
 
     [Fact]
@@ -1623,7 +1627,8 @@ public class MultiRowEdgeCasesTests {
             Value = value;
             Items = items;
         }
-        [GroupKey] public int Group { get; set; }
+        [GroupKey] 
+            public int Group { get; set; }
         public int Value { get; }
         public List<int> Items { get; }
     }

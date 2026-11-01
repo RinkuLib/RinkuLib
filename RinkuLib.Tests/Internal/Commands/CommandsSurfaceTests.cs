@@ -13,7 +13,7 @@ using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Internal.Commands;
 
 public record struct MinArgs(int Min);
 public class MinClass {
@@ -66,7 +66,6 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     }
 
     public record UserPair(long ID, string Name) : IDbReadable;
-
     [Fact]
     public async Task The_dispatch_prefers_the_settled_parser_and_relearns_when_a_param_unsettles() {
         var ct = TestContext.Current.CancellationToken;
@@ -449,11 +448,10 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
             Assert.Equal(ConnectionState.Closed, cnn.State);
         }
 
-        using (var real = Db.GetConnection()) {
-            IDbConnection plain = new PlainConnection(real);
-            Assert.ThrowsAny<Exception>(() => bad.ExecuteMultiReader(plain, out _));
-            Assert.Equal(ConnectionState.Closed, real.State);
-        }
+        using var real = Db.GetConnection();
+        IDbConnection plain = new PlainConnection(real);
+        Assert.ThrowsAny<Exception>(() => bad.ExecuteMultiReader(plain, out _));
+        Assert.Equal(ConnectionState.Closed, real.State);
     }
 
     /// <summary>A connection the caller had already opened stays open, whatever the outcome.</summary>
@@ -492,14 +490,13 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         var ct = TestContext.Current.CancellationToken;
         var withInsert = new QueryCommand("INSERT INTO Scratch (Val) VALUES (500); SELECT ID FROM Users ORDER BY ID");
         using var cnn = Db.GetConnection();
-        using (var mr = withInsert.ExecuteMultiReader(cnn, out var cmd)) {
-            var sets = new List<List<long>>();
-            await foreach (var list in mr.StreamQueryAsync<List<long>>(ct: ct)) 
-                sets.Add(list);
-            Assert.Single(sets);
-            Assert.Equal([1L, 2L, 3L], sets[0]);
-            cmd.Dispose();
-        }
+        using var mr = withInsert.ExecuteMultiReader(cnn, out var cmd);
+        var sets = new List<List<long>>();
+        await foreach (var list in mr.StreamQueryAsync<List<long>>(ct: ct))
+            sets.Add(list);
+        Assert.Single(sets);
+        Assert.Equal([1L, 2L, 3L], sets[0]);
+        cmd.Dispose();
     }
 
     [Fact]
@@ -1157,7 +1154,6 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
 
     sealed class CancellingReaderCommand : FakeCommand {
         public int DisposeCount;
-
         protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken ct)
             => Task.FromException<DbDataReader>(new OperationCanceledException(ct));
 
@@ -1170,7 +1166,6 @@ public class CommandsSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
 
     sealed class CancellingReaderConnection : DbConnection {
         private ConnectionState state;
-
         public CancellingReaderCommand? LastCommand { get; private set; }
         [AllowNull]
         public override string ConnectionString { get; set; } = "";

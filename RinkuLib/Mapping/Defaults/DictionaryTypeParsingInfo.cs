@@ -49,7 +49,8 @@ internal sealed class DictionaryTypeParsingInfo : TypeParsingInfo {
 }
 
 internal sealed class DictionaryRowPlan(int[] ownedOrdinals, DictionaryRowReader reader) : SimpleDbItemParser {
-    private static readonly MethodInfo ReadMethod = typeof(DictionaryRowReader).GetMethod(nameof(DictionaryRowReader.Read))!;
+    private static readonly MethodInfo ReadMethod = typeof(DictionaryRowReader).GetMethod(nameof(DictionaryRowReader.Read))
+        ?? throw new MissingMethodException(typeof(DictionaryRowReader).FullName, nameof(DictionaryRowReader.Read));
     private readonly int[] OwnedOrdinals = ownedOrdinals;
     private readonly DictionaryRowReader Reader = reader;
 
@@ -87,12 +88,12 @@ internal sealed class DictionaryRowReader : IGeneratedParserTarget {
 
     internal static DictionaryRowReader ForOwned(int[] ownedOrdinals) => new(true, ownedOrdinals);
 
-    public Dictionary<string, object> Read(DbDataReader reader) {
+    public Dictionary<string, object?> Read(DbDataReader reader) {
         if (ReadOwned)
             return ReadOwnedColumns(reader);
 
         int fieldCount = reader.FieldCount;
-        var result = new Dictionary<string, object>(fieldCount - CountExcludedBefore(fieldCount),
+        var result = new Dictionary<string, object?>(fieldCount - CountExcludedBefore(fieldCount),
             StringComparer.OrdinalIgnoreCase);
         int excludedIndex = 0;
         for (int ordinal = 0; ordinal < fieldCount; ordinal++) {
@@ -101,17 +102,17 @@ internal sealed class DictionaryRowReader : IGeneratedParserTarget {
                 continue;
             }
             object value = reader.GetValue(ordinal);
-            Add(result, reader.GetName(ordinal), value is DBNull ? null! : value);
+            Add(result, reader.GetName(ordinal), value is DBNull ? null : value);
         }
         return result;
     }
 
-    private Dictionary<string, object> ReadOwnedColumns(DbDataReader reader) {
-        var result = new Dictionary<string, object>(Ordinals.Length, StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, object?> ReadOwnedColumns(DbDataReader reader) {
+        var result = new Dictionary<string, object?>(Ordinals.Length, StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < Ordinals.Length; i++) {
             int ordinal = Ordinals[i];
             object value = reader.GetValue(ordinal);
-            Add(result, reader.GetName(ordinal), value is DBNull ? null! : value);
+            Add(result, reader.GetName(ordinal), value is DBNull ? null : value);
         }
         return result;
     }
@@ -123,7 +124,7 @@ internal sealed class DictionaryRowReader : IGeneratedParserTarget {
         return count;
     }
 
-    private static void Add(Dictionary<string, object> values, string name, object value) {
+    private static void Add(Dictionary<string, object?> values, string name, object? value) {
         if (values.TryAdd(name, value))
             return;
         int suffix = 2;

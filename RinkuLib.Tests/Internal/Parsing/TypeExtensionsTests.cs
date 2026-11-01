@@ -2,19 +2,18 @@ using System.Reflection;
 using System.Reflection.Emit;
 using Rinku;
 using Rinku.Mapping;
+using RinkuLib.Tests.Features.Mapping.Objects;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Mapping;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.DbParsing;
+namespace RinkuLib.Tests.Internal.Parsing;
 
 /// <summary>
 /// The reflection helpers behind parser construction: closing open generics, stack-slot equivalence,
 /// reader-method resolution, default-value detection, and the column-usage checkpoints.
 /// </summary>
 public class TypeExtensionsTests {
-
     [Fact]
     public void ShortName_reads_plain_generic_and_null_types() {
         Assert.Equal("void", ((Type?)null).ShortName());
@@ -196,7 +195,6 @@ public class TypeExtensionsTests {
 
     public record WithOptional(int A, int B = 0) : IDbReadable;
 
-
     [Fact]
     public void Column_usage_checkpoints_snapshot_and_roll_back() {
         Span<bool> backing = stackalloc bool[3];
@@ -245,31 +243,43 @@ public class TypeExtensionsTests {
 
 
     public record SchemaShape(int Id, string Name) : IDbReadable;
-
     [Fact]
     public void Parsers_derive_their_columns_from_a_type_method_ctor_or_delegate() {
-        var fromType = TypeParser.GetTypeParser<SchemaShape>(typeof(SchemaShape), out var typeCols);
+        var typeCols = SchemaExtractor.FromType(typeof(SchemaShape));
+        var fromType = TypeParser.GetTypeParser<SchemaShape>(typeCols);
         Assert.Equal(["Id", "Name"], typeCols.Select(c => c.Name));
         Assert.NotNull(fromType);
 
         var ctor = typeof(SchemaShape).GetConstructors()[0];
-        TypeParser.GetTypeParser<SchemaShape>(ctor, out var ctorCols);
+        var ctorCols = SchemaExtractor.FromConstructor(ctor);
+        TypeParser.GetTypeParser<SchemaShape>(ctorCols);
         Assert.Equal(["Id", "Name"], ctorCols.Select(c => c.Name));
 
         var method = typeof(TypeExtensionsTests).GetMethod(nameof(Shape))!;
-        TypeParser.GetTypeParser<SchemaShape>(method, out var methodCols);
+        var methodCols = SchemaExtractor.FromMethod(method);
+        TypeParser.GetTypeParser<SchemaShape>(methodCols);
         Assert.Equal(["Id", "Name"], methodCols.Select(c => c.Name));
 
-        TypeParser.GetTypeParser<SchemaShape>((Func<int, string, SchemaShape>)Shape, out var delegateCols);
+        var delegateCols = SchemaExtractor.FromMethod(((Func<int, string, SchemaShape>)Shape).Method);
+        TypeParser.GetTypeParser<SchemaShape>(delegateCols);
         Assert.Equal(["Id", "Name"], delegateCols.Select(c => c.Name));
 
-        var byShape = TypeParser.GetTypeParser<SchemaShape, DynaObject>(out var schemaCols);
+        var schemaCols = SchemaExtractor.FromType(typeof(SchemaShape));
+        var byShape = TypeParser.GetTypeParser<DynaObject>(schemaCols);
         Assert.Equal(["Id", "Name"], schemaCols.Select(c => c.Name));
         Assert.NotNull(byShape);
+
+        var runtimeType = TypeParser.GetTypeParser(typeof(SchemaShape), typeof(SchemaShape));
+        var runtimeCtor = TypeParser.GetTypeParser(typeof(SchemaShape), ctor);
+        var runtimeMethod = TypeParser.GetTypeParser(typeof(SchemaShape), method);
+        var runtimeDelegate = TypeParser.GetTypeParser(typeof(SchemaShape), (Func<int, string, SchemaShape>)Shape);
+        Assert.Equal(typeof(SchemaShape), runtimeType.Type);
+        Assert.Equal(typeof(SchemaShape), runtimeCtor.Type);
+        Assert.Equal(typeof(SchemaShape), runtimeMethod.Type);
+        Assert.Equal(typeof(SchemaShape), runtimeDelegate.Type);
     }
 
     public static SchemaShape Shape(int Id, string Name) => new(Id, Name);
-
 
     [Fact]
     public void The_stack_printers_dump_values_and_leave_the_stack_intact() {

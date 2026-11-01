@@ -27,6 +27,7 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
     private string _editMethodName = string.Empty;
     private string _editTarget = string.Empty;
     private string? _editResultSetName = string.Empty;
+    private bool _editGenerateHooks;
     private QuerySourceType _editTargetType = QuerySourceType.Text;
 
     private bool _hasMethodNameError;
@@ -52,6 +53,15 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
     }
 
     #region Properties
+
+    [DataMember]
+    public bool EditGenerateHooks {
+        get => _editGenerateHooks;
+        set {
+            if (SetProperty(ref _editGenerateHooks, value))
+                RunValidation();
+        }
+    }
 
     [DataMember]
     public string EditMethodName {
@@ -136,10 +146,8 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
     public IAsyncCommand AddParameterCommand => new AsyncCommand(AddParameterAsync);
 
     private Task AddParameterAsync(object? arg, CancellationToken ct) {
-        EditParameters.Add(new EditParameterData {
-            Name = string.Empty,
-            Type = _databaseProvider.DefaultParameterType,
-            IsNullable = false
+        EditParameters.Add(new EditParameterData(OnParameterChanged) {
+            Name = string.Empty
         });
 
         RunValidation();
@@ -202,17 +210,20 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
             EditTarget = item.Target ?? string.Empty;
             EditTargetType = item.SourceType;
             EditResultSetName = item.ResultSetName;
+            EditGenerateHooks = item.GenerateHooks;
 
             foreach (var p in item.Parameters) {
-                EditParameters.Add(new EditParameterData {
+                EditParameters.Add(new EditParameterData(OnParameterChanged) {
                     Name = p.Name,
                     Type = p.Type,
-                    IsNullable = p.IsNullable
+                    IsNullable = p.IsNullable,
+                    DefaultValue = p.DefaultValue
                 });
             }
         }
         else {
             EditResultSetName = null;
+            EditGenerateHooks = false;
             EditMethodName = string.Empty;
             EditTarget = string.Empty;
             EditTargetType = QuerySourceType.Text;
@@ -232,7 +243,7 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
         if (item.MethodName != EditMethodName ||
             item.ResultSetName != (string.IsNullOrEmpty(EditResultSetName) ? null : EditResultSetName) ||
             item.Target != EditTarget ||
-            item.SourceType != EditTargetType)
+            item.SourceType != EditTargetType || item.GenerateHooks != EditGenerateHooks)
             return true;
 
         if (item.Parameters.Count != EditParameters.Count)
@@ -244,7 +255,7 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
 
             if (p.Name != ep.Name ||
                 p.Type != ep.Type ||
-                p.IsNullable != ep.IsNullable)
+                p.IsNullable != ep.IsNullable || p.DefaultValue != (string.IsNullOrWhiteSpace(ep.DefaultValue) ? null : ep.DefaultValue.Trim()))
                 return true;
         }
 
@@ -263,8 +274,9 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
 
         var parameters = EditParameters.Select(p => new ParameterOverride {
             Name = p.Name,
-            Type = p.Type,
-            IsNullable = p.IsNullable
+            Type = string.IsNullOrWhiteSpace(p.Type) ? null : p.Type.Trim(),
+            IsNullable = p.IsNullable,
+            DefaultValue = string.IsNullOrWhiteSpace(p.DefaultValue) ? null : p.DefaultValue.Trim()
         }).ToList();
 
         if (item is null) {
@@ -274,7 +286,8 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
                 Target = EditTarget,
                 SourceType = EditTargetType,
                 ResultSetName = string.IsNullOrEmpty(EditResultSetName) ? null : EditResultSetName,
-                Parameters = parameters
+                Parameters = parameters,
+                GenerateHooks = EditGenerateHooks
             });
             if (!isFromOutside) {
                 RefreshShellState();
@@ -287,6 +300,7 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
             item.Target = EditTarget;
             item.SourceType = EditTargetType;
             item.Parameters = parameters;
+            item.GenerateHooks = EditGenerateHooks;
             if (!isFromOutside)
                 RaiseNotifyPropertyChangedEvent(nameof(FilteredItems));
         }
@@ -316,6 +330,9 @@ public class QueryManagerData : ListManagementShell<QuerySetting> {
         HasTargetError = string.IsNullOrWhiteSpace(EditTarget);
         RaiseNotifyPropertyChangedEvent(nameof(IsCommitEnabled));
         return !_hasMethodNameError && !_hasTargetError;
+    }
+    private void OnParameterChanged() {
+        RunValidation();
     }
     private bool CheckMethodNameIsValid() {
         if (string.IsNullOrEmpty(EditMethodName))

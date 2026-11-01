@@ -8,7 +8,7 @@ using Rinku;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.RunningQueries;
 public class ExecuteTestsFixture : DBFixture<SqlConnection> {
     public QueryCommand CreateSimpleTable = new("CREATE TABLE #Simple (ID INT IDENTITY(1,1), Val INT)");
     public QueryCommand InsertAndGetId = new("INSERT INTO #Simple (Val) VALUES (@Val); SELECT SCOPE_IDENTITY();");
@@ -17,7 +17,6 @@ public class ExecuteTestsFixture : DBFixture<SqlConnection> {
 [Collection(DatabaseIntegrationCollection.Name)]
 public class ExecuteTests(ExecuteTestsFixture fixture) : IClassFixture<ExecuteTestsFixture> {
     private readonly ExecuteTestsFixture Fixture = fixture;
-
     [Fact]
     public async Task TestIdentityConversion_ToLong() {
         using var cnn = Fixture.GetConnection();

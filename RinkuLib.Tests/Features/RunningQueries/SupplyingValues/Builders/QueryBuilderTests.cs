@@ -1,10 +1,10 @@
 using Rinku;
 using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace RinkuLib.Tests.Building;
+namespace RinkuLib.Tests.Features.RunningQueries.SupplyingValues.Builders;
 
 /// <summary>
 /// The in-memory builder: values live in <see cref="QueryBuilder.Variables"/> and nothing touches a

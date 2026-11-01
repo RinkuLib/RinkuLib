@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.Index;
 
 /// <summary>
 /// Values written as parameters come back intact when read: the parameter binding and the result
@@ -11,7 +11,6 @@ namespace RinkuLib.Tests.Execution;
 /// </summary>
 public class RoundTripTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand Echo = new("SELECT @v AS V");
-
     [Fact]
     public void String_round_trips() {
         using var cnn = Db.GetConnection();

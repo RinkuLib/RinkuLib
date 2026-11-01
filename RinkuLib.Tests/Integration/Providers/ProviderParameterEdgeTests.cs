@@ -6,10 +6,9 @@ using Rinku;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.Providers;
 
 public sealed class ProviderParameterEdgeFixture : DBFixture<SqlConnection>;
-
 /// <summary>
 /// Provider-sensitive parameter cases expressed through Rinku's parameter metadata entrypoints.
 /// The SQL Server assertions are only the observation; the binding choice stays in Rinku metadata.
@@ -183,7 +182,6 @@ public sealed class ProviderParameterEdgeTests(ProviderParameterEdgeFixture fixt
 
 sealed class SqlServerIntTableParam(string typeName = "dbo.ProviderIntList") : DbParamInfo(true) {
     private readonly string _typeName = typeName;
-
     public override bool SaveUse(string name, IDbCommand cmd, ref object value) {
         var parameter = Add(name, cmd, GetTable(value));
         value = parameter;
@@ -237,7 +235,6 @@ sealed class SqlServerIntTableParam(string typeName = "dbo.ProviderIntList") : D
 sealed class ProviderLabeledIntRow {
     public int Value { get; set; }
     public string Label { get; set; } = null!;
-
     public override bool Equals(object? obj)
         => obj is ProviderLabeledIntRow other && Value == other.Value && Label == other.Label;
 

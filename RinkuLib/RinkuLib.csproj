@@ -9,6 +9,7 @@
         <NoWarn>$(NoWarn);CS1591</NoWarn>
 
         <PackageId>Rinku</PackageId>
+        <RootNamespace>Rinku</RootNamespace>
         <MinVerTagPrefix>v</MinVerTagPrefix>
         <Authors>adam.therrien.marois</Authors>
 	    <Product>Rinku</Product>
@@ -37,16 +38,12 @@
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
     </PropertyGroup>
-	<ItemGroup Condition="'$(DocsApiBuild)' != 'true'">
-		<ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers\RinkuLib.Analyzers.csproj" PrivateAssets="all" ReferenceOutputAssembly="false"/>
-		<ProjectReference Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\RinkuLib.Analyzers.CodeFixes.csproj" PrivateAssets="all" ReferenceOutputAssembly="false"/>
-	</ItemGroup>
-
-	<Target Name="BuildAnalyzers" BeforeTargets="Pack">
+	<Target Name="BuildAnalyzers" BeforeTargets="GenerateNuspec">
 		<MSBuild Projects="..\RinkuLib.Analyzers\RinkuLib.Analyzers\RinkuLib.Analyzers.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
 		<MSBuild Projects="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\RinkuLib.Analyzers.CodeFixes.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
 	</Target>
 	<ItemGroup>
+		<None Include="buildTransitive/Rinku.targets" Pack="true" PackagePath="buildTransitive/Rinku.targets" />
 		<None Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers\bin\$(Configuration)\netstandard2.0\RinkuLib.Analyzers.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
 		<None Include="..\RinkuLib.Analyzers\RinkuLib.Analyzers.CodeFixes\bin\$(Configuration)\netstandard2.0\RinkuLib.Analyzers.CodeFixes.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
 	</ItemGroup>
@@ -67,6 +64,6 @@
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
-        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.303" PrivateAssets="all" />
     </ItemGroup>
 </Project>

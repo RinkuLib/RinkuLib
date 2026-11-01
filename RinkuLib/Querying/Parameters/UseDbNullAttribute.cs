@@ -17,8 +17,8 @@ public sealed class UseDbNullAttribute : AccessorEmitterHandler {
 
 internal sealed class UseDbNullEmitter : PathAccessorEmitterBase {
     internal static readonly UseDbNullEmitter Instance = new();
-    private static readonly MethodInfo ToDbValueMethod = typeof(UseDbNullEmitter).GetMethod(
-        nameof(ToDbValue), BindingFlags.Static | BindingFlags.NonPublic)!;
+    private static readonly MethodInfo ToDbValueMethod = Rinku.Mapping.TypeExtensions.Require(typeof(UseDbNullEmitter).GetMethod(
+        nameof(ToDbValue), BindingFlags.Static | BindingFlags.NonPublic), nameof(ToDbValueMethod));
 
     protected override void EmitCondition(ILGenerator il, ParameterMemberAccess member)
         => il.Emit(OpCodes.Ldc_I4_1);

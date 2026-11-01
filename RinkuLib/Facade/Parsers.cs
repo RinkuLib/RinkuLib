@@ -49,7 +49,7 @@ public static class SchemaExtractor {
             string name =
                 INameComparer.TryGetTrueName(param, out var trueName)
                     ? trueName
-                    : param.Name!;
+                    : param.Name ?? throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, "A parameter used for schema extraction has no name.");
 
             Add(columns, name, param.ParameterType, ctx.Create(param));
         }

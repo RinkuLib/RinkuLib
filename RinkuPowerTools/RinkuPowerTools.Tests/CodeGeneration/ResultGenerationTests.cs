@@ -11,10 +11,10 @@ public class ResultGenerationTests
         using var temp = new TempDirectory();
         var column = new ParameterMetadata("Count", DbType.Int32, false, 0, ParameterDirection.Output, 0, 0);
 
-        var generated = await GenerateAsync(temp.Path, null, [column]);
+        var (_, commandCode, _) = await GenerateAsync(temp.Path, null, [column]);
 
-        Assert.Contains("/// <Command cref=\"int\" />", generated.CommandCode);
-        Assert.DoesNotContain("record GetAlbumsResult", generated.CommandCode);
+        Assert.DoesNotContain("<Command", commandCode);
+        Assert.DoesNotContain("record GetAlbumsResult", commandCode);
     }
 
     [Fact]
@@ -27,10 +27,11 @@ public class ResultGenerationTests
             new("Title", DbType.String, false, 0, ParameterDirection.Output, 0, 0)
         };
 
-        var generated = await GenerateAsync(temp.Path, null, columns);
+        var (_, commandCode, _) = await GenerateAsync(temp.Path, null, columns);
 
-        Assert.Contains("/// <Command cref=\"GetAlbumsResult\" />", generated.CommandCode);
-        Assert.Contains("public partial record GetAlbumsResult(int AlbumId, string Title);", generated.CommandCode);
+        Assert.DoesNotContain("<Command", commandCode);
+        Assert.Contains("[Schema(\"", commandCode);
+        Assert.Contains("public partial record GetAlbumsResult(int AlbumId, string Title);", commandCode);
     }
 
     [Fact]
@@ -43,11 +44,11 @@ public class ResultGenerationTests
             new("Title", DbType.String, false, 0, ParameterDirection.Output, 0, 0)
         };
 
-        var generated = await GenerateAsync(temp.Path, "AlbumRow", columns);
+        var (_, commandCode, _) = await GenerateAsync(temp.Path, "AlbumRow", columns);
 
-        Assert.Contains("/// <Command cref=\"AlbumRow\" />", generated.CommandCode);
-        Assert.Contains("public partial record AlbumRow(int AlbumId, string Title);", generated.CommandCode);
-        Assert.DoesNotContain("record GetAlbumsResult", generated.CommandCode);
+        Assert.DoesNotContain("<Command", commandCode);
+        Assert.Contains("public partial record AlbumRow(int AlbumId, string Title);", commandCode);
+        Assert.DoesNotContain("record GetAlbumsResult", commandCode);
     }
 
     [Fact]
@@ -60,9 +61,22 @@ public class ResultGenerationTests
             new("Title", DbType.String, false, 0, ParameterDirection.Output, 0, 0)
         };
 
-        var generated = await GenerateAsync(temp.Path, null, columns);
+        var (_, commandCode, _) = await GenerateAsync(temp.Path, null, columns);
 
-        Assert.Contains("[TrueName(\"Album Id\")] int Album_Id", generated.CommandCode);
+        Assert.Contains("[TrueName(\"Album Id\")] int Album_Id", commandCode);
+    }
+
+    [Fact]
+    public async Task Refresh_shortens_schema_reference_without_removing_custom_record_members() {
+        using var temp = new TempDirectory();
+        List<ParameterMetadata> columns = [new("Id", DbType.Int32, false, 0, ParameterDirection.Output, 0, 0), new("Title", DbType.String, false, 0, ParameterDirection.Output, 0, 0)];
+        var (path, commands, _) = await GenerateAsync(temp.Path, null, columns);
+        string previous = commands.Replace("[Schema(", "[global::RinkuPowerTools.Generated.Schema(").Replace("record GetAlbumsResult(int Id, string Title);", "record GetAlbumsResult(int Id, string Title) { public string Display => Title; }");
+        await File.WriteAllTextAsync(path, previous, TestContext.Current.CancellationToken);
+        var (_, refreshed, support) = await GenerateAsync(temp.Path, null, columns);
+        Assert.Contains("[Schema(", refreshed); Assert.Contains("Display => Title", refreshed);
+        Assert.DoesNotContain("global::", refreshed); Assert.DoesNotContain("<Command", refreshed);
+        GeneratedAssemblyCompiler.Compile(support, refreshed);
     }
 
     private static Task<(string CommandPath, string CommandCode, string SupportCode)> GenerateAsync(

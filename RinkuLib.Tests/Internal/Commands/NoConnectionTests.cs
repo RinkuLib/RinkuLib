@@ -9,7 +9,7 @@ using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Internal.Commands;
 
 /// <summary>
 /// Every entry point that runs a command refuses one that carries no connection, on both the
@@ -102,11 +102,11 @@ public class NoConnectionTests {
         var cols = Cols;
         var lazy = TypeParser.GetTypeParser<IEnumerable<long>>(cols);
         var dbCmd = new FakeCommand();
-        AssertRefused(() => lazy.Query(dbCmd).ToList());
-        AssertRefused(() => lazy.Query(dbCmd, Query).ToList());
+        AssertRefused(() => _ = lazy.Query(dbCmd).ToList());
+        AssertRefused(() => _ = lazy.Query(dbCmd, Query).ToList());
         IDbCommand plain = new LegacyCommand();
-        AssertRefused(() => lazy.Query(plain).ToList());
-        AssertRefused(() => lazy.Query(plain, Query).ToList());
+        AssertRefused(() => _ = lazy.Query(plain).ToList());
+        AssertRefused(() => _ = lazy.Query(plain, Query).ToList());
     }
 
     static Task AssertStreamThrows<T>(IAsyncEnumerable<T> stream)
@@ -125,7 +125,7 @@ public class NoConnectionTests {
         var cmd = new FakeCommand();
         var builtIn = Record.Exception(() => cmd.ExecuteReader());
         Assert.NotNull(builtIn);
-        Assert.IsNotAssignableFrom<RinkuException>(builtIn);
+        Assert.IsNotType<RinkuException>(builtIn, exactMatch: false);
 
         var extension = Refusals.Raises(ErrorCodes.NoConnection, () => cmd.ExecuteReader(default, null));
         Refusals.HasHelpLink(extension);

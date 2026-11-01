@@ -254,7 +254,7 @@ using DbDataReader reader = command.ExecuteReader();
 
 ```csharp
 Album original = new(12, "Blue");
-IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
+ITrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 
 edit.Set(nameof(Album.Title), "Kind of Blue");
 
@@ -265,7 +265,7 @@ foreach (TrackingChange change in edit.GetChanges())
 The same generated item can expose a typed contract.
 
 ```csharp
-public interface IAlbumEdit : IRuntimeTrackingItem<Album>
+public interface IAlbumEdit : ITrackingItem<Album>
 {
     string Title { get; set; }
 }

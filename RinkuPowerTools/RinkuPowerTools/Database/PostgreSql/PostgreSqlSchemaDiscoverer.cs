@@ -257,7 +257,7 @@ ORDER BY m.oid, a.ordinality;
         for (int i = 0; i < schema.Count; i++) {
             DbColumn column = schema[i];
             string typeName = reader.GetDataTypeName(i);
-            PostgreSqlTypeParser.TryParse(typeName, out ProviderTypeInfo parsed);
+            _ = PostgreSqlTypeParser.TryParse(typeName, out ProviderTypeInfo parsed);
             string csharpType = CSharpTypeNames.FromType(column.DataType ?? reader.GetFieldType(i));
             if (csharpType == "object" && parsed.CSharpType != "object")
                 csharpType = parsed.CSharpType;

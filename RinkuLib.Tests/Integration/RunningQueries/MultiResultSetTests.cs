@@ -3,7 +3,7 @@ using Rinku;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.RunningQueries;
 
 public class MultiResultSetFixture : DBFixture<SqlConnection> {
     public QueryCommand TwoSets = new("SELECT Id FROM #mrs WHERE Id = @a; SELECT Id FROM #mrs WHERE Id = @b");
@@ -17,7 +17,6 @@ public class MultiResultSetFixture : DBFixture<SqlConnection> {
 [Collection(DatabaseIntegrationCollection.Name)]
 public class MultiResultSetTests(MultiResultSetFixture Fixture) : IClassFixture<MultiResultSetFixture> {
     private readonly MultiResultSetFixture Fixture = Fixture;
-
     private static async Task<SqlConnection> OpenSeeded(MultiResultSetFixture fixture, CancellationToken ct) {
         var cnn = fixture.GetConnection();
         await cnn.OpenAsync(ct);

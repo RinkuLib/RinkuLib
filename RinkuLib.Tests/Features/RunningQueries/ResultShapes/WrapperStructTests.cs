@@ -1,7 +1,7 @@
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.RunningQueries.ResultShapes;
 
 /// <summary>
 /// The result wrapper shapes convert to and from their value through implicit operators, and report
@@ -70,7 +70,7 @@ public class WrapperStructTests {
     }
 
     [Fact]
-    public void nullable_SingleOrDefault_shapes_flatten_missing_and_null() {
+    public void Nullable_SingleOrDefault_shapes_flatten_missing_and_null() {
         SingleOrDefaultNullable<string> reference = (string?)null;
         SingleOrDefaultNullableStruct<int> value = (int?)null;
         Assert.False(reference.HasValue);

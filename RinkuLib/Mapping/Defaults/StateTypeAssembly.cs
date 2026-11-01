@@ -1,6 +1,11 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
+#if NET9_0_OR_GREATER
+using GateLock = System.Threading.Lock;
+#else
+using GateLock = System.Object;
+#endif
 
 namespace Rinku.Mapping.Defaults;
 
@@ -8,9 +13,9 @@ internal static class StateTypeAssembly {
     private static readonly AssemblyBuilder Assembly;
     private static readonly ModuleBuilder Module;
     private static readonly ConstructorInfo IgnoresCtor =
-        typeof(IgnoresAccessChecksToAttribute).GetConstructor([typeof(string)])!;
+        TypeExtensions.Require(typeof(IgnoresAccessChecksToAttribute).GetConstructor([typeof(string)]), nameof(IgnoresCtor));
     private static readonly HashSet<string> Allowed = [];
-    private static readonly object Gate = new();
+    private static readonly GateLock Gate = new();
 
     static StateTypeAssembly() {
         Assembly = AssemblyBuilder.DefineDynamicAssembly(
@@ -32,7 +37,7 @@ internal static class StateTypeAssembly {
     internal static void AllowAccessTo(Type type) {
         AllowAccessTo(type.Assembly);
         if (type.HasElementType) {
-            AllowAccessTo(type.GetElementType()!);
+            AllowAccessTo(type.GetElementType() ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Element type missing for {type}."));
             return;
         }
         if (!type.IsGenericType)

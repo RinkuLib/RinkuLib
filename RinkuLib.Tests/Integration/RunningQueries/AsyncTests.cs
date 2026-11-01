@@ -9,7 +9,7 @@ using Rinku.Querying;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.RunningQueries;
 
 public class AsyncTestsFixture : DBFixture<SqlConnection> {
     public QueryCommand BasicStringUsage = new("select 'abc' as [Value] union all select @txt");
@@ -37,7 +37,6 @@ public class AsyncTestsFixture : DBFixture<SqlConnection> {
 [Collection(DatabaseIntegrationCollection.Name)]
 public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFixture> {
     private readonly AsyncTestsFixture Fixture = Fixture;
-
     [Theory]
     [Repeat(2)]
     public async Task TestBasicStringUsageAsync(int _) {
@@ -414,10 +413,8 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
         Assert.Equal(123 + 456 + 1 + 2 + 3 + 4, sum);
     }
     private static readonly int[] IDs = [1, 3, 4];
-
     [Fact]
     public async Task LiteralInAsync() {
-
         using var cnn = Fixture.GetConnection();
         await cnn.OpenAsync(TestContext.Current.CancellationToken);
         await Fixture.CreateTableLiteralIn.ExecuteAsync(cnn, ct: TestContext.Current.CancellationToken);
@@ -442,7 +439,7 @@ public class AsyncTests(AsyncTestsFixture Fixture) : IClassFixture<AsyncTestsFix
     }
 
     private static async Task<List<int>> ReadAllAsync(QueryCommand command, DbConnection connection) =>
-        (await command.QueryAsync<List<int>>(connection, ct: TestContext.Current.CancellationToken)).ToList();
+        [.. (await command.QueryAsync<List<int>>(connection, ct: TestContext.Current.CancellationToken))];
 }
 
 public class BasicType {

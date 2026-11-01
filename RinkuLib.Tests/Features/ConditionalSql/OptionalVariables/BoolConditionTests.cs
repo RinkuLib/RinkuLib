@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.OptionalVariables;
 
 /// <summary>
 /// The <c>/*Cond*/</c> marker guards the following footprint behind a named condition, with <c>&amp;</c>,

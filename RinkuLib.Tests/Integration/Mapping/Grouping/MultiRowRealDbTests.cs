@@ -6,7 +6,7 @@ using Rinku.Querying;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.Mapping.Grouping;
 
 /// <summary>The shapes the real-database multi-row tests group into. Leaf elements are scalar records, so one list equality checks every field of every element.</summary>
 public sealed record MrChild([AbortOnNull] int Id, string Value) : IDbReadable;
@@ -48,7 +48,6 @@ public class MultiRowDbFixture : DBFixture<SqlConnection> {
 [Collection(DatabaseIntegrationCollection.Name)]
 public class MultiRowRealDbTests(MultiRowDbFixture fixture) : IClassFixture<MultiRowDbFixture> {
     private readonly MultiRowDbFixture Fixture = fixture;
-
     private static readonly QueryCommand Flat = new("""
         SELECT p.Id, p.Name, c.Id AS ChildrenId, c.Val AS ChildrenValue
         FROM Parents p LEFT JOIN Children c ON c.ParentId = p.Id
@@ -261,7 +260,6 @@ public class MultiRowPostgresFixture : DBFixture<NpgsqlConnection> {
 [Collection(DatabaseIntegrationCollection.Name)]
 public class MultiRowPostgresTests(MultiRowPostgresFixture fixture) : IClassFixture<MultiRowPostgresFixture> {
     private readonly MultiRowPostgresFixture Fixture = fixture;
-
     private static readonly QueryCommand Flat = new("""
         SELECT p.id, p.name, c.id AS ChildrenId, c.val AS ChildrenValue
         FROM parents p LEFT JOIN children c ON c.parentid = p.id

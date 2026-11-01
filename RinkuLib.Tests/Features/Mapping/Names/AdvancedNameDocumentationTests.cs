@@ -1,8 +1,8 @@
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Names;
 
 /// <summary>Executable examples for docs/articles/mapping/names.md.</summary>
 public class AdvancedNameDocumentationTests {
@@ -21,7 +21,6 @@ public class AdvancedNameDocumentationTests {
         public readonly T Value = value;
     }
     private sealed record RuntimeCustomer(string First, string Second) : IDbReadable;
-
     [Fact]
     [DocumentationExample("names.md", "nested-prefix")]
     public void Nested_members_add_their_name_to_inner_columns() {

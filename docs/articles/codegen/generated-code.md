@@ -104,14 +104,16 @@ using DbDataReader reader = command.ExecuteReader();
 ## Result record
 
 ```csharp
-/// <Schema LastUpdated="2026-08-21T14:00Z" />
+[Schema("2026-08-21T14:00Z")]
 public partial record GetAlbumsByArtistResult(int Id, string Title);
 ```
 
 The schema timestamp changes when the inspected result shape changes. An unchanged record keeps its existing timestamp.
 
 ```csharp
-/// <BasedOn cref="GetAlbumsByArtistResult" LastUpdated="2026-08-21T14:00Z" />
+using Rinku.Mapping;
+
+[BasedOn(typeof(GetAlbumsByArtistResult), "2026-08-21T14:00Z")]
 public record AlbumDto(int Id, string Title);
 ```
 
@@ -267,6 +269,12 @@ Pure output parameters expose only the `out DbParameter` argument. Input output 
 Data/Generated/DbCommands.rinku.cs
 ```
 
-The support file lives at the project root. The command file uses the configured output path.
+The support file lives at the project root. It contains the generated SQL-file cache and ADO.NET
+extensions, `TrueNameAttribute`, and the fallback `RinkuPowerTools.Generated` schema attributes used
+by generated result metadata.
 
-[Configure](configure.md) Â· [Refresh](refresh.md)
+It is self-contained and does not require a reference to `Rinku`. When `Rinku` is referenced, its
+analyzers and runtime schema discovery recognize the same fallback metadata, so no second generated
+support file is needed. The command file uses the configured output path.
+
+[Configure](configure.md) · [Refresh](refresh.md)

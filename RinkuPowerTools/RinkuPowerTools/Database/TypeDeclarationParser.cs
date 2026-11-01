@@ -1,4 +1,4 @@
-namespace RinkuPowerTools;
+namespace RinkuPowerTools.Database;
 
 internal readonly record struct ParsedTypeDeclaration(string Name, string? FirstArgument, string? SecondArgument);
 

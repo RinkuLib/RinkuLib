@@ -11,7 +11,7 @@ namespace RinkuLib.Tests.Infrastructure;
 /// <see cref="System.Data.Common.DbParameter"/>, to exercise the paths that handle legacy ADO providers.
 /// </summary>
 public sealed class LegacyCommand : IDbCommand {
-    public LegacyParameterCollection Parameters { get; } = new();
+    public LegacyParameterCollection Parameters { get; } = [];
     IDataParameterCollection IDbCommand.Parameters => Parameters;
     public string CommandText { get; [param: AllowNull] set; } = "";
     public int CommandTimeout { get; set; }

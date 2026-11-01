@@ -1,9 +1,9 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Reflection.Emit;
 using Rinku.Mapping;
 using Rinku.Mapping.Conversion;
 
-namespace Rinku.Tracking.Runtime;
+namespace Rinku.Tracking.Runtime.Emit;
 
 internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
 {
@@ -46,16 +46,17 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
 
         for (int i = 0; i < definition.TypeEmitters.Count; i++)
             definition.TypeEmitters[i].Emit(context);
+        context.CompleteEmission();
 
-        ConstructorBuilder existingCtor = EmitExistingConstructor(context);
-        ConstructorBuilder stateCtor = EmitStateConstructor(context);
-        MethodBuilder ensureEdit = DefineEnsureEdit(context, snapshotCtor);
+        EmitExistingConstructor(context);
+        EmitNewConstructor(context);
+        MethodBuilder ensureEdit = DefineEnsureEdit(context);
         context.EnsureEditMethod = ensureEdit;
-        EmitEnsureEditBody(context, ensureEdit, snapshotCtor);
-
         EmitProperties(context);
+        EmitEnsureEditBody(context, ensureEdit, snapshotCtor);
         RuntimeAccessEntry[] runtimeAccess = BuildRuntimeAccess(context);
         EmitRuntimeAccess(context, runtimeAccess);
+        EmitConfirmationEvent(context);
         EmitLifecycle(context);
         EmitMethods(context);
         BindInterfaceProperties(context);
@@ -86,16 +87,18 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
 
         ConstructorInfo existing = created.GetConstructor([typeof(TOriginal)])
             ?? throw new MissingMethodException(created.FullName, ".ctor(TOriginal)");
-        ConstructorInfo withState = created.GetConstructor([typeof(TOriginal), typeof(bool)])
-            ?? throw new MissingMethodException(created.FullName, ".ctor(TOriginal, bool)");
-        return new(created, snapshotType, existing, withState, runtimeMapper);
+        ConstructorInfo newItem = created.GetConstructor(Type.EmptyTypes)
+            ?? throw new MissingMethodException(created.FullName, ".ctor()");
+        return new(created, snapshotType, existing, newItem, runtimeMapper);
     }
 
     private static void AddInterfaces(TypeBuilder type, RuntimeTrackingTypeDefinition<TOriginal> definition)
     {
-        var interfaces = new HashSet<Type>();
-        interfaces.Add(typeof(IRuntimeTrackingItem<TOriginal>));
-        interfaces.Add(typeof(IRuntimeNewStateControl));
+        var interfaces = new HashSet<Type>
+        {
+            typeof(ITrackingItem<TOriginal>),
+            typeof(ICanInsert)
+        };
         if (definition.RequestedContract.IsInterface) interfaces.Add(definition.RequestedContract);
         for (int i = 0; i < definition.Interfaces.Count; i++) interfaces.Add(definition.Interfaces[i]);
         foreach (Type current in interfaces) type.AddInterfaceImplementation(current);
@@ -107,18 +110,19 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         ILGenerator il = ctor.GetILGenerator();
         EmitObjectConstructor(il);
         context.Definition.OriginalStorage.EmitStoreFromArgument(il, context.OriginalField, 1);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Stfld, context.HasOriginalField);
         il.Emit(OpCodes.Ret);
         return ctor;
     }
 
-    private static ConstructorBuilder EmitStateConstructor(RuntimeTrackingEmitContext<TOriginal> context)
-    {
-        ConstructorBuilder ctor = context.TypeBuilder.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [typeof(TOriginal), typeof(bool)]);
+    private static ConstructorBuilder EmitNewConstructor(RuntimeTrackingEmitContext<TOriginal> context) {
+        ConstructorBuilder ctor = context.TypeBuilder.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, Type.EmptyTypes);
         ILGenerator il = ctor.GetILGenerator();
         EmitObjectConstructor(il);
-        context.Definition.OriginalStorage.EmitStoreFromArgument(il, context.OriginalField, 1);
         il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Ldarg_2);
+        il.Emit(OpCodes.Ldc_I4_1);
         il.Emit(OpCodes.Stfld, context.IsNewField);
         il.Emit(OpCodes.Ret);
         return ctor;
@@ -132,7 +136,7 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         il.Emit(OpCodes.Call, constructor);
     }
 
-    private static MethodBuilder DefineEnsureEdit(RuntimeTrackingEmitContext<TOriginal> context, ConstructorBuilder snapshotCtor)
+    private static MethodBuilder DefineEnsureEdit(RuntimeTrackingEmitContext<TOriginal> context)
         => context.TypeBuilder.DefineMethod("EnsureEdit", MethodAttributes.Private | MethodAttributes.HideBySig, context.SnapshotBuilder, Type.EmptyTypes);
 
     private static void EmitEnsureEditBody(RuntimeTrackingEmitContext<TOriginal> context, MethodBuilder method, ConstructorBuilder snapshotCtor)
@@ -163,6 +167,22 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, snapshot);
         il.Emit(OpCodes.Stfld, context.EditField);
+        foreach (var member in context.Definition.Members) {
+            if (member.CreateOnEdit is not { } factory) continue;
+            Type factoryType = factory.GetType();
+            string name = "s_createMember_" + context.Properties[member].Property.Name;
+            FieldBuilder factoryField = context.TypeBuilder.DefineField(name, factoryType, FieldAttributes.Private | FieldAttributes.Static);
+            context.AddInitializer(generated => generated.GetField(name, BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, factory));
+            Label existing = il.DefineLabel();
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Call, context.Properties[member].Getter);
+            il.Emit(OpCodes.Brtrue, existing);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldsfld, factoryField);
+            il.Emit(OpCodes.Callvirt, factoryType.GetMethod("Invoke")!);
+            il.Emit(OpCodes.Call, context.Properties[member].Setter!);
+            il.MarkLabel(existing);
+        }
         context.EmitChanged(il, null);
         il.Emit(OpCodes.Ldloc, snapshot);
         il.Emit(OpCodes.Ret);
@@ -199,6 +219,7 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
 
             CopyMetadata(property, member.MetadataSources);
             context.Properties.Add(member, new(property, getter, setter));
+
         }
     }
 
@@ -218,7 +239,7 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
             for (int p = 0; p < paths.Count; p++)
                 result.Add(EmitNestedPath(context, member, paths[p], p));
         }
-        return result.ToArray();
+        return [.. result];
     }
 
     private static RuntimeAccessEntry EmitNestedPath(RuntimeTrackingEmitContext<TOriginal> context, RuntimeTrackingMemberDefinition<TOriginal> root, MemberInfo child, int childIndex)
@@ -385,15 +406,53 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         context.TypeBuilder.DefineMethodOverride(method, contract);
     }
 
+    private static void EmitConfirmationEvent(RuntimeTrackingEmitContext<TOriginal> context)
+    {
+        FieldBuilder field = context.TypeBuilder.DefineField("_confirmed", typeof(TrackingConfirmationHandler), FieldAttributes.Private);
+        context.ConfirmationField = field;
+        EventInfo contract = typeof(ITrackingConfirmationSource).GetEvent(nameof(ITrackingConfirmationSource.Confirmed))!;
+        EventBuilder generated = context.TypeBuilder.DefineEvent(contract.Name, EventAttributes.None, typeof(TrackingConfirmationHandler));
+        foreach (bool adding in new[] { true, false })
+        {
+            MethodInfo accessor = (adding ? contract.AddMethod : contract.RemoveMethod)!;
+            MethodBuilder method = DefineExplicit(context.TypeBuilder, accessor);
+            ILGenerator il = method.GetILGenerator();
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldflda, field);
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Call, typeof(TrackingEvents).GetMethod(adding ? nameof(TrackingEvents.Add) : nameof(TrackingEvents.Remove))!.MakeGenericMethod(typeof(TrackingConfirmationHandler)));
+            il.Emit(OpCodes.Ret);
+            context.TypeBuilder.DefineMethodOverride(method, accessor);
+            if (adding)
+            {
+                generated.SetAddOnMethod(method);
+            }
+            else
+            {
+                generated.SetRemoveOnMethod(method);
+            }
+        }
+    }
+
+    private static void EmitConfirmed(RuntimeTrackingEmitContext<TOriginal> context, ILGenerator il, TrackingConfirmation operation)
+    {
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldfld, context.ConfirmationField);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldc_I4, (int)operation);
+        il.Emit(OpCodes.Call, typeof(TrackingEvents).GetMethod(nameof(TrackingEvents.Raise))!);
+    }
+
     private static void EmitLifecycle(RuntimeTrackingEmitContext<TOriginal> context)
     {
         EmitIsEditing(context);
         EmitEnsureEditing(context);
-        EmitConfirmEdit(context);
+        MethodBuilder confirmUpdate = EmitConfirmEdit(context);
         EmitCancelEdit(context);
         EmitTryGetOriginal(context);
+        EmitSetOriginal(context);
         EmitIsNew(context);
-        EmitConfirmNew(context);
+        EmitInsertConfirmation(context, confirmUpdate);
         EmitChanges(context);
     }
 
@@ -423,12 +482,44 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         context.TypeBuilder.DefineMethodOverride(method, contract);
     }
 
-    private static void EmitConfirmEdit(RuntimeTrackingEmitContext<TOriginal> context)
+    private static MethodBuilder EmitConfirmEdit(RuntimeTrackingEmitContext<TOriginal> context)
     {
         MethodInfo contract = typeof(IEditable).GetMethod(nameof(IEditable.ConfirmEdit))
             ?? throw new MissingMethodException(typeof(IEditable).FullName, nameof(IEditable.ConfirmEdit));
-        MethodBuilder method = DefineExplicit(context.TypeBuilder, contract);
+        MethodBuilder method = context.TypeBuilder.DefineMethod("ConfirmSnapshot", MethodAttributes.Private | MethodAttributes.HideBySig, typeof(bool), Type.EmptyTypes);
         ILGenerator il = method.GetILGenerator();
+        if (context.Definition.InsertConfirmation is not null || context.Definition.UpdateConfirmation is not null) {
+            Label update = il.DefineLabel(), prepared = il.DefineLabel();
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldfld, context.IsNewField);
+            il.Emit(OpCodes.Brfalse, update);
+            EmitPreparation(context.Definition.InsertConfirmation, "s_confirmInsert");
+            il.Emit(OpCodes.Br, prepared);
+            il.MarkLabel(update);
+            EmitPreparation(context.Definition.UpdateConfirmation, "s_confirmUpdate");
+            il.MarkLabel(prepared);
+        }
+        void EmitPreparation(Func<ITrackingItem<TOriginal>, TOriginal>? confirmation, string name) {
+            if (confirmation is null) return;
+            var callbackType = typeof(Func<ITrackingItem<TOriginal>, TOriginal>);
+            var callback = context.TypeBuilder.DefineField(name, callbackType, FieldAttributes.Private | FieldAttributes.Static);
+            context.AddInitializer(type => type.GetField(name, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, confirmation));
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldsfld, callback);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Callvirt, callbackType.GetMethod("Invoke")!);
+            il.Emit(OpCodes.Callvirt, typeof(IOriginalWriter<TOriginal>).GetMethod(nameof(IOriginalWriter<TOriginal>.SetOriginal))!);
+        }
+        Label available = il.DefineLabel();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldfld, context.HasOriginalField);
+        il.Emit(OpCodes.Brtrue, available);
+        il.Emit(OpCodes.Ldstr, ErrorCodes.ValueNotSet);
+        il.Emit(OpCodes.Ldstr, $"Confirmation of {typeof(TOriginal)} requires an original or a configured construction function.");
+        il.Emit(OpCodes.Ldnull);
+        il.Emit(OpCodes.Newobj, typeof(RinkuBindingException).GetConstructor([typeof(string), typeof(string), typeof(Exception)])!);
+        il.Emit(OpCodes.Throw);
+        il.MarkLabel(available);
         Label done = il.DefineLabel();
         context.EmitLoadEdit(il);
         il.Emit(OpCodes.Brfalse, done);
@@ -446,9 +537,23 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         il.Emit(OpCodes.Stfld, context.EditField);
         context.EmitChanged(il, null);
         il.MarkLabel(done);
+        EmitLifecyclePolicy(context, il, context.Definition.ConfirmedPolicy, "s_confirmedPolicy");
         il.Emit(OpCodes.Ldc_I4_1);
         il.Emit(OpCodes.Ret);
-        context.TypeBuilder.DefineMethodOverride(method, contract);
+        MethodBuilder confirm = DefineExplicit(context.TypeBuilder, contract);
+        ILGenerator confirmIl = confirm.GetILGenerator();
+        confirmIl.Emit(OpCodes.Ldarg_0);
+        confirmIl.Emit(OpCodes.Call, method);
+        Label rejected = confirmIl.DefineLabel();
+        confirmIl.Emit(OpCodes.Brfalse, rejected);
+        EmitConfirmed(context, confirmIl, TrackingConfirmation.Update);
+        confirmIl.Emit(OpCodes.Ldc_I4_1);
+        confirmIl.Emit(OpCodes.Ret);
+        confirmIl.MarkLabel(rejected);
+        confirmIl.Emit(OpCodes.Ldc_I4_0);
+        confirmIl.Emit(OpCodes.Ret);
+        context.TypeBuilder.DefineMethodOverride(confirm, contract);
+        return method;
     }
 
     private static void EmitCancelEdit(RuntimeTrackingEmitContext<TOriginal> context)
@@ -465,18 +570,65 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         il.Emit(OpCodes.Stfld, context.EditField);
         context.EmitChanged(il, null);
         il.MarkLabel(done);
+        EmitLifecyclePolicy(context, il, context.Definition.RevertedPolicy, "s_revertedPolicy");
         il.Emit(OpCodes.Ldc_I4_1);
         il.Emit(OpCodes.Ret);
         context.TypeBuilder.DefineMethodOverride(method, contract);
     }
 
+    private static void EmitLifecyclePolicy(RuntimeTrackingEmitContext<TOriginal> context, ILGenerator il, Action<ITrackingItem<TOriginal>>? policy, string name) {
+        if (policy is null) return;
+        Type callbackType = typeof(Action<ITrackingItem<TOriginal>>);
+        FieldBuilder callback = context.TypeBuilder.DefineField(name, callbackType, FieldAttributes.Private | FieldAttributes.Static);
+        context.AddInitializer(type => type.GetField(name, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, policy));
+        il.Emit(OpCodes.Ldsfld, callback);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Callvirt, callbackType.GetMethod("Invoke")!);
+    }
+
     private static void EmitTryGetOriginal(RuntimeTrackingEmitContext<TOriginal> context)
     {
-        MethodInfo contract = typeof(IOriginal<TOriginal>).GetMethod(nameof(IOriginal<TOriginal>.TryGetOriginal))
-            ?? throw new MissingMethodException(typeof(IOriginal<TOriginal>).FullName, nameof(IOriginal<TOriginal>.TryGetOriginal));
+        MethodInfo contract = typeof(IOriginal<TOriginal>).GetMethod(nameof(IOriginal<>.TryGetOriginal))
+            ?? throw new MissingMethodException(typeof(IOriginal<TOriginal>).FullName, nameof(IOriginal<>.TryGetOriginal));
         MethodBuilder method = DefineExplicit(context.TypeBuilder, contract);
         ILGenerator il = method.GetILGenerator();
+        Label available = il.DefineLabel();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldfld, context.HasOriginalField);
+        il.Emit(OpCodes.Brtrue, available);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Initobj, typeof(TOriginal));
+        il.Emit(OpCodes.Ldc_I4_0);
+        il.Emit(OpCodes.Ret);
+        il.MarkLabel(available);
         context.Definition.OriginalStorage.EmitTryGetOriginal(il, context.OriginalField);
+        context.TypeBuilder.DefineMethodOverride(method, contract);
+    }
+
+    private static void EmitSetOriginal(RuntimeTrackingEmitContext<TOriginal> context) {
+        Type contractType = typeof(IOriginalWriter<TOriginal>);
+        context.TypeBuilder.AddInterfaceImplementation(contractType);
+        MethodInfo contract = contractType.GetMethod(nameof(IOriginalWriter<TOriginal>.SetOriginal))!;
+        MethodBuilder method = DefineExplicit(context.TypeBuilder, contract);
+        ILGenerator il = method.GetILGenerator();
+        context.Definition.OriginalStorage.EmitStoreFromArgument(il, context.OriginalField, 1);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Stfld, context.HasOriginalField);
+        Label noEdit = il.DefineLabel();
+        context.EmitLoadEdit(il);
+        il.Emit(OpCodes.Brfalse, noEdit);
+        foreach (var member in context.Definition.Members) {
+            var storage = context.MemberContext(member);
+            if (storage.DirectField is not null && member.Emitter is { UsesSnapshot: true } emitter)
+                emitter.EmitConfirm(storage, il);
+        }
+        il.MarkLabel(noEdit);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldnull);
+        il.Emit(OpCodes.Stfld, context.EditField);
+        context.EmitChanged(il, null);
+        il.Emit(OpCodes.Ret);
         context.TypeBuilder.DefineMethodOverride(method, contract);
     }
 
@@ -492,23 +644,37 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         context.TypeBuilder.DefineMethodOverride(method, contract);
     }
 
-    private static void EmitConfirmNew(RuntimeTrackingEmitContext<TOriginal> context)
+    private static void EmitInsertConfirmation(RuntimeTrackingEmitContext<TOriginal> context, MethodBuilder confirmUpdate)
     {
-        MethodInfo contract = typeof(IRuntimeNewStateControl).GetMethod(nameof(IRuntimeNewStateControl.ConfirmNew))
-            ?? throw new MissingMethodException(typeof(IRuntimeNewStateControl).FullName, nameof(IRuntimeNewStateControl.ConfirmNew));
-        MethodBuilder method = DefineExplicit(context.TypeBuilder, contract);
-        ILGenerator il = method.GetILGenerator();
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Ldc_I4_0);
-        il.Emit(OpCodes.Stfld, context.IsNewField);
-        il.Emit(OpCodes.Ldc_I4_1);
-        il.Emit(OpCodes.Ret);
-        context.TypeBuilder.DefineMethodOverride(method, contract);
+        MethodInfo insertContract = typeof(ICanInsert).GetMethod(nameof(ICanInsert.ConfirmInsert))
+            ?? throw new MissingMethodException(typeof(ICanInsert).FullName, nameof(ICanInsert.ConfirmInsert));
+        MethodBuilder insert = DefineExplicit(context.TypeBuilder, insertContract);
+        ILGenerator insertIl = insert.GetILGenerator();
+        Label fail = insertIl.DefineLabel();
+        insertIl.Emit(OpCodes.Ldarg_0);
+        insertIl.Emit(OpCodes.Call, confirmUpdate);
+        insertIl.Emit(OpCodes.Brfalse, fail);
+        Label alreadyInserted = insertIl.DefineLabel();
+        insertIl.Emit(OpCodes.Ldarg_0);
+        insertIl.Emit(OpCodes.Ldfld, context.IsNewField);
+        insertIl.Emit(OpCodes.Brfalse, alreadyInserted);
+        insertIl.Emit(OpCodes.Ldarg_0);
+        insertIl.Emit(OpCodes.Ldc_I4_0);
+        insertIl.Emit(OpCodes.Stfld, context.IsNewField);
+        context.EmitChanged(insertIl, nameof(ITrackingListNewState.IsNew));
+        insertIl.MarkLabel(alreadyInserted);
+        EmitConfirmed(context, insertIl, TrackingConfirmation.Insert);
+        insertIl.Emit(OpCodes.Ldc_I4_1);
+        insertIl.Emit(OpCodes.Ret);
+        insertIl.MarkLabel(fail);
+        insertIl.Emit(OpCodes.Ldc_I4_0);
+        insertIl.Emit(OpCodes.Ret);
+        context.TypeBuilder.DefineMethodOverride(insert, insertContract);
     }
 
     private static void EmitChanges(RuntimeTrackingEmitContext<TOriginal> context)
     {
-        RuntimeTrackingMemberDefinition<TOriginal>[] tracked = context.Definition.Members.Where(static member => member.Emitter?.UsesSnapshot == true).ToArray();
+        RuntimeTrackingMemberDefinition<TOriginal>[] tracked = [.. context.Definition.Members.Where(static member => member.Emitter?.TracksChanges == true)];
         EmitTrackedMemberCount(context, tracked.Length);
         EmitTryGetChange(context, tracked);
     }
@@ -588,10 +754,10 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
         {
             RuntimeTrackingMemberDefinition<TOriginal> member = context.Definition.Members[i];
             RuntimeEmittedProperty implementation = context.Properties[member];
-            IReadOnlyList<RuntimeInterfacePropertyRequirement> requirements = member.Requirements;
+            IReadOnlyList<PropertyInfo> requirements = member.Requirements;
             for (int r = 0; r < requirements.Count; r++)
             {
-                PropertyInfo requirement = requirements[r].Property;
+                PropertyInfo requirement = requirements[r];
                 if (requirement.GetMethod is MethodInfo getter) context.TypeBuilder.DefineMethodOverride(implementation.Getter, getter);
                 if (requirement.SetMethod is MethodInfo setter)
                 {
@@ -613,7 +779,7 @@ internal static class RuntimeTrackingTypeEmitter<TOriginal, TEdit>
             MethodAttributes.Private | MethodAttributes.Virtual | MethodAttributes.Final | MethodAttributes.HideBySig | MethodAttributes.NewSlot,
             contract.CallingConvention,
             contract.ReturnType,
-            contract.GetParameters().Select(static parameter => parameter.ParameterType).ToArray());
+            [.. contract.GetParameters().Select(static parameter => parameter.ParameterType)]);
         return method;
     }
 
@@ -682,7 +848,7 @@ internal sealed class RuntimeOriginalForwardMethodEmitter<TOriginal> : RuntimeTr
         ParameterInfo[] parameters = requirement.GetParameters();
         for (int i = 0; i < parameters.Length; i++) il.Emit(OpCodes.Ldarg, i + 1);
         if (typeof(TOriginal).IsValueType) il.Emit(OpCodes.Constrained, typeof(TOriginal));
-        MethodInfo call = requirement.IsGenericMethodDefinition ? requirement.MakeGenericMethod(generic.Cast<Type>().ToArray()) : requirement;
+        MethodInfo call = requirement.IsGenericMethodDefinition ? requirement.MakeGenericMethod([.. generic.Cast<Type>()]) : requirement;
         il.Emit(OpCodes.Callvirt, call);
         il.Emit(OpCodes.Ret);
         return generated;
@@ -693,7 +859,7 @@ internal sealed class RuntimeOriginalForwardMethodEmitter<TOriginal> : RuntimeTr
         Type[] sourceGeneric = source.IsGenericMethodDefinition ? source.GetGenericArguments() : [];
         GenericTypeParameterBuilder[] generated = sourceGeneric.Length == 0
             ? []
-            : method.DefineGenericParameters(sourceGeneric.Select(static argument => argument.Name).ToArray());
+            : method.DefineGenericParameters([.. sourceGeneric.Select(static argument => argument.Name)]);
 
         Type Map(Type type)
         {
@@ -713,7 +879,7 @@ internal sealed class RuntimeOriginalForwardMethodEmitter<TOriginal> : RuntimeTr
                 return type.GetArrayRank() == 1 ? Map(element).MakeArrayType() : Map(element).MakeArrayType(type.GetArrayRank());
             }
             if (type.IsGenericType)
-                return type.GetGenericTypeDefinition().MakeGenericType(type.GetGenericArguments().Select(Map).ToArray());
+                return type.GetGenericTypeDefinition().MakeGenericType([.. type.GetGenericArguments().Select(Map)]);
             return type;
         }
 
@@ -723,16 +889,16 @@ internal sealed class RuntimeOriginalForwardMethodEmitter<TOriginal> : RuntimeTr
             Type[] constraints = sourceGeneric[i].GetGenericParameterConstraints();
             Type? baseConstraint = constraints.FirstOrDefault(static constraint => !constraint.IsInterface);
             if (baseConstraint is not null) generated[i].SetBaseTypeConstraint(Map(baseConstraint));
-            Type[] interfaceConstraints = constraints.Where(static constraint => constraint.IsInterface).Select(Map).ToArray();
+            Type[] interfaceConstraints = [.. constraints.Where(static constraint => constraint.IsInterface).Select(Map)];
             if (interfaceConstraints.Length != 0) generated[i].SetInterfaceConstraints(interfaceConstraints);
         }
 
         method.SetReturnType(Map(source.ReturnType));
         ParameterInfo[] parameters = source.GetParameters();
-        method.SetParameters(parameters.Select(parameter => Map(parameter.ParameterType)).ToArray());
+        method.SetParameters([.. parameters.Select(parameter => Map(parameter.ParameterType))]);
         for (int i = 0; i < parameters.Length; i++) method.DefineParameter(i + 1, parameters[i].Attributes, parameters[i].Name);
         return generated;
     }
 }
 
-internal readonly record struct RuntimeTrackingEmissionResult<TOriginal>(Type Type, Type SnapshotType, ConstructorInfo ExistingCtor, ConstructorInfo StateCtor, Mapper Mapper);
+internal readonly record struct RuntimeTrackingEmissionResult<TOriginal>(Type Type, Type SnapshotType, ConstructorInfo ExistingCtor, ConstructorInfo NewCtor, Mapper Mapper);

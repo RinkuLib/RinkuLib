@@ -8,14 +8,13 @@ using Rinku.Mapping.Defaults;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Internal.Commands;
 
 /// <summary>
 /// The parser a run uses when it has none yet. It is an ordinary parser, so the run is the ordinary
 /// <c>Query</c>, and it works out what the columns call for on the first row rather than being told.
 /// </summary>
 public class ColdStartShapeTests(SqliteDb Db) : IClassFixture<SqliteDb> {
-
     /// <summary>Counts how often it is asked, and answers with the parser the columns really call for.</summary>
     sealed class CountingCache : ICacheGivingParser<IEnumerable<UserRow>> {
         public int Asked;

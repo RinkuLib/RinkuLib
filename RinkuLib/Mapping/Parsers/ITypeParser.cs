@@ -57,7 +57,7 @@ public interface ITypeParser : IDisposable {
     /// <remarks>
     /// This method must allow repeated calls. A wrapper must not dispose a child parser supplied to it.
     /// </remarks>
-    void IDisposable.Dispose() { }
+    void IDisposable.Dispose() => GC.SuppressFinalize(this);
     /// <summary>Whether this parser can read a result carrying <paramref name="schema"/>.</summary>
     /// <remarks>
     /// A parser may accept several schemas. A parser that reads names and types at each call may accept every schema.
@@ -98,12 +98,12 @@ public interface ITypeParser<T> : ITypeParser {
     Type ITypeParser.Type => typeof(T);
     object? ITypeParser.DefaultObject() => Default();
     (bool CanContinue, object? Result) ITypeParser.ParseObject(DbDataReader reader) {
-        var result = Parse(reader);
-        return (result.CanContinue, result.Result);
+        var (CanContinue, Result) = Parse(reader);
+        return (CanContinue, Result);
     }
     async ValueTask<(bool CanContinue, object? Result)> ITypeParser.ParseObjectAsync(DbDataReader reader, CancellationToken ct) {
-        var result = await ParseAsync(reader, ct).ConfigureAwait(false);
-        return (result.CanContinue, result.Result);
+        var (CanContinue, Result) = await ParseAsync(reader, ct).ConfigureAwait(false);
+        return (CanContinue, Result);
     }
     object? ITypeParser.QueryObject(DbCommand command, ICache? cache, bool disposeCommand)
         => cache is null ? Query(command, disposeCommand) : Query(command, cache, disposeCommand);

@@ -12,7 +12,7 @@ public static class Refusals {
     /// <summary>Asserts <paramref name="run"/> was refused with <paramref name="code"/>.</summary>
     public static RinkuException Raises(string code, Action run) {
         var ex = Assert.ThrowsAny<Exception>(run);
-        var rinku = Assert.IsAssignableFrom<RinkuException>(ex);
+        var rinku = Assert.IsType<RinkuException>(ex, exactMatch: false);
         Assert.Equal(code, rinku.Code);
         return rinku;
     }
@@ -20,7 +20,7 @@ public static class Refusals {
     /// <inheritdoc cref="Raises(string, Action)"/>
     public static async Task<RinkuException> RaisesAsync(string code, Func<Task> run) {
         var ex = await Assert.ThrowsAnyAsync<Exception>(run);
-        var rinku = Assert.IsAssignableFrom<RinkuException>(ex);
+        var rinku = Assert.IsType<RinkuException>(ex, exactMatch: false);
         Assert.Equal(code, rinku.Code);
         return rinku;
     }

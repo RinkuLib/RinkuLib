@@ -1,7 +1,16 @@
-global using Rinku;
+﻿global using Rinku;
+global using Rinku.Facade;
 global using Rinku.Mapping;
 global using Rinku.Mapping.Conversion;
+global using Rinku.Mapping.Defaults;
 global using Rinku.Mapping.Emission;
 global using Rinku.Mapping.Parsers;
+global using Rinku.Mapping.Parsers.Defaults;
 global using Rinku.Querying;
 global using Rinku.Querying.Parameters;
+global using Rinku.Tracking;
+global using Rinku.Tracking.Core;
+global using Rinku.Tracking.Runtime.Configuration;
+global using Rinku.Tracking.Runtime.Emit;
+global using Rinku.Tracking.Runtime.Model;
+global using RinkuLib.Tests.Integration.Infrastructure;

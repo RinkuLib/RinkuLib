@@ -1,7 +1,7 @@
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Utilities;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// <see cref="Caster"/> converts values across types at runtime: numeric bridges, nullables, enums,
@@ -212,14 +212,14 @@ public class CasterTests {
     }
     [Fact]
     public void TryCast_uses_custom_parser_between_specific_types() {
-        Caster.AddParser<CastAmount, string>((CastAmount a, out string r) => { r = $"Number_{a.Value}"; return true; });
+        Caster.AddParser<CastAmount, string>((a, out r) => { r = $"Number_{a.Value}"; return true; });
         Assert.True(Caster.TryCast<CastAmount, string>(new CastAmount(42), out var result));
         Assert.Equal("Number_42", result);
     }
 
     [Fact]
     public void TryCast_uses_custom_parser_for_complex_types() {
-        Caster.AddParser<CastWrapped, int>((CastWrapped w, out int r) => { r = w.Raw.Length; return true; });
+        Caster.AddParser<CastWrapped, int>((w, out r) => { r = w.Raw.Length; return true; });
 
         var wrapped = new CastWrapped("12345");
         Assert.True(Caster.TryCast<CastWrapped, int>(wrapped, out var length));
@@ -407,7 +407,6 @@ public class CasterTests {
 }
 
 public struct CastPlain;
-
 public enum CastColor { Red = 1, Green = 2, Blue = 3 }
 public enum CastColor2 { Red2 = 1 }
 public record CastWrapped(string Raw);

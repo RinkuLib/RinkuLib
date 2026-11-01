@@ -6,7 +6,7 @@ using Rinku;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.Documentation;
+namespace RinkuLib.Tests.Features.Documentation;
 
 public class DocumentationSqlRuntimeTests {
     static readonly string[] CaseNames = [
@@ -36,8 +36,10 @@ public class DocumentationSqlRuntimeTests {
     static readonly AsyncLocal<int> TargetCase = new();
     static readonly AsyncLocal<int> CurrentCase = new();
 
-    public static IEnumerable<object?[]> SqlCases()
-        => CaseNames.Select((name, index) => new object?[] { index, name });
+    public static IEnumerable<TheoryDataRow<int, string>> SqlCases() {
+        for (int i = 0; i < CaseNames.Length; i++)
+            yield return new(i, CaseNames[i]);
+    }
 
     [Theory]
     [MemberData(nameof(SqlCases))]
@@ -204,7 +206,6 @@ internal sealed class RecordingDbConnection : DbConnection {
     public override string DataSource => "Documentation";
     public override string ServerVersion => "1";
     public override ConnectionState State => state;
-
     public override void ChangeDatabase(string databaseName) { }
     public override void Close() => state = ConnectionState.Closed;
     public override void Open() => state = ConnectionState.Open;
@@ -215,9 +216,8 @@ internal sealed class RecordingDbConnection : DbConnection {
 }
 
 internal sealed class RecordingDbCommand(RecordingDbConnection connection) : DbCommand {
-    readonly RecordingDbParameterCollection parameters = new();
+    readonly RecordingDbParameterCollection parameters = [];
     public string[] ExecutedParameterNames { get; private set; } = [];
-
     [AllowNull]
     public override string CommandText { get; set; } = "";
     public override int CommandTimeout { get; set; }
@@ -228,13 +228,11 @@ internal sealed class RecordingDbCommand(RecordingDbConnection connection) : DbC
     protected override DbConnection DbConnection { get; set; } = connection;
     protected override DbParameterCollection DbParameterCollection => parameters;
     protected override DbTransaction? DbTransaction { get; set; }
-
     public override void Cancel() { }
     public override int ExecuteNonQuery() {
-        ExecutedParameterNames = parameters
+        ExecutedParameterNames = [.. parameters
             .Cast<DbParameter>()
-            .Select(parameter => parameter.ParameterName)
-            .ToArray();
+            .Select(parameter => parameter.ParameterName)];
         return 1;
     }
     public override object ExecuteScalar() => 1;

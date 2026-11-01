@@ -23,7 +23,7 @@ internal struct CondInfo {
     public const char None = (char)3;
     public const char Special = (char)8;
     public static bool IsComment(char type) => type <= OrComment;
-    public string Cond { get; private set; }
+    public string? Cond { get; private set; }
     public int StartIndex { get; private set; }
     public int VarIndex { get; private set; }
     public char Type { get; private set; }
@@ -49,7 +49,7 @@ internal struct CondInfo {
         };
     public static CondInfo NewSelect(int StartIndex, ulong parMap, int prevExcessExcess) 
         =>new() {
-               Cond = null!,
+               Cond = null,
                Type = CondInfo.AndComment,
                VarIndex = -1,
                StartIndex = StartIndex,
@@ -206,7 +206,7 @@ internal unsafe ref struct QueryExtractor {
         CurrentExcess = null;
         newQuery = new string(Builder, 0, BuilderInd);
         ArrayPool<char>.Shared.Return(Builder);
-        Builder = null!;
+        Builder = [];
         return Conditions.LockTransfer();
     }
 
@@ -605,7 +605,7 @@ internal unsafe ref struct QueryExtractor {
         "then",
         ";"
     ];
-    private bool MatchSection(char* ptr, out int secLen) {
+    private readonly bool MatchSection(char* ptr, out int secLen) {
         var remaining = (int)(LastChar - ptr);
         for (int i = 0; i < SQLSections.Length; i++) {
             var sec = SQLSections[i];

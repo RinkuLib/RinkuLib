@@ -4,8 +4,16 @@ using System.Reflection.Emit;
 
 namespace Rinku.Mapping;
 internal static class TypeExtensions {
+    internal static T Require<T>(T? value, string name) where T : class
+        => value ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Required reflection member {name} was not found.");
+    internal static MethodInfo RequiredMethod(Type type, string name, Type[] parameterTypes)
+        => type.GetMethod(name, parameterTypes)
+            ?? throw new MissingMethodException(type.FullName, name);
+    internal static ConstructorInfo RequiredConstructor(Type type, Type[] parameterTypes)
+        => type.GetConstructor(parameterTypes)
+            ?? throw new MissingMethodException(type.FullName, ".ctor");
     #region Debug
-    internal static readonly MethodInfo WriteLine = typeof(Console).GetMethod("WriteLine", [typeof(object)])!;
+    internal static readonly MethodInfo WriteLine = RequiredMethod(typeof(Console), "WriteLine", [typeof(object)]);
     internal static void EmitWriteLineStackTop(this Type type, ILGenerator il) {
         il.Emit(OpCodes.Dup);
         if (type.IsValueType)
@@ -34,35 +42,35 @@ internal static class TypeExtensions {
     #region DbReaderVars
     internal static readonly Type[] IntParam = [typeof(int)];
     internal static readonly Type ReaderType = typeof(DbDataReader);
-    internal static readonly MethodInfo IsNull = ReaderType.GetMethod(nameof(DbDataReader.IsDBNull), IntParam)!;
+    internal static readonly MethodInfo IsNull = RequiredMethod(ReaderType, nameof(DbDataReader.IsDBNull), IntParam);
     
-    internal static readonly MethodInfo _obj = ReaderType.GetMethod(nameof(DbDataReader.GetValue), IntParam)!;
-    internal static readonly MethodInfo _str = ReaderType.GetMethod(nameof(DbDataReader.GetString), IntParam)!;
-    internal static readonly MethodInfo _i8 = ReaderType.GetMethod(nameof(DbDataReader.GetByte), IntParam)!;
-    internal static readonly MethodInfo _i16 = ReaderType.GetMethod(nameof(DbDataReader.GetInt16), IntParam)!;
-    internal static readonly MethodInfo _i32 = ReaderType.GetMethod(nameof(DbDataReader.GetInt32), IntParam)!;
-    internal static readonly MethodInfo _i64 = ReaderType.GetMethod(nameof(DbDataReader.GetInt64), IntParam)!;
-    internal static readonly MethodInfo _char = ReaderType.GetMethod(nameof(DbDataReader.GetChar), IntParam)!;
-    internal static readonly MethodInfo _bool = ReaderType.GetMethod(nameof(DbDataReader.GetBoolean), IntParam)!;
-    internal static readonly MethodInfo _dt = ReaderType.GetMethod(nameof(DbDataReader.GetDateTime), IntParam)!;
-    internal static readonly MethodInfo _dbl = ReaderType.GetMethod(nameof(DbDataReader.GetDouble), IntParam)!;
-    internal static readonly MethodInfo _flt = ReaderType.GetMethod(nameof(DbDataReader.GetFloat), IntParam)!;
-    internal static readonly MethodInfo _dec = ReaderType.GetMethod(nameof(DbDataReader.GetDecimal), IntParam)!;
-    internal static readonly MethodInfo _guid = ReaderType.GetMethod(nameof(DbDataReader.GetGuid), IntParam)!;
-    internal static readonly MethodInfo _byteArr = ReaderType.GetMethod(nameof(DbDataReader.GetBytes), IntParam)!;
-    internal static readonly MethodInfo _getMeth = ReaderType.GetMethod(nameof(DbDataReader.GetFieldValue), IntParam)!;
+    internal static readonly MethodInfo _obj = RequiredMethod(ReaderType, nameof(DbDataReader.GetValue), IntParam);
+    internal static readonly MethodInfo _str = RequiredMethod(ReaderType, nameof(DbDataReader.GetString), IntParam);
+    internal static readonly MethodInfo _i8 = RequiredMethod(ReaderType, nameof(DbDataReader.GetByte), IntParam);
+    internal static readonly MethodInfo _i16 = RequiredMethod(ReaderType, nameof(DbDataReader.GetInt16), IntParam);
+    internal static readonly MethodInfo _i32 = RequiredMethod(ReaderType, nameof(DbDataReader.GetInt32), IntParam);
+    internal static readonly MethodInfo _i64 = RequiredMethod(ReaderType, nameof(DbDataReader.GetInt64), IntParam);
+    internal static readonly MethodInfo _char = RequiredMethod(ReaderType, nameof(DbDataReader.GetChar), IntParam);
+    internal static readonly MethodInfo _bool = RequiredMethod(ReaderType, nameof(DbDataReader.GetBoolean), IntParam);
+    internal static readonly MethodInfo _dt = RequiredMethod(ReaderType, nameof(DbDataReader.GetDateTime), IntParam);
+    internal static readonly MethodInfo _dbl = RequiredMethod(ReaderType, nameof(DbDataReader.GetDouble), IntParam);
+    internal static readonly MethodInfo _flt = RequiredMethod(ReaderType, nameof(DbDataReader.GetFloat), IntParam);
+    internal static readonly MethodInfo _dec = RequiredMethod(ReaderType, nameof(DbDataReader.GetDecimal), IntParam);
+    internal static readonly MethodInfo _guid = RequiredMethod(ReaderType, nameof(DbDataReader.GetGuid), IntParam);
+    internal static readonly MethodInfo _getMeth = RequiredMethod(ReaderType, nameof(DbDataReader.GetFieldValue), IntParam);
+    internal static readonly MethodInfo _byteArr = _getMeth.MakeGenericMethod(typeof(byte[]));
     
-    internal static readonly ConstructorInfo _Ni8Ctor = typeof(byte?).GetConstructor([typeof(byte)])!;
-    internal static readonly ConstructorInfo _Ni16Ctor = typeof(short?).GetConstructor([typeof(short)])!;
-    internal static readonly ConstructorInfo _Ni32Ctor = typeof(int?).GetConstructor([typeof(int)])!;
-    internal static readonly ConstructorInfo _Ni64Ctor = typeof(long?).GetConstructor([typeof(long)])!;
-    internal static readonly ConstructorInfo _NcharCtor = typeof(char?).GetConstructor([typeof(char)])!;
-    internal static readonly ConstructorInfo _NboolCtor = typeof(bool?).GetConstructor([typeof(bool)])!;
-    internal static readonly ConstructorInfo _NdtCtor = typeof(DateTime?).GetConstructor([typeof(DateTime)])!;
-    internal static readonly ConstructorInfo _NdblCtor = typeof(double?).GetConstructor([typeof(double)])!;
-    internal static readonly ConstructorInfo _NfltCtor = typeof(float?).GetConstructor([typeof(float)])!;
-    internal static readonly ConstructorInfo _NdecCtor = typeof(decimal?).GetConstructor([typeof(decimal)])!;
-    internal static readonly ConstructorInfo _NguidCtor = typeof(Guid?).GetConstructor([typeof(Guid)])!;
+    internal static readonly ConstructorInfo _Ni8Ctor = RequiredConstructor(typeof(byte?), [typeof(byte)]);
+    internal static readonly ConstructorInfo _Ni16Ctor = RequiredConstructor(typeof(short?), [typeof(short)]);
+    internal static readonly ConstructorInfo _Ni32Ctor = RequiredConstructor(typeof(int?), [typeof(int)]);
+    internal static readonly ConstructorInfo _Ni64Ctor = RequiredConstructor(typeof(long?), [typeof(long)]);
+    internal static readonly ConstructorInfo _NcharCtor = RequiredConstructor(typeof(char?), [typeof(char)]);
+    internal static readonly ConstructorInfo _NboolCtor = RequiredConstructor(typeof(bool?), [typeof(bool)]);
+    internal static readonly ConstructorInfo _NdtCtor = RequiredConstructor(typeof(DateTime?), [typeof(DateTime)]);
+    internal static readonly ConstructorInfo _NdblCtor = RequiredConstructor(typeof(double?), [typeof(double)]);
+    internal static readonly ConstructorInfo _NfltCtor = RequiredConstructor(typeof(float?), [typeof(float)]);
+    internal static readonly ConstructorInfo _NdecCtor = RequiredConstructor(typeof(decimal?), [typeof(decimal)]);
+    internal static readonly ConstructorInfo _NguidCtor = RequiredConstructor(typeof(Guid?), [typeof(Guid)]);
     #endregion
     public static string ShortName(this Type? t) {
         if (t is null)
@@ -172,14 +180,18 @@ internal static class TypeExtensions {
         if (member is FieldInfo fi)
             return closedType.GetMemberWithSameMetadataDefinitionAs(fi);
         if (member is ConstructorInfo ci)
-            return ConstructorInfo.GetMethodFromHandle(ci.MethodHandle, closedType.TypeHandle)!;
+            return ConstructorInfo.GetMethodFromHandle(ci.MethodHandle, closedType.TypeHandle)
+                ?? throw new MissingMethodException(closedType.FullName, ci.Name);
         if (member is PropertyInfo pi)
             member = pi.GetSetMethod(true) ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, "Property has no setter");
         if (member is not MethodInfo mi)
             throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"Member type {member.GetType()} not supported");
+        if (!mi.ContainsGenericParameters)
+            return mi;
         if (mi.IsGenericMethod)
             return mi.MakeGenericMethod(closedType.GetGenericArguments());
-        return MethodBase.GetMethodFromHandle(mi.MethodHandle, closedType.TypeHandle)!;
+        return MethodBase.GetMethodFromHandle(mi.MethodHandle, closedType.TypeHandle)
+            ?? throw new MissingMethodException(closedType.FullName, mi.Name);
     }
     public static Type CloseType(this Type type, Type closedParent) {
         if (!type.ContainsGenericParameters)
@@ -210,7 +222,7 @@ internal static class TypeExtensions {
             return changed ? target.GetGenericTypeDefinition().MakeGenericType(targetArgs) : target;
         }
         if (target.IsArray) {
-            Type elementType = target.GetElementType()!;
+            Type elementType = target.GetElementType() ?? throw new InvalidOperationException($"{target} has no element type");
             Type resolvedElement = Resolve(elementType, parentArgs);
 
             if (resolvedElement != elementType) {
@@ -223,13 +235,13 @@ internal static class TypeExtensions {
         }
 
         if (target.IsPointer) {
-            Type elementType = target.GetElementType()!;
+            Type elementType = target.GetElementType() ?? throw new InvalidOperationException($"{target} has no element type");
             Type resolved = Resolve(elementType, parentArgs);
             return resolved != elementType ? resolved.MakePointerType() : target;
         }
 
         if (target.IsByRef) {
-            Type elementType = target.GetElementType()!;
+            Type elementType = target.GetElementType() ?? throw new InvalidOperationException($"{target} has no element type");
             Type resolved = Resolve(elementType, parentArgs);
             return resolved != elementType ? resolved.MakeByRefType() : target;
         }

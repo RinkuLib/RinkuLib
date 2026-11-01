@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.ConditionalMarkers;
 
 /// <summary>
 /// Pins the documented whitespace contract for each marker position. A space on only one side collapses

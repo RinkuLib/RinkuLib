@@ -30,23 +30,38 @@ public sealed class GenerateCtorCodeFixProvider : CodeFixProvider {
 
     public override async Task RegisterCodeFixesAsync(CodeFixContext context) {
         var diagnostic = context.Diagnostics.First();
-        var tagName = diagnostic.Id == MatchConstructorAnalyzer.DiagnosticId
-            ? DocumentationTags.MatchConstructor
-            : DocumentationTags.BasedOn;
+        const string tagName = DocumentationTags.BasedOn;
         var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);
         var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
         if (root is null || semanticModel is null)
             return;
 
         var declaration = DocumentationTags.FindContainingType(root, diagnostic.Location.SourceSpan);
-        var tag = DocumentationTags.FindTag(root, diagnostic.Location.SourceSpan, tagName);
+        var attribute = DocumentationTags.FindTag(root, diagnostic.Location.SourceSpan, DocumentationTags.BasedOn);
         if (declaration is null
-            || tag is null
+            || attribute is null
             || semanticModel.GetDeclaredSymbol(declaration, context.CancellationToken) is not INamedTypeSymbol targetType)
             return;
 
+        ImmutableArray<DocumentationReference> references = DocumentationTags.GetReferences(targetType, tagName, semanticModel.Compilation, context.CancellationToken);
+        DocumentationReference? selected = null;
+        foreach (DocumentationReference reference in references) {
+            if (reference.Attribute.ApplicationSyntaxReference is { } syntaxReference
+                && syntaxReference.SyntaxTree == attribute.SyntaxTree
+                && syntaxReference.Span.IntersectsWith(attribute.Span)) {
+                selected = reference;
+                break;
+            }
+        }
+        if (selected is null && references.Length == 1)
+            selected = references[0];
+        if (selected is null)
+            throw new InvalidOperationException($"No BasedOn reference selected. Found {references.Length}; diagnostic={diagnostic.Location.SourceSpan}; attribute={attribute.Span}.");
+        if (selected is not { } selectedReference)
+            return;
+
         var actions = ImmutableArray.CreateBuilder<CodeAction>();
-        foreach (var symbol in DocumentationTags.ResolveCref(tag, semanticModel.Compilation, context.CancellationToken)) {
+        foreach (ISymbol symbol in selectedReference.Symbols)
             foreach (var candidate in ConstructorContract.GetCandidates(symbol)) {
                 if (ConstructorContract.MatchesAny(targetType, candidate)
                     || ConstructorContract.HasConflictingSignature(targetType, candidate))
@@ -75,11 +90,10 @@ public sealed class GenerateCtorCodeFixProvider : CodeFixProvider {
                             tagName,
                             candidate,
                             includeProperties: true,
-                            cancellationToken),
-                        $"AddConstructorAndProperties-{display}"));
+                        cancellationToken),
+                    $"AddConstructorAndProperties-{display}"));
                 }
             }
-        }
 
         if (actions.Count == 0)
             return;
@@ -139,7 +153,7 @@ public sealed class GenerateCtorCodeFixProvider : CodeFixProvider {
         var parameterSyntaxes = parameters.Select(CreateParameter);
         var statements = includeAssignments
             ? parameters.Select(CreateAssignment)
-            : Enumerable.Empty<StatementSyntax>();
+            : [];
 
         return SyntaxFactory.ConstructorDeclaration(typeName)
             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))

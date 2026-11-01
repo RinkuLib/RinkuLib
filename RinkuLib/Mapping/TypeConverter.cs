@@ -138,7 +138,8 @@ public interface ITypeConverter {
     }
 }
 internal static class TypeConverterRuntime {
-    internal static readonly FieldInfo FormatProviderField = typeof(ITypeConverter).GetField(nameof(ITypeConverter.FormatProvider))!;
+    internal static readonly FieldInfo FormatProviderField = typeof(ITypeConverter).GetField(nameof(ITypeConverter.FormatProvider))
+        ?? throw new MissingFieldException(typeof(ITypeConverter).FullName, nameof(ITypeConverter.FormatProvider));
 }
 /// <summary>Leaves a value unchanged when the source and target types are compatible.</summary>
 public class IdentityConverter(Type type) : ITypeConverter {
@@ -233,7 +234,8 @@ public class ToStringConverter : ITypeConverter {
     /// <inheritdoc/>
     public void EmitConversion(Generator generator, Type sourceType) {
         if (!sourceType.IsValueType) {
-            generator.Emit(OpCodes.Callvirt, typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes)!);
+            generator.Emit(OpCodes.Callvirt, typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes)
+                ?? throw new MissingMethodException(typeof(object).FullName, nameof(ToString)));
             return;
         }
         var local = generator.DeclareLocal(sourceType);
@@ -246,13 +248,15 @@ public class ToStringConverter : ITypeConverter {
             return;
         }
         generator.Emit(OpCodes.Constrained, sourceType);
-        generator.Emit(OpCodes.Callvirt, typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes)!);
+        generator.Emit(OpCodes.Callvirt, typeof(object).GetMethod(nameof(ToString), Type.EmptyTypes)
+            ?? throw new MissingMethodException(typeof(object).FullName, nameof(ToString)));
     }
 }
 /// <summary>Calls a constructor that accepts the source type as its single argument.</summary>
 public class ConstructorConverter(ConstructorInfo ctor) : ITypeConverter {
     /// <inheritdoc/>
-    public Type OutputType { get; } = ctor.DeclaringType!;
+    public Type OutputType { get; } = ctor.DeclaringType
+        ?? throw new InvalidOperationException("A constructor converter requires a declaring type.");
     private readonly ConstructorInfo _ctor = ctor;
 
     /// <inheritdoc/>

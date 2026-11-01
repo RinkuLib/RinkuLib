@@ -48,7 +48,7 @@ public abstract class SpecialHandler : IQuerySegmentHandler {
     /// The suffix letters that map to a special handler, <c>X</c> for list spread to start. Add a letter here
     /// to register your own handler for every command.
     /// </summary>
-    public static readonly LetterMap<HandlerGetter<SpecialHandler>> SpecialHandlerGetter = new();
+    public static readonly LetterMap<HandlerGetter<SpecialHandler>> SpecialHandlerGetter = [];
     /// <summary>
     /// Whether this handler has settled its parameter metadata, so it binds without further learning.
     /// </summary>
@@ -145,35 +145,36 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
             if (currentValue is not object[] currentArr)
                 return false;
             RemoveArray(cmd, currentArr);
-            currentValue = null!;
+            currentValue = null;
             return true;
         }
-        if (currentValue is not object[] arr)
+        if (currentValue is not object?[] arr)
             throw new RinkuBindingException(ErrorCodes.ValueNotSet,
                 $"the spread for \"{ParameterName}\" was updated before a bind saved its state");
-        object[] array = [.. e];
+        object?[] array = [.. e];
         var cached = CachedParam;
         if (array.Length == arr.Length) {
             for (int i = 0; i < array.Length; i++)
-                if (!cached.Update(cmd, ref arr[i]!, array[i]))
+                if (!cached.Update(cmd, ref arr[i], array[i]))
                     return false;
             currentValue = arr;
             return true;
         }
         if (array.Length < arr.Length) {
             for (int i = 0; i < array.Length; i++) {
-                if (!cached.Update(cmd, ref arr[i]!, array[i]))
+                if (!cached.Update(cmd, ref arr[i], array[i]))
                     return false;
                 array[i] = arr[i];
             }
             for (int i = array.Length; i < arr.Length; i++)
-                cached.Remove(cmd, arr[i]);
+                if (arr[i] is { } oldValue)
+                    cached.Remove(cmd, oldValue);
             currentValue = array.Length <= 0 ? null : array;
             return true;
         }
         System.Diagnostics.Debug.Assert(array.Length > arr.Length);
         for (int i = 0; i < arr.Length; i++) {
-            if (!cached.Update(cmd, ref arr[i]!, array[i]))
+            if (!cached.Update(cmd, ref arr[i], array[i]))
                 return false;
             array[i] = arr[i];
         }
@@ -186,8 +187,10 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
                 nbDigits++;
                 lastWithSameNbDidgit = ((lastWithSameNbDidgit + 1) * 10) - 1;
             }
-            if (!cached.SaveUse(BuildName(ParameterName, i+1, nbDigits), cmd, ref array[i]))
+            object value = array[i] ?? throw new InvalidOperationException("A spread element cannot be null during parameter binding.");
+            if (!cached.SaveUse(BuildName(ParameterName, i+1, nbDigits), cmd, ref value))
                 return false;
+            array[i] = value;
         }
         currentValue = array;
         return true;
@@ -220,7 +223,7 @@ public class MultiVariableHandler(string ParameterName) : SpecialHandler {
         if (value is not System.Collections.IEnumerable e) return false;
         object[] array = [.. e];
         if (array.Length == 0) {
-            value = null!;
+            value = null;
             return true;
         }
         int nbDigits = 1;

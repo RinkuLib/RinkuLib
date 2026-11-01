@@ -5,7 +5,7 @@ using Rinku.Querying;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 
-namespace Rinku;
+namespace Rinku.Facade;
 
 internal sealed class LinkerQueryCommandWithParser<T>(QueryCommand command, bool[] usageMap) : ICacheGivingParser<T> {
     private readonly QueryCommand Command = command;

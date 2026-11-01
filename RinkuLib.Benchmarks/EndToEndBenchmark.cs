@@ -42,11 +42,11 @@ namespace RinkuLib.Benchmarks;
 public class EndToEndBenchmark : IAsyncDisposable {
     private const int RowCount = 5000;
 
-    private SqlServerFixture _fixture = null!;
-    private SqlConnection cnn = null!;
+    private readonly SqlServerFixture _fixture = new();
+    private readonly SqlConnection cnn = new();
     private BatchUpdateArgs[] _batchItems = [];
-    private DataTable _tableIds = null!;
-    private QueryCommand _outputProcCmd = null!;
+    private readonly DataTable _tableIds = new();
+    private QueryCommand _outputProcCmd = new("SELECT 1");
 
     private int _i;
     private bool _fixId;
@@ -127,7 +127,8 @@ public class EndToEndBenchmark : IAsyncDisposable {
 
     static EndToEndBenchmark()
         => TypeParsingInfo.GetOrAdd<BenchmarkShape>()
-            .AddPossibleConstruction(typeof(BenchmarkShape).GetMethod(nameof(BenchmarkShape.FromRow))!);
+            .AddPossibleConstruction(typeof(BenchmarkShape).GetMethod(nameof(BenchmarkShape.FromRow))
+                ?? throw new InvalidOperationException($"{nameof(BenchmarkShape.FromRow)} was not found."));
 
     [GlobalSetup]
     public Task Setup() => Setup(true);
@@ -138,7 +139,6 @@ public class EndToEndBenchmark : IAsyncDisposable {
         DbStringCmd.UpdateParamCache("@value", SizedDbParamCache.Get(DbType.AnsiString, 50));
         TableValuedParameterCmd.UpdateParamCache("@ids", SqlServerTableParamInfo.Instance);
 
-        _fixture = new SqlServerFixture();
         await _fixture.InitializeAsync();
 
         await using (var seed = _fixture.GetConnection()) {
@@ -225,11 +225,11 @@ public class EndToEndBenchmark : IAsyncDisposable {
             await Exec("CREATE TYPE dbo.BenchmarkIds AS TABLE (Id INT NOT NULL)");
         }
 
-        cnn = _fixture.GetConnection();
+        cnn.ConnectionString = _fixture.ConnectionString;
         await cnn.OpenAsync();
+        _outputProcCmd.Dispose();
         _outputProcCmd = QueryCommand.FromProc(OutputProcedure, cnn);
         _batchItems = [.. Enumerable.Range(1, 64).Select(id => new BatchUpdateArgs(1, id))];
-        _tableIds = new DataTable();
         _tableIds.Columns.Add("Id", typeof(int));
         foreach (var id in Enumerable.Range(1, 50))
             _tableIds.Rows.Add(id);
@@ -1365,11 +1365,9 @@ public class EndToEndBenchmark : IAsyncDisposable {
     public async ValueTask Cleanup() => await DisposeAsync();
 
     public async ValueTask DisposeAsync() {
-        _outputProcCmd?.Dispose();
-        if (cnn is not null)
-            await cnn.DisposeAsync();
-        if (_fixture is not null)
-            await _fixture.DisposeAsync();
+        _outputProcCmd.Dispose();
+        await cnn.DisposeAsync();
+        await _fixture.DisposeAsync();
         GC.SuppressFinalize(this);
     }
 }
@@ -1384,7 +1382,7 @@ public sealed class ProjectionRow {
 }
 
 public abstract class BenchmarkShape {
-    public string Kind { get; set; } = null!;
+    public string Kind { get; set; } = string.Empty;
     public abstract int Measure();
 
     public static BenchmarkShape FromRow(string kind, int? radius, int? side)
@@ -1440,7 +1438,8 @@ internal sealed class SqlServerTableParamInfo : ConvertedDbParamInfo<DataTable> 
 
 internal sealed class StrongPostIdTypeInfo : ScalarTypeParsingInfo<StrongPostId> {
     internal static readonly StrongPostIdTypeInfo Instance = new();
-    private static readonly MethodInfo FromInt32Method = typeof(StrongPostIdTypeInfo).GetMethod(nameof(FromInt32), BindingFlags.Static | BindingFlags.NonPublic)!;
+    private static readonly MethodInfo FromInt32Method = typeof(StrongPostIdTypeInfo).GetMethod(nameof(FromInt32), BindingFlags.Static | BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException($"{nameof(FromInt32)} was not found.");
 
     protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal)
         => column.Type == typeof(int)
@@ -1458,12 +1457,12 @@ public sealed record PostMultiMapChild([AltSkippingSegments("Id", 2), AbortOnNul
 
 public sealed class PostMultiMapParent : IDbReadable {
     public int Id { get; set; }
-    public string Name { get; set; } = null!;
+    public string Name { get; set; } = string.Empty;
 }
 
 public sealed class PostSetParent : IDbReadable {
     public int Id { get; set; }
-    public string Name { get; set; } = null!;
+    public string Name { get; set; } = string.Empty;
     public List<PostSetChild> Children { get; } = [];
 }
 

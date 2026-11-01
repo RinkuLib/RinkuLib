@@ -1,10 +1,10 @@
 using System.Data;
 using System.Data.Common;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries;
 
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class GlobalCacheDocumentationCollection {
@@ -15,11 +15,10 @@ public sealed class GlobalCacheDocumentationCollection {
 [Collection(GlobalCacheDocumentationCollection.Name)]
 public class CacheControlDocumentationTests(SqliteDb db) : IClassFixture<SqliteDb> {
     private sealed record Track(long Id, string Name);
-    private sealed record TrackFilter(int id);
+    private sealed record TrackFilter(int Id);
 
     private sealed class DisposalTrackingStreamCommand : FakeCommand {
         public int DisposeCount { get; private set; }
-
         protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken ct)
             => Task.FromResult<DbDataReader>(Rows.Reader([new("Name", typeof(string), false)], ["John"], ["Victor"]));
 
@@ -31,7 +30,6 @@ public class CacheControlDocumentationTests(SqliteDb db) : IClassFixture<SqliteD
     }
 
     private static DisposalTrackingStreamCommand StreamCommand() => new() { Connection = new FakeConnection() };
-
     [Fact]
     [DocumentationExample("caches.md", "invalidate-all")]
     [DocumentationExample("caches.md", "invalidate-one")]
@@ -43,16 +41,16 @@ public class CacheControlDocumentationTests(SqliteDb db) : IClassFixture<SqliteD
 
         Assert.Equal(new Track(1, "John"), run.Query<Track>(cnn));
         Assert.True(command.TryGetCachedParser<Track>(run.Variables, out var localParser));
-        Assert.Equal(1, command.InvalidateParser(localParser, QueryParserInvalidationScope.Local));
+        Assert.Equal(1, command.InvalidateParsers(candidate => ReferenceEquals(candidate, localParser), QueryParserInvalidationScope.Local));
         Assert.False(command.TryGetCachedParser<Track>(run.Variables, out _));
 
         Assert.Equal(new Track(1, "John"), run.Query<Track>(cnn));
         Assert.True(command.TryGetCachedParser<Track>(run.Variables, out var globalParser));
-        Assert.Equal(1, command.InvalidateParser(globalParser, QueryParserInvalidationScope.Global));
+        Assert.Equal(1, command.InvalidateParsers(candidate => ReferenceEquals(candidate, globalParser), QueryParserInvalidationScope.Global));
         Assert.False(command.TryGetCachedParser<Track>(run.Variables, out _));
 
         Assert.Equal(new Track(1, "John"), run.Query<Track>(cnn));
-        Assert.Equal(1, command.InvalidateParsers());
+        Assert.Equal(1, command.InvalidateParsers(static _ => true));
         Assert.False(command.TryGetCachedParser<Track>(run.Variables, out _));
     }
 
@@ -66,9 +64,9 @@ public class CacheControlDocumentationTests(SqliteDb db) : IClassFixture<SqliteD
         builder.UseWith(new TrackFilter(2));
         Render.From(builder);
 
-        var cached = Assert.Single(command.GetCachedParameterAccessors());
-        Assert.Equal(typeof(TrackFilter), cached.ParameterType);
-        Assert.Equal(ParameterAccessorKinds.Both, cached.Accessors);
+        var (ParameterType, Accessors) = Assert.Single(command.GetCachedParameterAccessors());
+        Assert.Equal(typeof(TrackFilter), ParameterType);
+        Assert.Equal(ParameterAccessorKinds.Both, Accessors);
 
         Assert.Equal(ParameterAccessorKinds.Direct,
             command.InvalidateParameterAccessor(typeof(TrackFilter), ParameterAccessorKinds.Direct));
@@ -142,8 +140,8 @@ public class CacheControlDocumentationTests(SqliteDb db) : IClassFixture<SqliteD
         var first = cache.Query<DynaObject>(command);
         Assert.Equal(1L, first.Get<long>("Id"));
 
-        Assert.True(cache.Invalidate<List<Track>>());
-        Assert.Same(first.GetType(), cache.Query<DynaObject>(command).GetType());
+        Assert.True(cache.Invalidate());
+        Assert.Equal(1L, cache.Query<DynaObject>(command).Get<long>("Id"));
     }
 
     [Fact]
@@ -169,8 +167,8 @@ public class CacheControlDocumentationTests(SqliteDb db) : IClassFixture<SqliteD
         Assert.Equal(1L, first.Get<long>("Id"));
         Assert.Equal(learnedSchema, cache.Schema);
 
-        Assert.Equal(2, cache.Invalidate());
-        Assert.True(cache.HasSchema);
+        Assert.True(cache.Invalidate());
+        Assert.False(cache.HasSchema);
         Assert.Equal(3, cache.Query<List<Track>>(command).Count);
         Assert.Equal(learnedSchema, cache.Schema);
     }

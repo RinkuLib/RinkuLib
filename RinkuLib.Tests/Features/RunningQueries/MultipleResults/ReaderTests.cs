@@ -6,7 +6,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.MultipleResults;
 
 /// <summary>
 /// <c>ExecuteReader</c> hands back the raw data reader, and <c>ExecuteMultiReader</c> wraps it to
@@ -20,7 +20,6 @@ public class ReaderTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand UsersByFlag = new("SELECT ID FROM Users WHERE IsActive = @a ORDER BY ID; SELECT ID FROM Users WHERE IsActive = @b ORDER BY ID");
     private static readonly QueryCommand ArtistWithAlbumsQuery = new("SELECT 7 AS Id, 'Queen' AS Name; SELECT 10 AS Id, 'Jazz' AS Title UNION ALL SELECT 11 AS Id, 'The Game' AS Title");
     private static readonly QueryCommand EmployeeAndManagerQuery = new("SELECT 1 AS Id, 'Ada' AS Name, 2 AS Id, 'Grace' AS Name");
-
     [Fact]
     public void ExecuteReader_returns_the_result() {
         using var cnn = Db.GetConnection();

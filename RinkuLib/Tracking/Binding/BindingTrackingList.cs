@@ -12,20 +12,44 @@ public class BindingTrackingList<T> : TrackingList<T>, IBindingList, ITypedList,
     private PropertyDescriptorCollection? _properties;
     private string? _listName;
     private int _pendingIndex = -1;
-    private AdditionToken _pendingToken;
+    private Func<object, T>? _baselineFactory;
+    private IDisposable? _sourceBinding;
+    private AddDelta _pendingDelta;
 
     /// <summary>Creates an empty binding tracking list.</summary>
-    public BindingTrackingList(int capacity = 0, IEqualityComparer<T>? comparer = null, ITrackingListContext<T>? context = null)
-        : base(capacity, comparer, context) { }
+    public BindingTrackingList(int capacity = 0, IEqualityComparer<T>? comparer = null, Func<T>? newItemFactory = null)
+        : base(capacity, comparer, newItemFactory) { }
 
     /// <summary>Creates a binding tracking list with baseline items.</summary>
-    public BindingTrackingList(IEnumerable<T> items, int initialCapacity = 0, IEqualityComparer<T>? comparer = null, ITrackingListContext<T>? context = null)
-        : base(items, initialCapacity, comparer, context) { }
+    public BindingTrackingList(IEnumerable<T> items, int initialCapacity = 0, IEqualityComparer<T>? comparer = null, Func<T>? newItemFactory = null)
+        : base(items, initialCapacity, comparer, newItemFactory) { }
+
+    internal void ConfigureBaselineFactory<TOriginal>(Func<TOriginal, T> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _baselineFactory = item => factory((TOriginal)item);
+    }
+
+    internal void BindSource<TOriginal>(IEnumerable<TOriginal> originals)
+    {
+        _sourceBinding?.Dispose();
+        _sourceBinding = originals is IList<TOriginal> { IsReadOnly: false } target && (target is not IList list || !list.IsFixedSize) ? this.BindBack(target) : null;
+    }
+
+    /// <summary>Replaces the accepted baseline using the original-item factory configured during materialization.</summary>
+    /// <remarks>Automatic bind-back follows the new writable source list. Explicitly registered bindings remain unchanged.</remarks>
+    public void ResetBaseline<TOriginal>(IEnumerable<TOriginal> originals)
+    {
+        ArgumentNullException.ThrowIfNull(originals);
+        Func<object, T> factory = _baselineFactory ?? throw new InvalidOperationException("This binding list was not materialized from original items.");
+        base.ResetBaseline(originals.Select(item => factory(item!)));
+        BindSource(originals);
+    }
 
     /// <inheritdoc/>
     public bool AllowEdit => true;
     /// <inheritdoc/>
-    public bool AllowNew => Context.CanCreateNew || _addingNew is not null;
+    public bool AllowNew => CanAddNew || _addingNew is not null;
     /// <inheritdoc/>
     public bool AllowRemove => true;
     /// <inheritdoc/>
@@ -127,8 +151,8 @@ public class BindingTrackingList<T> : TrackingList<T>, IBindingList, ITypedList,
         T item;
         if (args.NewObject is null)
         {
-            if (!Context.CanCreateNew) throw new NotSupportedException($"The tracking-list context for {typeof(T)} cannot create a new item.");
-            item = Context.CreateNew();
+            if (!CanAddNew) throw new NotSupportedException($"{typeof(T)} has no public parameterless constructor and no new-item factory was supplied.");
+            item = CreateNewItem();
         }
         else
         {
@@ -136,7 +160,7 @@ public class BindingTrackingList<T> : TrackingList<T>, IBindingList, ITypedList,
         }
 
         _pendingIndex = Count;
-        _pendingToken = AddTrackedItem(_pendingIndex, item);
+        _pendingDelta = AddTrackedItem(_pendingIndex, item);
         return item;
     }
 
@@ -150,7 +174,7 @@ public class BindingTrackingList<T> : TrackingList<T>, IBindingList, ITypedList,
     public void CancelNew(int itemIndex)
     {
         if (itemIndex != _pendingIndex) return;
-        CancelTrackedAddition(itemIndex, _pendingToken);
+        CancelTrackedAddition(itemIndex, _pendingDelta);
         _pendingIndex = -1;
     }
 
@@ -161,10 +185,10 @@ public class BindingTrackingList<T> : TrackingList<T>, IBindingList, ITypedList,
     }
 
     /// <inheritdoc/>
-    protected override void OnConfirmed(TrackingListConfirmationKind kind, int index, T item)
+    protected override void OnAddedConfirmed(int index, T item)
     {
-        if (kind == TrackingListConfirmationKind.Added && _pendingIndex == index) _pendingIndex = -1;
-        base.OnConfirmed(kind, index, item);
+        if (_pendingIndex == index) _pendingIndex = -1;
+        base.OnAddedConfirmed(index, item);
     }
 
     /// <inheritdoc/>
@@ -202,6 +226,19 @@ public class BindingTrackingList<T> : TrackingList<T>, IBindingList, ITypedList,
                 Raise(new ListChangedEventArgs(ListChangedType.Reset, -1));
                 break;
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _sourceBinding?.Dispose();
+            _sourceBinding = null;
+            UnsubscribeAll();
+            _listChanged = null;
+            _addingNew = null;
+        }
+        base.Dispose(disposing);
     }
 
     private void EndPending() => _pendingIndex = -1;

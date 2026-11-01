@@ -1,7 +1,7 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Reflection.Emit;
 
-namespace Rinku.Tracking.Runtime;
+namespace Rinku.Tracking.Runtime.Model;
 
 internal sealed class RuntimeOriginalMemberAccess
 {
@@ -28,15 +28,27 @@ internal sealed class RuntimeOriginalMemberAccess
 
     internal void EmitRead<TOriginal>(RuntimeTrackingMemberEmitContext<TOriginal> context, ILGenerator il)
     {
+        Label available = il.DefineLabel();
+        Label done = il.DefineLabel();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldfld, context.Type.HasOriginalField);
+        il.Emit(OpCodes.Brtrue, available);
+        LocalBuilder empty = il.DeclareLocal(ValueType);
+        il.Emit(OpCodes.Ldloca, empty);
+        il.Emit(OpCodes.Initobj, ValueType);
+        il.Emit(OpCodes.Ldloc, empty);
+        il.Emit(OpCodes.Br, done);
+        il.MarkLabel(available);
         context.Type.EmitLoadOriginalTarget(il);
         EmitReadFromLoadedTarget(il, typeof(TOriginal));
+        il.MarkLabel(done);
     }
 
     internal void EmitWrite<TOriginal>(RuntimeTrackingMemberEmitContext<TOriginal> context, ILGenerator il, Action<ILGenerator> emitValue)
     {
         if (!CanWrite) throw new InvalidOperationException($"Original member {Member} is read-only.");
 
-        context.Type.EmitLoadOriginalForWrite(il);
+        context.Type.EmitLoadOriginalTarget(il);
         emitValue(il);
         if (Member is PropertyInfo property)
         {

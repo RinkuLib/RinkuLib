@@ -26,6 +26,7 @@ public sealed class ConvertedScalarPlan(Type parentType, ITypeConverter converte
         var local = generator.DeclareLocal(method.ReturnType);
         generator.Emit(OpCodes.Stloc, local);
         generator.Emit(OpCodes.Ldloca, local);
-        generator.Emit(OpCodes.Call, method.ReturnType.GetMethod(nameof(Nullable<int>.GetValueOrDefault), Type.EmptyTypes)!);
+        generator.Emit(OpCodes.Call, method.ReturnType.GetMethod(nameof(Nullable<>.GetValueOrDefault), Type.EmptyTypes)
+            ?? throw new MissingMethodException(method.ReturnType.FullName, nameof(Nullable<>.GetValueOrDefault)));
     }
 }

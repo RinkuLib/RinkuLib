@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.ConditionalSql.Handlers;
+namespace RinkuLib.Tests.Features.ConditionalSql.Handlers;
 
 /// <summary>
 /// Literal handlers render numbers and strings into the template. The assertions use the intended SQL and

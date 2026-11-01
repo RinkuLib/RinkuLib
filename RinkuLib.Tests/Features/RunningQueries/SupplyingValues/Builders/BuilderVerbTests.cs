@@ -5,7 +5,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.SupplyingValues.Builders;
 
 /// <summary>
 /// Every execution verb is reachable from both builder forms, over both connection interfaces,
@@ -16,8 +16,7 @@ public class BuilderVerbTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand Insert = new("INSERT INTO Scratch (Val) VALUES (@Val)");
     private static readonly QueryCommand TwoSets = new("SELECT 1; SELECT 2");
     private static readonly QueryCommand Names = new("SELECT Name FROM Users WHERE IsActive = @Active ORDER BY ID");
-
-    private QueryBuilder ActiveBuilder(QueryCommand query, object value) {
+    private static QueryBuilder ActiveBuilder(QueryCommand query, object value) {
         var builder = query.StartBuilder();
         builder.Use("@Active", value);
         return builder;

@@ -55,7 +55,7 @@ internal sealed class DictionaryParameterAccess {
         il.Emit(OpCodes.Ldloc, dictionary);
         il.Emit(OpCodes.Ldstr, key);
         il.Emit(OpCodes.Ldloca, value);
-        il.Emit(OpCodes.Callvirt, _shape.TryGetValue!);
+        il.Emit(OpCodes.Callvirt, Rinku.Mapping.TypeExtensions.Require(_shape.TryGetValue, nameof(_shape.TryGetValue)));
     }
 
     private LocalBuilder EmitNonGenericTryGet(ILGenerator il, Label missing, int sourceArgument) {
@@ -81,11 +81,12 @@ internal sealed class DictionaryParameterAccess {
         Label next = il.DefineLabel();
         il.Emit(OpCodes.Ldloc, dictionary);
         il.Emit(OpCodes.Ldstr, key);
-        il.Emit(OpCodes.Callvirt, typeof(IDictionary).GetMethod(nameof(IDictionary.Contains))!);
+        il.Emit(OpCodes.Callvirt, Rinku.Mapping.TypeExtensions.Require(typeof(IDictionary).GetMethod(nameof(IDictionary.Contains)), nameof(IDictionary.Contains)));
         il.Emit(OpCodes.Brfalse, next);
         il.Emit(OpCodes.Ldloc, dictionary);
         il.Emit(OpCodes.Ldstr, key);
-        il.Emit(OpCodes.Callvirt, typeof(IDictionary).GetProperty("Item")!.GetMethod!);
+        var itemProperty = Rinku.Mapping.TypeExtensions.Require(typeof(IDictionary).GetProperty("Item"), "IDictionary.Item");
+        il.Emit(OpCodes.Callvirt, Rinku.Mapping.TypeExtensions.Require(itemProperty.GetMethod, "IDictionary.Item.GetMethod"));
         il.Emit(OpCodes.Stloc, value);
         il.Emit(OpCodes.Br, found);
         il.MarkLabel(next);
@@ -122,10 +123,11 @@ internal sealed class DictionaryParameterAccess {
             LocalBuilder nullable = il.DeclareLocal(containerType);
             il.Emit(OpCodes.Stloc, nullable);
             il.Emit(OpCodes.Ldloca, nullable);
-            il.Emit(OpCodes.Call, containerType.GetProperty(nameof(Nullable<int>.HasValue))!.GetMethod!);
+            var hasValue = Rinku.Mapping.TypeExtensions.Require(containerType.GetProperty(nameof(Nullable<>.HasValue)), "Nullable.HasValue");
+            il.Emit(OpCodes.Call, Rinku.Mapping.TypeExtensions.Require(hasValue.GetMethod, "Nullable.HasValue.GetMethod"));
             il.Emit(OpCodes.Brfalse, missing);
             il.Emit(OpCodes.Ldloca, nullable);
-            il.Emit(OpCodes.Call, containerType.GetMethod(nameof(Nullable<int>.GetValueOrDefault), Type.EmptyTypes)!);
+            il.Emit(OpCodes.Call, Rinku.Mapping.TypeExtensions.Require(containerType.GetMethod(nameof(Nullable<>.GetValueOrDefault), Type.EmptyTypes), "Nullable.GetValueOrDefault"));
             il.Emit(OpCodes.Box, nullableType);
             return;
         }
@@ -142,7 +144,8 @@ internal sealed class DictionaryParameterAccess {
         }
         if (Nullable.GetUnderlyingType(valueType) is not null) {
             il.Emit(OpCodes.Ldloca, value);
-            il.Emit(OpCodes.Call, valueType.GetProperty(nameof(Nullable<int>.HasValue))!.GetMethod!);
+            var hasValue = Rinku.Mapping.TypeExtensions.Require(valueType.GetProperty(nameof(Nullable<>.HasValue)), "Nullable.HasValue");
+            il.Emit(OpCodes.Call, Rinku.Mapping.TypeExtensions.Require(hasValue.GetMethod, "Nullable.HasValue.GetMethod"));
             return true;
         }
         il.Emit(OpCodes.Ldc_I4_1);
@@ -172,7 +175,7 @@ internal sealed class DictionaryParameterAccess {
             if (generic is not null) {
                 Type valueType = generic.GetGenericArguments()[1];
                 shape = new DictionaryShape(generic, valueType,
-                    generic.GetMethod("TryGetValue", [typeof(string), valueType.MakeByRefType()])!);
+                    Rinku.Mapping.TypeExtensions.Require(generic.GetMethod("TryGetValue", [typeof(string), valueType.MakeByRefType()]), "Dictionary.TryGetValue"));
                 return true;
             }
             if (typeof(IDictionary).IsAssignableFrom(type)) {

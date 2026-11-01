@@ -1,7 +1,7 @@
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Utilities;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// <see cref="Mapper"/> numbers a set of keys once and answers name lookups case-insensitively, with

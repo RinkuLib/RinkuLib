@@ -76,7 +76,7 @@ public sealed class RuntimeNullOriginalStorage<TOriginal> : IRuntimeOriginalStor
     public RuntimeNullOriginalStorage()
     {
         if (typeof(TOriginal).IsValueType)
-            throw new InvalidOperationException($"{nameof(RuntimeNullOriginalStorage<TOriginal>)} requires a reference TOriginal.");
+            throw new InvalidOperationException($"{nameof(RuntimeNullOriginalStorage<>)} requires a reference TOriginal.");
     }
 
     /// <inheritdoc/>

@@ -14,7 +14,7 @@ using Xunit;
 
 #pragma warning disable CS0618 // These tests intentionally exercise the legacy System.Data.SqlClient provider.
 
-namespace RinkuLib.Tests.Queries;
+namespace RinkuLib.Tests.Features.RunningQueries.ParameterMetadata;
 
 /// <summary>
 /// The runtime bookkeeping around a command: the learned-parser cache and its merge rules, the parameter
@@ -269,7 +269,7 @@ public class QueryRuntimeInternalsTests {
 
     [Fact]
     public void Bound_spread_rejects_a_non_collection_update() {
-        var b = Bound(out var cmd);
+        var b = Bound(out _);
         Assert.True(b.Use("@Ids", new[] { 1 }));
         Assert.False(b.Use("@Ids", 5));
     }
@@ -773,7 +773,7 @@ public class QueryRuntimeInternalsTests {
     [Fact]
     public void Spread_saveuse_rejects_a_non_collection() {
         var h = HandlerWith(InferredDbParamCache.ForceInferred);
-        object? value = new object();
+        object? value = new();
         Assert.False(h.SaveUse(new FakeCommand(), ref value));
     }
 
@@ -948,7 +948,6 @@ public class QueryRuntimeInternalsTests {
     }
     public struct Mark0; public struct Mark1; public struct Mark2; public struct Mark3;
     public struct Mark4; public struct Mark5; public struct Mark6; public struct Mark7;
-
     /// <summary>
     /// The direct-accessor lookup runs without the lock, so each cache entry keeps its type handle and
     /// delegate together in the same immutable array element.

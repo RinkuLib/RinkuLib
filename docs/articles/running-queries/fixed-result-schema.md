@@ -23,6 +23,8 @@ public static class AlbumCommands
 
 ## Learn the schema from the first query
 
+Choose one schema source for a `CachedTypeParser`. The following sections show alternatives; they are not declarations to combine in one class.
+
 ```csharp
 static readonly CachedTypeParser AlbumSchemaParser = new();
 
@@ -77,6 +79,33 @@ static readonly ConstructorInfo AlbumRowConstructor = typeof(AlbumRow).GetConstr
 static readonly CachedTypeParser AlbumSchemaParser = new(AlbumRowConstructor);
 ```
 
+## Discover a schema from `BasedOn`
+
+`BasedOn` is the runtime schema link. It selects a constructor source type or a named method source,
+so it does not require XML documentation files.
+
+```csharp
+using Rinku.Mapping;
+
+public static class ResultSchemas
+{
+    public static void Album(int Id, string Title) { }
+}
+
+[BasedOn(typeof(ResultSchemas), null, nameof(ResultSchemas.Album))]
+public record Album(int Id, string Title);
+```
+
+Enumerate the references and pass the returned member directly to parser creation:
+
+```csharp
+foreach ((Type resultType, MemberInfo schemaMember) in typeof(Album).GetSchemas())
+    TypeParser.GetTypeParser(resultType, schemaMember);
+```
+
+`SchemaReference.GetAllSchemas()` performs the same lookup across every already-loaded assembly.
+`SchemaAttribute` is analyzer-only version metadata; runtime schema discovery ignores it.
+
 ## Runtime result type
 
 ```csharp
@@ -110,10 +139,10 @@ ITypeParser runtimeParser = AlbumSchemaParser.Get(resultType);
 ## Invalidate result parsers
 
 ```csharp
-AlbumSchemaParser.Invalidate<Album>();
 AlbumSchemaParser.Invalidate();
 ```
 
-The fixed column schema remains on the `CachedTypeParser` instance.
+The non-generic `CachedTypeParser` invalidates its schema and every type parser as one package. The
+next query relearns the reader schema, which is useful after an external command-factory change.
 
 [Existing DbCommand](dbcommand.md) · [Cache control](../customization/caches.md)

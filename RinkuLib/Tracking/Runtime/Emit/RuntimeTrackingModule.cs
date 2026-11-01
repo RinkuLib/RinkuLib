@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Reflection.Emit;
 
-namespace Rinku.Tracking.Runtime;
+namespace Rinku.Tracking.Runtime.Emit;
 
 internal static class RuntimeTrackingModule
 {

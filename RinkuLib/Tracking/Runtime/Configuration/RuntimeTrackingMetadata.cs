@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace Rinku.Tracking.Runtime;
+namespace Rinku.Tracking.Runtime.Configuration;
 
 internal static class RuntimeTrackingMetadataSources
 {

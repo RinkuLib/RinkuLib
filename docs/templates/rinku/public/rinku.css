@@ -1,0 +1,30 @@
+.codegen-screenshot {
+  width: fit-content;
+  max-width: min(100%, 760px);
+  margin: 1.25rem 0 1.75rem;
+  overflow-x: auto;
+}
+
+.codegen-screenshot img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.codegen-screenshot figcaption {
+  margin-top: 0.5rem;
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
+}
+
+.codegen-light {
+  display: none !important;
+}
+
+html[data-bs-theme="light"] .codegen-dark {
+  display: none !important;
+}
+
+html[data-bs-theme="light"] .codegen-light {
+  display: block !important;
+}

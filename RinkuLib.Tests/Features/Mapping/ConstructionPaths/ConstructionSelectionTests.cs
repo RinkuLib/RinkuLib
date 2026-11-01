@@ -1,11 +1,12 @@
 using System.Reflection;
 using Rinku.Mapping;
+using RinkuLib.Tests.Features.Mapping.Objects;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.ConstructionPaths;
 
 /// <summary>
 /// How the engine picks a way to build <c>T</c>: constructor overloads and static factories compete
@@ -180,7 +181,6 @@ public record BareCard(string CardNumber) : IPayKind;
 public record NamedCard(string CardNumber, string Owner) : IPayKind;
 public record WireTransfer(string Iban, string Bic) : IPayKind;
 public record ExternalPayment(int ExternalID) : IPayKind;
-
 public class Purchase {
     public int OrderId { get; }
     public IPayKind Payment { get; }
@@ -215,9 +215,7 @@ public class SecretHolder : IDbReadable {
 public record struct FallbackTrack(int Id, string Name, int Code);
 public sealed class RatingFallback : SimpleDbItemParser, IFallbackParserGetter {
     public static readonly RatingFallback Instance = new();
-
     public DbItemPlan? FallbackTryGetParser(Type type) => type == typeof(int) ? this : null;
-
     public override void Emit(ColumnInfo[] cols, Rinku.Mapping.Emission.Generator generator, NullSetPoint nullSetPoint)
         => generator.Emit(System.Reflection.Emit.OpCodes.Ldc_I4_5);
 

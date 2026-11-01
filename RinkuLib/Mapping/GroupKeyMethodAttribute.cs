@@ -16,8 +16,10 @@ public sealed class GroupKeyMethodAttribute(string method) : Attribute, IGroupin
     /// <inheritdoc/>
     public IGroupingRule MakeRule(IReadOnlyList<ICustomAttributeProvider> carriers) {
         var construction = (MethodBase)carriers[0];
-        var boundary = construction.DeclaringType!.GetMethod(Method, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"[GroupKeyMethod] names no static method {Method} on {construction.DeclaringType}");
+        var declaringType = construction.DeclaringType
+            ?? throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, "The grouping construction has no declaring type.");
+        var boundary = declaringType.GetMethod(Method, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, $"[GroupKeyMethod] names no static method {Method} on {declaringType}");
         return new MethodGroupingRule(boundary);
     }
 }

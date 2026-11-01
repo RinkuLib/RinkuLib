@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-namespace Rinku.Tracking;
+namespace Rinku.Tracking.Core;
 
 internal struct StructuralOriginMap
 {
@@ -141,7 +141,7 @@ internal struct StructuralOriginMap
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void SetBit(int index, bool value)
+    private readonly void SetBit(int index, bool value)
     {
         ulong[] bits = _bits ?? throw new InvalidOperationException("Mixed provenance has no bit storage.");
         ulong bit = 1UL << (index & 63);
@@ -173,7 +173,7 @@ internal struct StructuralOriginMap
         ClearUnused(newCount);
     }
 
-    private bool RemoveBit(int index, int oldCount)
+    private readonly bool RemoveBit(int index, int oldCount)
     {
         ulong[] bits = _bits ?? throw new InvalidOperationException("Mixed provenance has no bit storage.");
         bool removed = GetBit(index);
@@ -212,7 +212,7 @@ internal struct StructuralOriginMap
         return removed;
     }
 
-    private void ClearUnused(int count)
+    private readonly void ClearUnused(int count)
     {
         if (_bits is not ulong[] bits || bits.Length == 0) return;
         int words = WordCount(count);

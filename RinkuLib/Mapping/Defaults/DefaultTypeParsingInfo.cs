@@ -63,7 +63,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                 var c = value[i];
                 if (!IsValidTarget(c.TargetType))
                     throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch, $"the method or constructor must be of type {Type} (returning type)");
-                var declare = c.MethodBase.DeclaringType!;
+                var declare = TypeExtensions.Require(c.MethodBase.DeclaringType, nameof(c.MethodBase.DeclaringType));
                 if (declare != Type && declare.IsGenericType)
                     throw new RinkuConfigurationException(ErrorCodes.ForeignGenericSource, $"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
             }
@@ -85,7 +85,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
                 var c = value[i];
                 if (!IsValidTarget(c.TargetType))
                     throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch, $"the member must belong to {Type}, and {c.Member} belongs to {c.TargetType}");
-                var declare = c.Member.DeclaringType!;
+                var declare = TypeExtensions.Require(c.Member.DeclaringType, nameof(c.Member.DeclaringType));
                 if (declare != Type && declare.IsGenericType)
                     throw new RinkuConfigurationException(ErrorCodes.ForeignGenericSource, $"Cannot add a member from a generic type other then the target type Target:{Type} Used:{declare}");
             }
@@ -205,7 +205,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
             var target = mci.TargetType;
             if (!IsValidTarget(target))
                 throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch, $"the expected type is {Type} but the provided type via the method is {mci.TargetType}");
-            var declare = mci.MethodBase.DeclaringType!;
+            var declare = TypeExtensions.Require(mci.MethodBase.DeclaringType, nameof(mci.MethodBase.DeclaringType));
             if (declare != Type && declare.IsGenericType)
                 throw new RinkuConfigurationException(ErrorCodes.ForeignGenericSource, $"Cannot add a possible construction from a generic type other then the target type Target:{Type} Used:{declare}");
             mci.InsertInto(ref MCIs);
@@ -216,7 +216,7 @@ public class DefaultTypeParsingInfo(Type Type) : TypeParsingInfo, ICanAddPossibl
         lock (WriteLock) {
             if (!IsValidTarget(member.TargetType))
                 throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch, $"the member must be of type {Type}");
-            var declare = member.Member.DeclaringType!;
+            var declare = TypeExtensions.Require(member.Member.DeclaringType, nameof(member.Member.DeclaringType));
             if (declare != Type && declare.IsGenericType)
                 throw new RinkuConfigurationException(ErrorCodes.ForeignGenericSource, $"Cannot add a member from a generic type other then the target type Target:{Type} Used:{declare}");
             var result = new MemberParser[Members.Length + 1];

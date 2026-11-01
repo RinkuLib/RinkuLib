@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.Infrastructure;
 
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class DatabaseIntegrationCollection {

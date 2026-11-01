@@ -2,20 +2,18 @@ using System.Data;
 using Rinku;
 using Rinku.Querying;
 using Rinku.Querying.Defaults;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.RunningQueries.ParameterMetadata;
 
 /// <summary>Executable examples for docs/articles/customization/parameters.md.</summary>
 [Collection("ParamGetterMakers")]
 public class AdvancedParameterCustomizationDocumentationTests {
     private readonly record struct Names(IReadOnlyList<string> Items);
-
     private sealed class NamesParam : ConvertedDbParamInfo<Names> {
         protected override object ConvertValue(Names value) => string.Join(',', value.Items);
-
         protected override void ConfigureParameter(IDbDataParameter parameter)
             => parameter.DbType = DbType.String;
     }
@@ -26,7 +24,6 @@ public class AdvancedParameterCustomizationDocumentationTests {
                 .Select((parameter, index) => KeyValuePair.Create(parameter.ParameterName, index));
 
         public DbParamInfo MakeInfoAt(int index) => TypedDbParamCache.Get(DbType.String, 200);
-
         public bool TryGetInfo(string name, out DbParamInfo info) {
             int index = command.Parameters.IndexOf(name);
             info = index < 0 ? null! : MakeInfoAt(index);
@@ -46,9 +43,7 @@ public class AdvancedParameterCustomizationDocumentationTests {
 
     private sealed class AppParameterDefaults : IDbParameterDefaults {
         private readonly DefaultDbParameterServices shipped = new();
-
         public DbParamInfo Inferred => shipped.Inferred;
-
         public DbParamInfo MakeInfo(IDbDataParameter parameter) {
             if (parameter.DbType == DbType.String && parameter.Size == 0)
                 return TypedDbParamCache.Get(DbType.String, 4000);

@@ -404,3 +404,12 @@ FodyWeavers.xsd
 
 # Demo project, kept local until reworked
 RinkuDemo/
+
+# DevExpress demo, kept in its own repository until reworked
+DevExpressDemo/
+
+# Rinku.More is not ready for release yet
+Rinku.More/
+docs/api/rinku-more/
+docs/articles/more/
+*.generated.sql

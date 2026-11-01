@@ -13,7 +13,8 @@ public sealed class SimpleTypeParser<T> : BaseTypeParser<T>, ISimpleParser<T> {
     private readonly ParserSchema? Schema;
     private readonly EmissionFingerprint? Fingerprint;
     private readonly INullColHandler? GeneratedNullColHandler;
-    internal INullColHandler GeneratedNullability => GeneratedNullColHandler!;
+    internal INullColHandler GeneratedNullability => GeneratedNullColHandler
+        ?? throw new InvalidOperationException("The parser has no generated nullability handler.");
     /// <summary>Creates a parser that requires the supplied schema shape.</summary>
     public SimpleTypeParser(CommandBehavior behavior, Func<DbDataReader, T> parser, ColumnInfo[] schema) {
         Behavior = behavior;
@@ -33,7 +34,14 @@ public sealed class SimpleTypeParser<T> : BaseTypeParser<T>, ISimpleParser<T> {
     public override bool CanParse(ColumnInfo[] schema) {
         if (Schema is { } exactSchema && exactSchema.Accepts(schema))
             return true;
-        return TypeParser.DefaultTypeParserMaker is ITypeParserSchemaMatcher matcher && matcher.CanParse(this, schema);
+        if (GeneratedNullColHandler is null)
+            return false;
+        if (!DefaultTypeParserMaker.TryPrepareParser<T>(GeneratedNullColHandler, schema, out var prepared, out _)
+            || prepared is null)
+            return false;
+        bool matches = prepared.Matches(this);
+        prepared.Discard();
+        return matches;
     }
     /// <inheritdoc/>
     public override CommandBehavior Behavior { get; }

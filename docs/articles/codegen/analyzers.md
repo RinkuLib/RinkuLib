@@ -1,116 +1,131 @@
 # Analyzers and code fixes
 
-The analyzers ship with the `Rinku` package.
+The analyzers ship with the `Rinku` package. They use two different pieces of metadata:
+
+- `BasedOn` selects the runtime schema member.
+- `Schema` records a source version for analyzer checks only. It has no runtime meaning.
+
+## Start with a runtime schema link
 
 ```csharp
-/// <Schema LastUpdated="2026-08-21T14:00Z" />
-public partial record GetAlbumResult(int Id, string Title);
-```
+using Rinku.Mapping;
 
-![Rinku analyzer Quick Action](../../images/codegen/analyzer-quick-action.png)
+public static class AlbumSchemas
+{
+    public static void Read(int Id, string Title) { }
+}
 
-## Add a schema link
-
-```csharp
-public record AlbumDto(int Id, string Title);
-// Quick Action can add a schema link when the compilation contains a <Schema> declaration.
-```
-
-A type that already carries `Schema`, `BasedOn`, or `MatchConstructor` metadata is not offered another schema-link action.
-
-## BasedOn
-
-```csharp
-/// <Schema LastUpdated="2026-08-21T14:00Z" />
-public partial record GetAlbumResult(int Id, string Title);
-
-/// <BasedOn cref="GetAlbumResult" LastUpdated="2026-08-21T14:00Z" />
+[BasedOn(typeof(AlbumSchemas), null, nameof(AlbumSchemas.Read))]
 public record AlbumDto(int Id, string Title);
 ```
 
-When the referenced schema timestamp becomes newer, `RK0100` marks the stale link.
+`BasedOn` can be discovered at runtime through `SchemaReference.GetSchemas()` and passed directly to
+the parser. The analyzer also uses it to compare the result constructor with the selected schema
+shape.
+
+## Add a link with a Quick Action
 
 ```csharp
-/// <Schema LastUpdated="2026-08-22T09:30Z" />
-public partial record GetAlbumResult(int Id, string Title, int? ReleaseYear);
+[Schema("2026-08-21T14:00Z")]
+public record AlbumSchema(int Id, string Title);
 
-/// <BasedOn cref="GetAlbumResult" LastUpdated="2026-08-21T14:00Z" />
-public record AlbumDto(int Id, string Title); // RK0100
+public record AlbumDto(int Id, string Title);
 ```
 
-After reviewing the dependent type, `Acknowledge current schema` updates only the stored timestamp.
+When a source `Schema` is available, the Quick Action adds a `BasedOn` attribute. A type that already
+has `BasedOn` metadata is not offered another link action.
+
+The generated attribute uses ordinary C# type and member references, so `typeof` and `nameof` remain
+available for navigation and refactoring:
 
 ```csharp
-/// <BasedOn cref="GetAlbumResult" LastUpdated="2026-08-22T09:30Z" />
+[BasedOn(typeof(AlbumSchema))]
+public record AlbumDto(int Id, string Title);
+```
+
+## Select a constructor or method
+
+The one-argument form uses the referenced type's constructor schema:
+
+```csharp
+[BasedOn(typeof(AlbumSchema))]
+public record AlbumDto(int Id, string Title);
+```
+
+The analyzer accepts any constructor on the referenced type that exactly matches any target
+constructor. Runtime discovery returns every constructor as a schema candidate.
+
+Select methods with `nameof`:
+
+```csharp
+public static class AlbumSchemas
+{
+    public static object Read(int Id, string Title) => new();
+}
+
+[BasedOn(typeof(AlbumSchemas), null, nameof(AlbumSchemas.Read))]
+public record AlbumDto(int Id, string Title);
+```
+
+The method form includes every overload with that name. Runtime discovery returns each candidate
+`MemberInfo`; it does not use XML documentation.
+
+## Version acknowledgement
+
+Put `Schema` on the source and pass `lastUpdated` to `BasedOn` when the source has a versioned shape. Both attributes parse the constructor string into a read-only UTC `DateTime?`:
+
+`BasedOn` accepts `(Type declaringType, string? lastUpdated = null, string? methodName = null)`. A type and positional timestamp have the same meaning as a named `lastUpdated` argument. For a method reference without a timestamp, pass `null` before the method name.
+
+```csharp
+[Schema("2026-08-22T09:30Z")]
+public record AlbumSchema(int Id, string Title, int? ReleaseYear);
+
+[BasedOn(typeof(AlbumSchema), lastUpdated: "2026-08-22T09:30Z")]
 public record AlbumDto(int Id, string Title, int? ReleaseYear);
 ```
 
-A missing timestamp also produces `RK0100` when the referenced declaration has one.
+The link is current when its date is equal to or newer than the source date. `RK0100` reports a link
+whose date is older than the source. The acknowledgement action updates only `BasedOn.LastUpdated`.
+
+When the source has a `Schema.LastUpdated` value, `Acknowledge current schema` is available from the
+`BasedOn` actions even when the constructor already matches. It adds the `lastUpdated` constructor argument when it is
+missing, or updates it to the current source date. The action is therefore independent of `RK0101`.
+
+If the source has no version date, there is no version acknowledgement. The analyzer instead requires
+the schema candidates to have a matching constructor shape. When the source is versioned but the
+link has no date, the same exact-match rule applies and the `BasedOn` actions offer an acknowledgement
+that records the current source date.
+
+If the source date is newer than the link date, the analyzer requires the match again. A changed shape
+then reports both the stale-link warning (`RK0100`) and the constructor warning (`RK0101`). An equal or
+newer link date explicitly acknowledges the changed shape, so `RK0101` is not reported.
 
 ```csharp
-/// <Schema LastUpdated="2026-08-22T09:30Z" />
-public partial record GetAlbumResult(int Id, string Title);
+public record AlbumSchema(int Id, string Title);
 
-/// <BasedOn cref="GetAlbumResult" />
-public record AlbumDto(int Id, string Title); // RK0100
+[BasedOn(typeof(AlbumSchema))]
+public record AlbumDto(long Id, string Title); // RK0101
 ```
 
-Several `BasedOn` links on one type are checked independently.
-
-## Constructor scaffold from BasedOn
+An acknowledged shape change is intentional and therefore does not produce `RK0101`:
 
 ```csharp
-/// <Schema LastUpdated="2026-08-21T14:00Z" />
-public class AlbumSchema
-{
-    public AlbumSchema(int id, string? title) { }
-}
+[Schema("2026-08-22T09:30Z")]
+public record AlbumSchema(int Id, string Title);
 
-/// <BasedOn cref="AlbumSchema" LastUpdated="2026-08-21T14:00Z" />
-public class AlbumDto
-{
-}
+[BasedOn(typeof(AlbumSchema), lastUpdated: "2026-08-22T09:30Z")]
+public record AlbumDto(int Id); // no RK0101; the link acknowledges the new shape
 ```
 
-`Add constructor from AlbumSchema` generates the constructor shape.
+If `AlbumDto.LastUpdated` were earlier than the source date, the same example would require the
+constructor match again and would report `RK0100` and `RK0101`.
 
-```csharp
-public class AlbumDto
-{
-    public AlbumDto(int id, string? title)
-    {
-    }
-}
-```
+## Constructor matching
 
-When generated property names are available and there is no `out` parameter, the properties action can generate members too.
-
-```csharp
-public class AlbumDto
-{
-    public AlbumDto(int id, string? title)
-    {
-        Id = id;
-        Title = title;
-    }
-
-    public int Id { get; set; }
-    public string? Title { get; set; }
-}
-```
-
-`BasedOn` itself tracks schema review. It does not require that constructor shape.
-
-## MatchConstructor
-
-```csharp
-public record AlbumSchema(int Id, string? Title);
-
-/// <MatchConstructor cref="AlbumSchema" />
-public record AlbumDto(int Id, string? Title);
-```
-
-Any matching instance constructor on the referenced type can satisfy the link.
+The constructor check compares count, order, names, types, reference nullability, `ref`/`out`/`in`,
+and `params`. Default values do not affect the match. A constructor reference compares every source
+constructor with every target constructor until one pair matches. A method reference does the same
+with every method overload having the selected name.
 
 ```csharp
 public class AlbumSchema
@@ -119,23 +134,14 @@ public class AlbumSchema
     public AlbumSchema(int id, string title) { }
 }
 
-/// <MatchConstructor cref="AlbumSchema" />
+[BasedOn(typeof(AlbumSchema))]
 public class AlbumDto
 {
     public AlbumDto(int id, string title) { }
 }
 ```
 
-An implicit parameterless constructor also counts.
-
-```csharp
-public class EmptySchema { }
-
-/// <MatchConstructor cref="EmptySchema" />
-public class EmptyDto { }
-```
-
-A method can provide the required parameter shape.
+The selected constructor or method can also require `ref` and `params`:
 
 ```csharp
 public static class AlbumSchemas
@@ -143,105 +149,43 @@ public static class AlbumSchemas
     public static object Read(ref int id, params string?[] titles) => new();
 }
 
-/// <MatchConstructor cref="AlbumSchemas.Read" />
+[BasedOn(typeof(AlbumSchemas), null, nameof(AlbumSchemas.Read))]
 public class AlbumDto
 {
     public AlbumDto(ref int id, params string?[] titles) { }
 }
 ```
 
-The match compares the following shape.
+`RK0101` offers a constructor code fix. The generated constructor preserves the selected candidate's
+parameter contract and can also generate assignable properties when that option is legal.
 
-```text
-parameter count
-parameter order
-parameter names
-parameter types and reference nullability
-ref out and in
-params
-```
+## Generated result metadata
 
-Default values are not part of the match.
+Generated result records use the schema attribute in the shared PowerTools support file:
 
 ```csharp
-public class AlbumSchema
-{
-    public AlbumSchema(int id = 1) { }
-}
+using Schema = RinkuPowerTools.Generated.SchemaAttribute;
 
-/// <MatchConstructor cref="AlbumSchema" />
-public class AlbumDto
-{
-    public AlbumDto(int id = 2) { }
-}
+[Schema("2026-08-21T14:00Z")]
+public partial record GetAlbumsResult(int Id, string Title);
 ```
 
-A mismatch produces `RK0101`.
-
-```csharp
-public record AlbumSchema(int Id, string Title);
-
-/// <MatchConstructor cref="AlbumSchema" />
-public record AlbumDto(string Title, int AlbumId); // RK0101
-```
-
-Several `MatchConstructor` links are all checked.
-
-```csharp
-public record IdSchema(int Id);
-public record TitleSchema(string Title);
-
-/// <MatchConstructor cref="IdSchema" />
-/// <MatchConstructor cref="TitleSchema" />
-public class AlbumDto
-{
-    public AlbumDto(int Id) { }
-    public AlbumDto(string Title) { }
-}
-```
-
-## Generate a missing constructor
-
-```csharp
-[AttributeUsage(AttributeTargets.Parameter)]
-public sealed class SlotAttribute(string name) : Attribute
-{
-    public bool Required { get; set; }
-}
-
-public static class AlbumSchemas
-{
-    public static void Read([Slot("id", Required = true)] ref int id, params string?[] titles) { }
-}
-
-/// <MatchConstructor cref="AlbumSchemas.Read" />
-public class AlbumDto
-{
-}
-```
-
-The generated constructor keeps the parameter contract.
-
-```csharp
-public class AlbumDto
-{
-    public AlbumDto([Slot("id", Required = true)] ref int id, params string?[] titles)
-    {
-    }
-}
-```
+`SchemaAttribute` parses the constructor's timestamp string into a UTC `DateTime`.
+Generated files remain independent of Rinku. The analyzer recognizes both the generated schema
+attribute and `Rinku.Mapping.SchemaAttribute`. Application-owned result types use the existing
+`Rinku.Mapping.BasedOnAttribute`; PowerTools does not generate another `BasedOn` attribute.
 
 ## Complete a method invocation
 
 `RK0002` finds an uncalled method reference in a method, constructor, or local function.
 
-```csharp
+```text
 int Save(int id) => id;
 
 int Build(int id) => Save; // RK0002
 ```
 
-`Generate invocation` reuses a matching value already in scope.
+`Generate invocation` reuses a matching value already in scope:
 
 ```csharp
 int Save(int id) => id;
@@ -249,7 +193,7 @@ int Save(int id) => id;
 int Build(int id) => Save(id);
 ```
 
-Members of an in-scope value can also satisfy parameters.
+Members of an in-scope value can also satisfy parameters:
 
 ```csharp
 public record SaveAlbumRequest(int Id, string Title);
@@ -259,7 +203,7 @@ int Save(int id, string title) => id;
 int Build(SaveAlbumRequest request) => Save(request.Id, request.Title);
 ```
 
-When a value is missing, the fix can add it to the caller and pass it through.
+When a value is missing, the fix can add it to the caller and pass it through:
 
 ```csharp
 int Save(int id, string title) => id;
@@ -267,58 +211,7 @@ int Save(int id, string title) => id;
 int Build(int id, string title) => Save(id, title);
 ```
 
-Generated caller parameters preserve `ref`, `out`, `in`, and `params` from the called method.
-
-Member access expressions use the same completion.
-
-```csharp
-public sealed class AlbumService
-{
-    public int Save(int id) => id;
-}
-
-int Build(AlbumService service, int id) => service.Save; // RK0002
-```
-
-```csharp
-int Build(AlbumService service, int id) => service.Save(id);
-```
-
 Normal invocations, `nameof`, and delegate conversions are not changed.
-
-```csharp
-int Save() => 1;
-
-void Build()
-{
-    Func<int> callback = Save;
-    int value = Save();
-    string name = nameof(Save);
-}
-```
-
-When several overload candidates are available, the Quick Action can offer one invocation for each candidate.
-
-## Schema metadata
-
-```csharp
-/// <Schema LastUpdated="2026-08-21T14:00Z" />
-public partial record GetAlbumsResult(int Id, string Title);
-```
-
-Power Tools writes `Schema` metadata on generated result records. An unchanged generated record keeps its existing timestamp. A changed result shape gets a new timestamp.
-
-Source code can expose the same schema metadata.
-
-```csharp
-public static class AlbumQueries
-{
-    /// <Schema LastUpdated="2026-08-21T14:00Z" />
-    public static object ReadAlbum(int id, string title) => new();
-}
-```
-
-The automatic schema picker searches source declarations in the current project compilation. `MatchConstructor` can be written manually against another resolvable type or method. `BasedOn` needs source `Schema` metadata for timestamp comparison.
 
 ## Severity configuration
 
@@ -336,17 +229,17 @@ The standard `.editorconfig` diagnostic severity settings apply.
 | Rule | Severity | Meaning |
 | --- | --- | --- |
 | `RK0000` | Hidden | Offers actions for a `BasedOn` link |
-| `RK0001` | Hidden | Offers to add a schema link |
+| `RK0001` | Hidden | Offers to add a `BasedOn` link |
 | `RK0002` | Hidden | Offers to complete a method call |
-| `RK0100` | Warning | A `BasedOn` link is older than its schema |
+| `RK0100` | Warning | A versioned `BasedOn` link is older than its `Schema` source |
 | `RK0101` | Warning | No constructor matches the referenced type or method |
 
 ## Code fix reference
 
 | Action | Available from | Result |
 | --- | --- | --- |
-| `Add schema link` | `RK0001` | Adds `BasedOn` or `MatchConstructor` for a selected source schema |
-| `Acknowledge current schema` | `RK0000` | Updates the stored `BasedOn` timestamp |
+| `Add schema link` | `RK0001` | Adds `BasedOn` for a selected source schema |
+| `Acknowledge current schema` | `RK0000` or `RK0100` | Updates `BasedOn.LastUpdated` |
 | `Add constructor from ...` | `RK0000` or `RK0101` | Adds the referenced parameter shape |
 | `Add constructor and properties from ...` | `RK0000` or `RK0101` | Adds the constructor and assignable properties when legal |
 | `Generate invocation` | `RK0002` | Invokes the selected method and threads missing parameters through the caller |

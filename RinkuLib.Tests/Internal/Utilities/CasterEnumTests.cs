@@ -1,14 +1,13 @@
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Utilities;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// The full enum conversion matrix through <see cref="Caster"/>: enum to/from other enums, to/from
 /// numbers, to/from strings, each across the four nullability combinations.
 /// </summary>
 public class CasterEnumTests {
-
     [Fact]
     public void Enum_to_enum_by_underlying_value() {
         Assert.True(Caster.TryCast<ByteKind, IntKind>(ByteKind.Two, out var r));

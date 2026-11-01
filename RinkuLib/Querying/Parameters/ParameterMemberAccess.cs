@@ -65,7 +65,7 @@ public readonly struct ParameterMemberAccess {
             if (i == 0)
                 AccessorEmitter.EmitMemberLoad(il, RootType, member, sourceArgument);
             else
-                EmitMemberLoad(il, owner!, ownerType, member);
+                EmitMemberLoad(il, owner ?? throw new InvalidOperationException("A nested member path has no owner value."), ownerType, member);
 
             Type valueType = GetMemberType(member);
             LocalBuilder value = il.DeclareLocal(valueType);
@@ -90,12 +90,13 @@ public readonly struct ParameterMemberAccess {
             }
 
             il.Emit(OpCodes.Ldloca, value);
-            il.Emit(OpCodes.Call, valueType.GetProperty(nameof(Nullable<int>.HasValue))!.GetMethod!);
+            var hasValue = Rinku.Mapping.TypeExtensions.Require(valueType.GetProperty(nameof(Nullable<>.HasValue)), "Nullable.HasValue");
+            il.Emit(OpCodes.Call, Rinku.Mapping.TypeExtensions.Require(hasValue.GetMethod, "Nullable.HasValue.GetMethod"));
             il.Emit(OpCodes.Brfalse, missing);
 
             LocalBuilder unwrapped = il.DeclareLocal(nullableType);
             il.Emit(OpCodes.Ldloca, value);
-            il.Emit(OpCodes.Call, valueType.GetMethod(nameof(Nullable<int>.GetValueOrDefault), Type.EmptyTypes)!);
+            il.Emit(OpCodes.Call, Rinku.Mapping.TypeExtensions.Require(valueType.GetMethod(nameof(Nullable<>.GetValueOrDefault), Type.EmptyTypes), "Nullable.GetValueOrDefault"));
             il.Emit(OpCodes.Stloc, unwrapped);
             ownerType = nullableType;
             owner = unwrapped;

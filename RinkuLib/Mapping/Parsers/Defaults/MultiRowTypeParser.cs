@@ -10,18 +10,13 @@ namespace Rinku.Mapping.Parsers.Defaults;
 /// Reads a multi row value through <typeparamref name="TState"/>. Use this parser when a state object can add
 /// each row and build the final value.
 /// </summary>
-public class MultiRowTypeParser<T, TState> : BaseTypeParser<T>
+public class MultiRowTypeParser<T, TState>(ColumnInfo[] schema, CommandBehavior behavior) : BaseTypeParser<T>
     where TState : IMultiRowState<T>, new() {
-    private readonly ColumnInfo[] Schema;
-    private readonly CommandBehavior ReaderBehavior;
+    private readonly ColumnInfo[] Schema = schema;
+    private readonly CommandBehavior ReaderBehavior = (behavior | CommandBehavior.SingleResult) & ~CommandBehavior.SingleRow;
     private int Disposed;
     /// <summary>Creates a parser for the supplied schema.</summary>
     public MultiRowTypeParser(ColumnInfo[] schema) : this(schema, CommandBehavior.SingleResult) { }
-    /// <summary>Creates a parser for the supplied schema and reader behavior.</summary>
-    public MultiRowTypeParser(ColumnInfo[] schema, CommandBehavior behavior) {
-        Schema = schema;
-        ReaderBehavior = (behavior | CommandBehavior.SingleResult) & ~CommandBehavior.SingleRow;
-    }
     /// <inheritdoc/>
     public override bool CanParse(ColumnInfo[] schema) => schema.EquivalentTo(Schema);
     /// <inheritdoc/>
@@ -80,6 +75,7 @@ public class MultiRowTypeParser<T, TState> : BaseTypeParser<T>
         }
         for (int i = 0; i < targets.Count; i++)
             PreparedSimpleParser<T>.DisposeTargets(targets[i]);
+        GC.SuppressFinalize(this);
     }
 }
 

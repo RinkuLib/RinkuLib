@@ -2,7 +2,7 @@ using Rinku.Querying;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.OptionalVariables;
 
 /// <summary>
 /// Exhaustive matrix over the marker key expressions (single, <c>!</c>, <c>&amp;</c>, <c>|</c>, and their

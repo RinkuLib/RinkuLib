@@ -4,7 +4,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.Index;
 
 /// <summary>
 /// <c>Execute</c> returns the affected row count and <c>ExecuteScalar&lt;T&gt;</c> the first cell,
@@ -14,7 +14,6 @@ public class ExecuteTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand InsertVal = new("INSERT INTO Scratch (Val) VALUES (@Val)");
     private static readonly QueryCommand InsertAndCount = new("INSERT INTO Scratch (Val) VALUES (@Val); SELECT COUNT(*) FROM Scratch");
     private static readonly QueryCommand SelectMissing = new("SELECT Val FROM Scratch WHERE ID = -1");
-
     [Fact]
     public void Execute_returns_the_affected_row_count() {
         using var cnn = Db.GetConnection();
@@ -177,7 +176,6 @@ public class ExecuteTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     }
 
     private static readonly QueryCommand Broken = new("SELECT * FROM NoSuchTable");
-
     /// <summary>
     /// A run that opens the connection owns it until it hands it to a reader, so a statement the provider
     /// refuses leaves the connection as it found it rather than returning it to the pool open.

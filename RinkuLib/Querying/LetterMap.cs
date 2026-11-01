@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -143,11 +144,11 @@ public class LetterMap<T> : IDictionary<char, T> {
     /// <summary>
     /// Tries to get the value for an ASCII letter. Returns <see langword="false"/> when it is missing.
     /// </summary>
-    public bool TryGetValue(char key, out T value) {
+    public bool TryGetValue(char key, [MaybeNullWhen(false)] out T value) {
         int i = Idx(key);
         uint bit = 1u << i;
         if ((_mask & bit) == 0) {
-            value = default!;
+            value = default;
             return false;
         }
         value = _values[Rank(_mask, i)];

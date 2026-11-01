@@ -2,7 +2,7 @@ using System.Reflection;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.Reference.Errors;
 
 /// <summary>
 /// The properties every code must hold, checked over the whole set rather than one condition at a time.
@@ -16,7 +16,6 @@ public class ErrorCodeTests {
 
     [Fact]
     public void The_catalog_is_not_empty() => Assert.NotEmpty(All);
-
     [Fact]
     public void Every_code_is_unique() {
         var duplicates = All.GroupBy(c => c.Code).Where(g => g.Count() > 1)
@@ -43,7 +42,7 @@ public class ErrorCodeTests {
     [Fact]
     public void A_raised_condition_carries_its_code_and_a_help_link() {
         var refused = Refusals.Raises(ErrorCodes.QueryTooShort,
-            () => new Rinku.QueryCommand("a"));
+            () => _ = new Rinku.QueryCommand("a"));
         Assert.StartsWith(ErrorCodes.QueryTooShort, refused.Message);
         Refusals.HasHelpLink(refused);
         Assert.Contains("errors", refused.HelpLink);

@@ -1,7 +1,7 @@
 using Rinku.Mapping;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Names;
 
 /// <summary>
 /// The comparer chain behind name matching: single names, alternatives, joins, and the helpers that

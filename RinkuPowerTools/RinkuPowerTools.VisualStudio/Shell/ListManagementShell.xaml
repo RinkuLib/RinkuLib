@@ -1,36 +1,81 @@
-﻿<DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:styles="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
+              xmlns:colors="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
               xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
               xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
 
-    <Border Padding="16" MinWidth="750" MinHeight="500"
-            Width="{Binding Path=ActualWidth, RelativeSource={RelativeSource AncestorType=ContentPresenter}}"
-            Height="{Binding Path=ActualHeight, RelativeSource={RelativeSource AncestorType=ContentPresenter}}">
-        <Grid>
+    <DataTemplate.Resources>
+        <Thickness x:Key="DialogInset">12</Thickness>
+        <Thickness x:Key="FieldGroupGap">0,0,0,12</Thickness>
+        <Thickness x:Key="LabelGap">0,0,0,5</Thickness>
+        <Thickness x:Key="ControlInset">6,4</Thickness>
+        <Thickness x:Key="ButtonInset">12,4</Thickness>
+        <Thickness x:Key="ButtonGap">6,0,0,0</Thickness>
+        <Thickness x:Key="ColumnGap">6,0</Thickness>
+        <Thickness x:Key="FooterGap">0,12,0,0</Thickness>
+    </DataTemplate.Resources>
+    <Border MinWidth="840" MinHeight="480" MaxHeight="720" Background="{DynamicResource {x:Static styles:VsBrushes.WindowKey}}" Padding="{StaticResource DialogInset}">
+
+        <Grid TextElement.Foreground="{DynamicResource {x:Static styles:VsBrushes.WindowTextKey}}">
+            <Grid.Resources>
+                <Style TargetType="Button" BasedOn="{StaticResource {x:Static styles:VsResourceKeys.ThemedDialogButtonStyleKey}}">
+                    <Setter Property="Padding" Value="{StaticResource ButtonInset}" />
+                    <Setter Property="Margin" Value="{StaticResource ButtonGap}" />
+                </Style>
+                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Static styles:VsResourceKeys.ThemedDialogTextBoxStyleKey}}">
+                    <Setter Property="Padding" Value="{StaticResource ControlInset}" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+                <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Static styles:VsResourceKeys.ThemedDialogComboBoxStyleKey}}">
+                    <Setter Property="Padding" Value="{StaticResource ControlInset}" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+                <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Static styles:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}" />
+                <Style TargetType="Label" BasedOn="{StaticResource {x:Static styles:VsResourceKeys.ThemedDialogLabelStyleKey}}">
+                    <Setter Property="Padding" Value="{StaticResource LabelGap}" />
+                </Style>
+                <Style TargetType="ListBox" BasedOn="{StaticResource {x:Static styles:VsResourceKeys.ThemedDialogListBoxStyleKey}}" />
+                <Style x:Key="FieldGroup" TargetType="StackPanel">
+                    <Setter Property="Margin" Value="{StaticResource FieldGroupGap}" />
+                </Style>
+                <Style x:Key="ValidationMessage" TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static colors:EnvironmentColors.ToolWindowValidationErrorTextBrushKey}}" />
+                    <Setter Property="TextWrapping" Value="Wrap" />
+                    <Style.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                        <Trigger Property="Text" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Resources>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250" MinWidth="150" />
-                <ColumnDefinition Width="10" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="2*" />
             </Grid.ColumnDefinitions>
-            <Grid Grid.Column="0" Margin="0,0,4,0">
+            <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <TextBox Grid.Row="0" Margin="0,0,0,8" Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Grid.Row="1" Margin="0,0,0,12" Content="{Binding NewText}" Command="{Binding NewCommand}" />
-                <ListBox Grid.Row="2" ItemsSource="{Binding FilteredItems}" SelectedIndex="{Binding DisplayIndex, Mode=TwoWay}">
+                <TextBox Margin="{StaticResource FieldGroupGap}" Grid.Row="0" Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Margin="{StaticResource FieldGroupGap}" Grid.Row="1" Content="{Binding NewText}" Command="{Binding NewCommand}" />
+                <ListBox Grid.Row="2" ScrollViewer.VerticalScrollBarVisibility="Auto" ItemsSource="{Binding FilteredItems}" SelectedIndex="{Binding DisplayIndex, Mode=TwoWay}">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Description}" />
+                            <Label Content="{Binding Description}" />
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
             </Grid>
-            <GridSplitter Grid.Column="1" Width="10" HorizontalAlignment="Center" Background="Transparent"/>
-            <Grid Grid.Column="2" Margin="4,0,0,0">
+            <GridSplitter Margin="{StaticResource ColumnGap}" Grid.Column="1" MinWidth="{DynamicResource {x:Static SystemParameters.ResizeFrameVerticalBorderWidthKey}}" HorizontalAlignment="Stretch" Background="{DynamicResource {x:Static colors:EnvironmentColors.ToolWindowBorderBrushKey}}"/>
+            <Grid Grid.Column="2">
                 <Grid.Style>
                     <Style TargetType="Grid">
                         <Setter Property="Visibility" Value="Visible"/>
@@ -47,12 +92,11 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,8,0">
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     {{CONTENT}}
                 </ScrollViewer>
                 
-                <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}" 
-                        Padding="0,12,0,0" Margin="0,12,0,0">
+                <Border Margin="{StaticResource FooterGap}" Grid.Row="1" BorderBrush="{DynamicResource {x:Static colors:EnvironmentColors.ToolWindowBorderBrushKey}}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -61,11 +105,11 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <Button Grid.Column="0" Content="{Binding DeleteText}" 
-                                Command="{Binding DeleteCommand}" Visibility="{Binding DeleteVisible}" Height="26" Width="90" Margin="0,0,8,0" />
+                                Command="{Binding DeleteCommand}" Visibility="{Binding DeleteVisible}" />
                         <Button Grid.Column="2" Content="{Binding CommitText}" 
-                                Command="{Binding CommitCommand}" IsEnabled="{Binding IsCommitEnabled}" Height="26" Width="90" Margin="0,0,8,0" />
+                                Command="{Binding CommitCommand}" IsEnabled="{Binding IsCommitEnabled}" />
                         <Button Grid.Column="3" Content="{Binding CancelText}" 
-                                Command="{Binding CancelCommand}" Height="26" Width="90" />
+                                Command="{Binding CancelCommand}" />
                     </Grid>
                 </Border>
             </Grid>

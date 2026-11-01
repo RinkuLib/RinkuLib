@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <RinkuPowerToolsRefreshOnBuild Condition="'$(RinkuPowerToolsRefreshOnBuild)' == ''">true</RinkuPowerToolsRefreshOnBuild>
+    <RinkuPowerToolsCliPath Condition="'$(RinkuPowerToolsCliPath)' == ''">$(MSBuildThisFileDirectory)../tools/net8.0/any/RinkuPowerTools.Cli.dll</RinkuPowerToolsCliPath>
+    <RinkuPowerToolsCliCommand Condition="'$(RinkuPowerToolsCliCommand)' == ''">dotnet &quot;$(RinkuPowerToolsCliPath)&quot;</RinkuPowerToolsCliCommand>
+  </PropertyGroup>
+
+  <Target Name="RinkuPowerToolsRefreshBeforeCompile" BeforeTargets="CoreCompile" DependsOnTargets="RinkuPowerToolsRefresh" Condition="'$(RinkuPowerToolsRefreshOnBuild)' == 'true' AND '$(DesignTimeBuild)' != 'true'" />
+
+  <Target Name="RinkuPowerToolsRefresh" DependsOnTargets="ResolveProjectReferences" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="$(RinkuPowerToolsCliCommand) refresh --project &quot;$(MSBuildProjectFullPath)&quot;"
+          WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true">
+      <Output TaskParameter="ConsoleOutput" ItemName="_RinkuGeneratedOutputs" />
+    </Exec>
+    <ItemGroup>
+      <Compile Include="@(_RinkuGeneratedOutputs)" Exclude="@(Compile->'%(FullPath)')" AutoGen="true" />
+      <Compile Include="$(MSBuildProjectDirectory)/.PowerTools.rinku.cs" Exclude="@(Compile->'%(FullPath)')" AutoGen="true" Condition="Exists('$(MSBuildProjectDirectory)/.PowerTools.rinku.cs')" />
+    </ItemGroup>
+  </Target>
+</Project>

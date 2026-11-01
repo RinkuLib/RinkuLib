@@ -11,10 +11,10 @@ public class ParameterGenerationTests
         using var temp = new TempDirectory();
         var parameter = new ParameterMetadata("@artistId", DbType.Int32, false, 0, ParameterDirection.Input, 0, 0);
 
-        var generated = await GenerateAsync(temp.Path, [parameter]);
+        var (_, commandCode, _) = await GenerateAsync(temp.Path, [parameter]);
 
-        Assert.Contains("GetAlbums(this DbConnection connection, int artistId)", generated.CommandCode);
-        Assert.Contains("command.Add(\"@artistId\", DbType.Int32, artistId);", generated.CommandCode);
+        Assert.Contains("GetAlbums(this DbConnection connection, int artistId)", commandCode);
+        Assert.Contains("command.Add(\"@artistId\", DbType.Int32, (object)artistId);", commandCode);
     }
 
     [Fact]
@@ -23,11 +23,11 @@ public class ParameterGenerationTests
         using var temp = new TempDirectory();
         var parameter = new ParameterMetadata("@title", DbType.String, true, 50, ParameterDirection.Input, 0, 0);
 
-        var generated = await GenerateAsync(temp.Path, [parameter]);
+        var (_, commandCode, _) = await GenerateAsync(temp.Path, [parameter]);
 
-        Assert.Contains("string? title", generated.CommandCode);
-        Assert.Contains("(object?)title ?? DBNull.Value", generated.CommandCode);
-        Assert.Contains(", 50);", generated.CommandCode);
+        Assert.Contains("string? title", commandCode);
+        Assert.Contains("(object?)title ?? DBNull.Value", commandCode);
+        Assert.Contains(", 50);", commandCode);
     }
 
     [Fact]
@@ -36,11 +36,11 @@ public class ParameterGenerationTests
         using var temp = new TempDirectory();
         var parameter = new ParameterMetadata("@count", DbType.Int32, false, 0, ParameterDirection.Output, 0, 0);
 
-        var generated = await GenerateAsync(temp.Path, [parameter]);
+        var (_, commandCode, _) = await GenerateAsync(temp.Path, [parameter]);
 
-        Assert.Contains("out DbParameter out_count", generated.CommandCode);
-        Assert.Contains("out_count = command.Add(\"@count\", DbType.Int32, DBNull.Value);", generated.CommandCode);
-        Assert.Contains("out_count.Direction = ParameterDirection.Output;", generated.CommandCode);
+        Assert.Contains("out DbParameter out_count", commandCode);
+        Assert.Contains("out_count = command.Add(\"@count\", DbType.Int32, DBNull.Value);", commandCode);
+        Assert.Contains("out_count.Direction = ParameterDirection.Output;", commandCode);
     }
 
     [Fact]
@@ -49,13 +49,13 @@ public class ParameterGenerationTests
         using var temp = new TempDirectory();
         var parameter = new ParameterMetadata("@total", DbType.Decimal, false, 0, ParameterDirection.InputOutput, 18, 2);
 
-        var generated = await GenerateAsync(temp.Path, [parameter]);
+        var (_, commandCode, _) = await GenerateAsync(temp.Path, [parameter]);
 
-        Assert.Contains("decimal total, out DbParameter out_total", generated.CommandCode);
-        Assert.Contains("out_total = command.Add(\"@total\", DbType.Decimal, total);", generated.CommandCode);
-        Assert.Contains("out_total.Direction = ParameterDirection.InputOutput;", generated.CommandCode);
-        Assert.Contains("out_total.Precision = 18;", generated.CommandCode);
-        Assert.Contains("out_total.Scale = 2;", generated.CommandCode);
+        Assert.Contains("decimal total, out DbParameter out_total", commandCode);
+        Assert.Contains("out_total = command.Add(\"@total\", DbType.Decimal, total);", commandCode);
+        Assert.Contains("out_total.Direction = ParameterDirection.InputOutput;", commandCode);
+        Assert.Contains("out_total.Precision = 18;", commandCode);
+        Assert.Contains("out_total.Scale = 2;", commandCode);
     }
 
     private static Task<(string CommandPath, string CommandCode, string SupportCode)> GenerateAsync(
