@@ -43,7 +43,6 @@
   <ItemGroup>
     <ProjectReference Include="..\RinkuLib\RinkuLib.csproj" />
     <ProjectReference Include="..\RinkuPowerTools\RinkuPowerTools\RinkuPowerTools.csproj" />
-    <ProjectReference Include="..\Rinku.More\Rinku.More\Rinku.More.csproj" Condition="'$(TargetFramework)' == 'net10.0'" />
   </ItemGroup>
 
 </Project>

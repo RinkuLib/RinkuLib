@@ -55,7 +55,8 @@ jobs:
       - name: Restore
         run: |
           dotnet restore RinkuLib.slnx
-          dotnet restore RinkuPowerTools/RinkuPowerTools.slnx
+          dotnet restore RinkuPowerTools/RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj
+          dotnet restore RinkuPowerTools/RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj
 
       - name: Build
         run: dotnet build RinkuLib.slnx --configuration Release --no-restore
