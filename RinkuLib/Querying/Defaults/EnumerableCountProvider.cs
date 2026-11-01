@@ -19,7 +19,8 @@ internal class GenericCountContract(Type genericDefinition, string propertyName 
     }
 
     private static Func<object, int> BuildDelegate(Type t, string propName) {
-        var prop = t.GetProperty(propName)!;
+        var prop = t.GetProperty(propName)
+            ?? throw new InvalidOperationException($"Count property '{propName}' was not found on {t}.");
         var param = Expression.Parameter(typeof(object));
         var cast = Expression.Convert(param, t);
         var body = Expression.Property(cast, prop);

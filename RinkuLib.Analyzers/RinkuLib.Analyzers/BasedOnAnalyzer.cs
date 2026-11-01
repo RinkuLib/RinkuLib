@@ -35,15 +35,13 @@ public sealed class BasedOnAnalyzer : DiagnosticAnalyzer {
             DocumentationTags.BasedOn,
             context.Compilation,
             context.CancellationToken)) {
-            var schemaTimestamp = DocumentationTags.GetLatestSchemaTimestamp(reference.Symbol, context.CancellationToken);
+            var schemaTimestamp = DocumentationTags.GetLatestSchemaTimestamp(reference.Symbols, context.CancellationToken);
             var properties = schemaTimestamp.HasValue
-                ? ImmutableDictionary<string, string?>.Empty.Add(
-                    SchemaTimestampProperty,
-                    schemaTimestamp.Value.ToString("O", CultureInfo.InvariantCulture))
+                ? ImmutableDictionary<string, string?>.Empty.Add(SchemaTimestampProperty, schemaTimestamp.Value.ToString("O", CultureInfo.InvariantCulture))
                 : null;
             context.ReportDiagnostic(Diagnostic.Create(
                 Rule,
-                reference.Tag.GetLocation(),
+                reference.Location(context.CancellationToken),
                 properties,
                 reference.Symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
         }

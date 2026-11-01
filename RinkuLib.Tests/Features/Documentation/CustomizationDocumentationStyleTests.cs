@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace RinkuLib.Tests.Documentation;
+namespace RinkuLib.Tests.Features.Documentation;
 
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
 public sealed class DocumentationExampleAttribute(string page, string id) : Attribute {
@@ -9,10 +9,10 @@ public sealed class DocumentationExampleAttribute(string page, string id) : Attr
     public string Id { get; } = id;
 }
 
-public class CustomizationDocumentationStyleTests {
+public partial class CustomizationDocumentationStyleTests {
     private static readonly char[] FancyPunctuation = [';', ':', '\u2014', '\u2013', '\u201C', '\u201D'];
     private static readonly string[] FancyWords = ["lifecycle", "seam", "dispatch", "retained", "compose"];
-    private static readonly Regex MarkdownLink = new(@"\[[^\]]+\]\([^)]*\)", RegexOptions.Compiled);
+    private static readonly Regex MarkdownLink = MyRegex();
 
     [Fact]
     public void Customization_prose_stays_short_and_plain() {
@@ -61,7 +61,7 @@ public class CustomizationDocumentationStyleTests {
             remaining = remaining[4..].Trim();
         remaining = remaining.TrimEnd('.');
         return remaining.Split(" · ", StringSplitOptions.RemoveEmptyEntries)
-            .All(part => part.StartsWith("[") && part.Contains("](", StringComparison.Ordinal) && part.EndsWith(")"));
+            .All(part => part.StartsWith('[') && part.Contains("](", StringComparison.Ordinal) && part.EndsWith(')'));
     }
 
     private static string FindCustomizationFolder()
@@ -69,14 +69,13 @@ public class CustomizationDocumentationStyleTests {
 
     private static string[] GetCustomizationPages() {
         string folder = FindCustomizationFolder();
-        return File.ReadLines(Path.Combine(folder, "toc.yml"))
+        return [.. File.ReadLines(Path.Combine(folder, "toc.yml"))
             .Select(line => line.Trim())
             .Where(line => line.StartsWith("href: ", StringComparison.Ordinal))
             .Select(line => line[6..].Split('#')[0])
             .Where(path => path.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
             .Select(path => Path.GetFullPath(Path.Combine(folder, path)))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
     private static DirectoryInfo FindRepositoryRoot() {
@@ -85,4 +84,7 @@ public class CustomizationDocumentationStyleTests {
                 return folder;
         throw new DirectoryNotFoundException("Could not find docs/articles/customization.");
     }
+
+    [GeneratedRegex(@"\[[^\]]+\]\([^)]*\)", RegexOptions.Compiled)]
+    private static partial Regex MyRegex();
 }

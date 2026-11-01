@@ -1,7 +1,5 @@
 using System.Data;
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
-using System.Runtime.ExceptionServices;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 
@@ -46,38 +44,6 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
     /// <inheritdoc/>
     public bool CanHandle<T>() 
         => typeof(T).IsGenericType && acceptedGenericDefinitions.Contains(typeof(T).GetGenericTypeDefinition());
-    private static object? GetItemParser(Type itemType, ColumnInfo[] cols, INullColHandler? nullColHandler) {
-        object?[] args = [cols, nullColHandler];
-
-        MethodInfo? method = null;
-        foreach (var m in typeof(TypeParser).GetMethods()) {
-            if (m.Name != nameof(TypeParser.GetTypeParser) || !m.IsGenericMethodDefinition)
-                continue;
-
-            var ps = m.GetParameters();
-            if (ps.Length != 2 
-                || ps[0].ParameterType != typeof(ColumnInfo[])
-                || ps[1].ParameterType != typeof(INullColHandler))
-                continue;
-
-            method = m;
-            break;
-        }
-
-        if (method is null)
-            throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"{typeof(TypeParser).FullName}.{nameof(TypeParser.GetTypeParser)} was not found");
-
-        object? parser;
-        try {
-            parser = method.MakeGenericMethod(itemType).Invoke(null, args);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null) {
-            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-            throw;
-        }
-
-        return parser;
-    }
     /// <inheritdoc/>
     public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
         parser = null;
@@ -97,9 +63,7 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
         else
             elementHandler = elementNullability[Array.IndexOf(acceptedGenericDefinitions, def)];
 
-        var itemParser = GetItemParser(itemType, cols, elementHandler);
-        if (itemParser is null)
-            return false;
+        var itemParser = TypeParser.GetTypeParser(itemType, cols, elementHandler);
 
         Type collectionParserType;
         object?[] constructorArgs;
@@ -113,7 +77,8 @@ public class ReusingBaseTypeParserMaker(Type[] acceptedGenericDefinitions, GetPa
             collectionParserType = getParserType(def, itemType, ref constructorArgs);
         }
 
-        parser = (ITypeParser<T>)Activator.CreateInstance(collectionParserType, constructorArgs)!;
+        parser = Activator.CreateInstance(collectionParserType, constructorArgs) as ITypeParser<T>
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Could not create parser {collectionParserType}.");
         return true;
     }
 }

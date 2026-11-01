@@ -11,12 +11,10 @@ namespace Rinku.Querying.Defaults;
 /// </summary>
 public static class StoredProcedure {
     /// <summary>
-    /// How a procedure's parameters are read onto a command. Every provider ships this as
-    /// <c>DeriveParameters</c> on its command builder, and the default finds that one by the name the
-    /// provider gave it, so this only needs setting for a provider that breaks the convention or to put
-    /// something else in its place.
+    /// How a provider's procedure metadata is copied onto a command. The default locates the provider's
+    /// <c>DeriveParameters</c> method by convention. Set this when a provider uses a different entry point.
     /// </summary>
-    public static Action<IDbCommand> ParameterDeriver = DeriveThroughProvider;
+    public static Action<IDbCommand> ParameterDeriver { get; set; } = DeriveThroughProvider;
 
     private static (Type Command, Action<IDbCommand> Derive)[] Derivers = [];
     private static readonly
@@ -30,7 +28,7 @@ public static class StoredProcedure {
     /// <summary>
     /// The command for a procedure, reading what it declares through <see cref="ParameterDeriver"/>.
     /// </summary>
-    /// <param name="connection">The connection to ask, opened for the question if it is not already.</param>
+    /// <param name="connection">The connection used to inspect the procedure. It is opened temporarily when needed.</param>
     /// <param name="procedureName">The procedure to call.</param>
     /// <param name="inputOutputHasDefault">Whether provider-derived input/output parameters may be omitted.</param>
     public static QueryCommand From(IDbConnection connection, string procedureName, bool inputOutputHasDefault = true) {
@@ -56,12 +54,11 @@ public static class StoredProcedure {
     /// The command for a procedure, reading what it declares through <see cref="ParameterDeriver"/>, opening
     /// the connection asynchronously when it is not already open.
     /// </summary>
-    /// <param name="connection">The connection to ask, opened for the question if it is not already.</param>
+    /// <param name="connection">The connection used to inspect the procedure. It is opened temporarily when needed.</param>
     /// <param name="procedureName">The procedure to call.</param>
-    /// <param name="ct">The forwarded cancellation token.</param>
     /// <param name="inputOutputHasDefault">Whether provider-derived input/output parameters may be omitted.</param>
-    public static async Task<QueryCommand> FromAsync(DbConnection connection, string procedureName, CancellationToken ct = default,
-        bool inputOutputHasDefault = true) {
+    /// <param name="ct">The forwarded cancellation token.</param>
+    public static async Task<QueryCommand> FromAsync(DbConnection connection, string procedureName, bool inputOutputHasDefault = true, CancellationToken ct = default) {
         ArgumentNullException.ThrowIfNull(connection);
         bool opened = false;
         if (connection.State != ConnectionState.Open) {
@@ -135,9 +132,7 @@ public static class StoredProcedure {
         if (!name.EndsWith("Command", StringComparison.Ordinal))
             throw NoDeriver(commandType, "its name does not end in \"Command\"");
         var builder = commandType.Assembly.GetType(name + "Builder");
-        var method = builder?.GetMethod("DeriveParameters", BindingFlags.Public | BindingFlags.Static, null, [commandType], null);
-        if (method is null)
-            throw NoDeriver(commandType, $"no public static {name}Builder.DeriveParameters was found beside it");
+        var method = (builder?.GetMethod("DeriveParameters", BindingFlags.Public | BindingFlags.Static, null, [commandType], null)) ?? throw NoDeriver(commandType, $"no public static {name}Builder.DeriveParameters was found beside it");
         return cmd => method.Invoke(null, [cmd]);
     }
     private static RinkuConfigurationException NoDeriver(Type commandType, string why)

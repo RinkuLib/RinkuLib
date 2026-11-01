@@ -1,8 +1,12 @@
 <Solution>
   <Project Path="RinkuPowerTools.Compiler/RinkuPowerTools.Compiler.csproj" Id="95e98e07-9b0e-4981-8787-957a86c0cff4" />
+  <Project Path="RinkuPowerTools.SqlEditor/RinkuPowerTools.SqlEditor.csproj" />
   <Project Path="RinkuPowerTools.VisualStudio/RinkuPowerTools.VisualStudio.csproj">
     <Deploy />
   </Project>
   <Project Path="RinkuPowerTools/RinkuPowerTools.csproj" />
   <Project Path="RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj" />
+  <Project Path="RinkuPowerTools.Cli/RinkuPowerTools.Cli.csproj" />
+  <Project Path="RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj" />
+  <Project Path="RinkuPowerTools.Cli.Build/RinkuPowerTools.Cli.Build.csproj" />
 </Solution>

@@ -13,7 +13,7 @@ public sealed class MatchConstructorAnalyzerTests {
             #nullable enable
             public record CustomerSchema(int Id, string? Name);
 
-            /// <MatchConstructor cref="CustomerSchema" />
+            [BasedOn(typeof(CustomerSchema))]
             public record CustomerDto(int Id, string? Name);
             """;
 
@@ -28,7 +28,7 @@ public sealed class MatchConstructorAnalyzerTests {
                 public CustomerSchema(int id, string name) { }
             }
 
-            /// <MatchConstructor cref="CustomerSchema" />
+            [BasedOn(typeof(CustomerSchema))]
             public class CustomerDto {
                 public CustomerDto(int id, string name) { }
             }
@@ -42,7 +42,7 @@ public sealed class MatchConstructorAnalyzerTests {
         const string source = """
             public class CustomerSchema { }
 
-            /// <MatchConstructor cref="CustomerSchema" />
+            [BasedOn(typeof(CustomerSchema))]
             public class CustomerDto { }
             """;
 
@@ -53,10 +53,11 @@ public sealed class MatchConstructorAnalyzerTests {
     public async Task ReferencedMethodParametersMayMatch() {
         const string source = """
             public static class Schemas {
+                public static object Create(int id) => new();
                 public static object Create(int id, ref string name, params object[] values) => new();
             }
 
-            /// <MatchConstructor cref="Schemas.Create" />
+            [BasedOn(typeof(Schemas), null, nameof(Schemas.Create))]
             public class CustomerDto {
                 public CustomerDto(int id, ref string name, params object[] values) { }
             }
@@ -70,7 +71,7 @@ public sealed class MatchConstructorAnalyzerTests {
         const string source = """
             public record CustomerSchema(int Id);
 
-            /// {|#0:<MatchConstructor cref="CustomerSchema" />|}
+            [{|#0:BasedOn(typeof(CustomerSchema))|}]
             public record CustomerDto(long Id);
             """;
 
@@ -85,7 +86,7 @@ public sealed class MatchConstructorAnalyzerTests {
         const string source = """
             public record CustomerSchema(int Id, string Name);
 
-            /// {|#0:<MatchConstructor cref="CustomerSchema" />|}
+            [{|#0:BasedOn(typeof(CustomerSchema))|}]
             public record CustomerDto(string Name, int CustomerId);
             """;
 
@@ -101,7 +102,7 @@ public sealed class MatchConstructorAnalyzerTests {
             #nullable enable
             public record CustomerSchema(string? Name);
 
-            /// {|#0:<MatchConstructor cref="CustomerSchema" />|}
+            [{|#0:BasedOn(typeof(CustomerSchema))|}]
             public record CustomerDto(string Name);
             """;
 
@@ -118,7 +119,7 @@ public sealed class MatchConstructorAnalyzerTests {
                 public static object Create(ref int id, params string[] names) => new();
             }
 
-            /// {|#0:<MatchConstructor cref="Schemas.Create" />|}
+            [{|#0:BasedOn(typeof(Schemas), null, nameof(Schemas.Create))|}]
             public class CustomerDto {
                 public CustomerDto(int id, string[] names) { }
             }
@@ -142,7 +143,7 @@ public sealed class MatchConstructorAnalyzerTests {
                 public CustomerSchema([Slot] int id = 1) { }
             }
 
-            /// <MatchConstructor cref="CustomerSchema" />
+            [BasedOn(typeof(CustomerSchema))]
             public class CustomerDto {
                 public CustomerDto(int id = 2) { }
             }
@@ -157,8 +158,8 @@ public sealed class MatchConstructorAnalyzerTests {
             public record FirstSchema(int Id);
             public record SecondSchema(string Name);
 
-            /// <MatchConstructor cref="FirstSchema" />
-            /// {|#0:<MatchConstructor cref="SecondSchema" />|}
+            [BasedOn(typeof(FirstSchema))]
+            [{|#0:BasedOn(typeof(SecondSchema))|}]
             public record CustomerDto(int Id);
             """;
 
@@ -166,5 +167,47 @@ public sealed class MatchConstructorAnalyzerTests {
             .WithLocation(0)
             .WithArguments("CustomerDto", "SecondSchema");
         await VerifyMatch.VerifyAnalyzerAsync(source, expected);
+    }
+
+    [TestMethod]
+    public async Task CurrentSchemaAcknowledgementAllowsAnIntentionalShapeChange() {
+        const string source = """
+            [Schema("2026-08-22T09:30Z")]
+            public record CustomerSchema(int Id, string Name);
+
+            [BasedOn(typeof(CustomerSchema), lastUpdated: "2026-08-22T09:30Z")]
+            public record CustomerDto(int Id);
+            """;
+
+        await VerifyMatch.VerifyAnalyzerAsync(source);
+    }
+
+    [TestMethod]
+    public async Task NewerSchemaThanAcknowledgementStillRequiresAMatch() {
+        const string source = """
+            [Schema("2026-08-22T09:30Z")]
+            public record CustomerSchema(int Id, string Name);
+
+            [{|#0:BasedOn(typeof(CustomerSchema), lastUpdated: "2026-08-21T14:00Z")|}]
+            public record CustomerDto(int Id);
+            """;
+
+        var expected = VerifyMatch.Diagnostic(MatchConstructorAnalyzer.DiagnosticId)
+            .WithLocation(0)
+            .WithArguments("CustomerDto", "CustomerSchema");
+        await VerifyMatch.VerifyAnalyzerAsync(source, expected);
+    }
+
+    [TestMethod]
+    public async Task NewerAcknowledgementAlsoAllowsAnIntentionalShapeChange() {
+        const string source = """
+            [Schema("2026-08-22T09:30Z")]
+            public record CustomerSchema(int Id, string Name);
+
+            [BasedOn(typeof(CustomerSchema), lastUpdated: "2026-08-23T09:30Z")]
+            public record CustomerDto(int Id);
+            """;
+
+        await VerifyMatch.VerifyAnalyzerAsync(source);
     }
 }

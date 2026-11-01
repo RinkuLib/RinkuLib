@@ -1,7 +1,7 @@
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Utilities;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// <see cref="LetterMap{T}"/> is a dictionary keyed on letters, case-insensitive, iterated in

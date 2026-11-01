@@ -1,4 +1,4 @@
-namespace RinkuPowerTools;
+namespace RinkuPowerTools.Database.PostgreSql;
 
 internal readonly record struct PostgreSqlParameterLayout(
     IReadOnlyList<string> Names,
@@ -7,7 +7,7 @@ internal readonly record struct PostgreSqlParameterLayout(
     public static PostgreSqlParameterLayout Parse(string sql) {
         List<string> scanned = NamedParameterScanner.Scan(sql);
         if (scanned.Count == 0)
-            return new PostgreSqlParameterLayout(Array.Empty<string>(), false);
+            return new PostgreSqlParameterLayout([], false);
 
         bool hasPositional = false;
         bool hasNamed = false;

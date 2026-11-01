@@ -1,7 +1,31 @@
 namespace Rinku.Tracking;
 
+/// <summary>Confirms item-owned state for a list insertion.</summary>
+public interface ICanInsert
+{
+    /// <summary>Accepts the item-owned state associated with an insertion.</summary>
+    /// <returns><see langword="true"/> when the insertion can be confirmed.</returns>
+    bool ConfirmInsert();
+}
+
+/// <summary>Confirms item-owned state for a list update.</summary>
+public interface ICanUpdate
+{
+    /// <summary>Accepts the item-owned state associated with an update.</summary>
+    /// <returns><see langword="true"/> when the update can be confirmed.</returns>
+    bool ConfirmUpdate();
+}
+
+/// <summary>Confirms item-owned state for a list deletion.</summary>
+public interface ICanDelete
+{
+    /// <summary>Accepts the item-owned state associated with a deletion.</summary>
+    /// <returns><see langword="true"/> when the deletion can be confirmed.</returns>
+    bool ConfirmDelete();
+}
+
 /// <summary>
-/// Reports whether an item is new to its surrounding source.
+/// Reports whether an item is a pending list addition.
 /// </summary>
 public interface ITrackingListNewState
 {
@@ -9,27 +33,32 @@ public interface ITrackingListNewState
     bool IsNew { get; }
 }
 
-/// <summary>
-/// Creates items and confirms changes for a tracking list.
-/// </summary>
-public interface ITrackingListContext<T>
+/// <summary>Pending persistence operations and their confirmation, independent of list storage.</summary>
+public interface ITrackingCommitSource<T>
 {
-    /// <summary>Gets whether this context can create an item.</summary>
-    bool CanCreateNew { get; }
-    /// <summary>Creates a new item.</summary>
-    T CreateNew();
-
-    /// <summary>Confirms that an item was added.</summary>
-    bool ConfirmAdded(T item);
-    /// <summary>Confirms edits made to an item.</summary>
-    bool ConfirmEdit(T item);
-    /// <summary>Confirms that an item was deleted.</summary>
-    bool ConfirmDelete(T item);
+    /// <summary>Enumerates pending insertions and updates.</summary>
+    IEnumerable<(T Item, bool IsInsert)> GetChanged();
+    /// <summary>Gets pending deletions.</summary>
+    ReadOnlySpan<T> RemovedSpan { get; }
+    /// <summary>Accepts the operations after persistence succeeds.</summary>
+    bool ConfirmChanges();
 }
 
-/// <summary>Access to the singleton default context for a given T.</summary>
-public static class TrackingListContext<T>
+/// <summary>An editable collection of tracked items, independent of storage and UI binding.</summary>
+public interface ITrackingSource<T> : IReadOnlyList<T>, ITrackingCommitSource<T> {
+    /// <summary>Gets whether the source contains pending changes.</summary>
+    bool HasChanges { get; }
+    /// <summary>Gets whether a new item can be created.</summary>
+    bool CanAddNew { get; }
+    /// <summary>Creates and adds a pending item.</summary>
+    T AddNew();
+    /// <summary>Discards pending changes without undoing confirmations or restoring ordering.</summary>
+    void RevertChanges();
+}
+
+/// <summary>Accepted list operations observed by caches and other projections.</summary>
+public interface ITrackingConfirmations<out T> : IReadOnlyList<T>
 {
-    /// <summary>Gets the default context.</summary>
-    public static ITrackingListContext<T> Default => DefaultTrackingListContext<T>.Instance;
+    /// <summary>Observes accepted operations until the returned subscription is disposed.</summary>
+    IDisposable SubscribeConfirmations(Action<int, T>? onAdded = null, Action<int, T>? onUpdated = null, Action<T>? onDeleted = null);
 }

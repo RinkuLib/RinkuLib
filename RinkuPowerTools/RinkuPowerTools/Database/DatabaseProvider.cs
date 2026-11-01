@@ -70,12 +70,7 @@ public static class DatabaseProviders {
 
     public static IReadOnlyList<DatabaseProvider> All => Providers;
 
-    public static DatabaseProvider Get(DatabaseType type) => type switch {
-        DatabaseType.SqlServer => SqlServerDatabaseProvider.Instance,
-        DatabaseType.PostgreSql => PostgreSqlDatabaseProvider.Instance,
-        DatabaseType.Sqlite => SqliteDatabaseProvider.Instance,
-        _ => throw new ArgumentOutOfRangeException(nameof(type))
-    };
+    public static DatabaseProvider Get(DatabaseType type) => Array.Find(Providers, provider => provider.Type == type) ?? throw new ArgumentOutOfRangeException(nameof(type));
 
     public static bool TryParseType(string? value, out DatabaseType type) {
         if (Enum.TryParse(value, true, out type))

@@ -7,6 +7,20 @@ using Microsoft.VisualStudio.ProjectSystem.Query;
 namespace RinkuPowerTools.VisualStudio;
 
 public static class ExtensionHelper {
+    internal static async Task UpdateCommandsAsync(this VisualStudioExtensibility extensibility, IClientContext context, bool configure, CancellationToken ct) {
+        var (project, directory) = await context.GetProjectAndDirectoryAsync(ct);
+        if (project is null || directory is null) {
+            await extensibility.ShowPromptAsync("No active project found. Please select a project or a file inside a project.", ct);
+            return;
+        }
+        string? fileName = (await context.GetSelectedPathAsync(ct)).GetFileNameWithTrueCasing();
+        if (!fileName.TryExtractClassName(out string? className)) return;
+        ExtensionSettings? settings = configure
+            ? await SettingsProvider.ConfigureSettingsAsync(extensibility, directory, className, ct)
+            : await SettingsProvider.GetSettingsAsync(extensibility, directory, className, ct);
+        if (settings is not null) await extensibility.GenerateAndOpenCommandsFileAsync(project, settings, ct);
+    }
+
     /// <summary>
     /// Safely retrieves the active project and its directory.
     /// </summary>
@@ -40,22 +54,12 @@ public static class ExtensionHelper {
     /// Derives the generated class name based on the JSON file's naming convention.
     /// </summary>
     public static bool TryExtractClassName(this string? fileName, [MaybeNullWhen(false)] out string className) {
-        if (string.IsNullOrEmpty(fileName)) {
+        var match = SharedRegex.ConfigFileName().Match(fileName ?? string.Empty);
+        if (!match.Success) {
             className = null;
             return false;
         }
-        int firstDot = fileName.IndexOf('.');
-        if (firstDot == -1) {
-            className = null;
-            return false;
-        }
-        firstDot++;
-        int secondDot = fileName.IndexOf('.', firstDot);
-        if (secondDot == -1) {
-            className = string.Empty;
-            return true;
-        }
-        className = fileName[firstDot..secondDot];
+        className = match.Groups[1].Value.TrimStart('.');
         return true;
     }
 
@@ -66,7 +70,7 @@ public static class ExtensionHelper {
             return false;
         try {
             var fullPath = await MainClassGenerator.GenerateClassAsync(settings, baseNamespace, ct);
-            await extensibility.ApplySqlFileProjectMetadataAsync(projectSnapshot, settings, ct);
+            await ApplySqlFileProjectMetadataAsync(projectSnapshot, settings, ct);
             if (openAfter)
                 await extensibility.Documents().OpenDocumentAsync(new Uri(fullPath), ct);
             return true;
@@ -77,7 +81,7 @@ public static class ExtensionHelper {
         }
     }
 
-    private static async Task ApplySqlFileProjectMetadataAsync(this VisualStudioExtensibility extensibility, IProjectSnapshot projectSnapshot, ExtensionSettings settings, CancellationToken ct) {
+    private static async Task ApplySqlFileProjectMetadataAsync(IProjectSnapshot projectSnapshot, ExtensionSettings settings, CancellationToken ct) {
         HashSet<string> handled = new(StringComparer.OrdinalIgnoreCase);
         foreach (var query in settings.Queries) {
             if (query.SourceType != QuerySourceType.FromFile || Path.IsPathRooted(query.Target) || !handled.Add(query.Target))
@@ -90,9 +94,8 @@ public static class ExtensionHelper {
             IFileSnapshot? file = await FindProjectFileAsync(projectSnapshot, fullPath, ct);
             if (file is null) {
                 await projectSnapshot.AsUpdatable().AddFile(fullPath, "None").ExecuteAsync(ct);
-                file = await FindProjectFileAsync(projectSnapshot, fullPath, ct);
-                if (file is null)
-                    throw new InvalidOperationException($"Unable to add SQL file '{query.Target}' to the project.");
+                file = await FindProjectFileAsync(projectSnapshot, fullPath, ct)
+                    ?? throw new InvalidOperationException($"Unable to add SQL file '{query.Target}' to the project.");
             }
 
             await file.AsUpdatable()

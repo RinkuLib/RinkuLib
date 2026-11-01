@@ -17,5 +17,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RinkuPowerTools\RinkuPowerTools.csproj" />
+    <ProjectReference Include="..\..\RinkuLib\RinkuLib.csproj" />
   </ItemGroup>
 </Project>

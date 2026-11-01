@@ -22,7 +22,6 @@ public sealed class AreReadableAttribute : Attribute;
 public sealed class UsePrivateMembersAttribute : Attribute;
 /// <summary>
 /// A validated candidate for object instantiation, wrapping a
-/// A validated candidate for object instantiation, wrapping a
 /// <see cref="ConstructorInfo"/> or static <see cref="MethodInfo"/>.
 /// </summary>
 public class MethodCtorInfo {
@@ -91,13 +90,15 @@ public class MethodCtorInfo {
         }
     }
     private static IGroupingRule? MakeGroupKey(MethodBase construction)
-        => GroupKeyScan.Resolve(construction.DeclaringType!, [construction, .. construction.GetParameters()]);
+        => GroupKeyScan.Resolve(construction.DeclaringType
+            ?? throw new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "A construction must have a declaring type."), [construction, .. construction.GetParameters()]);
     /// <summary>
     /// Initializes a new instance of <see cref="MethodCtorInfo"/>.
     /// </summary>
     /// <param name="MethodBase">The constructor or method to wrap.</param>
     /// <exception cref="Exception">Thrown if validation fails.</exception>
-    public MethodCtorInfo(MethodBase MethodBase) : this(MethodBase, TryMakeParameters(MethodBase)!) { }
+    public MethodCtorInfo(MethodBase MethodBase) : this(MethodBase,
+        TryMakeParameters(MethodBase) ?? throw new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "The construction parameters could not be described.")) { }
     /// <summary>
     /// Initializes a new instance of <see cref="MethodCtorInfo"/>.
     /// </summary>
@@ -152,7 +153,7 @@ public class MethodCtorInfo {
             flags |= AdditionalFlags.CanCompleteWithMembers;
         if (MethodBase.IsDefined(typeof(AreReadableAttribute)))
             flags |= AdditionalFlags.ParametersAreReadable;
-        var created = new MethodCtorInfo(MethodBase, Parameters!, flags, true);
+        var created = new MethodCtorInfo(MethodBase, Parameters ?? throw new InvalidOperationException("Validated parameters unexpectedly became null."), flags, true);
         mci = TypeParsingInfo.ApplyRegistrationInitializer(Volatile.Read(ref _registrationInitializer), created);
         if (mci.TargetType != created.TargetType)
             throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch,
@@ -168,7 +169,7 @@ public class MethodCtorInfo {
             mci = null;
             return false;
         }
-        var created = new MethodCtorInfo(MethodBase, Parameters!, Flags, true);
+        var created = new MethodCtorInfo(MethodBase, Parameters ?? throw new InvalidOperationException("Validated parameters unexpectedly became null."), Flags, true);
         mci = TypeParsingInfo.ApplyRegistrationInitializer(Volatile.Read(ref _registrationInitializer), created);
         if (mci.TargetType != created.TargetType)
             throw new RinkuConfigurationException(ErrorCodes.TargetTypeMismatch,
@@ -202,6 +203,8 @@ public class MethodCtorInfo {
     public static Exception? ValidateMethodReturn(MethodInfo method) {
         if (!method.IsStatic)
             return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory must be static");
+        if (!method.ContainsGenericParameters)
+            return null;
         if (method.DeclaringType == method.ReturnType) {
             if (method.IsGenericMethod)
                 return new RinkuConfigurationException(ErrorCodes.ConstructionShapeNotUsable, "a factory on the type it builds takes its type parameters from that type, so it must not be generic itself");

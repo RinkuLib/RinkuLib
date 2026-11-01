@@ -8,10 +8,9 @@ using Rinku.Mapping;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.Providers;
 
 public sealed class ProviderPostgresEdgeFixture : DBFixture<NpgsqlConnection>;
-
 /// <summary>
 /// A provider-native PostgreSQL array parameter supplied through Rinku's complete parameter takeover API.
 /// </summary>
@@ -111,7 +110,7 @@ public sealed class ProviderPostgresEdgeTests(ProviderPostgresEdgeFixture fixtur
         }
         finally {
             if (parser is not null)
-                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
             TypeParsingInfo.TryRemove(typeof(int[]), out _);
         }
     }
@@ -119,7 +118,6 @@ public sealed class ProviderPostgresEdgeTests(ProviderPostgresEdgeFixture fixtur
 
 sealed class PostgresIntArrayTypeInfo : ScalarTypeParsingInfo<int[]> {
     internal static readonly PostgresIntArrayTypeInfo Instance = new();
-
     protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal)
         => column.Type == typeof(Array)
             ? new PostgresIntArrayPlan(parentType, parameter.NameComparer.GetDefaultName(), parameter.NullColHandler, ordinal)
@@ -129,7 +127,6 @@ sealed class PostgresIntArrayTypeInfo : ScalarTypeParsingInfo<int[]> {
 sealed class PostgresIntArrayPlan(Type parentType, string parameterName, INullColHandler nullHandler, int ordinal)
     : ScalarDbItemPlan<int[]>(parentType, parameterName, nullHandler, ordinal) {
     private static readonly MethodInfo ReadMethod = typeof(DbDataReader).GetMethod(nameof(DbDataReader.GetFieldValue))!.MakeGenericMethod(typeof(int[]));
-
     protected override void EmitValue(ColumnInfo column, Generator generator) {
         generator.Emit(OpCodes.Ldarg_1);
         generator.Emit(OpCodes.Ldc_I4, ColumnOrdinal);
@@ -139,7 +136,6 @@ sealed class PostgresIntArrayPlan(Type parentType, string parameterName, INullCo
 
 sealed class PostgresIntArrayParam : DbParamInfo {
     public PostgresIntArrayParam() : base(true) { }
-
     public override bool SaveUse(string name, IDbCommand cmd, ref object value) {
         var parameter = Add(name, cmd, ToArray(value));
         value = parameter;
@@ -176,7 +172,7 @@ sealed class PostgresIntArrayParam : DbParamInfo {
 
     private static int[] ToArray(object value) => value switch {
         int[] values => values,
-        IEnumerable<int> values => values.ToArray(),
+        IEnumerable<int> values => [.. values],
         _ => throw new InvalidCastException($"Expected integer sequence, got {value.GetType()}.")
     };
 }

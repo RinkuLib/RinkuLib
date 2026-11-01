@@ -3,7 +3,7 @@ using System.Data.Common;
 using Rinku.Mapping;
 using Rinku.Mapping.Parsers;
 
-namespace Rinku;
+namespace Rinku.Facade;
 
 internal sealed class RuntimeParserLinker(QueryCommand command, Type type, bool[] usageMap) : ICacheGivingParser {
     public CommandBehavior Behavior => command.TryGetCachedParser(type, usageMap, out var parser) ? parser.Behavior : CommandBehavior.SingleResult;
@@ -17,8 +17,5 @@ internal sealed class RuntimeParserLinker(QueryCommand command, Type type, bool[
         return parser;
     }
 
-    public async ValueTask<ITypeParser> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default) {
-        await Task.CompletedTask.ConfigureAwait(false);
-        return UpdateCache(cmd, reader);
-    }
+    public ValueTask<ITypeParser> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default) => new(UpdateCache(cmd, reader));
 }

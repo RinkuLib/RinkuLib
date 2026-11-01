@@ -18,6 +18,8 @@ namespace Rinku;
 /// <see cref="DbDataReader"/>, so the raw reader methods stay available underneath.
 /// </summary>
 public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader reader, IDbCommand cmd, bool disposeCmd, bool wasClosed) : DbDataReader, IDisposable {
+    private static object RequireObjectResult(object? result)
+        => result ?? throw new RinkuReadException(ErrorCodes.CannotConvert, "The result set produced a null result.");
     private readonly bool[] usage = usage;
     private readonly QueryCommand command = command;
     private readonly DbDataReader reader = reader;
@@ -88,9 +90,8 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         bool next = true;
         try {
             var cache = GetCurrentSetParser(resultType);
-            if (!reader.Read()) return cache.DefaultObject()!;
-            var result = cache.ParseObject(reader).Result!;
-            return result;
+            if (!reader.Read()) return RequireObjectResult(cache.DefaultObject());
+            return RequireObjectResult(cache.ParseObject(reader).Result);
         }
         finally {
             if (next && !reader.NextResult()) CompleteReader();
@@ -160,8 +161,8 @@ public sealed class MultiReader(bool[] usage, QueryCommand command, DbDataReader
         nbResultSetPassedMinusOne++;
         try {
             var cache = GetCurrentSetParser(resultType);
-            if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return cache.DefaultObject()!;
-            return (await cache.ParseObjectAsync(reader, ct).ConfigureAwait(false)).Result!;
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return RequireObjectResult(cache.DefaultObject());
+            return RequireObjectResult((await cache.ParseObjectAsync(reader, ct).ConfigureAwait(false)).Result);
         }
         finally {
             if (!await reader.NextResultAsync(ct).ConfigureAwait(false)) await CompleteReaderAsync().ConfigureAwait(false);

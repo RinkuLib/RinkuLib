@@ -120,10 +120,10 @@ public static class RuntimeNestedCopier<T>
             {
                 MemberAccess member = members[i];
                 Type comparer = typeof(EqualityComparer<>).MakeGenericType(member.Type);
-                MethodInfo getDefault = comparer.GetProperty(nameof(EqualityComparer<int>.Default))?.GetMethod
-                    ?? throw new MissingMethodException(comparer.FullName, $"get_{nameof(EqualityComparer<int>.Default)}");
-                MethodInfo equals = comparer.GetMethod(nameof(EqualityComparer<int>.Equals), [member.Type, member.Type])
-                    ?? throw new MissingMethodException(comparer.FullName, nameof(EqualityComparer<int>.Equals));
+                MethodInfo getDefault = comparer.GetProperty(nameof(EqualityComparer<>.Default))?.GetMethod
+                    ?? throw new MissingMethodException(comparer.FullName, $"get_{nameof(EqualityComparer<>.Default)}");
+                MethodInfo equals = comparer.GetMethod(nameof(EqualityComparer<>.Equals), [member.Type, member.Type])
+                    ?? throw new MissingMethodException(comparer.FullName, nameof(EqualityComparer<>.Equals));
 
                 il.Emit(OpCodes.Call, getDefault);
                 EmitRead(il, runtimeType, member, 0);
@@ -152,10 +152,10 @@ public static class RuntimeNestedCopier<T>
 
                 Label same = il.DefineLabel();
                 Type comparer = typeof(EqualityComparer<>).MakeGenericType(member.Type);
-                MethodInfo getDefault = comparer.GetProperty(nameof(EqualityComparer<int>.Default))?.GetMethod
-                    ?? throw new MissingMethodException(comparer.FullName, $"get_{nameof(EqualityComparer<int>.Default)}");
-                MethodInfo equals = comparer.GetMethod(nameof(EqualityComparer<int>.Equals), [member.Type, member.Type])
-                    ?? throw new MissingMethodException(comparer.FullName, nameof(EqualityComparer<int>.Equals));
+                MethodInfo getDefault = comparer.GetProperty(nameof(EqualityComparer<>.Default))?.GetMethod
+                    ?? throw new MissingMethodException(comparer.FullName, $"get_{nameof(EqualityComparer<>.Default)}");
+                MethodInfo equals = comparer.GetMethod(nameof(EqualityComparer<>.Equals), [member.Type, member.Type])
+                    ?? throw new MissingMethodException(comparer.FullName, nameof(EqualityComparer<>.Equals));
 
                 il.Emit(OpCodes.Call, getDefault);
                 EmitRead(il, runtimeType, member, 0);
@@ -212,7 +212,7 @@ public static class RuntimeNestedCopier<T>
                 if (field.IsStatic) continue;
                 result.Add(new(field.FieldType, null, field, !field.IsInitOnly && !field.IsLiteral));
             }
-            return result.ToArray();
+            return [.. result];
         }
     }
 

@@ -13,7 +13,7 @@ namespace Rinku.Mapping.Defaults;
 /// The object parser, the maker that claims any type no other maker did. It maps a result's columns onto a
 /// type's members and constructor by name, the default behind mapping a plain class, record, or struct.
 /// </summary>
-public class DefaultTypeParserMaker : ITypeParserMaker, ITypeParserSchemaMatcher {
+public class DefaultTypeParserMaker : ITypeParserMaker {
     /// <inheritdoc/>
     [ExcludeFromCodeCoverage]
     public bool CanHandle<T>() => true;
@@ -29,11 +29,12 @@ public class DefaultTypeParserMaker : ITypeParserMaker, ITypeParserSchemaMatcher
     public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
         if (!TryPrepareParser<T>(nullColHandler, cols, out var prepared, out parser))
             return false;
-        parser ??= prepared!.Complete();
+        parser ??= prepared?.Complete()
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "A prepared parser was missing after parser preparation succeeded.");
         return true;
     }
 
-    internal bool TryPrepareParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, out PreparedSimpleParser<T>? prepared, out ITypeParser<T>? parser) {
+    internal static bool TryPrepareParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, out PreparedSimpleParser<T>? prepared, out ITypeParser<T>? parser) {
         var rd = Negotiate<T>(nullColHandler, cols);
         if (rd is null) {
             prepared = null;
@@ -50,12 +51,7 @@ public class DefaultTypeParserMaker : ITypeParserMaker, ITypeParserSchemaMatcher
             typeof(T), TReaderArg, Module,
             skipVisibility: true
         );
-        Generator gen =
-#if DEBUG
-            new(dm.GetILGenerator(), cols);
-#else
-            new(dm.GetILGenerator());
-#endif
+        Generator gen = new(dm.GetILGenerator());
         Label? nullJump = rd.NeedNullSetPoint(cols) ? gen.DefineLabel() : null;
         ((ISimpleDbItemPlan)rd).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default);
         object[] targets = gen.GetTargets();
@@ -77,15 +73,6 @@ public class DefaultTypeParserMaker : ITypeParserMaker, ITypeParserSchemaMatcher
         return true;
     }
 
-    bool ITypeParserSchemaMatcher.CanParse<T>(ITypeParser<T> parser, ColumnInfo[] schema) {
-        if (!TryPrepareParser<T>(parser is SimpleTypeParser<T> simple ? simple.GeneratedNullability : TypeParser.GetDefaultNullColHandler<T>(), schema, out var prepared, out _)
-            || prepared is null)
-            return false;
-        bool matches = prepared.Matches(parser);
-        prepared.Discard();
-        return matches;
-    }
-
     private static DbItemPlan? Negotiate<T>(INullColHandler nullColHandler, ColumnInfo[] cols) {
         var closedType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
         var paramInfo = nullColHandler == NullableTypeHandle.Instance
@@ -97,7 +84,7 @@ public class DefaultTypeParserMaker : ITypeParserMaker, ITypeParserSchemaMatcher
         return TypeParsingInfo.ForceGet(closedType).TryGetParser(typeof(T), new([], 0), paramInfo, cols, new(), ref colUsage);
     }
 
-    internal ITypeParser<T> ForceMultiRow<T>(INullColHandler nullColHandler, ColumnInfo[] cols) {
+    internal static ITypeParser<T> ForceMultiRow<T>(INullColHandler nullColHandler, ColumnInfo[] cols) {
         var rd = Negotiate<T>(nullColHandler, cols)
             ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"no read plan for {typeof(T)} over the given columns");
         return MultiRowEmitter.Build<T>(rd, cols);

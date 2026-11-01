@@ -1,0 +1,36 @@
+<Project>
+  <PropertyGroup>
+    <EnableDefaultRinkuSqlItems Condition="'$(EnableDefaultRinkuSqlItems)' == ''">true</EnableDefaultRinkuSqlItems>
+    <RinkuSqlClass Condition="'$(RinkuSqlClass)' == ''">Queries</RinkuSqlClass>
+    <RinkuSqlContent Condition="'$(RinkuSqlContent)' == ''">Inline</RinkuSqlContent>
+  </PropertyGroup>
+  <ItemGroup>
+    <RinkuSql Include="**/*.rnksql" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder);@(RinkuSql)" Condition="'$(EnableDefaultRinkuSqlItems)' == 'true'" />
+    <CompilerVisibleProperty Include="MSBuildProjectDirectory;RootNamespace;RinkuSqlRoot;RinkuSqlClass;RinkuSqlNamespace;RinkuSqlContent;RinkuSqlKeyPrefix" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="RinkuSql" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Root" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Class" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Namespace" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Content" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Pattern" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="KeyPrefix" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="RuntimePath" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Link" />
+  </ItemGroup>
+  <Target Name="RinkuCollectSql" BeforeTargets="AssignTargetPaths;GenerateMSBuildEditorConfigFile;CoreCompile">
+    <ItemGroup>
+      <AdditionalFiles Include="@(RinkuSql)" Exclude="@(AdditionalFiles)">
+        <RinkuSql>true</RinkuSql>
+      </AdditionalFiles>
+      <AdditionalFiles Update="@(RinkuSql)">
+        <RinkuSql>true</RinkuSql>
+      </AdditionalFiles>
+      <_RinkuRuntimeSql Include="@(RinkuSql)" Condition="'%(RinkuSql.Content)' == 'File' Or ('%(RinkuSql.Content)' == '' And '$(RinkuSqlContent)' == 'File')">
+        <TargetPath Condition="'%(RinkuSql.RuntimePath)' != ''">%(RinkuSql.RuntimePath)</TargetPath>
+        <TargetPath Condition="'%(RinkuSql.RuntimePath)' == '' And '%(RinkuSql.Link)' != ''">%(RinkuSql.Link)</TargetPath>
+        <TargetPath Condition="'%(RinkuSql.RuntimePath)' == '' And '%(RinkuSql.Link)' == ''">$([MSBuild]::MakeRelative('$(MSBuildProjectDirectory)', '%(RinkuSql.FullPath)'))</TargetPath>
+      </_RinkuRuntimeSql>
+      <ContentWithTargetPath Include="@(_RinkuRuntimeSql)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

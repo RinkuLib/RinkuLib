@@ -17,6 +17,13 @@ public interface IValidatable<in TContext>
     bool Validate(TContext context);
 }
 
+/// <summary>Validates an operation result before tracking confirmation.</summary>
+public interface IResultValidatable<in TResult>
+{
+    /// <summary>Returns whether the operation result is accepted.</summary>
+    bool ValidateResult(TResult result);
+}
+
 /// <summary>Validates an item asynchronously.</summary>
 public interface IAsyncValidatable
 {

@@ -1,7 +1,7 @@
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Utilities;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// <see cref="ValueStringBuilder"/> builds strings over a caller buffer, growing into pooled arrays

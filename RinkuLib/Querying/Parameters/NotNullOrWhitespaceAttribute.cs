@@ -10,7 +10,7 @@ namespace Rinku.Querying.Parameters;
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 public sealed class NotNullOrWhitespaceAttribute : AccessorEmitterHandler {
     private static readonly MethodConditionEmitter Emitter = new(
-        typeof(string).GetMethod(nameof(string.IsNullOrWhiteSpace), [typeof(string)])!, invert: true);
+        Rinku.Mapping.TypeExtensions.Require(typeof(string).GetMethod(nameof(string.IsNullOrWhiteSpace), [typeof(string)]), nameof(string.IsNullOrWhiteSpace)), invert: true);
 
     /// <inheritdoc/>
     public override IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper) {
@@ -48,19 +48,21 @@ internal sealed class NotDefaultEmitter : PathAccessorEmitterBase {
             member.EmitLoad(il);
             il.Emit(OpCodes.Stloc, value);
             il.Emit(OpCodes.Ldloca, value);
-            il.Emit(OpCodes.Call, memberType.GetProperty(nameof(Nullable<int>.HasValue))!.GetMethod!);
+            var hasValue = Rinku.Mapping.TypeExtensions.Require(memberType.GetProperty(nameof(Nullable<>.HasValue)), "Nullable.HasValue");
+            il.Emit(OpCodes.Call, Rinku.Mapping.TypeExtensions.Require(hasValue.GetMethod, "Nullable.HasValue.GetMethod"));
             return;
         }
 
         var comparerType = typeof(EqualityComparer<>).MakeGenericType(memberType);
-        MethodInfo equals = comparerType.GetMethod(nameof(EqualityComparer<int>.Equals), [memberType, memberType])!;
+        MethodInfo equals = Rinku.Mapping.TypeExtensions.Require(comparerType.GetMethod(nameof(EqualityComparer<>.Equals), [memberType, memberType]), "EqualityComparer.Equals");
         LocalBuilder current = il.DeclareLocal(memberType);
         LocalBuilder defaultValue = il.DeclareLocal(memberType);
         member.EmitLoad(il);
         il.Emit(OpCodes.Stloc, current);
         il.Emit(OpCodes.Ldloca, defaultValue);
         il.Emit(OpCodes.Initobj, memberType);
-        il.Emit(OpCodes.Call, comparerType.GetProperty(nameof(EqualityComparer<int>.Default))!.GetMethod!);
+        var defaultProperty = Rinku.Mapping.TypeExtensions.Require(comparerType.GetProperty(nameof(EqualityComparer<>.Default)), "EqualityComparer.Default");
+        il.Emit(OpCodes.Call, Rinku.Mapping.TypeExtensions.Require(defaultProperty.GetMethod, "EqualityComparer.Default.GetMethod"));
         il.Emit(OpCodes.Ldloc, current);
         il.Emit(OpCodes.Ldloc, defaultValue);
         il.Emit(OpCodes.Callvirt, equals);

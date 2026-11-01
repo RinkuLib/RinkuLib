@@ -16,13 +16,13 @@ namespace RinkuLib.Analyzers.Test;
 [TestClass]
 public sealed class SchemaCodeFixTests {
     [TestMethod]
-    public async Task AddSchemaLinkOffersBothLinkKindsAndSourceSchemas() {
+    public async Task AddSchemaLinkOffersSourceSchemas() {
         const string source = """
-            /// <Schema LastUpdated="2026-08-21T14:00Z" />
+            [Schema("2026-08-21T14:00Z")]
             public record AlbumSchema(int Id, string Title);
 
             public static class Schemas {
-                /// <Schema LastUpdated="2026-08-21T15:00Z" />
+                [Schema("2026-08-21T15:00Z")]
                 public static object ReadSchema(int id, string title) => new();
             }
 
@@ -34,21 +34,17 @@ public sealed class SchemaCodeFixTests {
         CodeAction action = await GetAddSchemaLinkActionAsync(document, "AlbumDto");
 
         Assert.AreEqual("Add schema link", action.Title);
-        Assert.AreEqual(2, action.NestedActions.Length);
+        Assert.AreEqual(1, action.NestedActions.Length);
         Assert.AreEqual("Track schema changes", action.NestedActions[0].Title);
-        Assert.AreEqual("Require a matching constructor", action.NestedActions[1].Title);
-
-        foreach (CodeAction linkKind in action.NestedActions) {
-            Assert.AreEqual(2, linkKind.NestedActions.Length);
-            Assert.IsTrue(linkKind.NestedActions.Any(x => x.Title.Contains("AlbumSchema", StringComparison.Ordinal)));
-            Assert.IsTrue(linkKind.NestedActions.Any(x => x.Title.Contains("ReadSchema", StringComparison.Ordinal)));
-        }
+        Assert.AreEqual(2, action.NestedActions[0].NestedActions.Length);
+        Assert.IsTrue(action.NestedActions[0].NestedActions.Any(x => x.Title.Contains("AlbumSchema", StringComparison.Ordinal)));
+        Assert.IsTrue(action.NestedActions[0].NestedActions.Any(x => x.Title.Contains("ReadSchema", StringComparison.Ordinal)));
     }
 
     [TestMethod]
     public async Task TrackSchemaChangesWritesBasedOnTimestamp() {
         const string source = """
-            /// <Schema LastUpdated="2026-08-21T14:00Z" />
+            [Schema("2026-08-21T14:00Z")]
             public record AlbumSchema(int Id, string Title);
 
             public record AlbumDto(int Id, string Title);
@@ -65,29 +61,23 @@ public sealed class SchemaCodeFixTests {
 
         StringAssert.Contains(
             actual,
-            "/// <BasedOn cref=\"AlbumSchema\" LastUpdated=\"2026-08-21T14:00Z\" />");
+            "[BasedOn(typeof(global::AlbumSchema), \"2026-08-21T14:00:00.000Z\")]");
     }
 
     [TestMethod]
-    public async Task MatchingConstructorLinkOmitsTimestamp() {
+    public async Task MethodSchemaLinkUsesTimestampBeforeMethodName() {
         const string source = """
-            /// <Schema LastUpdated="2026-08-21T14:00Z" />
-            public record AlbumSchema(int Id, string Title);
-
-            public record AlbumDto(int Id, string Title);
+            public static class Schemas {
+                [Schema("2026-08-21T15:00Z")]
+                public static object Read(int id) => new();
+            }
+            public class AlbumDto { }
             """;
-
         using var workspace = new AdhocWorkspace();
-        Document document = CreateDocument(workspace, source);
-        CodeAction action = await GetAddSchemaLinkActionAsync(document, "AlbumDto");
-        CodeAction leaf = action.NestedActions
-            .Single(x => x.Title == "Require a matching constructor")
-            .NestedActions.Single();
-
-        string actual = await ApplyAsync(document, leaf);
-
-        StringAssert.Contains(actual, "/// <MatchConstructor cref=\"AlbumSchema\" />");
-        Assert.IsFalse(actual.Contains("<MatchConstructor cref=\"AlbumSchema\" LastUpdated=", StringComparison.Ordinal));
+        var document = CreateDocument(workspace, source);
+        var action = await GetAddSchemaLinkActionAsync(document, "AlbumDto");
+        string actual = await ApplyAsync(document, action.NestedActions.Single().NestedActions.Single());
+        StringAssert.Contains(actual, "[BasedOn(typeof(global::Schemas), \"2026-08-21T15:00:00.000Z\", nameof(global::Schemas.Read))]");
     }
 
     private static Document CreateDocument(AdhocWorkspace workspace, string source) {
@@ -101,6 +91,7 @@ public sealed class SchemaCodeFixTests {
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)));
 
         project = project.AddMetadataReference(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
+        project = project.AddDocument("RinkuSchemaAttributes.g.cs", SourceText.From(CSharpVerifierHelper.SchemaAttributes)).Project;
         Assert.IsTrue(workspace.TryApplyChanges(project.Solution));
 
         return workspace.AddDocument(project.Id, "Test.cs", SourceText.From(source));

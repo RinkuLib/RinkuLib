@@ -1,4 +1,3 @@
-﻿using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -32,26 +31,24 @@ public static class FromResultSetGenerator {
 
     private static void GenerateContent(StringBuilder sb, string nameSpace, string className, string fullPathFile, string targetResultSetName) {
 
-        if (!File.Exists(fullPathFile))
-            return;
-
         var code = File.ReadAllText(fullPathFile);
         var tree = CSharpSyntaxTree.ParseText(code);
         var root = tree.GetCompilationUnitRoot();
+        var resultSet = root.DescendantNodes().OfType<RecordDeclarationSyntax>().FirstOrDefault(record => record.Identifier.ValueText == targetResultSetName)
+            ?? throw new InvalidOperationException($"Result set '{targetResultSetName}' was not found in '{fullPathFile}'. Refresh the linked SQL command before generating its model.");
 
-        if (TryExtractNamespace(root, out var namespaceName)) {
-            sb.AppendLine($"using {namespaceName};");
+        sb.AppendLine("using Rinku.Mapping;");
+        if (root.Members.OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault() is { } sourceNamespace) {
+            sb.AppendLine($"using {sourceNamespace.Name};");
             sb.AppendLine();
         }
         sb.AppendLine($"namespace {nameSpace};");
         sb.AppendLine();
 
-        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm");
-        sb.AppendLine($"/// <BasedOn LastUpdated=\"{timestamp}\" cref=\"{targetResultSetName}\" />");
+        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'");
+        sb.AppendLine($"[BasedOn(typeof({targetResultSetName}), lastUpdated: \"{timestamp}\")]");
         sb.Append($"public class {className}");
-        var resultSet = FindResultSet(root, targetResultSetName);
-        if (resultSet is not null)
-            HandleResultSet(sb, resultSet);
+        HandleResultSet(sb, resultSet);
     }
     private static void HandleResultSet(StringBuilder sb, RecordDeclarationSyntax resultSet) {
         if (resultSet.ParameterList is null || resultSet.ParameterList.Parameters.Count == 0) {
@@ -63,13 +60,7 @@ public static class FromResultSetGenerator {
         sb.Append('(');
         foreach (var parameter in parameters) {
             var type = parameter.Type?.ToString().Trim() ?? "object?";
-            var name = parameter.Identifier.Text;
-            sb.Append(type).Append(' ');
-            if (name.Length > 0 && char.IsUpper(name[0]))
-                sb.Append(char.ToLowerInvariant(name[0])).Append(name.AsSpan(1));
-            else
-                sb.Append(name);
-            sb.Append(", ");
+            sb.Append(type).Append(' ').Append(ParameterName(parameter)).Append(", ");
         }
 
         sb.Length -= 2;
@@ -79,44 +70,13 @@ public static class FromResultSetGenerator {
             var type = parameter.Type?.ToString().Trim() ?? "object?";
             var name = parameter.Identifier.Text;
 
-            sb.Append("    public ").Append(type).Append(' ').Append(name).Append(" { get; set; } = ");
-
-            if (name.Length > 0 && char.IsUpper(name[0]))
-                sb.Append(char.ToLowerInvariant(name[0])).Append(name.AsSpan(1)).AppendLine(";");
-            else
-                sb.Append(name).AppendLine(";");
+            sb.Append("    public ").Append(type).Append(' ').Append(name).Append(" { get; set; } = ").Append(ParameterName(parameter)).AppendLine(";");
         }
         sb.AppendLine("}");
     }
-    private static bool TryExtractNamespace(CompilationUnitSyntax root, [MaybeNullWhen(false)] out string nameSpace) {
-        foreach (var node in root.Members) {
-            if (node is NamespaceDeclarationSyntax ns) {
-                nameSpace = ns.Name.ToString();
-                return !string.IsNullOrWhiteSpace(nameSpace);
-            }
-            if (node is FileScopedNamespaceDeclarationSyntax fns) {
-                nameSpace = fns.Name.ToString();
-                return !string.IsNullOrWhiteSpace(nameSpace);
-            }
-        }
-        nameSpace = null;
-        return false;
-    }
-    private static RecordDeclarationSyntax? FindResultSet(CompilationUnitSyntax root, string targetResultSetName) {
-        foreach (var member in root.Members) {
-            if (member is BaseNamespaceDeclarationSyntax ns) {
-                foreach (var inner in ns.Members) {
-                    if (inner is RecordDeclarationSyntax rec &&
-                        rec.Identifier.Text == targetResultSetName) {
-                        return rec;
-                    }
-                }
-            }
-            if (member is RecordDeclarationSyntax globalRec &&
-                globalRec.Identifier.Text == targetResultSetName) {
-                return globalRec;
-            }
-        }
-        return null;
+    private static string ParameterName(ParameterSyntax parameter) {
+        string name = parameter.Identifier.ValueText;
+        if (name.Length > 0) name = char.ToLowerInvariant(name[0]) + name[1..];
+        return SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None ? name : "@" + name;
     }
 }

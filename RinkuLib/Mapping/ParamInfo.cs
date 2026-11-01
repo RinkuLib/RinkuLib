@@ -31,14 +31,14 @@ public class ParamInfo(Type Type, INullColHandler NullColHandler, INameComparer 
     /// The current strategy for handling database NULL values.
     /// </summary>
     public INullColHandler NullColHandler {
-        get => field;
+        get;
         set => Interlocked.Exchange(ref field, value);
     } = NullColHandler;
     /// <summary>
     /// The logic used to match column names against this member's identifiers.
     /// </summary>
     public INameComparer NameComparer {
-        get => field;
+        get;
         set => Interlocked.Exchange(ref field, value);
     } = NameComparer;
     /// <summary>

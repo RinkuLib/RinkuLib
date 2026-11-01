@@ -39,7 +39,7 @@ public static class SettingsProvider {
 
             settingsName = selected._name ?? string.Empty;
 
-            res = await ParseSettingsAsync(projectDirectory, settingsName, ct);
+            res = await ParseSettingsAsync(projectDirectory, settingsName, ct, selected.FilePath);
             if (res is null) {
                 await extensibility.Shell().ShowPromptAsync($"The settings file was not created successfully after dialog: rinkupt.{settingsName}.json", PromptOptions.OK, ct);
                 return null;
@@ -68,10 +68,10 @@ public static class SettingsProvider {
         }
     }
 
-    private static async Task<ExtensionSettings?> ParseSettingsAsync(string projectDirectory, string settingsName, CancellationToken ct) {
-        var filePath = Path.Combine(projectDirectory, string.IsNullOrWhiteSpace(settingsName) ? "rinkupt.json" : $"rinkupt.{settingsName}.json");
+    private static async Task<ExtensionSettings?> ParseSettingsAsync(string projectDirectory, string settingsName, CancellationToken ct, string? filePath = null) {
+        filePath ??= GetConfigFiles(projectDirectory).SingleOrDefault(path => Path.GetFileName(path).TryExtractClassName(out var name) && string.Equals(name, settingsName, StringComparison.OrdinalIgnoreCase));
 
-        if (!File.Exists(filePath))
+        if (filePath is null || !File.Exists(filePath))
             return null;
 
         using var stream = File.OpenRead(filePath);

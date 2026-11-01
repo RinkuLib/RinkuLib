@@ -8,6 +8,7 @@ namespace RinkuLib.Analyzers.Test {
         public class Test : CSharpAnalyzerTest<TAnalyzer, MSTestVerifier> {
             public Test() {
                 TestState.Sources.Add(("IsExternalInit.g.cs", CSharpVerifierHelper.IsExternalInit));
+                TestState.Sources.Add(("RinkuSchemaAttributes.g.cs", CSharpVerifierHelper.SchemaAttributes));
                 SolutionTransforms.Add((solution, projectId) => {
                     var compilationOptions = solution.GetProject(projectId)!.CompilationOptions!;
                     compilationOptions = compilationOptions.WithSpecificDiagnosticOptions(

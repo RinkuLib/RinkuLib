@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.RunningQueries.SqlString;
 
 /// <summary>
 /// The factory reads a template into segments, conditions, and the key map that numbers every

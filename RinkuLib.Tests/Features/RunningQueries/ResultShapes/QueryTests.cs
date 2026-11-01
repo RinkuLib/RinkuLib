@@ -5,7 +5,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.ResultShapes;
 
 /// <summary>
 /// <c>Query&lt;T&gt;</c> runs the command and reads the first row as <c>T</c>, with collection and
@@ -21,7 +21,6 @@ public class QueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand NullEmail = new("SELECT Email FROM Users WHERE ID = 1");
     private static readonly QueryCommand NullInt = new("SELECT Val FROM Scratch WHERE Val IS NULL ORDER BY ID DESC LIMIT 1");
     private static readonly QueryCommand SalaryOfOne = new("SELECT Salary FROM Users WHERE ID = 1");
-
     [Fact]
     public void Scalar_string() {
         using var cnn = Db.GetConnection();

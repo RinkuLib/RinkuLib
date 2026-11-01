@@ -3,11 +3,11 @@ using Rinku.Mapping.Defaults;
 using System.Reflection;
 using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Registration;
 
 /// <summary>
 /// The registration surface: members and construction paths added by hand are validated on entry,
@@ -80,7 +80,7 @@ public class RegistrationApiTests {
         Assert.False(MemberParser.TryNew(M("GenericInstance"), P<int>("x"), out _));
         Assert.False(MemberParser.TryNew(typeof(MemberHost).GetConstructors()[0], P<int>("x"), out _));
         Assert.False(MemberParser.TryNew(M("Plain"), P<string>("Plain"), out _)); 
-        Refusals.Raises(ErrorCodes.UnusableMember, () => new MemberParser(M("ReadOnlyField"), P<int>("x")));
+        Refusals.Raises(ErrorCodes.UnusableMember, () => _ = new MemberParser(M("ReadOnlyField"), P<int>("x")));
     }
 
 
@@ -115,6 +115,19 @@ public class RegistrationApiTests {
         Assert.False(MethodCtorInfo.TryNew(half, out _));
     }
 
+    private static IReadOnlyDictionary<string, int> MakeNumbers(int value) => new Dictionary<string, int> { [nameof(value)] = value };
+
+    [Fact]
+    public void A_closed_external_factory_can_return_a_generic_interface()
+    {
+        var method = typeof(RegistrationApiTests).GetMethod(nameof(MakeNumbers), BindingFlags.NonPublic | BindingFlags.Static)!;
+        var info = TypeParsingInfo.GetOrAdd<IReadOnlyDictionary<string, int>>(saveAsGenericDefinitionWhenGeneric: false);
+        Assert.True(info.AddPossibleConstruction(method));
+        Assert.Same(method, method.GetClosedMember(typeof(IReadOnlyDictionary<string, int>)));
+        ColumnInfo[] columns = [new("Value", typeof(int), false)];
+        Assert.Equal(42, Rows.ParseOne<IReadOnlyDictionary<string, int>>(columns, 42)["value"]);
+    }
+
     [Fact]
     public void Invalid_construction_paths_are_rejected() {
         Assert.NotNull(MethodCtorInfo.Validate(Ctor, null));
@@ -124,7 +137,7 @@ public class RegistrationApiTests {
         Assert.NotNull(MethodCtorInfo.ValidateMethodReturn(typeof(Payment).GetMethod("NotStatic")!));
         Assert.NotNull(MethodCtorInfo.ValidateMethodReturn(typeof(Payment).GetMethod("Generic")!));
         Assert.Null(MethodCtorInfo.ValidateMethodReturn(typeof(Payment).GetMethod("WrongReturn")!));
-        Refusals.Raises(ErrorCodes.ConstructionShapeNotUsable, () => new MethodCtorInfo(Ctor, []));
+        Refusals.Raises(ErrorCodes.ConstructionShapeNotUsable, () => _ = new MethodCtorInfo(Ctor, []));
     }
 
     [Fact]
@@ -269,7 +282,7 @@ public class RegistrationApiTests {
         }
         finally {
             TypeParsingInfo.TryRemove(type, out _);
-            TypeParser.Invalidate(schema, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(schema), ParserInvalidationMode.InvalidateReferences);
         }
     }
 
@@ -385,7 +398,7 @@ public class RegistrationApiTests {
         Refusals.Raises(ErrorCodes.ForeignGenericSource, () => TypeParsingInfo.GetOrAdd(typeof(Box<>))
             .AddPossibleConstruction(typeof(BoxDonorGeneric<int>).GetMethod("Create")!));
 
-        Refusals.Raises(ErrorCodes.ConstructionShapeNotUsable, () => TypeParsingInfo.GetOrAdd(typeof(Box<>))
+        Refusals.Raises(ErrorCodes.ForeignGenericSource, () => TypeParsingInfo.GetOrAdd(typeof(Box<>))
             .AddPossibleConstruction(typeof(BoxDonorTFromHost<int>).GetMethod("Create")!));
 
         ColumnInfo[] cols = [new("Value", typeof(int), false)];
@@ -515,6 +528,7 @@ public class RegistrationApiTests {
         Assert.False(INameComparer.TryGetTrueName(new TrueNameAttribute(null!), out _));
     }
 
+    [AttributeUsage(AttributeTargets.All)]
     public sealed class TrueNameAttribute(string? name) : Attribute {
         public string? Name { get; } = name;
     }
@@ -590,9 +604,9 @@ public class RegistrationApiTests {
     }
 
     [Fact]
-    public void Factory_return_generics_must_mirror_the_method_generics() {
+    public void Open_factory_generics_must_mirror_the_return_while_closed_factories_need_no_substitution() {
         Assert.NotNull(MethodCtorInfo.ValidateMethodReturn(typeof(FactoryHost).GetMethod("GenericToPlain")!));
-        Assert.NotNull(MethodCtorInfo.ValidateMethodReturn(typeof(FactoryHost).GetMethod("ClosedReturn")!));
+        Assert.Null(MethodCtorInfo.ValidateMethodReturn(typeof(FactoryHost).GetMethod("ClosedReturn")!));
         Assert.NotNull(MethodCtorInfo.ValidateMethodReturn(typeof(FactoryHost).GetMethod("HalfGenerics")!));
     }
 

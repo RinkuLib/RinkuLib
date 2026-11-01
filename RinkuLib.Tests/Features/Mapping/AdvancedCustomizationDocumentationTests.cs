@@ -1,9 +1,9 @@
 using Rinku.Mapping.Defaults;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping;
 
 /// <summary>Executable examples for docs/articles/customization/slot-rules.md.</summary>
 [Collection("GlobalMappingConfiguration")]
@@ -16,7 +16,6 @@ public class AdvancedCustomizationDocumentationTests {
 
     private sealed record PrefixTrack([DbPrefix] int Id, string Name);
     private sealed record GlobalPrefixTrack(int Id, string Name);
-
     [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
     private sealed class NullAsDefaultAttribute : Attribute, INullColHandlerMaker {
         public INullColHandler MakeColHandler(Type type, string? name, object[] attributes, object? member)
@@ -24,7 +23,6 @@ public class AdvancedCustomizationDocumentationTests {
     }
 
     private sealed record Stock([NullAsDefault] int Count);
-
     [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
     private sealed class ReusableSequentialAttribute : Attribute, IUsageFlagModifier {
         public void UpdateFlags(object? member, ref UsageFlags flags)
@@ -32,7 +30,6 @@ public class AdvancedCustomizationDocumentationTests {
     }
 
     private sealed record ReusablePair([NoName, ReusableSequential] int First, [NoName] int Second);
-
     [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
     private sealed class PositionalReusableAttribute : Attribute, IParamInfoMaker {
         public ParamInfo MakeMatcher(Type type, INullColHandler nulls, INameComparer names, string? name,
@@ -42,7 +39,6 @@ public class AdvancedCustomizationDocumentationTests {
     }
 
     private sealed record MakerPair([PositionalReusable] int First, [NoName] int Second);
-
     [Fact]
     [DocumentationExample("slot-rules.md", "name-attribute")]
     public void A_name_maker_adds_a_second_column_name() {

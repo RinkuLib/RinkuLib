@@ -21,4 +21,5 @@ public sealed class ConfigFile {
     public string OutputPath { get; set; } = string.Empty;
     public string? Namespace { get; set; }
     public bool IsInternal { get; set; }
+    public ConstantsSource? Constants { get; set; }
 }

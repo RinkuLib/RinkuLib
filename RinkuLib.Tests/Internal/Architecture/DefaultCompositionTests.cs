@@ -20,10 +20,10 @@ public class DefaultCompositionTests {
         public List<T> Items { get; } = [];
         public void Add(T item) => Items.Add(item);
     }
-    private struct ValueBag<T> {
+    private readonly struct ValueBag<T> {
         public List<T> Items { get; } = [];
         public ValueBag() { }
-        public void Add(T item) => Items.Add(item);
+        public readonly void Add(T item) => Items.Add(item);
     }
     private static class ReadOnlyBag<T> {
         public static IReadOnlyCollection<T> Finish(List<T> items) => items;
@@ -31,7 +31,6 @@ public class DefaultCompositionTests {
 
     private sealed class RejectingListInfo : TypeParsingInfo {
         public int Negotiations { get; private set; }
-
         public override void ValidateCanUseType(Type targetType) {
             if (targetType != typeof(List<>))
                 throw new InvalidOperationException();
@@ -156,7 +155,7 @@ public class DefaultCompositionTests {
         var bagType = typeof(RecursiveBag<>);
         var original = TypeParsingInfo.Get(bagType);
         var bagInfo = new MultiRowTypeParsingInfo(bagType.GetConstructor(Type.EmptyTypes)!,
-            bagType.GetMethod(nameof(RecursiveBag<int>.Add))!, null);
+            bagType.GetMethod(nameof(RecursiveBag<>.Add))!, null);
         try {
             TypeParsingInfo.AddOrSet(bagType, bagInfo);
             using var bagReader = Rows.Reader(columns, [6], [7]);
@@ -175,7 +174,7 @@ public class DefaultCompositionTests {
         var valueBagType = typeof(ValueBag<>);
         original = TypeParsingInfo.Get(valueBagType);
         var valueBagInfo = new MultiRowTypeParsingInfo(valueBagType.GetConstructor(Type.EmptyTypes)!,
-            valueBagType.GetMethod(nameof(ValueBag<int>.Add))!, null);
+            valueBagType.GetMethod(nameof(ValueBag<>.Add))!, null);
         try {
             TypeParsingInfo.AddOrSet(valueBagType, valueBagInfo);
             using var bagReader = Rows.Reader(columns, [8], [9]);
@@ -194,7 +193,7 @@ public class DefaultCompositionTests {
         var interfaceType = typeof(IReadOnlyCollection<>);
         original = TypeParsingInfo.Get(interfaceType);
         var interfaceInfo = new MultiRowTypeParsingInfo(typeof(List<>).GetConstructor(Type.EmptyTypes)!,
-            typeof(List<>).GetMethod(nameof(List<int>.Add))!, typeof(ReadOnlyBag<>).GetMethod(nameof(ReadOnlyBag<int>.Finish))!);
+            typeof(List<>).GetMethod(nameof(List<>.Add))!, typeof(ReadOnlyBag<>).GetMethod(nameof(ReadOnlyBag<>.Finish))!);
         try {
             TypeParsingInfo.AddOrSet(interfaceType, interfaceInfo);
             using var interfaceReader = Rows.Reader(columns, [10], [11]);
@@ -234,7 +233,7 @@ public class DefaultCompositionTests {
             var parameters = new QueryParameters(2, []);
             var coldReads = probe.InferredReads;
 
-            Assert.True(parameters.NeedToCache(new object?[] { 1, null }));
+            Assert.True(parameters.NeedToCache([1, null]));
             Assert.True(parameters.NeedToCache(new[] { true, false }.AsSpan()));
             Assert.False(parameters.IsCached(0));
             parameters.UpdateCachedIndexes();

@@ -12,7 +12,7 @@ namespace Rinku.Querying;
 /// <see cref="GetKey"/> or <see cref="GetSameKey(string)"/> when reference comparison is useful.
 /// </summary>
 public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, IDisposable, IGeneratedParserTarget {
-    private static readonly string[] DeadKeys = [null!];
+    private static readonly string[] DeadKeys = new string[1];
     /// <summary>The names available to a custom mapper.</summary>
     protected string[] _keys = Keys;
     [ExcludeFromCodeCoverage]
@@ -52,16 +52,16 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
     /// <summary>Gets the stored string instance that matches the name.</summary>
     /// <param name="key">The name to find.</param>
     /// <returns>The stored string instance or <see langword="null"/> when no name matches.</returns>
-    public string GetSameKey(string key) {
+    public string? GetSameKey(string key) {
         int i = GetIndex(key);
-        return i >= 0 ? _keys[i] : null!;
+        return i >= 0 ? _keys[i] : null;
     }
     /// <summary>Gets the stored string instance that matches the name.</summary>
     /// <param name="key">The name to find.</param>
     /// <returns>The stored string instance or <see langword="null"/> when no name matches.</returns>
-    public string GetSameKey(ReadOnlySpan<char> key) {
+    public string? GetSameKey(ReadOnlySpan<char> key) {
         int i = GetIndex(key);
-        return i >= 0 ? _keys[i] : null!;
+        return i >= 0 ? _keys[i] : null;
     }
     /// <summary>Finds the index after adding one character before <paramref name="value"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -163,7 +163,7 @@ public abstract class Mapper(string[] Keys) : IReadOnlyDictionary<string, int>, 
         if (keys.Length == 2)
             return GetTwoKeyMapper(keys[0], keys[1]);
         var builder = new AsciiMapperBuilder(keys);
-        if (builder.MaxDepth >= 0 || builder.UsedKeys is not null) {
+        if (builder.MaxDepth >= 0 || builder.UsedKeys.Length != 0) {
             var usedKeys = builder.UsedKeys;
             if (usedKeys.Length == 1)
                 return GetOneKeyMapper(usedKeys[0]);

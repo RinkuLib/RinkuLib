@@ -205,7 +205,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
         Type type = parameterObj.GetType();
         var accessor = QueryCommand.GetUseWithAccessor(type.TypeHandle.Value, type);
         var values = RentUseWithValues();
-        bool[]? affected = null;
+        bool[]? affected;
         try {
             affected = accessor.InvokeObject(parameterObj, values, needTarget: true);
             ApplyUseWithValues(values, affected);
@@ -214,24 +214,7 @@ public readonly struct QueryBuilderCommand<TCommand>(QueryCommand QueryCommand, 
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
-    public void UseWith<T>(T parameterObj) where T : notnull {
-        var values = RentUseWithValues();
-        bool[]? affected = null;
-        try {
-            if (!typeof(T).IsValueType) {
-                var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
-                affected = accessor.InvokeObject(parameterObj, values, needTarget: true);
-                ApplyUseWithValues(values, affected);
-            }
-            else {
-                var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
-                var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref accessor);
-                affected = typed.InvokeTyped(ref parameterObj, values, needTarget: true);
-                ApplyUseWithValues(values, affected);
-            }
-        }
-        finally { ReturnUseWithValues(values); }
-    }
+    public void UseWith<T>(T parameterObj) where T : notnull => UseWith(ref parameterObj);
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {

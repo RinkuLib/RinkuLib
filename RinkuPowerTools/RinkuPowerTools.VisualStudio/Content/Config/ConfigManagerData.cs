@@ -42,6 +42,8 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     private string? _editNamespace;
     private DatabaseType? _editDatabase;
     private bool _editIsInternal;
+    private QuerySourceType? _editConstantsType;
+    private string _editConstantsTarget = string.Empty;
 
     private bool _hasNameError;
     private bool _hasTargetError;
@@ -55,6 +57,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
 
         BrowseCommand = new AsyncCommand(BrowseAsync);
         BrowseFolderCommand = new AsyncCommand(BrowseFolderAsync);
+        BrowseConstantsCommand = new AsyncCommand(BrowseConstantsAsync);
         ShowConnectionStringCommand = new AsyncCommand(ShowConnectionStringAsync);
         TestConnectionCommand = new AsyncCommand(TestConnectionAsync);
         _ = LoadAsync();
@@ -108,6 +111,18 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     [DataMember] public string? EditNamespace { get => _editNamespace; set { if (SetProperty(ref _editNamespace, value)) RunValidation(); } }
     [DataMember] public DatabaseType? EditDatabase { get => _editDatabase; set { if (SetProperty(ref _editDatabase, value)) RunValidation(); } }
     [DataMember] public bool EditIsInternal { get => _editIsInternal; set { if (SetProperty(ref _editIsInternal, value)) RunValidation(); } }
+    [DataMember] public List<DisplayItem<QuerySourceType?>> ConstantsTypes { get; } = [new(null, "None"), new(QuerySourceType.FromFile, "SQL file"), new(QuerySourceType.Text, "Raw SQL"), new(QuerySourceType.StoredProcedure, "Stored procedure")];
+    [DataMember] public QuerySourceType? EditConstantsType {
+        get => _editConstantsType;
+        set { if (SetProperty(ref _editConstantsType, value)) { RaiseNotifyPropertyChangedEvent(nameof(ConstantsVisibility)); RaiseNotifyPropertyChangedEvent(nameof(ConstantsFileVisibility)); RaiseNotifyPropertyChangedEvent(nameof(ConstantsTextVisibility)); RaiseNotifyPropertyChangedEvent(nameof(ConstantsProcedureVisibility)); RunValidation(); } }
+    }
+    [DataMember] public string EditConstantsTarget { get => _editConstantsTarget; set { if (SetProperty(ref _editConstantsTarget, value)) RunValidation(); } }
+    [DataMember] public Visibility ConstantsVisibility => EditConstantsType is null ? Visibility.Collapsed : Visibility.Visible;
+    [DataMember] public Visibility ConstantsFileVisibility => EditConstantsType == QuerySourceType.FromFile ? Visibility.Visible : Visibility.Collapsed;
+    [DataMember] public Visibility ConstantsTextVisibility => EditConstantsType == QuerySourceType.Text ? Visibility.Visible : Visibility.Collapsed;
+    [DataMember] public Visibility ConstantsProcedureVisibility => EditConstantsType == QuerySourceType.StoredProcedure ? Visibility.Visible : Visibility.Collapsed;
+    [DataMember] public string? ConstantsError => EditConstantsType is not null && string.IsNullOrWhiteSpace(EditConstantsTarget) ? "A constants/enums source is required, or select None." : EditConstantsType == QuerySourceType.StoredProcedure && EditDatabase == DatabaseType.Sqlite ? "SQLite does not support stored procedures." : null;
+    private ConstantsSource? EditedConstants => EditConstantsType is { } type ? new ConstantsSource(type, EditConstantsTarget) : null;
 
     [DataMember] public string? NameError => _hasNameError ? "Name must be unique and a valid C# identifier." : null;
     public bool HasNameError {
@@ -156,6 +171,8 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
             EditNamespace = null;
             EditDatabase = null;
             EditIsInternal = false;
+            EditConstantsType = null;
+            EditConstantsTarget = string.Empty;
         }
         else {
             EditName = item.Name;
@@ -166,6 +183,9 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
             EditNamespace = item.Namespace;
             EditDatabase = item.Database;
             EditIsInternal = item.IsInternal;
+            var constants = item.Constants;
+            EditConstantsType = constants?.SourceType;
+            EditConstantsTarget = constants?.Target ?? string.Empty;
         }
         RunValidation();
     }
@@ -177,17 +197,19 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
                 || !string.IsNullOrWhiteSpace(EditTarget)
                 || !string.IsNullOrWhiteSpace(EditOutputPath)
                 || !string.IsNullOrWhiteSpace(EditNamespace)
-                || EditDatabase is not null;
+                || EditDatabase is not null || EditConstantsType is not null;
         return item.ConnectionSourceType != (SelectedSource?.SourceType ?? 0)
             || item.ConnectionTarget != EditTarget
             || item.ConnectionExtractionPath != EditExtractionPath
             || item.OutputPath != EditOutputPath
             || item.Namespace != EditNamespace
             || item.Database != EditDatabase
-            || item.IsInternal != EditIsInternal;
+            || item.IsInternal != EditIsInternal
+            || item.Constants?.SourceType != EditConstantsType
+            || (item.Constants?.Target ?? string.Empty) != (EditConstantsType is null ? string.Empty : EditConstantsTarget);
     }
 
-    protected override bool CanCommit() => !HasNameError && !HasTargetError && !HasExtractionPathError && HasUnsavedChanges();
+    protected override bool CanCommit() => !HasNameError && !HasTargetError && !HasExtractionPathError && ConstantsError is null && HasUnsavedChanges();
 
     public override async Task CommitAsync(object? arg, CancellationToken ct) {
         if (!CanCommit())
@@ -204,6 +226,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
         item.Namespace = string.IsNullOrWhiteSpace(EditNamespace) ? null : EditNamespace;
         item.Database = EditDatabase;
         item.IsInternal = EditIsInternal;
+        item.Constants = EditedConstants;
 
         await WriteFileAsync(item, ct);
         if (isNew) {
@@ -230,28 +253,17 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
         foreach (var file in files) {
             try {
                 var json = await File.ReadAllTextAsync(file);
-                var node = JsonNode.Parse(json) as JsonObject ?? [];
-
-                ConnectionSourceType? detectedType = null;
-                string? detectedTarget = null;
-
-                foreach (var pair in node) {
-                    if (Enum.TryParse<ConnectionSourceType>(pair.Key, true, out var type)) {
-                        detectedType = type;
-                        detectedTarget = pair.Value?.ToString();
-                        break;
-                    }
-                }
-
+                var settings = JsonSerializer.Deserialize<ExtensionSettings>(json) ?? throw new JsonException("Expected connection settings.");
                 _items.Add(new ConfigFile {
                     FilePath = file,
-                    Database = DatabaseProviders.TryParseType(node[nameof(ExtensionSettings.Database)]?.ToString(), out DatabaseType database) ? database : null,
-                    ConnectionSourceType = detectedType ?? ConnectionSourceType.RawConnectionString,
-                    ConnectionTarget = detectedTarget ?? string.Empty,
-                    ConnectionExtractionPath = node[nameof(ExtensionSettings.ConnectionExtractionPath)]?.ToString(),
-                    OutputPath = node[nameof(ExtensionSettings.OutputPath)]?.ToString() ?? string.Empty,
-                    Namespace = node[nameof(ExtensionSettings.Namespace)]?.ToString(),
-                    IsInternal = node[nameof(ExtensionSettings.IsInternal)]?.GetValue<bool>() ?? false
+                    Database = settings.Database,
+                    ConnectionSourceType = settings.ConnectionSourceType,
+                    ConnectionTarget = settings.ConnectionTarget,
+                    ConnectionExtractionPath = settings.ConnectionExtractionPath,
+                    OutputPath = settings.OutputPath,
+                    Namespace = settings.Namespace,
+                    IsInternal = settings.IsInternal,
+                    Constants = settings.Constants
                 });
             }
             catch { }
@@ -289,10 +301,18 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
         else
             json.Remove(nameof(ExtensionSettings.Database));
 
-        json[nameof(ExtensionSettings.ConnectionExtractionPath)] = file.ConnectionExtractionPath;
-        json[nameof(ExtensionSettings.OutputPath)] = file.OutputPath;
-        json[nameof(ExtensionSettings.Namespace)] = file.Namespace;
-        json[nameof(ExtensionSettings.IsInternal)] = file.IsInternal;
+        SetOptional(nameof(ExtensionSettings.ConnectionExtractionPath), file.ConnectionExtractionPath);
+        SetOptional(nameof(ExtensionSettings.OutputPath), file.OutputPath);
+        SetOptional(nameof(ExtensionSettings.Namespace), file.Namespace);
+        if (file.IsInternal) json[nameof(ExtensionSettings.IsInternal)] = true;
+        else json.Remove(nameof(ExtensionSettings.IsInternal));
+        foreach (string key in new[] { "ConstantsSQL", "ConstantsPath", "ConstantsProc" }) json.Remove(key);
+        if (file.Constants is { } constants) json[constants.PropertyName] = constants.Target;
+
+        void SetOptional(string name, string? value) {
+            if (string.IsNullOrWhiteSpace(value)) json.Remove(name);
+            else json[name] = value;
+        }
 
         await using var output = File.Create(file.FilePath);
         await JsonSerializer.SerializeAsync(output, json, SettingsProvider.PrettyIndent, ct);
@@ -304,6 +324,7 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
         HasTargetError = string.IsNullOrWhiteSpace(EditTarget);
         HasExtractionPathError = (SelectedSource?.RequiresExtractionPath ?? false) && string.IsNullOrWhiteSpace(EditExtractionPath);
         RaiseNotifyPropertyChangedEvent(nameof(IsCommitEnabled));
+        RaiseNotifyPropertyChangedEvent(nameof(ConstantsError));
         return !HasNameError && !HasTargetError && !HasExtractionPathError;
     }
     private bool CheckNameIsValid() {
@@ -318,6 +339,16 @@ public sealed class ConfigManagerData : ListManagementShell<ConfigFile> {
     #endregion
 
     #region Commands
+
+    [DataMember] public IAsyncCommand BrowseConstantsCommand { get; }
+    private async Task BrowseConstantsAsync(object? arg, CancellationToken ct) {
+        var options = new FileDialogOptions { Title = "Select constants/enums SQL file", InitialDirectory = _projectDirectory, Filters = new DialogFilters([new("SQL files", "*.sql")]) };
+        string? path = await _extensibility.Shell().ShowOpenFileDialogAsync(options, ct);
+        if (!string.IsNullOrWhiteSpace(path)) {
+            string relative = Path.GetRelativePath(_projectDirectory, path);
+            EditConstantsTarget = Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ? path : relative.Replace('\\', '/');
+        }
+    }
 
     [DataMember] public IAsyncCommand BrowseCommand { get; }
     private async Task BrowseAsync(object? arg, CancellationToken ct) {

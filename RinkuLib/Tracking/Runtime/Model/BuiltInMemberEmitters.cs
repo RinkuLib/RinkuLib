@@ -1,24 +1,28 @@
 using System.Reflection;
 using System.Reflection.Emit;
+using Rinku.Tracking.Runtime.Model;
 
 namespace Rinku.Tracking.Runtime;
 
-/// <summary>Provides equality checks used by generated members.</summary>
+/// <summary>Copies and compares values for generated members.</summary>
 [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-public static class RuntimeTrackingComparison
+public static class RuntimeTrackingValue
 {
     /// <summary>Returns whether two values differ.</summary>
     public static bool Different<T>(T left, T right) => !EqualityComparer<T>.Default.Equals(left, right);
+    /// <summary>Copies a value through its tracking-value contract.</summary>
+    public static T? Copy<T>(T? value) where T : ITrackingValue<T> => value is null ? value : value.Copy();
 }
 
 /// <summary>Reads a member directly from the accepted original.</summary>
-public sealed class RuntimeOriginalReadOnlyEmitter<TOriginal> : RuntimeTrackingMemberEmitter<TOriginal>
+public sealed class RuntimeOriginalReadOnlyEmitter<TOriginal> : RuntimeTrackingMemberEmitter<TOriginal>, IRuntimeReadOnlyEmitter<TOriginal>, IRuntimeNestedEmitter<TOriginal>
 {
     private readonly RuntimeOriginalMemberAccess _access;
 
     internal RuntimeOriginalReadOnlyEmitter(RuntimeOriginalMemberAccess access) => _access = access;
 
-    internal RuntimeOriginalMemberAccess Access => _access;
+    RuntimeTrackingMemberEmitter<TOriginal> IRuntimeReadOnlyEmitter<TOriginal>.AsReadOnly() => new RuntimeOriginalReadOnlyEmitter<TOriginal>(_access);
+    RuntimeTrackingMemberEmitter<TOriginal> IRuntimeNestedEmitter<TOriginal>.WithNestedEdit(NestedEditMode mode) => new RuntimeNestedSnapshotEmitter<TOriginal>(_access, mode);
 
     /// <inheritdoc/>
     public override bool CanRead => true;
@@ -34,13 +38,14 @@ public sealed class RuntimeOriginalReadOnlyEmitter<TOriginal> : RuntimeTrackingM
 }
 
 /// <summary>Edits an original member through snapshot storage.</summary>
-public sealed class RuntimeOriginalSnapshotEmitter<TOriginal> : RuntimeTrackingMemberEmitter<TOriginal>
+public sealed class RuntimeOriginalSnapshotEmitter<TOriginal> : RuntimeTrackingMemberEmitter<TOriginal>, IRuntimeReadOnlyEmitter<TOriginal>, IRuntimeNestedEmitter<TOriginal>
 {
     private readonly RuntimeOriginalMemberAccess _access;
 
     internal RuntimeOriginalSnapshotEmitter(RuntimeOriginalMemberAccess access) => _access = access;
 
-    internal RuntimeOriginalMemberAccess Access => _access;
+    RuntimeTrackingMemberEmitter<TOriginal> IRuntimeReadOnlyEmitter<TOriginal>.AsReadOnly() => new RuntimeOriginalReadOnlyEmitter<TOriginal>(_access);
+    RuntimeTrackingMemberEmitter<TOriginal> IRuntimeNestedEmitter<TOriginal>.WithNestedEdit(NestedEditMode mode) => new RuntimeNestedSnapshotEmitter<TOriginal>(_access, mode);
     /// <inheritdoc/>
     public override bool CanRead => true;
     /// <inheritdoc/>
@@ -72,6 +77,7 @@ public sealed class RuntimeOriginalSnapshotEmitter<TOriginal> : RuntimeTrackingM
         if (!CanWrite) throw new InvalidOperationException($"Runtime member '{context.Member.Name}' is read-only.");
         context.EmitEnsureEdit(il);
         il.Emit(OpCodes.Ldarg_1);
+        EmitCopy(context.Member.ValueType, il);
         il.Emit(OpCodes.Stfld, SnapshotField(context));
     }
 
@@ -79,6 +85,7 @@ public sealed class RuntimeOriginalSnapshotEmitter<TOriginal> : RuntimeTrackingM
     protected internal override void EmitInitializeSnapshot(RuntimeTrackingMemberEmitContext<TOriginal> context, ILGenerator il)
     {
         _access.EmitRead(context, il);
+        EmitCopy(context.Member.ValueType, il);
         il.Emit(OpCodes.Stfld, SnapshotField(context));
     }
 
@@ -102,6 +109,7 @@ public sealed class RuntimeOriginalSnapshotEmitter<TOriginal> : RuntimeTrackingM
         {
             context.EmitLoadEdit(value);
             value.Emit(OpCodes.Ldfld, SnapshotField(context));
+            EmitCopy(context.Member.ValueType, value);
         });
         il.MarkLabel(done);
     }
@@ -121,14 +129,22 @@ public sealed class RuntimeOriginalSnapshotEmitter<TOriginal> : RuntimeTrackingM
         BoxIfNeeded(context.Member.ValueType, il);
     }
 
-    internal RuntimeOriginalReadOnlyEmitter<TOriginal> AsReadOnly() => new(_access);
+
 
     private static FieldBuilder SnapshotField(RuntimeTrackingMemberEmitContext<TOriginal> context)
         => context.SnapshotField ?? throw new InvalidOperationException($"Runtime member '{context.Member.Name}' has no snapshot field.");
 
+    private static void EmitCopy(Type type, ILGenerator il)
+    {
+        if (typeof(ITrackingValue<>).MakeGenericType(type).IsAssignableFrom(type))
+        {
+            il.Emit(OpCodes.Call, typeof(RuntimeTrackingValue).GetMethod(nameof(RuntimeTrackingValue.Copy))!.MakeGenericMethod(type));
+        }
+    }
+
     internal static MethodInfo DifferentMethod(Type type)
-        => typeof(RuntimeTrackingComparison).GetMethod(nameof(RuntimeTrackingComparison.Different), BindingFlags.Static | BindingFlags.Public)?.MakeGenericMethod(type)
-           ?? throw new MissingMethodException(typeof(RuntimeTrackingComparison).FullName, nameof(RuntimeTrackingComparison.Different));
+        => typeof(RuntimeTrackingValue).GetMethod(nameof(RuntimeTrackingValue.Different), BindingFlags.Static | BindingFlags.Public)?.MakeGenericMethod(type)
+           ?? throw new MissingMethodException(typeof(RuntimeTrackingValue).FullName, nameof(RuntimeTrackingValue.Different));
 
     internal static void BoxIfNeeded(Type type, ILGenerator il)
     {
@@ -263,7 +279,7 @@ public sealed class RuntimeDirectSnapshotEmitter<TOriginal> : RuntimeTrackingMem
 }
 
 /// <summary>Edits a detached copy of a nested member.</summary>
-public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMemberEmitter<TOriginal>
+public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMemberEmitter<TOriginal>, IRuntimeReadOnlyEmitter<TOriginal>, IRuntimeNestedEmitter<TOriginal>
 {
     private readonly RuntimeOriginalMemberAccess _access;
     private readonly NestedEditMode _mode;
@@ -311,6 +327,10 @@ public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMem
         if (!CanWrite) throw new InvalidOperationException($"Nested root '{context.Member.Name}' is read-only; mutate it through an ensured edit/path instead.");
         context.EmitEnsureEdit(il);
         il.Emit(OpCodes.Ldarg_1);
+        if (_mode == NestedEditMode.Replacement)
+        {
+            il.Emit(OpCodes.Call, CopierMethod(context.Member.ValueType, nameof(RuntimeNestedCopier<>.Clone)));
+        }
         il.Emit(OpCodes.Stfld, SnapshotField(context));
     }
 
@@ -318,7 +338,7 @@ public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMem
     protected internal override void EmitInitializeSnapshot(RuntimeTrackingMemberEmitContext<TOriginal> context, ILGenerator il)
     {
         _access.EmitRead(context, il);
-        il.Emit(OpCodes.Call, CopierMethod(context.Member.ValueType, nameof(RuntimeNestedCopier<object>.Clone)));
+        il.Emit(OpCodes.Call, CopierMethod(context.Member.ValueType, nameof(RuntimeNestedCopier<>.Clone)));
         il.Emit(OpCodes.Stfld, SnapshotField(context));
     }
 
@@ -328,7 +348,7 @@ public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMem
         _access.EmitRead(context, il);
         context.EmitLoadEdit(il);
         il.Emit(OpCodes.Ldfld, SnapshotField(context));
-        il.Emit(OpCodes.Call, CopierMethod(context.Member.ValueType, nameof(RuntimeNestedCopier<object>.HasChanges)));
+        il.Emit(OpCodes.Call, CopierMethod(context.Member.ValueType, nameof(RuntimeNestedCopier<>.HasChanges)));
     }
 
     /// <inheritdoc/>
@@ -343,7 +363,7 @@ public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMem
             _access.EmitRead(context, il);
             context.EmitLoadEdit(il);
             il.Emit(OpCodes.Ldfld, SnapshotField(context));
-            il.Emit(OpCodes.Call, CopierMethod(context.Member.ValueType, nameof(RuntimeNestedCopier<object>.CopyInPlace)));
+            il.Emit(OpCodes.Call, CopierMethod(context.Member.ValueType, nameof(RuntimeNestedCopier<>.CopyInPlace)));
         }
         else
         {
@@ -351,6 +371,7 @@ public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMem
             {
                 context.EmitLoadEdit(value);
                 value.Emit(OpCodes.Ldfld, SnapshotField(context));
+                value.Emit(OpCodes.Call, CopierMethod(context.Member.ValueType, nameof(RuntimeNestedCopier<>.Clone)));
             });
         }
 
@@ -375,7 +396,8 @@ public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMem
     /// <inheritdoc/>
     protected internal override IReadOnlyList<MemberInfo> GetNestedRuntimePathMembers() => _paths;
 
-    internal RuntimeOriginalMemberAccess Access => _access;
+    RuntimeTrackingMemberEmitter<TOriginal> IRuntimeReadOnlyEmitter<TOriginal>.AsReadOnly() => new RuntimeOriginalReadOnlyEmitter<TOriginal>(_access);
+    RuntimeTrackingMemberEmitter<TOriginal> IRuntimeNestedEmitter<TOriginal>.WithNestedEdit(NestedEditMode mode) => new RuntimeNestedSnapshotEmitter<TOriginal>(_access, mode);
 
     private static FieldBuilder SnapshotField(RuntimeTrackingMemberEmitContext<TOriginal> context)
         => context.SnapshotField ?? throw new InvalidOperationException($"Nested runtime member '{context.Member.Name}' has no snapshot field.");
@@ -394,6 +416,6 @@ public sealed class RuntimeNestedSnapshotEmitter<TOriginal> : RuntimeTrackingMem
         foreach (FieldInfo field in type.GetFields(flags))
             if (!field.IsStatic) members.Add(field);
         members.Sort(static (x, y) => string.CompareOrdinal(x.Name, y.Name));
-        return members.ToArray();
+        return [.. members];
     }
 }

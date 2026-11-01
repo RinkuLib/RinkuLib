@@ -26,7 +26,8 @@ public static class MergeXAMLEngine {
             var (featureTagEnd, featureAttrs) = ParseAttributes(feature);
 
             var fullOutput = Path.Combine(outputPath, GetLogicalName(projectRoot, file, pattern));
-            Directory.CreateDirectory(Path.GetDirectoryName(fullOutput)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullOutput)
+                ?? throw new InvalidOperationException($"Could not determine the output directory for {fullOutput}."));
 
             using (var writer = new StreamWriter(fullOutput)) {
                 writer.Write(DataTemplate);

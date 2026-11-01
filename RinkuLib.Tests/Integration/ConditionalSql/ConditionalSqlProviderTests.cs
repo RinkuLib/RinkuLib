@@ -6,7 +6,7 @@ using Rinku;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.ConditionalSql;
 
 /// <summary>
 /// A seeded table both dialects accept, so one set of conditional templates can be run against either
@@ -34,14 +34,13 @@ public abstract class ConditionalSqlFixture<TCnn> : DBFixture<TCnn> where TCnn :
         await cnn.OpenAsync();
         await Drop.ExecuteAsync(cnn);
         await Create.ExecuteAsync(cnn);
-        foreach (var row in Seed)
-            await Insert.ExecuteAsync(cnn, new { row.Id, row.Name, row.GenreId, row.UnitPrice });
+        foreach (var (Id, Name, GenreId, UnitPrice) in Seed)
+            await Insert.ExecuteAsync(cnn, new { Id, Name, GenreId, UnitPrice });
     }
 }
 
 public class SqlServerConditionalFixture : ConditionalSqlFixture<SqlConnection> { }
 public class PostgresConditionalFixture : ConditionalSqlFixture<NpgsqlConnection> { }
-
 /// <summary>
 /// The conditional-SQL rules run against a real engine, which is the only thing that can say whether a
 /// rendered template actually parses. A string comparison accepts <c>IN ()</c> or a half-closed
@@ -51,7 +50,6 @@ public class PostgresConditionalFixture : ConditionalSqlFixture<NpgsqlConnection
 public abstract class ConditionalSqlSuite {
     /// <summary>A fresh connection to whichever engine this run is aimed at.</summary>
     protected abstract DbConnection Connect();
-
     /// <summary>
     /// One command per suite rather than one shared across the engines. A command reuses the row parser it
     /// learned from the first result it saw, and nothing accounts for a provider typing the same query

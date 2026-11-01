@@ -13,12 +13,12 @@ public struct QueryFactory {
     /// injects raw text, <c>N</c> writes a number. App-wide and mutable, add a letter here to register your
     /// own handler for every command.
     /// </summary>
-    public static readonly LetterMap<HandlerGetter<IQuerySegmentHandler>> BaseHandlerMapper = new();
+    public static readonly LetterMap<HandlerGetter<IQuerySegmentHandler>> BaseHandlerMapper = [];
 #pragma warning disable CA2211
     /// <summary>The character that marks a variable when a command does not name its own. <c>@</c> to start.</summary>
     public static char DefaultVariableChar = '@';
 #pragma warning restore CA2211
-    /// <summary>The template text with the markers stripped, the SQL a run with everything present would send.</summary>
+    /// <summary>The template text with its markers stripped and every optional part included.</summary>
     public string Query;
     /// <summary>The template broken into the runs of text and handler spots that make up the SQL.</summary>
     public QuerySegment[] Segments;
@@ -37,7 +37,7 @@ public struct QueryFactory {
     /// <summary>How many conditional markers are neither a variable nor a projected column.</summary>
     public int NbNonVarComment;
 
-    /// <summary>Which base-handler letters are free to use, the ones a special handler has not claimed.</summary>
+    /// <summary>The base-handler letters not claimed by a special handler.</summary>
     public uint BaseHandlerPresenceMap;
     /// <summary>Whether a suffix letter is a base handler that is free to use here.</summary>
     public readonly bool IsBaseHandler(char c) {
@@ -161,6 +161,7 @@ public struct QueryFactory {
     }
 
     private readonly Condition GetOptionalCond(ref CondInfo cond) {
+        string condName = cond.Cond ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "an optional condition was missing its name");
         var segInd = 0;
         while (Segments[segInd].Start != cond.StartIndex)
             segInd++;
@@ -171,8 +172,8 @@ public struct QueryFactory {
             Segments[end].IsSection = cond.NextSegmentIsSection;
         if (segInd - 1 >= 0 && Segments[segInd - 1].Handler is null)
             Segments[segInd - 1].ExcessOrInd = cond.PrevSegmentExcess;
-        if (!Mapper.TryGetValue(cond.Cond, out var condMapperInd))
-            throw new RinkuTemplateException(ErrorCodes.ConditionVariableNotInQuery, $"the marker names \"{cond.Cond}\", which the query does not contain");
+        if (!Mapper.TryGetValue(condName, out var condMapperInd))
+            throw new RinkuTemplateException(ErrorCodes.ConditionVariableNotInQuery, $"the marker names \"{condName}\", which the query does not contain");
         var isOrIdentifier = 0;
         if (cond.Type == CondInfo.OrComment)
             isOrIdentifier = -1;
@@ -180,13 +181,16 @@ public struct QueryFactory {
     }
 
     private readonly bool SetHandler(ref CondInfo cond) {
+        string condName = cond.Cond ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "a special condition was missing its name");
         var segInd = 0;
         if (cond.Type < CondInfo.Special)
             return false;
         while (Segments[segInd].Start != cond.VarIndex)
             segInd++;
         if (BaseHandlerMapper.TryGetValue(cond.Type, out var getter))
-            Segments[segInd].Handler = getter(Mapper.GetSameKey(cond.Cond));
+            Segments[segInd].Handler = getter(Mapper.GetSameKey(condName)
+                ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant,
+                    $"the special condition {condName} has no matching mapper key"));
         else
             Segments[segInd].Handler =
 #if NET8_0_OR_GREATER
@@ -195,7 +199,7 @@ public struct QueryFactory {
                 QuerySegmentHandler
 #endif
                 .NotSet;
-        Segments[segInd].ExcessOrInd = Mapper[cond.Cond];
+        Segments[segInd].ExcessOrInd = Mapper[condName];
         return true;
     }
 
@@ -208,17 +212,18 @@ public struct QueryFactory {
         var keys = ArrayPool<string>.Shared.Rent(nbKeys);
         for (int i = 0; i < condInfos.Length; i++) {
             var cond = condInfos[i];
+            string condName = cond.Cond ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "a condition was missing its name");
             if (cond.Type >= CondInfo.Special) {
                 if (IsBaseHandler(cond.Type))
-                    keys[baseHandlerInd++] = cond.Cond;
+                    keys[baseHandlerInd++] = condName;
                 else
-                    keys[specialHandlersInd++] = cond.Cond;
+                    keys[specialHandlersInd++] = condName;
             }
             else if (cond.Type == CondInfo.None)
-                keys[normalVariableInd++] = cond.Cond;
+                keys[normalVariableInd++] = condName;
             else if (CondInfo.IsComment(cond.Type))
-                if (cond.Cond[0] != variableChar)
-                    keys[commentInd++] = cond.Cond;
+                if (condName[0] != variableChar)
+                    keys[commentInd++] = condName;
         }
         var mapper = Mapper.GetMapper(keys.AsSpan(0, nbKeys));
         var count = mapper.Count;
@@ -242,11 +247,12 @@ public struct QueryFactory {
         segmentIndexes.Add(0);
         for (int i = 0; i < condInfos.Length; i++) {
             ref var cond = ref condInfos[i];
+            string condName = cond.Cond ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "a condition was missing its name");
             if (!cond.IsFinished)
-                throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"conditions {cond.Cond} was not finished [{cond.StartIndex}-{cond.EndIndex}]");
+                throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"conditions {condName} was not finished [{cond.StartIndex}-{cond.EndIndex}]");
             if (cond.Type >= CondInfo.Special) {
                 segmentIndexes.Add(cond.VarIndex);
-                segmentIndexes.Add(cond.VarIndex + cond.Cond.Length + 2);
+                segmentIndexes.Add(cond.VarIndex + condName.Length + 2);
                 if (IsBaseHandler(cond.Type))
                     NbBaseHandlers++;
                 else
@@ -255,7 +261,7 @@ public struct QueryFactory {
             else if (cond.Type == CondInfo.None)
                 NbNormalVar++;
             else if (CondInfo.IsComment(cond.Type))
-                if (cond.Cond[0] != variableChar)
+                if (condName[0] != variableChar)
                     NbNonVarComment++;
             if (cond.IsRequired) {
                 NbRequired++;

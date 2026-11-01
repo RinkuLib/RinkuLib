@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.Internal;
 
 /// <summary>
 /// Malformed templates the parser must reject, and quoting/nesting constructs it must scan past without
@@ -12,7 +12,7 @@ namespace RinkuLib.Tests.Templating;
 public class ParsingEdgeCaseTests {
     [Fact]
     public void Query_shorter_than_two_characters_is_rejected()
-        => Refusals.Raises(ErrorCodes.QueryTooShort, () => new QueryCommand("a"));
+        => Refusals.Raises(ErrorCodes.QueryTooShort, () => _ = new QueryCommand("a"));
 
     [Theory]
     [InlineData("SELECT Name FROM Users WHERE ID >= @Min /*Old*/AND ID > 0 ORDER BY ID")]
@@ -58,29 +58,29 @@ public class ParsingEdgeCaseTests {
 
     [Fact]
     public void Unclosed_condition_comment_is_rejected()
-        => Refusals.Raises(ErrorCodes.UnclosedComment, () => new QueryCommand("SELECT /*Cond FROM Users"));
+        => Refusals.Raises(ErrorCodes.UnclosedComment, () => _ = new QueryCommand("SELECT /*Cond FROM Users"));
 
     [Fact]
     public void Whitespace_only_condition_is_rejected()
-        => Refusals.Raises(ErrorCodes.EmptyConditionKey, () => new QueryCommand("SELECT /*A&*/Col FROM Users"));
+        => Refusals.Raises(ErrorCodes.EmptyConditionKey, () => _ = new QueryCommand("SELECT /*A&*/Col FROM Users"));
 
     [Fact]
     public void Unclosed_literal_comment_is_rejected()
-        => Refusals.Raises(ErrorCodes.UnclosedComment, () => new QueryCommand("SELECT /*~ still going FROM Users"));
+        => Refusals.Raises(ErrorCodes.UnclosedComment, () => _ = new QueryCommand("SELECT /*~ still going FROM Users"));
 
     [Fact]
     public void Unbalanced_closing_paren_is_rejected()
-        => Refusals.Raises(ErrorCodes.UnbalancedScope, () => new QueryCommand("SELECT a) FROM Users"));
+        => Refusals.Raises(ErrorCodes.UnbalancedScope, () => _ = new QueryCommand("SELECT a) FROM Users"));
 
     [Fact]
     public void Nesting_deeper_than_the_limit_is_rejected() {
         var query = "SELECT " + new string('(', 65) + "1" + new string(')', 65) + " x";
-        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => new QueryCommand(query));
+        Refusals.Raises(ErrorCodes.ScopeTooDeep, () => _ = new QueryCommand(query));
     }
 
     [Fact]
     public void Always_used_marker_outside_a_projection_is_rejected()
-        => Refusals.Raises(ErrorCodes.ProjectionOnlyConstruct, () => new QueryCommand("SELECT A!, B FROM Users"));
+        => Refusals.Raises(ErrorCodes.ProjectionOnlyConstruct, () => _ = new QueryCommand("SELECT A!, B FROM Users"));
 
     [Fact]
     public void A_literal_comment_is_preserved() {

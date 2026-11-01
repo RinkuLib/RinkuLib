@@ -1,8 +1,8 @@
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.ReadingOrder;
 
 /// <summary>Executable examples for docs/articles/mapping/reading-order.md.</summary>
 public class AdvancedReadingOrderDocumentationTests {
@@ -100,7 +100,7 @@ public class AdvancedReadingOrderDocumentationTests {
     [Fact]
     [DocumentationExample("reading-order.md", "runtime-reading")]
     public void Runtime_rule_replaces_the_selected_slot() {
-        var info = Assert.IsAssignableFrom<ICanProvideConstructions>(TypeParsingInfo.GetOrAdd<RuntimePerson>());
+        var info = Assert.IsType<ICanProvideConstructions>(TypeParsingInfo.GetOrAdd<RuntimePerson>(), exactMatch: false);
         MethodCtorInfo path = info.PossibleConstructors[0];
         ParamInfo original = path.Parameters[1];
         path.Parameters[1] = original.WithColModifier(FlagUpdater.SequentialRead);

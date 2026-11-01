@@ -22,7 +22,8 @@ public sealed class EqualityGroupingRule : IGroupingRule {
             var components = new (IBoundaryReader, IBoundaryField)[Sources.Length];
             for (int i = 0; i < Sources.Length; i++) {
                 var (name, type) = Resolve(Sources[i], spanningType, columns);
-                var reader = GroupKeyNegotiation.NegotiateReader(name, type, columns, colModifier, Sources[i].ToString()!);
+                var sourceName = Sources[i].ToString() ?? throw new RinkuConfigurationException(ErrorCodes.OperationNotSupportedForType, "A grouping source returned a null name.");
+                var reader = GroupKeyNegotiation.NegotiateReader(name, type, columns, colModifier, sourceName);
                 components[i] = (build.Reader(reader, type), build.Field(type));
             }
             return new EqualityBoundary(components);
@@ -45,7 +46,7 @@ public sealed class EqualityGroupingRule : IGroupingRule {
     private static object[] RequireSources<T>(T[] sources) {
         if (sources is null || sources.Length == 0)
             throw new RinkuConfigurationException(ErrorCodes.GroupKeyUnmapped, "an equality group key requires at least one source");
-        return sources.Cast<object>().ToArray();
+        return [.. sources.Cast<object>()];
     }
     private static MemberInfo Closed(Type spanningType, MemberInfo member) {
         if (member.DeclaringType is { IsGenericTypeDefinition: true } && spanningType.IsGenericType)

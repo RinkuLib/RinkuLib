@@ -8,6 +8,7 @@ using System.Data.Common;
 namespace RinkuPowerTools;
 
 public static class MainClassGenerator {
+    private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fff'Z'";
     public static async Task<string> GenerateClassAsync(ExtensionSettings settings, string baseNamespace, CancellationToken ct) {
         DatabaseProvider provider = settings.GetDatabaseProvider();
         using DbConnection connection = provider.CreateConnection(settings.ConnectionString ?? throw new InvalidOperationException("The connection string was not resolved."));
@@ -39,15 +40,15 @@ public static class MainClassGenerator {
         return sb.ToString();
     }
     public static async Task<string> GenerateClassAsync(SchemaDiscoverer discoverer, DbConnection connection, ExtensionSettings settings, string baseNamespace, CancellationToken ct) {
-        await EnsureSupportFileAsync(settings, baseNamespace, ct);
         string fullPathDirectory = settings.GetFullPath(settings.OutputPath);
-        if (string.IsNullOrWhiteSpace(settings.ClassName))
-            settings.ClassName = "DbCommands";
-        string fullPathFile = Path.Combine(fullPathDirectory, $"{settings.ClassName}.rinku.cs");
+        string className = string.IsNullOrWhiteSpace(settings.ClassName) ? "DbCommands" : settings.ClassName;
+        settings.ClassName = className;
+        string fullPathFile = Path.Combine(fullPathDirectory, $"{className}.rinku.cs");
         var code = await GenerateClassCodeAsync(discoverer, GetCompilationUnit(fullPathFile), connection, settings, baseNamespace, ct);
 
         if (!Directory.Exists(fullPathDirectory))
             Directory.CreateDirectory(fullPathDirectory);
+        await EnsureSupportFileAsync(settings, baseNamespace, ct);
         await File.WriteAllTextAsync(fullPathFile, code, Encoding.UTF8, ct);
         return fullPathFile;
     }
@@ -55,7 +56,8 @@ public static class MainClassGenerator {
         string path = Path.Combine(settings.GetFullPath(string.Empty), ".PowerTools.rinku.cs");
 
         string content = GenerateSupportFile(baseNamespace);
-        await File.WriteAllTextAsync(path, content, Encoding.UTF8, ct);
+        if (!File.Exists(path) || await File.ReadAllTextAsync(path, ct) != content)
+            await File.WriteAllTextAsync(path, content, Encoding.UTF8, ct);
     }
     private static string GenerateSupportFile(string baseNamespace) {
         return $$"""
@@ -69,9 +71,10 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using System.IO;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 
-namespace {{baseNamespace}};
+namespace {{baseNamespace}} {
 
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class TrueNameAttribute(string name) : Attribute {
@@ -81,13 +84,7 @@ public sealed class TrueNameAttribute(string name) : Attribute {
 public static class RinkuPowerTools {
     public static readonly ConcurrentDictionary<string, string> SqlFiles = new(StringComparer.OrdinalIgnoreCase);
 
-    public static string GetSqlFile(string path) =>
-        SqlFiles.GetOrAdd(
-            path,
-            static path => File.ReadAllText(
-                Path.IsPathRooted(path)
-                    ? path
-                    : Path.Combine(AppContext.BaseDirectory, path)));
+    public static string GetSqlFile(string path) => SqlFiles.GetOrAdd(path, static path => File.ReadAllText(Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path)));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static DbParameter Add(this DbCommand command, string name, object value) {
@@ -129,14 +126,31 @@ public static class RinkuPowerTools {
         return p;
     }
 }
+
+}
+
+namespace RinkuPowerTools.Generated {
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Method | AttributeTargets.Constructor)]
+    public sealed class SchemaAttribute(string? lastUpdated = null) : Attribute {
+        public DateTime? LastUpdated { get; } = lastUpdated is null ? null : DateTime.Parse(lastUpdated, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+    }
+
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class ResultSetAttribute(Type type) : Attribute {
+        public Type Type { get; } = type;
+    }
+}
 """;
     }
     public static async Task<string> GenerateClassCodeAsync(SchemaDiscoverer discoverer, CompilationUnitSyntax? oldRoot, DbConnection connection, ExtensionSettings settings, string baseNamespace, CancellationToken ct) {
+        string? constants = settings.Constants is null ? null : await ConstantsGenerator.GenerateAsync(connection, settings, ct);
         var classSb = new StringBuilder();
         var dtoSb = new StringBuilder();
+        var hooks = new HashSet<string>(StringComparer.Ordinal);
         string @namespace = string.IsNullOrWhiteSpace(settings.Namespace) ? DeduceNamespaceFromPath(baseNamespace, settings.OutputPath) : settings.Namespace;
-        AppendFileHeaders(classSb, settings.ClassName!, @namespace, baseNamespace, settings.IsInternal);
-        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm'Z'");
+        string className = string.IsNullOrWhiteSpace(settings.ClassName) ? "DbCommands" : settings.ClassName;
+        AppendFileHeaders(classSb, className, @namespace, baseNamespace, settings.IsInternal, settings.Queries.Count > 0);
+        var timestamp = DateTime.UtcNow.ToString(TimestampFormat);
 
         foreach (var query in settings.Queries) {
             int classLength = classSb.Length;
@@ -144,6 +158,10 @@ public static class RinkuPowerTools {
             try {
                 var schema = await discoverer.DiscoverSchemaAsync(settings, connection, query, ct);
                 ProcessQuery(classSb, dtoSb, oldRoot, query, schema, timestamp);
+                if (query.GenerateHooks)
+                {
+                    WriteHooks(classSb, hooks, query.MethodName.TrimStart('@'), schema.Parameters);
+                }
             }
             catch (Exception ex) {
                 classSb.Length = classLength;
@@ -151,23 +169,42 @@ public static class RinkuPowerTools {
                 AppendErrorBlock(classSb, query, ex);
             }
         }
-        classSb.AppendLine("}");
-        return classSb.Append(dtoSb).ToString();
+        if (settings.Queries.Count > 0)
+            classSb.AppendLine("}");
+        classSb.Append(dtoSb);
+        string code = classSb.ToString();
+        if (constants is not null) {
+            var constantTree = CSharpSyntaxTree.ParseText(constants, cancellationToken: ct);
+            var errors = constantTree.GetDiagnostics(ct).Where(error => error.Severity == DiagnosticSeverity.Error).ToArray();
+            if (errors.Length > 0) throw new InvalidOperationException("Invalid generated constants: " + string.Join("; ", errors.Select(error => error.ToString())));
+            var existing = CSharpSyntaxTree.ParseText(code, cancellationToken: ct).GetRoot(ct).DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Where(type => type.Parent is BaseNamespaceDeclarationSyntax).Select(type => type.Identifier.ValueText).ToHashSet(StringComparer.Ordinal);
+            foreach (var type in constantTree.GetRoot(ct).ChildNodes().OfType<BaseTypeDeclarationSyntax>())
+                if (existing.Contains(type.Identifier.ValueText)) throw new InvalidOperationException($"ConstantDefinition '{type.Identifier.ValueText}' collides with a generated command/result type.");
+            code += "\n" + string.Concat(constantTree.GetCompilationUnitRoot(ct).Members.Select(member => member.ToFullString()));
+        }
+        return code;
     }
-    private static void AppendFileHeaders(StringBuilder sb, string className, string @namespace, string baseNamespace, bool isInternal) {
+    private static void AppendFileHeaders(StringBuilder sb, string className, string @namespace, string baseNamespace, bool isInternal, bool hasQueries) {
         sb.AppendLine("//------------------------------------------------------------------------------");
         sb.AppendLine("// <auto-generated> This code was generated by Rinku Power Tools. </auto-generated>");
+        sb.AppendLine($"// Last reload: {DateTime.UtcNow.ToString(TimestampFormat)}");
         sb.AppendLine("//------------------------------------------------------------------------------");
         sb.AppendLine("#nullable enable");
         sb.AppendLine("using System;");
-        sb.AppendLine("using System.Data;");
-        sb.AppendLine("using System.Data.Common;");
+        sb.AppendLine("using System.ComponentModel;");
+        if (hasQueries) {
+            sb.AppendLine("using System.Data;");
+            sb.AppendLine("using System.Data.Common;");
+            sb.AppendLine("using Schema = RinkuPowerTools.Generated.SchemaAttribute;");
+            sb.AppendLine("using ResultSet = RinkuPowerTools.Generated.ResultSetAttribute;");
+        }
         if (!string.Equals(baseNamespace, @namespace, StringComparison.Ordinal))
             sb.AppendLine($"using {baseNamespace};");
         sb.AppendLine();
         sb.AppendLine($"namespace {@namespace};");
         sb.AppendLine();
-        sb.AppendLine($"{(isInternal ? "internal" : "public")} static class {className} {{");
+        if (hasQueries)
+            sb.AppendLine($"{(isInternal ? "internal" : "public")} static partial class {className} {{");
     }
     private static void AppendErrorBlock(StringBuilder sb, QuerySetting query, Exception ex) {
         string target = Sanitize(query.Target);
@@ -215,34 +252,58 @@ public static class RinkuPowerTools {
             sb.Append(c == '\r' || c == '\n' ? ' ' : c);
         return sb.ToString();
     }
-    private static async void ProcessQuery(StringBuilder classSb, StringBuilder dtoSb, CompilationUnitSyntax? oldRoot, QuerySetting query, DiscoveredSchema schema, string timestamp) {
+    private static void ProcessQuery(StringBuilder classSb, StringBuilder dtoSb, CompilationUnitSyntax? oldRoot, QuerySetting query, DiscoveredSchema schema, string timestamp) {
         var (typeName, requiresDto) = GetReturnInfo(schema.ResultColumns, query.MethodName);
         if (requiresDto && query.ResultSetName is not null)
             typeName = query.ResultSetName;
-        WriteMethod(classSb, query, schema, typeName);
+        WriteMethod(classSb, query, schema, schema.ResultColumns.Count == 0 ? null : typeName);
 
         if (requiresDto) {
             var oldDto = FindDto(oldRoot, typeName);
-            if (oldDto != null && !HasDtoChanged(oldDto, schema.ResultColumns))
-                dtoSb.Append(oldDto.ToFullString());
+            if (oldDto != null && !HasDtoChanged(oldDto, schema.ResultColumns)) {
+                var schemaAttributes = oldDto.AttributeLists.SelectMany(list => list.Attributes).Where(attribute => attribute.Name.ToString() is "Schema" or "global::RinkuPowerTools.Generated.Schema" or "RinkuPowerTools.Generated.Schema");
+                var dto = oldDto.ReplaceNodes(schemaAttributes, (attribute, _) => attribute.WithName(SyntaxFactory.IdentifierName("Schema").WithTriviaFrom(attribute.Name)).WithArgumentList(attribute.ArgumentList is { } arguments ? arguments.WithArguments(SyntaxFactory.SeparatedList(arguments.Arguments.Select(argument => argument.NameEquals?.Name.Identifier.ValueText == "LastUpdated" ? argument.WithNameEquals(null) : argument))) : null));
+                dtoSb.Append(dto.ToFullString());
+            }
             else
                 WriteDto(dtoSb, typeName, schema.ResultColumns, timestamp);
         }
     }
-    private static void WriteMethod(StringBuilder sb, QuerySetting query, DiscoveredSchema schema, string returnType) {
+    private static void WriteMethod(StringBuilder sb, QuerySetting query, DiscoveredSchema schema, string? resultType) {
+        ValidateParameterDefaults(schema.Parameters);
         sb.AppendLine();
-        sb.AppendLine($"    /// <Command cref=\"{returnType}\" />");
+        string hookName = query.MethodName.TrimStart('@');
+        if (resultType is not null)
+        {
+            sb.AppendLine($"    [ResultSet(typeof({TypeOfName(resultType)}))]");
+        }
         sb.Append($"    public static DbCommand {query.MethodName}(this DbConnection connection");
 
         foreach (var param in schema.Parameters) {
             if (param.Direction == ParameterDirection.Input)
-                sb.Append($", {param.CSharpType} {param.CleanName}");
+                sb.Append($", {param.CSharpType} {param.CleanName}{(param.DefaultValue is null ? string.Empty : " = " + param.DefaultValue.Trim())}");
             else if (param.Direction == ParameterDirection.InputOutput)
                 sb.Append($", {param.CSharpType} {param.CleanName}, out DbParameter out_{param.CleanName}");
             else if (param.Direction == ParameterDirection.Output)
                 sb.Append($", out DbParameter out_{param.CleanName}");
         }
         sb.AppendLine(") {");
+        if (query.GenerateHooks)
+        {
+            sb.AppendLine($"        Before{hookName}(connection);");
+            if (schema.Parameters.Any(static parameter => parameter.Direction is ParameterDirection.Input or ParameterDirection.InputOutput))
+            {
+                sb.Append($"        Before{hookName}(connection");
+                foreach (var parameter in schema.Parameters)
+                {
+                    if (parameter.Direction is ParameterDirection.Input or ParameterDirection.InputOutput)
+                    {
+                        sb.Append($", ref {parameter.CleanName}");
+                    }
+                }
+                sb.AppendLine(");");
+            }
+        }
         sb.AppendLine("        var command = connection.CreateCommand();");
         if (query.SourceType == QuerySourceType.FromFile) {
             string target = IsAbsoluteSqlFilePath(query.Target)
@@ -256,9 +317,59 @@ public static class RinkuPowerTools {
         sb.AppendLine();
         foreach (var param in schema.Parameters)
             WriteOneParameter(sb, param);
+        if (query.GenerateHooks)
+        {
+            sb.AppendLine($"        After{hookName}(command);");
+        }
         sb.AppendLine("        return command;");
         sb.AppendLine("    }");
     }
+
+    private static void WriteHooks(StringBuilder sb, HashSet<string> hooks, string name, List<ParameterMetadata> parameters)
+    {
+        sb.AppendLine();
+        if (hooks.Add($"Before{name}(DbConnection)"))
+        {
+            sb.AppendLine($"    static partial void Before{name}(DbConnection connection);");
+        }
+        var signature = new StringBuilder($"Before{name}(DbConnection");
+        var declaration = new StringBuilder($"Before{name}(DbConnection connection");
+        bool hasInputs = false;
+        foreach (var parameter in parameters)
+        {
+            if (parameter.Direction is ParameterDirection.Input or ParameterDirection.InputOutput)
+            {
+                hasInputs = true;
+                signature.Append($", ref {TypeOfName(parameter.CSharpType)}");
+                declaration.Append($", ref {parameter.CSharpType} {parameter.CleanName}");
+            }
+        }
+        if (hasInputs && hooks.Add(signature.Append(')').ToString()))
+        {
+            sb.AppendLine($"    static partial void {declaration});");
+        }
+        if (hooks.Add($"After{name}(DbCommand)"))
+        {
+            sb.AppendLine($"    static partial void After{name}(DbCommand command);");
+        }
+    }
+
+    private static void ValidateParameterDefaults(List<ParameterMetadata> parameters) {
+        bool optionalSeen = false;
+        foreach (var parameter in parameters) {
+            if (parameter.DefaultValue is { } value) {
+                if (parameter.Direction != ParameterDirection.Input)
+                    throw new InvalidOperationException($"Parameter '{parameter.DbName}' cannot have a default because it is not an input-only parameter.");
+                if (string.IsNullOrWhiteSpace(value) || SyntaxFactory.ParseExpression(value).ContainsDiagnostics)
+                    throw new InvalidOperationException($"DefaultValue for parameter '{parameter.DbName}' must be a valid C# expression. Use \"null\" for a null default, or omit DefaultValue to keep the argument required.");
+                optionalSeen = true;
+            }
+            else if (optionalSeen && parameter.Direction is ParameterDirection.Input or ParameterDirection.InputOutput or ParameterDirection.Output)
+                throw new InvalidOperationException($"Required parameter '{parameter.DbName}' follows an optional parameter. Defaults must form a trailing group; argument order is preserved.");
+        }
+    }
+
+    private static string TypeOfName(string type) => type is "string?" or "object?" || type.EndsWith("[]?", StringComparison.Ordinal) ? type[..^1] : type;
 
     private static bool IsAbsoluteSqlFilePath(string path) =>
         Path.IsPathRooted(path) ||
@@ -269,6 +380,8 @@ public static class RinkuPowerTools {
         string valueExpr = param.Direction == ParameterDirection.Output
             ? "DBNull.Value"
             : param.IsNullable ? $"(object?){param.CleanName} ?? DBNull.Value" : param.CleanName;
+        if (param.Direction != ParameterDirection.Output && !param.IsNullable && param.DbType is not null && param.CSharpType is "byte" or "sbyte" or "short" or "ushort" or "int")
+            valueExpr = $"(object){param.CleanName}";
 
         bool hasSize = param.Size > 0 || param.Size == -1;
         string method;
@@ -321,7 +434,7 @@ public static class RinkuPowerTools {
 
     private static void WriteDto(StringBuilder sb, string name, List<ParameterMetadata> cols, string timeStamp) {
         sb.AppendLine();
-        sb.AppendLine($"/// <Schema LastUpdated=\"{timeStamp}\" />");
+        sb.AppendLine($"[Schema(\"{timeStamp}\")]");
         sb.AppendLine($"public partial record {name}({string.Join(", ", cols.Select(c => $"{GetAttributeLine(c)}{c.CSharpType} {c.CleanName}"))});");
     }
     private static string GetAttributeLine(ParameterMetadata col) 

@@ -59,17 +59,17 @@ public class FlagUpdater(UsageFlags Flags, bool Subtree = false) : IColModifier 
 public class ParamInfoPlus(Type Type, INullColHandler NullColHandler, INameComparer NameComparer, IColModifier colModifier, IFallbackParserGetter fallbackParserGetter) : ParamInfo(Type, NullColHandler, NameComparer) {
     /// <summary>When true, a scalar value accepts only a column with the exact type.</summary>
     public override bool RequireExactType {
-        get => field;
-        set => field = value;
+        get;
+        set;
     }
     /// <inheritdoc/>
     public IColModifier ColModifier {
-        get => field;
+        get;
         set => Interlocked.Exchange(ref field, value);
     } = colModifier;
     /// <inheritdoc/>
     public IFallbackParserGetter FallbackParserGetter {
-        get => field;
+        get;
         set => Interlocked.Exchange(ref field, value);
     } = fallbackParserGetter;
     /// <inheritdoc/>

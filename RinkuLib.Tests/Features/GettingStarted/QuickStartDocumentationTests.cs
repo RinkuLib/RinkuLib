@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.GettingStarted;
+namespace RinkuLib.Tests.Features.GettingStarted;
 
 /// <summary>Executable examples for <c>docs/articles/getting-started/quick-start.md</c>.</summary>
 public class QuickStartDocumentationTests(SqliteDb db) : IClassFixture<SqliteDb> {
@@ -84,13 +84,12 @@ public class QuickStartDocumentationTests(SqliteDb db) : IClassFixture<SqliteDb>
 }
 
 public sealed record QuickStartUser(int Id, string Name, string? Email);
-
 file sealed class UserFilterClass {
     public int Id { get; init; }
 }
 
 file sealed record UserFilterRecord(int Id);
 
-file struct UserFilterStruct {
+file readonly struct UserFilterStruct {
     public int Id { get; init; }
 }

@@ -5,7 +5,7 @@ using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Queries;
+namespace RinkuLib.Tests.Features.RunningQueries.ParameterMetadata;
 
 public sealed class MethodConditionEmitterTests {
     private static readonly MethodConditionEmitter StringCondition = new(

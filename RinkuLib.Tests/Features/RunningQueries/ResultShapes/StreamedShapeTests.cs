@@ -6,7 +6,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.ResultShapes;
 
 /// <summary>
 /// The rules a streamed <see cref="IEnumerable{T}"/> result follows. Nothing runs until the rows are
@@ -36,7 +36,7 @@ public class StreamedShapeTests {
         return query;
     }
 
-    public static TheoryData<bool> Roads => new() { false, true };
+    public static TheoryData<bool> Roads => [false, true];
 
     static QueryCommand Road(SqliteDb db, bool warm) => warm ? Warm(db) : Cold();
 
@@ -173,7 +173,6 @@ public class StreamedShapeTests {
     }
 
     public record Paid(long ID, double Salary);
-
     /// <summary>
     /// A row the parser refuses ends the walk there, and what the run opened goes back the same way it
     /// would have at the end of the rows.

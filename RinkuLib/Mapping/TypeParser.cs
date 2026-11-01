@@ -20,7 +20,6 @@ public static class TypeParser {
     public static ITypeParserMaker DefaultTypeParserMaker {
         get => _defaultTypeParserMaker ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "No default type-parser maker has been installed");
         set {
-            ArgumentNullException.ThrowIfNull(value);
             lock (TypeParserMakers) {
                 _defaultTypeParserMaker = value;
             }
@@ -39,26 +38,24 @@ public static class TypeParser {
         lock (TypeParserMakers) {
             if (_defaultTypeParserMaker is not null)
                 return false;
-            _defaultTypeParserMaker = fallback ?? throw new ArgumentNullException(nameof(fallback));
+            _defaultTypeParserMaker = fallback;
             for (int i = 0; i < makers.Length; i++)
                 TypeParserMakers.Add(makers[i]);
             return true;
         }
     }
-    /// <summary>
-    /// Removes every global parser that accepts <paramref name="schema"/> and applies <paramref name="mode"/>
-    /// to caches retaining those exact parser instances.
-    /// </summary>
+    /// <summary>Removes every global parser for which <paramref name="predicate"/> returns <see langword="true"/>.</summary>
+    /// <param name="predicate">Selects the globally cached parser instances to remove.</param>
+    /// <param name="mode">Controls whether caches retaining a selected parser must release it or may keep it alive.</param>
     /// <returns>The number of distinct parsers removed.</returns>
-    public static int Invalidate(ColumnInfo[] schema, ParserInvalidationMode mode) {
-        ArgumentNullException.ThrowIfNull(schema);
+    public static int Invalidate(Func<ITypeParser, bool> predicate, ParserInvalidationMode mode) {
         ValidateMode(mode);
         List<ITypeParser> removed = [];
         lock (TypeParserMakers) {
             var current = ReadingInfos;
             for (int i = 0; i < current.Length; i++) {
                 var parser = (ITypeParser)current[i].Parser;
-                if (parser.CanParse(schema) && !ContainsReference(removed, parser))
+                if (predicate(parser) && !ContainsReference(removed, parser))
                     removed.Add(parser);
             }
             if (removed.Count != 0)
@@ -68,35 +65,12 @@ public static class TypeParser {
         }
         return removed.Count;
     }
-    /// <summary>Removes one exact parser instance from the global cache.</summary>
-    /// <returns><see langword="true"/> when the parser was globally cached.</returns>
-    public static bool Invalidate(ITypeParser parser, ParserInvalidationMode mode) {
-        ArgumentNullException.ThrowIfNull(parser);
-        ValidateMode(mode);
-        bool removed = false;
-        lock (TypeParserMakers) {
-            var current = ReadingInfos;
-            for (int i = 0; i < current.Length; i++)
-                if (ReferenceEquals(current[i].Parser, parser)) {
-                    removed = true;
-                    break;
-                }
-            if (removed)
-                ReadingInfos = WithoutParser(current, parser);
-            if (removed)
-                TryDisposeParser(parser, mode);
-        }
-        return removed;
-    }
     /// <summary>
     /// Releases an owner's reference to <paramref name="parser"/> and disposes it only when neither the
     /// global cache nor another subscribed cache reports that it still retains the same instance.
     /// </summary>
     /// <returns><see langword="true"/> when the parser was disposed. Otherwise <see langword="false"/>.</returns>
-    public static bool Release(ITypeParser parser) {
-        ArgumentNullException.ThrowIfNull(parser);
-        return TryDisposeParser(parser, ParserInvalidationMode.CheckUsage);
-    }
+    public static bool Release(ITypeParser parser) => TryDisposeParser(parser, ParserInvalidationMode.CheckUsage);
     internal static bool TryInvalidateIfUnreferenced(ITypeParser parser) {
         lock (TypeParserMakers) {
             var current = ReadingInfos;
@@ -112,24 +86,6 @@ public static class TypeParser {
             parser.Dispose();
             return true;
         }
-    }
-    /// <summary>Removes every parser from the global cache.</summary>
-    /// <returns>The number of distinct parsers removed.</returns>
-    public static int InvalidateAll(ParserInvalidationMode mode) {
-        ValidateMode(mode);
-        List<ITypeParser> removed = [];
-        lock (TypeParserMakers) {
-            var current = ReadingInfos;
-            for (int i = 0; i < current.Length; i++) {
-                var parser = (ITypeParser)current[i].Parser;
-                if (!ContainsReference(removed, parser))
-                    removed.Add(parser);
-            }
-            ReadingInfos = [];
-            for (int i = 0; i < removed.Count; i++)
-                TryDisposeParser(removed[i], mode);
-        }
-        return removed.Count;
     }
     internal static bool TryDisposeParser(ITypeParser parser, ParserInvalidationMode mode) {
         ValidateMode(mode);
@@ -226,8 +182,6 @@ public static class TypeParser {
     }
     /// <summary>Gets the cached parser for a runtime result type and schema.</summary>
     public static ITypeParser GetTypeParser(Type type, ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
-        ArgumentNullException.ThrowIfNull(type);
-        ArgumentNullException.ThrowIfNull(cols);
         nullColHandler ??= GetDefaultNullColHandler(type);
         var readingInfos = ReadingInfos;
         for (int i = 0; i < readingInfos.Length; i++) {
@@ -242,9 +196,17 @@ public static class TypeParser {
                 if (parser is ITypeParser p && p.Type == type && nullCol == nullColHandler && p.CanParse(cols))
                     return p;
             }
-            var maker = typeof(TypeParser).GetMethod(nameof(MakeParser), BindingFlags.NonPublic | BindingFlags.Static)!
-                .MakeGenericMethod(type);
-            var created = (ITypeParser)maker.Invoke(null, [cols, nullColHandler])!;
+            var maker = typeof(TypeParser).GetMethod(nameof(MakeParser), BindingFlags.NonPublic | BindingFlags.Static)
+                ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"{nameof(MakeParser)} was not found.");
+            ITypeParser created;
+            try {
+                created = maker.MakeGenericMethod(type).Invoke(null, [cols, nullColHandler]) as ITypeParser
+                    ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"{nameof(MakeParser)} returned no parser.");
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException is not null) {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                throw;
+            }
             var updated = new (INullColHandler, object)[current.Length + 1];
             current.CopyTo(updated, 0);
             updated[^1] = (nullColHandler, created);
@@ -263,30 +225,51 @@ public static class TypeParser {
             Refuse.NoParser(typeof(T), cols);
         return info;
     }
-    /// <summary>The parser for <typeparamref name="T"/> over the columns of <typeparamref name="TSchema"/>, taken from its shape rather than a result.</summary>
-    public static ITypeParser<T> GetTypeParser<TSchema, T>(out ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
-        var res = GetTypeParser<T>(TypeSchema<TSchema>._schema, nullColHandler);
-        cols = TypeSchema<TSchema>._schema;
-        return res;
+    /// <summary>The parser for <typeparamref name="T"/> over the columns of <typeparamref name="TSchema"/>.</summary>
+    public static ITypeParser<T> GetTypeParser<TSchema, T>(INullColHandler? nullColHandler = null)
+        => GetTypeParser<T>(TypeSchema<TSchema>._schema, nullColHandler);
+
+    /// <summary>The parser for <typeparamref name="T"/> over the columns derived from <paramref name="schemaType"/>.</summary>
+    public static ITypeParser<T> GetTypeParser<T>(Type schemaType, INullColHandler? nullColHandler = null) => GetTypeParser<T>(SchemaExtractor.FromType(schemaType), nullColHandler);
+
+    /// <summary>The parser for <typeparamref name="T"/> over the columns derived from <paramref name="schemaMethod"/>.</summary>
+    public static ITypeParser<T> GetTypeParser<T>(MethodBase schemaMethod, INullColHandler? nullColHandler = null) => GetTypeParser<T>(SchemaExtractor.FromMethod(schemaMethod), nullColHandler);
+
+    /// <summary>The parser for <typeparamref name="T"/> over the columns derived from <paramref name="schemaConstructor"/>.</summary>
+    public static ITypeParser<T> GetTypeParser<T>(ConstructorInfo schemaConstructor, INullColHandler? nullColHandler = null) => GetTypeParser<T>(SchemaExtractor.FromConstructor(schemaConstructor), nullColHandler);
+
+    /// <summary>The parser for <typeparamref name="T"/> over the columns derived from <paramref name="schemaFactory"/>.</summary>
+    public static ITypeParser<T> GetTypeParser<T>(Delegate schemaFactory, INullColHandler? nullColHandler = null) => GetTypeParser<T>(SchemaExtractor.FromMethod(schemaFactory.Method), nullColHandler);
+
+    /// <summary>The parser for <typeparamref name="T"/> over a reflected type, method, or constructor.</summary>
+    public static ITypeParser<T> GetTypeParser<T>(MemberInfo schemaMember, INullColHandler? nullColHandler = null) {
+        return schemaMember switch {
+            Type schemaType => GetTypeParser<T>(schemaType, nullColHandler),
+            ConstructorInfo schemaConstructor => GetTypeParser<T>(schemaConstructor, nullColHandler),
+            MethodBase schemaMethod => GetTypeParser<T>(schemaMethod, nullColHandler),
+            _ => throw new ArgumentException("The schema member must be a type, method, or constructor.", nameof(schemaMember))
+        };
     }
-    /// <summary>The parser for <typeparamref name="T"/> over the columns derived from <paramref name="type"/>.</summary>
-    public static ITypeParser<T> GetTypeParser<T>(Type type, out ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
-        cols = SchemaExtractor.FromType(type);
-        return GetTypeParser<T>(cols, nullColHandler);
-    }
-    /// <summary>The parser for <typeparamref name="T"/> over the columns derived from a method's parameters.</summary>
-    public static ITypeParser<T> GetTypeParser<T>(MethodBase method, out ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
-        cols = SchemaExtractor.FromMethod(method);
-        return GetTypeParser<T>(cols, nullColHandler);
-    }
-    /// <summary>The parser for <typeparamref name="T"/> over the columns derived from a constructor's parameters.</summary>
-    public static ITypeParser<T> GetTypeParser<T>(ConstructorInfo ctor, out ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
-        cols = SchemaExtractor.FromConstructor(ctor);
-        return GetTypeParser<T>(cols, nullColHandler);
-    }
-    /// <summary>The parser for <typeparamref name="T"/> over the columns derived from a factory delegate's parameters.</summary>
-    public static ITypeParser<T> GetTypeParser<T>(Delegate factory, out ColumnInfo[] cols, INullColHandler? nullColHandler = null) {
-        cols = SchemaExtractor.FromMethod(factory.Method);
-        return GetTypeParser<T>(cols, nullColHandler);
+
+    /// <summary>Gets a parser for a runtime result type over the columns derived from <paramref name="schemaType"/>.</summary>
+    public static ITypeParser GetTypeParser(Type resultType, Type schemaType, INullColHandler? nullColHandler = null) => GetTypeParser(resultType, SchemaExtractor.FromType(schemaType), nullColHandler);
+
+    /// <summary>Gets a parser for a runtime result type over the columns derived from <paramref name="schemaMethod"/>.</summary>
+    public static ITypeParser GetTypeParser(Type resultType, MethodBase schemaMethod, INullColHandler? nullColHandler = null) => GetTypeParser(resultType, SchemaExtractor.FromMethod(schemaMethod), nullColHandler);
+
+    /// <summary>Gets a parser for a runtime result type over the columns derived from <paramref name="schemaConstructor"/>.</summary>
+    public static ITypeParser GetTypeParser(Type resultType, ConstructorInfo schemaConstructor, INullColHandler? nullColHandler = null) => GetTypeParser(resultType, SchemaExtractor.FromConstructor(schemaConstructor), nullColHandler);
+
+    /// <summary>Gets a parser for a runtime result type over the columns derived from <paramref name="schemaFactory"/>.</summary>
+    public static ITypeParser GetTypeParser(Type resultType, Delegate schemaFactory, INullColHandler? nullColHandler = null) => GetTypeParser(resultType, SchemaExtractor.FromMethod(schemaFactory.Method), nullColHandler);
+
+    /// <summary>Gets a parser for a runtime result type over a reflected type, method, or constructor.</summary>
+    public static ITypeParser GetTypeParser(Type resultType, MemberInfo schemaMember, INullColHandler? nullColHandler = null) {
+        return schemaMember switch {
+            Type schemaType => GetTypeParser(resultType, schemaType, nullColHandler),
+            ConstructorInfo schemaConstructor => GetTypeParser(resultType, schemaConstructor, nullColHandler),
+            MethodBase schemaMethod => GetTypeParser(resultType, schemaMethod, nullColHandler),
+            _ => throw new ArgumentException("The schema member must be a type, method, or constructor.", nameof(schemaMember))
+        };
     }
 }

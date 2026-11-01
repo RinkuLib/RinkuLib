@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// <see cref="EnumHelper"/> bridges synchronous sequences into async streams.

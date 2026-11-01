@@ -53,10 +53,15 @@ jobs:
             10.0
 
       - name: Restore
-        run: dotnet restore RinkuLib.slnx
+        run: |
+          dotnet restore RinkuLib/RinkuLib.csproj
+          dotnet restore RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj
+          dotnet restore RinkuLib.Tests/RinkuLib.Tests.csproj
+          dotnet restore RinkuPowerTools/RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj
+          dotnet restore RinkuPowerTools/RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj
 
-      - name: Build
-        run: dotnet build RinkuLib.slnx --configuration Release --no-restore
+      - name: Build Rinku
+        run: dotnet build RinkuLib/RinkuLib.csproj --configuration Release --no-restore
 
       - name: Test
         run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --framework net10.0
@@ -64,7 +69,13 @@ jobs:
       - name: Test analyzers
         run: dotnet test RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj --configuration Release
 
-      - name: Pack
+      - name: Test Power Tools
+        run: dotnet run --project RinkuPowerTools/RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj --configuration Release
+
+      - name: Test CLI
+        run: dotnet run --project RinkuPowerTools/RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj --configuration Release
+
+      - name: Pack Rinku
         run: dotnet pack RinkuLib/RinkuLib.csproj --configuration Release --output artifacts
 
       - name: Upload package for review

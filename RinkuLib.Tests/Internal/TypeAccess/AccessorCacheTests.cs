@@ -8,7 +8,7 @@ using Rinku.Mapping.Parsers;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Internal.TypeAccess;
 
 /// <summary>
 /// The compiled parameter binder cache keyed by mapper instance, including its by-reference value-type path.

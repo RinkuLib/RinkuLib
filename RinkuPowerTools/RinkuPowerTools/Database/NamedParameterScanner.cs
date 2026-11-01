@@ -1,4 +1,4 @@
-namespace RinkuPowerTools;
+namespace RinkuPowerTools.Database;
 
 internal static class NamedParameterScanner {
     public static List<string> Scan(string sql) {

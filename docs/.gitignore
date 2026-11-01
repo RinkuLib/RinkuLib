@@ -1,3 +1,8 @@
 _site/
 api/*.yml
 api/.manifest
+!api/toc.yml
+api/rinku/*.yml
+api/rinku/.manifest
+api/rinku-more/*.yml
+api/rinku-more/.manifest

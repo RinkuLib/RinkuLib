@@ -3,11 +3,11 @@ using Rinku.Mapping.Defaults;
 using System.Reflection.Emit;
 using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Registration;
 
 /// <summary>
 /// The registration and emission roads a plain mapping never reaches: forced registration of a
@@ -15,7 +15,6 @@ namespace RinkuLib.Tests.Mapping;
 /// emission a deeply nested null jump needs.
 /// </summary>
 public class RegistrationResidualTests {
-
     public class Unregistered {
         public int A;
         public Unregistered(int a) => A = a;
@@ -70,17 +69,14 @@ public class RegistrationResidualTests {
     [AreReadable]
     public sealed record DirectReadableParent(int Id, DirectReadableChild Child);
     public sealed record DirectReadableChild(int Value);
-
     [AreReadable]
     public sealed record DirectReadableListParent([NoName] List<DirectReadableListChild> Items);
     public sealed record DirectReadableListChild([NoName] int Value);
-
     [AreReadable]
     public sealed class DirectReadableMemberParent {
         public DirectReadableMemberChild Child { get; set; } = null!;
     }
     public sealed record DirectReadableMemberChild(int Value);
-
     [Fact]
     [DocumentationExample("registration.md", "readable-registration")]
     public void AreReadable_registers_a_parameter_type_that_was_not_registered() {
@@ -180,19 +176,16 @@ public class RegistrationResidualTests {
         Refusals.Raises(ErrorCodes.InternalInvariant, () => point.MakeNullJump(gen));
     }
 
-    static Generator Wrap(ILGenerator il) =>
-#if DEBUG
-        new(il, []);
-#else
-        new(il);
-#endif
+    static Generator Wrap(ILGenerator il) => new(il);
 
 
     [Fact]
     public void A_plan_can_have_its_modifier_and_fallback_replaced() {
         var plan = new ParamInfoPlus(typeof(int), NotNullHandle.Instance, new NameComparer("A"),
-            IColModifier.Nothing, IFallbackParserGetter.Nothing);
-        plan.ColModifier = FlagUpdater.CanReuse;
+            IColModifier.Nothing, IFallbackParserGetter.Nothing)
+        {
+            ColModifier = FlagUpdater.CanReuse
+        };
         Assert.Same(FlagUpdater.CanReuse, plan.ColModifier);
         plan.FallbackParserGetter = DefaultValueFallback.Instance;
         Assert.Same(DefaultValueFallback.Instance, plan.FallbackParserGetter);
@@ -203,15 +196,17 @@ public class RegistrationResidualTests {
         Assert.Null(IFallbackParserGetter.Nothing.FallbackTryGetParser(typeof(int)));
     }
 
+    [AttributeUsage(AttributeTargets.Property)]
     sealed class CustomHandlerAttribute : Attribute, INullColHandlerMaker {
         public INullColHandler MakeColHandler(Type type, string? name, object[] attributes, object? param)
             => NullableTypeHandle.Instance;
     }
 
+    [AttributeUsage(AttributeTargets.Property)]
     sealed class CustomPlanAttribute : Attribute, IParamInfoMaker {
         public ParamInfo MakeMatcher(Type Type, INullColHandler NullColHandler, INameComparer NameComparer,
             string? name, object[] attributes, UsageFlags usageFlags, object? param)
-            => new ParamInfo(Type, NullColHandler, new NameComparer("Renamed"));
+            => new(Type, NullColHandler, new NameComparer("Renamed"));
     }
 
     class AttributeSeams {
@@ -312,12 +307,11 @@ public class RegistrationResidualTests {
     [Fact]
     public void A_construction_built_with_explicit_flags_still_validates() {
         var ctor = typeof(InitTwice).GetConstructors()[0];
-        Refusals.Raises(ErrorCodes.ConstructionShapeNotUsable, () => new MethodCtorInfo(ctor, [], MethodCtorInfo.AdditionalFlags.CanCompleteWithMembers));
+        Refusals.Raises(ErrorCodes.ConstructionShapeNotUsable, () => _ = new MethodCtorInfo(ctor, [], MethodCtorInfo.AdditionalFlags.CanCompleteWithMembers));
     }
 
 
     public record StrictTrack(int Id, string Name, int Code) : IDbReadable;
-
     public class SettableTrack : IDbReadable {
         public int Id { get; set; }
         public string? Name { get; set; }
@@ -358,7 +352,6 @@ public class RegistrationResidualTests {
 
     public record NamedTrack(int Id, string Name) : IDbReadable;
     public record AliasedTrack([Alt("TrackId")] int Id, [Alt("TrackName")] string Name) : IDbReadable;
-
     /// <summary>
     /// The columns and the type are each fine on their own,
     /// they carry different names.
@@ -508,7 +501,6 @@ public class RegistrationResidualTests {
     public record RacingRegistrationA(int Id, string Name);
     public record RacingRegistrationB(int Id, string Name);
     public record RacingRegistrationC(int Id, string Name);
-
     /// <summary>
     /// The registry is process wide, and the info a caller receives is the one the whole app will parse
     /// through. First sight of a type from several threads has to settle on one entry, otherwise a caller

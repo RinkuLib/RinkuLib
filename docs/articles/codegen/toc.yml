@@ -1,4 +1,4 @@
-- name: Code generation
+- name: Overview
   href: index.md
 - name: Configure CodeGen
   href: configure.md

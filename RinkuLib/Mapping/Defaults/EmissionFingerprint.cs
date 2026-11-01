@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 
-namespace Rinku.Mapping.Emission;
+namespace Rinku.Mapping.Defaults;
 
 internal readonly record struct EmissionFingerprint(ulong A, ulong B, ulong C, ulong D);
 

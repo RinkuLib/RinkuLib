@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using VerifyAdd = RinkuLib.Analyzers.Test.CSharpAnalyzerVerifier<RinkuLib.Analyzers.AddBasedOnAnalyzer>;
 using VerifyBasedOn = RinkuLib.Analyzers.Test.CSharpAnalyzerVerifier<RinkuLib.Analyzers.BasedOnAnalyzer>;
+using VerifyMatch = RinkuLib.Analyzers.Test.CSharpAnalyzerVerifier<RinkuLib.Analyzers.MatchConstructorAnalyzer>;
 using VerifySync = RinkuLib.Analyzers.Test.CSharpAnalyzerVerifier<RinkuLib.Analyzers.SyncBasedOnAnalyzer>;
 
 namespace RinkuLib.Analyzers.Test;
@@ -17,7 +18,7 @@ public sealed class SchemaLinkAnalyzerTests {
     [TestMethod]
     public async Task LinkSuggestionReportsConsumerTypesOnly() {
         const string source = """
-            /// <Schema LastUpdated="2026-08-11T10:00Z" />
+            [Schema("2026-08-11T10:00Z")]
             public record CustomerSchema(int Id);
 
             public class {|#0:CustomerDto|} { }
@@ -32,13 +33,13 @@ public sealed class SchemaLinkAnalyzerTests {
     [TestMethod]
     public async Task EitherLinkKindSuppressesTheSuggestion() {
         const string source = """
-            /// <Schema LastUpdated="2026-08-11T10:00Z" />
+            [Schema("2026-08-11T10:00Z")]
             public record CustomerSchema(int Id);
 
-            /// <BasedOn cref="CustomerSchema" LastUpdated="2026-08-11T10:00Z" />
+            [BasedOn(typeof(CustomerSchema), lastUpdated: "2026-08-11T10:00Z")]
             public record TrackedCustomer(int Id);
 
-            /// <MatchConstructor cref="CustomerSchema" />
+            [BasedOn(typeof(CustomerSchema))]
             public record MatchedCustomer(int Id);
             """;
 
@@ -46,11 +47,27 @@ public sealed class SchemaLinkAnalyzerTests {
     }
 
     [TestMethod]
-    public async Task BasedOnLinkProvidesActionsForItsReference() {
+    public async Task BasedOnLinkWithoutVersioningStillExposesMemberActions() {
         const string source = """
             public record CustomerSchema(int Id);
 
-            /// {|#0:<BasedOn cref="CustomerSchema" />|}
+            [{|#0:BasedOn(typeof(CustomerSchema))|}]
+            public record CustomerDto(int Id);
+            """;
+
+        var expected = VerifyBasedOn.Diagnostic(BasedOnAnalyzer.DiagnosticId)
+            .WithLocation(0)
+            .WithArguments("CustomerSchema");
+        await VerifyBasedOn.VerifyAnalyzerAsync(source, expected);
+    }
+
+    [TestMethod]
+    public async Task VersionedSourceWithoutLinkTimestampStillExposesAcknowledgement() {
+        const string source = """
+            [Schema("2026-08-11T10:00Z")]
+            public record CustomerSchema(int Id);
+
+            [{|#0:BasedOn(typeof(CustomerSchema))|}]
             public record CustomerDto(int Id);
             """;
 
@@ -63,10 +80,10 @@ public sealed class SchemaLinkAnalyzerTests {
     [TestMethod]
     public async Task OlderLinkReportsAWarning() {
         const string source = """
-            /// <Schema LastUpdated="2026-08-11T10:00Z" />
+            [Schema("2026-08-11T10:00Z")]
             public record CustomerSchema(int Id);
 
-            /// {|#0:<BasedOn cref="CustomerSchema" LastUpdated="2026-08-10T10:00Z" />|}
+            [{|#0:BasedOn(typeof(CustomerSchema), lastUpdated: "2026-08-10T10:00Z")|}]
             public record CustomerDto(int Id);
             """;
 
@@ -77,31 +94,31 @@ public sealed class SchemaLinkAnalyzerTests {
     }
 
     [TestMethod]
-    public async Task MissingLinkTimestampReportsAWarning() {
+    public async Task MissingLinkTimestampUsesConstructorMatching() {
         const string source = """
-            /// <Schema LastUpdated="2026-08-11T10:00Z" />
+            [Schema("2026-08-11T10:00Z")]
             public record CustomerSchema(int Id);
 
-            /// {|#0:<BasedOn cref="CustomerSchema" />|}
-            public record CustomerDto(int Id);
+            [{|#0:BasedOn(typeof(CustomerSchema))|}]
+            public record CustomerDto(long Id);
             """;
 
-        var expected = VerifySync.Diagnostic(SyncBasedOnAnalyzer.DiagnosticId)
+        var expected = VerifyMatch.Diagnostic(MatchConstructorAnalyzer.DiagnosticId)
             .WithLocation(0)
             .WithArguments("CustomerDto", "CustomerSchema");
-        await VerifySync.VerifyAnalyzerAsync(source, expected);
+        await VerifyMatch.VerifyAnalyzerAsync(source, expected);
     }
 
     [TestMethod]
     public async Task CurrentOrNewerLinkDoesNotReport() {
         const string source = """
-            /// <Schema LastUpdated="2026-08-11T10:00Z" />
+            [Schema("2026-08-11T10:00Z")]
             public record CustomerSchema(int Id);
 
-            /// <BasedOn cref="CustomerSchema" LastUpdated="2026-08-11T10:00Z" />
+            [BasedOn(typeof(CustomerSchema), lastUpdated: "2026-08-11T10:00Z")]
             public record CurrentCustomer(int Id);
 
-            /// <BasedOn cref="CustomerSchema" LastUpdated="2026-08-12T10:00Z" />
+            [BasedOn(typeof(CustomerSchema), lastUpdated: "2026-08-12T10:00Z")]
             public record NewerCustomer(int Id);
             """;
 
@@ -113,7 +130,7 @@ public sealed class SchemaLinkAnalyzerTests {
         const string source = """
             public record CustomerSchema(int Id);
 
-            /// <BasedOn cref="CustomerSchema" />
+            [BasedOn(typeof(CustomerSchema))]
             public record CustomerDto(int Id);
             """;
 

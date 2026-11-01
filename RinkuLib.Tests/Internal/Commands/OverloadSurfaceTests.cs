@@ -2,10 +2,12 @@ using System.Data;
 using System.Data.Common;
 using Rinku;
 using Rinku.Querying;
+using RinkuLib.Tests.Features.RunningQueries.Index;
+using RinkuLib.Tests.Features.RunningQueries.ResultShapes;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Internal.Commands;
 
 /// <summary>
 /// One pass over every overload of the command and connection execution surface: each verb crossed
@@ -19,7 +21,6 @@ public class OverloadSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private const string CountSql = "SELECT COUNT(*) FROM Users WHERE IsActive = @Active";
     private const string InsertSql = "INSERT INTO Scratch (Val) VALUES (@Val)";
     private static readonly CancellationToken Ct = TestContext.Current.CancellationToken;
-
 
     [Fact]
     public void Command_execute_overloads_on_DbConnection() {
@@ -347,10 +348,9 @@ public class OverloadSurfaceTests(SqliteDb Db) : IClassFixture<SqliteDb> {
             Assert.Equal(2L, reader.GetInt64(0));
             c7.Dispose();
         }
-        using (var multi = cnn.ExecuteMultiReader("SELECT 1; SELECT 2", out var c8)) {
-            Assert.Equal(1, multi.Query<int>());
-            c8.Dispose();
-        }
+        using var multi = cnn.ExecuteMultiReader("SELECT 1; SELECT 2", out var c8);
+        Assert.Equal(1, multi.Query<int>());
+        c8.Dispose();
     }
 
     [Fact]

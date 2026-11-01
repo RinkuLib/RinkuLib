@@ -292,17 +292,24 @@ public abstract class AccessorEmitterHandler : Attribute {
     /// <summary>Returns an emitter for the whole parameter type and requested key.</summary>
     public virtual ITypeAccessorEmitter? GetTypeEmitter(char varChar, int index, Type type, Mapper mapper) => null;
 
+    /// <summary>Returns a type-level emitter when the consuming method specifies the required value type.</summary>
+    public virtual ITypeAccessorEmitter? GetTypeEmitter(char varChar, int index, Type type, Mapper mapper, Type valueType) => GetTypeEmitter(varChar, index, type, mapper);
+
     /// <summary>Returns an emitter for a parameter member and requested key.</summary>
     public virtual IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper) => null;
 }
 
 /// <summary>Shared IL helpers for parameter access.</summary>
 public static class AccessorEmitter {
-    private static readonly MethodInfo SpanItem = typeof(Span<bool>).GetProperty("Item")!.GetMethod!;
-    private static readonly MethodInfo DbParamUse = typeof(DbParamInfo).GetMethod(
-        nameof(DbParamInfo.Use), [typeof(string), typeof(IDbCommand), typeof(object)])!;
-    private static readonly FieldInfo UsageMarker = typeof(AccessorUsageMarker).GetField(
-        nameof(AccessorUsageMarker.Value), BindingFlags.Static | BindingFlags.NonPublic)!;
+    private static T Require<T>(T? value, string name) where T : class
+        => value ?? throw new InvalidOperationException($"Required reflection member '{name}' was not found.");
+
+    private static readonly PropertyInfo SpanItemProperty = Require(typeof(Span<bool>).GetProperty("Item"), "Span<bool>.Item");
+    private static readonly MethodInfo SpanItem = Require(SpanItemProperty.GetMethod, "Span<bool>.Item.GetMethod");
+    private static readonly MethodInfo DbParamUse = Require(typeof(DbParamInfo).GetMethod(
+        nameof(DbParamInfo.Use), [typeof(string), typeof(IDbCommand), typeof(object)]), nameof(DbParamInfo.Use));
+    private static readonly FieldInfo UsageMarker = Require(typeof(AccessorUsageMarker).GetField(
+        nameof(AccessorUsageMarker.Value), BindingFlags.Static | BindingFlags.NonPublic), nameof(AccessorUsageMarker.Value));
 
     /// <summary>Emits one direct parameter binding slot.</summary>
     public static void EmitSlot(ILGenerator il, int index, string key,
@@ -411,7 +418,7 @@ public static class AccessorEmitter {
         if (!bindValue)
             return;
         if (handlerValue) {
-            il.Emit(OpCodes.Ldloc, handlerValues!);
+            il.Emit(OpCodes.Ldloc, handlerValues ?? throw new InvalidOperationException("A handler value local is required for this emission path."));
             il.Emit(OpCodes.Ldc_I4, handlerIndex);
             value(il);
             il.Emit(OpCodes.Stelem_Ref);
@@ -491,7 +498,8 @@ public static class AccessorEmitter {
         LocalBuilder value = il.DeclareLocal(memberType);
         il.Emit(OpCodes.Stloc, value);
         il.Emit(OpCodes.Ldloca, value);
-        il.Emit(OpCodes.Call, memberType.GetProperty(nameof(Nullable<int>.HasValue))!.GetMethod!);
+        var hasValue = Require(memberType.GetProperty(nameof(Nullable<>.HasValue)), "Nullable.HasValue");
+        il.Emit(OpCodes.Call, Require(hasValue.GetMethod, "Nullable.HasValue.GetMethod"));
     }
 
     /// <summary>Boxes the value currently on the IL stack when <paramref name="valueType"/> is a value type.</summary>

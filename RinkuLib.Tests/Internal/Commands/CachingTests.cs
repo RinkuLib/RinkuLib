@@ -8,7 +8,7 @@ using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Internal.Commands;
 
 /// <summary>
 /// A command learns its row parser per condition shape and reuses it, so runs that render different
@@ -16,7 +16,6 @@ namespace RinkuLib.Tests.Execution;
 /// </summary>
 public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     public record UserIdentity(long ID, string Name, string? Email = null);
-
     [Fact]
     public void Each_condition_shape_gets_its_own_parser() {
         var query = new QueryCommand("SELECT ID, /*Name*/Name FROM Users WHERE Name = ?@Name");
@@ -209,7 +208,6 @@ public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     }
 
     public static UserIdentity MakeUserIdentity(long id, string name, string? email) => new(id, name, email);
-
     /// <summary>
     /// A root dictionary is the schema-adaptive alternative for a controlled raw projection. Its cached row
     /// parser asks the current reader for names and values, so changing a handler value does not reuse stale
@@ -309,7 +307,6 @@ public class CachingTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     }
 
     public record RacedRow(int Id, string Name) : IDbReadable;
-
     /// <summary>
     /// The shared parser store is read without a lock and written under one, so several threads meeting an
     /// unseen shape at once all reach the write. The one that gets there first records the parser and the

@@ -1,12 +1,30 @@
 # Tracking
 
+The examples assume `cnn` is an open `DbConnection` and use this model and generated edit contract:
+
+```csharp
+using Rinku;
+using Rinku.Tracking;
+using Rinku.Tracking.Binding;
+using Rinku.Tracking.Committers;
+using Rinku.Tracking.Runtime;
+
+public record Album(int Id, string Title);
+
+public interface IAlbumEdit : ITrackingItem<Album>
+{
+    int Id { get; set; }
+    string Title { get; set; }
+}
+
+Album original = new(12, "Blue");
+List<Album> existingAlbums = [new(12, "Blue"), new(13, "Green")];
+```
+
 ## One editable item
 
 ```csharp
-public record Album(int Id, string Title);
-
-Album original = new(12, "Blue");
-IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
+ITrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 
 edit.Set(nameof(Album.Title), "Kind of Blue");
 
@@ -21,26 +39,19 @@ foreach (TrackingChange change in edit.GetChanges())
 ## Typed contract
 
 ```csharp
-public interface IAlbumEdit : IRuntimeTrackingItem<Album>
-{
-    int Id { get; }
-    string Title { get; set; }
-}
-
 RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album, IAlbumEdit>();
 IAlbumEdit edit = options.GetRegistration<IAlbumEdit>().Create(original);
 
 edit.Title = "Kind of Blue";
 ```
 
-The generated CLR type implements the contract while the same runtime tracking state remains available through `IRuntimeTrackingItem<Album>`.
+The returned item implements the contract and remains available through `ITrackingItem<Album>`.
 
 [Runtime tracking](runtime.md)
 
 ## Structural list changes
 
 ```csharp
-List<Album> existingAlbums = cnn.Query<List<Album>>("SELECT AlbumId AS Id, Title FROM albums ORDER BY AlbumId");
 TrackingList<Album> albums = new(existingAlbums);
 
 albums.Add(new Album(0, "New album"));
@@ -53,9 +64,9 @@ Console.WriteLine(albums.RemovedCount);
 The list can also contain generated editable items.
 
 ```csharp
-TrackingList<IRuntimeTrackingItem<Album>> albums = existingAlbums.ToTrackingList();
+TrackingList<ITrackingItem<Album>> albums = existingAlbums.ToTrackingList();
 
-IRuntimeTrackingItem<Album> added = albums.AddNew();
+ITrackingItem<Album> added = albums.AddNew();
 added.Set(nameof(Album.Title), "New album");
 ```
 
@@ -64,34 +75,29 @@ added.Set(nameof(Album.Title), "New album");
 ## Binding
 
 ```csharp
-using Rinku.Tracking.Binding;
-
-BindingTrackingList<IRuntimeTrackingItem<Album>> albums = existingAlbums.ToBindingList();
+BindingTrackingList<ITrackingItem<Album>> albums = existingAlbums.ToBindingList();
 ```
 
 [Binding](binding.md)
 
-## Validation and metadata
+## Validation
 
 ```csharp
 RuntimeTrackingOptions<Album> options = RuntimeTracking.CreateOptions<Album, IAlbumEdit>();
 
 options.Validate<Album, IAlbumEdit>(static edit => !string.IsNullOrWhiteSpace(edit.Title));
-options.Metadata<Album, string[]>();
+options.Member<string[]>("Validation", member => member.Direct().Parameters(false));
 ```
 
-[Validation and metadata](validation.md)
+[Validation](validation.md)
 
 ## Persist and confirm
 
 ```csharp
 static readonly QueryCommand UpdateAlbum = new("UPDATE albums SET Title = @Title WHERE AlbumId = @Id");
+static readonly QueryCommitter SaveAlbumChanges = Committer.Create(update: UpdateAlbum);
 
-if (edit.HasChanges())
-{
-    UpdateAlbum.Execute(cnn, edit);
-    edit.ConfirmEdit();
-}
+bool committed = SaveAlbumChanges.Commit(cnn, albums);
 ```
 
 [Persistence](persistence.md)

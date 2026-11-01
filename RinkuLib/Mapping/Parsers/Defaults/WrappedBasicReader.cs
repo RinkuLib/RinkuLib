@@ -8,7 +8,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
-namespace Rinku.Mapping.Parsers;
+namespace Rinku.Mapping.Parsers.Defaults;
 
 internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerator {
     private IDataReader _reader;
@@ -81,11 +81,13 @@ internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerato
 
     public override byte GetByte(int i) => _reader.GetByte(i);
 
+    // IDataReader permits a null buffer as a length probe; its legacy annotation is non-nullable.
     public override long GetBytes(int i, long fieldOffset, byte[]? buffer, int bufferoffset, int length) =>
         _reader.GetBytes(i, fieldOffset, buffer!, bufferoffset, length);
 
     public override char GetChar(int i) => _reader.GetChar(i);
 
+    // IDataReader permits a null buffer as a length probe; its legacy annotation is non-nullable.
     public override long GetChars(int i, long fieldoffset, char[]? buffer, int bufferoffset, int length) =>
         _reader.GetChars(i, fieldoffset, buffer!, bufferoffset, length);
 
@@ -128,6 +130,8 @@ internal sealed class WrappedBasicReader : DbDataReader, IDbColumnSchemaGenerato
     public override T GetFieldValue<T>(int ordinal) {
         var value = _reader.GetValue(ordinal);
         if (value is DBNull) value = null;
+        // GetFieldValue<T> cannot annotate its generic result as maybe-null, but T may be string?.
+        // Preserve the framework behavior for nullable T at this unavoidable generic cast boundary.
         return (T)value!;
     }
     public override Task<T> GetFieldValueAsync<T>(int ordinal, CancellationToken cancellationToken) {

@@ -13,21 +13,24 @@ namespace Rinku;
 /// The instance can be shared across threads.
 /// </summary>
 public sealed class CachedTypeParser<T> : ICacheGivingParser<T>, IDisposable {
+    /// <summary>Shared parser for callers whose commands return a compatible shape for this result type. Use a separate instance for another shape.</summary>
+    public static CachedTypeParser<T> Default { get; } = new();
     private ITypeParser<T>? _parser;
     private bool _subscribedToParserDisposing;
     private int _disposed;
     private sealed class CacheBridge(ICache userCache, ICacheGivingParser<T> parserCache) : ICacheGivingParser<T> {
-        private readonly ICache _userCache = userCache;
-        private readonly ICacheGivingParser<T> _parserCache = parserCache;
         public CommandBehavior Behavior => CommandBehavior.SingleResult;
         public ITypeParser<T> UpdateCache(IDbCommand cmd, DbDataReader reader) {
-            var parser = _parserCache.UpdateCache(cmd, reader);
-            _userCache.UpdateCache(cmd);
+            var parser = parserCache.UpdateCache(cmd, reader);
+            userCache.UpdateCache(cmd);
             return parser;
         }
 
-        public ValueTask<ITypeParser<T>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default)
-            => new(UpdateCache(cmd, reader));
+        public async ValueTask<ITypeParser<T>> UpdateCacheAsync(IDbCommand cmd, DbDataReader reader, CancellationToken ct = default) {
+            var parser = await parserCache.UpdateCacheAsync(cmd, reader, ct).ConfigureAwait(false);
+            await userCache.UpdateCacheAsync(cmd, ct).ConfigureAwait(false);
+            return parser;
+        }
     }
     /// <inheritdoc cref="ITypeParser{T}"/>
     public CommandBehavior Behavior => _parser is null ? CommandBehavior.SingleResult : _parser.Behavior;
@@ -80,8 +83,7 @@ public sealed class CachedTypeParser<T> : ICacheGivingParser<T>, IDisposable {
         var schema = reader.GetColumnsFast();
         lock (TypeParser.TypeParserMakers) {
             lock (this) {
-                if (Volatile.Read(ref _disposed) != 0)
-                    throw new ObjectDisposedException(nameof(CachedTypeParser<T>));
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, nameof(CachedTypeParser<>));
                 parser = _parser;
                 if (parser is null) {
                     parser = TypeParser.GetTypeParser<T>(schema);

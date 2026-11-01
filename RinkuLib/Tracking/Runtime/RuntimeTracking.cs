@@ -15,18 +15,18 @@ public static class RuntimeTracking
     }
 
     /// <summary>Gets the shared default registration.</summary>
-    public static RuntimeTrackingRegistration<TOriginal, IRuntimeTrackingItem<TOriginal>> Default<TOriginal>()
+    public static RuntimeTrackingRegistration<TOriginal, ITrackingItem<TOriginal>> Default<TOriginal>()
         => RuntimeTrackingDefaultCache<TOriginal>.Registration;
 }
 
 internal static class RuntimeTrackingDefaultCache<TOriginal>
 {
-    internal static readonly RuntimeTrackingRegistration<TOriginal, IRuntimeTrackingItem<TOriginal>> Registration = Build();
+    internal static readonly RuntimeTrackingRegistration<TOriginal, ITrackingItem<TOriginal>> Registration = Build();
 
-    private static RuntimeTrackingRegistration<TOriginal, IRuntimeTrackingItem<TOriginal>> Build()
+    private static RuntimeTrackingRegistration<TOriginal, ITrackingItem<TOriginal>> Build()
     {
-        RuntimeTrackingOptions<TOriginal> options = RuntimeTracking.CreateOptions<TOriginal, IRuntimeTrackingItem<TOriginal>>();
-        return options.GetRegistration<IRuntimeTrackingItem<TOriginal>>();
+        RuntimeTrackingOptions<TOriginal> options = RuntimeTracking.CreateOptions<TOriginal, ITrackingItem<TOriginal>>();
+        return options.GetRegistration<ITrackingItem<TOriginal>>();
     }
 }
 

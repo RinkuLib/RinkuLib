@@ -8,7 +8,7 @@ using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.Handlers;
 
 /// <summary>
 /// Rendering a template into the SQL a run sends: the base handlers (<c>_S</c>, <c>_R</c>, <c>_N</c>), the
@@ -76,7 +76,6 @@ public class HandlerRenderingTests {
     }
 
     private enum UnsignedEnum : ulong { Max = ulong.MaxValue }
-
     [Fact]
     public void Number_handler_writes_the_full_unsigned_enum_range() {
         var b = Build("SELECT @V_N AS X");
@@ -160,7 +159,7 @@ public class HandlerRenderingTests {
     /// </summary>
     [Fact]
     public void An_unregistered_suffix_letter_is_rejected_at_construction() {
-        var ex = Refusals.Raises(ErrorCodes.UnknownHandlerSuffix, () => new QueryCommand("SELECT * FROM t WHERE x = @V_Q"));
+        var ex = Refusals.Raises(ErrorCodes.UnknownHandlerSuffix, () => _ = new QueryCommand("SELECT * FROM t WHERE x = @V_Q"));
         Assert.Contains("_Q", ex.Message);
         Assert.Contains("@V", ex.Message);
     }
@@ -328,7 +327,6 @@ public class HandlerRenderingTests {
     }
 
     private static readonly QueryCommand SpreadOnly = new("SELECT * FROM t WHERE Id IN (@Ids_X)");
-
     /// <summary>
     /// A spread needs a count and the bind already took one, so the source is read once and no more. Reading
     /// it again is not free and not safe, since a sequence is under no obligation to answer the same way

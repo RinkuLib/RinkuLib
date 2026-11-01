@@ -4,7 +4,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Nullability;
 
 /// <summary>
 /// A null rule supplied from outside the library drives the emission choices the built-in rules never
@@ -45,9 +45,7 @@ public class CustomNullHandlerTests {
     }
 
     public record Pair(int Id, string Name) : IDbReadable;
-
     public record Collapsible([AbortOnNull] int? Id, string Name) : IDbReadable;
-
     static readonly ColumnInfo[] PairCols = [new("Id", typeof(int), true), new("Name", typeof(string), true)];
 
     [Fact]

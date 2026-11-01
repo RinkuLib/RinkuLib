@@ -4,7 +4,7 @@ using Rinku;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.Providers;
 
 public sealed class ProviderSqliteEdgeTests {
     [Fact]

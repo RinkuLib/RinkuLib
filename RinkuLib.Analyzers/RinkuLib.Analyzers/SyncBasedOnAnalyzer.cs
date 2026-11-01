@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 
@@ -34,14 +35,14 @@ public sealed class SyncBasedOnAnalyzer : DiagnosticAnalyzer {
             DocumentationTags.BasedOn,
             context.Compilation,
             context.CancellationToken)) {
-            var schemaTimestamp = DocumentationTags.GetLatestSchemaTimestamp(reference.Symbol, context.CancellationToken);
-            if (!schemaTimestamp.HasValue
-                || reference.LastUpdated.HasValue && schemaTimestamp <= reference.LastUpdated)
+            var schemaTimestamp = DocumentationTags.GetLatestSchemaTimestamp(reference.Symbols, context.CancellationToken);
+            if (!schemaTimestamp.HasValue || !reference.LastUpdated.HasValue || schemaTimestamp <= reference.LastUpdated)
                 continue;
 
             context.ReportDiagnostic(Diagnostic.Create(
                 Rule,
-                reference.Tag.GetLocation(),
+                reference.Location(context.CancellationToken),
+                ImmutableDictionary<string, string?>.Empty.Add(BasedOnAnalyzer.SchemaTimestampProperty, schemaTimestamp.Value.ToString("O", CultureInfo.InvariantCulture)),
                 type.Name,
                 reference.Symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
         }

@@ -33,13 +33,21 @@ internal sealed class RuntimeBindingEmitter<TOriginal> : IRuntimeTrackingTypeEmi
         FieldBuilder field = context.TypeBuilder.DefineField("_propertyChanged", typeof(PropertyChangedEventHandler), FieldAttributes.Private);
         MethodInfo raise = typeof(PropertyChangedHub).GetMethod(nameof(PropertyChangedHub.Raise))
             ?? throw new MissingMethodException(typeof(PropertyChangedHub).FullName, nameof(PropertyChangedHub.Raise));
+        var arguments = new Dictionary<string, FieldBuilder>(StringComparer.Ordinal);
         context.SetChangedEmitter((il, propertyName) =>
         {
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldfld, field);
             il.Emit(OpCodes.Ldarg_0);
-            if (propertyName is null) il.Emit(OpCodes.Ldnull);
-            else il.Emit(OpCodes.Ldstr, propertyName);
+            string key = propertyName ?? string.Empty;
+            if (!arguments.TryGetValue(key, out var argument))
+            {
+                argument = context.TypeBuilder.DefineField($"_propertyChangedArgs{arguments.Count}", typeof(PropertyChangedEventArgs), FieldAttributes.Private | FieldAttributes.Static);
+                arguments.Add(key, argument);
+                string fieldName = argument.Name;
+                context.AddInitializer(type => type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, new PropertyChangedEventArgs(propertyName)));
+            }
+            il.Emit(OpCodes.Ldsfld, argument);
             il.Emit(OpCodes.Call, raise);
         });
 
@@ -56,8 +64,7 @@ internal sealed class RuntimeBindingEmitter<TOriginal> : IRuntimeTrackingTypeEmi
         addIl.Emit(OpCodes.Ldarg_0);
         addIl.Emit(OpCodes.Ldflda, field);
         addIl.Emit(OpCodes.Ldarg_1);
-        addIl.Emit(OpCodes.Call, typeof(PropertyChangedHub).GetMethod(nameof(PropertyChangedHub.Add))
-            ?? throw new MissingMethodException(typeof(PropertyChangedHub).FullName, nameof(PropertyChangedHub.Add)));
+        addIl.Emit(OpCodes.Call, typeof(TrackingEvents).GetMethod(nameof(TrackingEvents.Add))!.MakeGenericMethod(typeof(PropertyChangedEventHandler)));
         addIl.Emit(OpCodes.Ret);
 
         MethodBuilder remove = DefineExplicit(context.TypeBuilder, removeContract);
@@ -65,8 +72,7 @@ internal sealed class RuntimeBindingEmitter<TOriginal> : IRuntimeTrackingTypeEmi
         removeIl.Emit(OpCodes.Ldarg_0);
         removeIl.Emit(OpCodes.Ldflda, field);
         removeIl.Emit(OpCodes.Ldarg_1);
-        removeIl.Emit(OpCodes.Call, typeof(PropertyChangedHub).GetMethod(nameof(PropertyChangedHub.Remove))
-            ?? throw new MissingMethodException(typeof(PropertyChangedHub).FullName, nameof(PropertyChangedHub.Remove)));
+        removeIl.Emit(OpCodes.Call, typeof(TrackingEvents).GetMethod(nameof(TrackingEvents.Remove))!.MakeGenericMethod(typeof(PropertyChangedEventHandler)));
         removeIl.Emit(OpCodes.Ret);
 
         generatedEvent.SetAddOnMethod(add);
@@ -114,7 +120,7 @@ internal sealed class RuntimeBindingEmitter<TOriginal> : IRuntimeTrackingTypeEmi
             $"__binding_{contract.Name}",
             MethodAttributes.Private | MethodAttributes.Virtual | MethodAttributes.Final | MethodAttributes.HideBySig | MethodAttributes.NewSlot,
             contract.ReturnType,
-            contract.GetParameters().Select(static parameter => parameter.ParameterType).ToArray());
+            [.. contract.GetParameters().Select(static parameter => parameter.ParameterType)]);
 }
 
 /// <summary>Provides binding options for generated tracking types.</summary>

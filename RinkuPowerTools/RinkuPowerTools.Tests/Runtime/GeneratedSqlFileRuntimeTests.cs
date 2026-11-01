@@ -118,7 +118,7 @@ public class GeneratedSqlFileRuntimeTests
     private static async Task<GeneratedRuntime> CreateRuntimeAsync()
     {
         using var temp = new TempDirectory();
-        var generated = await GeneratorTestHelper.GenerateAsync(
+        var (_, _, supportCode) = await GeneratorTestHelper.GenerateAsync(
             temp.Path,
             new QuerySetting
             {
@@ -128,7 +128,7 @@ public class GeneratedSqlFileRuntimeTests
             },
             new DiscoveredSchema("SELECT 1", [], []));
 
-        Assembly assembly = GeneratedAssemblyCompiler.Compile(generated.SupportCode);
+        Assembly assembly = GeneratedAssemblyCompiler.Compile(supportCode);
         Type type = assembly.GetType("TestApp.RinkuPowerTools")
             ?? throw new InvalidOperationException("Generated TestApp.RinkuPowerTools type was not found.");
         FieldInfo field = type.GetField("SqlFiles", BindingFlags.Public | BindingFlags.Static)

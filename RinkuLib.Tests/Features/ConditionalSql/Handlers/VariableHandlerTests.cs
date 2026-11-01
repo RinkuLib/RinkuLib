@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.Handlers;
 
 /// <summary>
 /// Suffix letters route a variable through a handler instead of a plain parameter: <c>_S</c> injects a

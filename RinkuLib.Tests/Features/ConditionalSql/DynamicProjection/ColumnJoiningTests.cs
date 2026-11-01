@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.DynamicProjection;
 
 /// <summary>
 /// The <c>&amp;,</c> marker chains columns under one condition, and the <c>?SELECT</c> form turns every

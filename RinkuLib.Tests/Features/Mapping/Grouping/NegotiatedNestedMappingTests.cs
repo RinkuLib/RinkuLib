@@ -4,7 +4,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Grouping;
 
 [Collection("GlobalMappingConfiguration")]
 public class NegotiatedNestedMappingTests {
@@ -66,8 +66,8 @@ public class NegotiatedNestedMappingTests {
         var rows = Rows.ParseAll<(int Id, TupleChild Child)>([
             new("Id", typeof(int), false), new("ChildId", typeof(int), false), new("ChildName", typeof(string), false)], [1, 10, "c10"], [2, 20, "c20"], [1, 11, "c11"]);
         var parents = new Dictionary<int, RegisteredParent>();
-        foreach (var row in rows)
-            parents[row.Id] = new RegisteredParent(row.Id, new RegisteredChild { Id = row.Child.Id, Name = row.Child.Name });
+        foreach (var (Id, Child) in rows)
+            parents[Id] = new RegisteredParent(Id, new RegisteredChild { Id = Child.Id, Name = Child.Name });
         Assert.Equal([1, 2], parents.Keys.OrderBy(id => id));
         Assert.Equal((11, "c11"), (parents[1].Child.Id, parents[1].Child.Name));
         Assert.Equal((20, "c20"), (parents[2].Child.Id, parents[2].Child.Name));
@@ -75,6 +75,7 @@ public class NegotiatedNestedMappingTests {
 }
 
 public class RegisteredChild { public int Id { get; set; } public string Name { get; set; } = null!; }
+/// <summary>Represents a registered parent used by the nested mapping tests.</summary>
 public record RegisteredParent(int Id, RegisteredChild Child) : IDbReadable;
 public record RegisteredPairParent(int Id, RegisteredChild First, RegisteredChild Second) : IDbReadable;
 public record RegisteredNineParent(int Id, RegisteredChild User1, RegisteredChild User2, RegisteredChild User3, RegisteredChild User4, RegisteredChild User5, RegisteredChild User6, RegisteredChild User7, RegisteredChild User8, RegisteredChild User9) : IDbReadable;

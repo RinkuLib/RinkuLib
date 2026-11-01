@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.SupplyingValues;
 
 /// <summary>
 /// A spread on a bound command re-binds differentially between runs: same count updates in place, fewer

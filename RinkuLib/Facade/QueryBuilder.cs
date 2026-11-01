@@ -124,16 +124,7 @@ public readonly struct QueryBuilder(QueryCommand QueryCommand) : IQueryBuilder {
     }
 
     /// <inheritdoc cref="UseWith(object)"/>
-    public void UseWith<T>(T parameterObj) where T : notnull {
-        if (!typeof(T).IsValueType) {
-            var accessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
-            accessor.InvokeObject(parameterObj, Variables, needTarget: false);
-            return;
-        }
-        var valueAccessor = QueryCommand.GetUseWithAccessor(typeof(T).TypeHandle.Value, typeof(T));
-        var typed = Unsafe.As<UseWithAccessor, UseWithAccessor<T>>(ref valueAccessor);
-        typed.InvokeTyped(ref parameterObj, Variables, needTarget: false);
-    }
+    public void UseWith<T>(T parameterObj) where T : notnull => UseWith(ref parameterObj);
 
     /// <inheritdoc cref="UseWith(object)"/>
     public void UseWith<T>(ref T parameterObj) where T : notnull {

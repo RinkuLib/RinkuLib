@@ -6,7 +6,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Building;
+namespace RinkuLib.Tests.Features.RunningQueries.SupplyingValues.Builders;
 
 public sealed class UseWithTests {
     private const string Template =
@@ -178,7 +178,6 @@ public sealed class UseWithTests {
     private sealed record DbNullFilter([property: UseDbNull] string? Name);
     [UseDbNull]
     private sealed record TypeDbNullFilter(string? Name, [property: NotNullOrWhitespace] string? Status);
-
     private sealed class CountingCommand : FakeCommand {
         private string? _commandText;
         public int CommandTextSetCount { get; private set; }

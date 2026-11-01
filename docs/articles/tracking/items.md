@@ -1,10 +1,11 @@
 # Editable items
 
+The examples assume `original` and `edit` from the [tracking overview](index.md).
+
 ## Accepted and edited values
 
 ```csharp
-Album original = new(12, "Blue");
-IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
+ITrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 
 string before = edit.Get<string>(nameof(Album.Title));
 

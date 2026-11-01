@@ -22,7 +22,8 @@ public sealed class EnumerableTypeParserMaker() : ReusingBaseTypeParserMaker(
     private static readonly MethodInfo Rows = Road(nameof(ColdRows));
     private static readonly MethodInfo RowsAsync = Road(nameof(ColdRowsAsync));
     private static MethodInfo Road(string name)
-        => typeof(EnumerableTypeParserMaker).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static)!;
+        => typeof(EnumerableTypeParserMaker).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new MissingMethodException(typeof(EnumerableTypeParserMaker).FullName, name);
 
     /// <inheritdoc/>
     public bool TryColdStart<T>(DbCommand cmd, ICacheGivingParser<T> cache, bool disposeCommand, [MaybeNullWhen(false)] out T result)
@@ -55,8 +56,9 @@ public sealed class EnumerableTypeParserMaker() : ReusingBaseTypeParserMaker(
             result = default;
             return false;
         }
-        result = (T)Rows.MakeGenericMethod(typeof(T).GetGenericArguments()[0])
-            .Invoke(null, [cmd, cache, disposeCommand])!;
+        result = (T)(Rows.MakeGenericMethod(typeof(T).GetGenericArguments()[0])
+            .Invoke(null, [cmd, cache, disposeCommand])
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The enumerable parser returned null."));
         return true;
     }
     private bool TryAsync<T>(IDbCommand cmd, ICacheGivingParser<T> cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<T> result) {
@@ -64,12 +66,13 @@ public sealed class EnumerableTypeParserMaker() : ReusingBaseTypeParserMaker(
             result = null;
             return false;
         }
-        result = (Task<T>)RowsAsync.MakeGenericMethod(typeof(T).GetGenericArguments()[0])
-            .Invoke(null, [cmd, cache, disposeCommand, ct])!;
+        result = (Task<T>)(RowsAsync.MakeGenericMethod(typeof(T).GetGenericArguments()[0])
+            .Invoke(null, [cmd, cache, disposeCommand, ct])
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The asynchronous enumerable parser returned null."));
         return true;
     }
 
-    private bool TrySync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result) {
+    private static bool TrySync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, [MaybeNullWhen(false)] out object? result) {
         if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(IEnumerable<>)) {
             result = null;
             return false;
@@ -77,17 +80,18 @@ public sealed class EnumerableTypeParserMaker() : ReusingBaseTypeParserMaker(
         result = Rows.MakeGenericMethod(type.GetGenericArguments()[0]).Invoke(null, [cmd, cache, disposeCommand]);
         return true;
     }
-    private bool TryAsync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result) {
+    private static bool TryAsync(Type type, IDbCommand cmd, ICacheGivingParser cache, bool disposeCommand, CancellationToken ct, [MaybeNullWhen(false)] out Task<object?>? result) {
         if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(IEnumerable<>)) {
             result = null;
             return false;
         }
-        result = ConvertTask(RowsAsync.MakeGenericMethod(type.GetGenericArguments()[0]).Invoke(null, [cmd, cache, disposeCommand, ct])!);
+        result = ConvertTask(RowsAsync.MakeGenericMethod(type.GetGenericArguments()[0]).Invoke(null, [cmd, cache, disposeCommand, ct])
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The asynchronous enumerable parser returned null."));
         return true;
     }
     private static async Task<object?> ConvertTask(object task) {
         await ((Task)task).ConfigureAwait(false);
-        return task.GetType().GetProperty("Result")!.GetValue(task);
+        return TypeExtensions.Require(task.GetType().GetProperty("Result"), "Result").GetValue(task);
     }
 
     private static IEnumerable<TItem> ColdRows<TItem>(IDbCommand cmd, ICacheGivingParser<IEnumerable<TItem>> cache, bool disposeCommand) {

@@ -7,10 +7,10 @@ using Rinku.Mapping;
 using Rinku.Mapping.Parsers;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Querying.Parameters;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace Rinku.Querying.Tests;
+namespace RinkuLib.Tests.Parameters;
 
 public sealed class ParameterShapeTests {
     private sealed class RenamedArgs {
@@ -237,7 +237,6 @@ public sealed class ParameterShapeTests {
     [AttributeUsage(AttributeTargets.Property)]
     private sealed class ConditionalDynamicAttribute : AccessorEmitterHandler {
         private static readonly ConditionalDynamicEmitter Emitter = new();
-
         public override IAccessorEmitter? GetMemberEmitter(
             char varChar, int index, Type type, MemberInfo member, Mapper mapper)
             => index < 0 ? null : Emitter;
@@ -269,7 +268,6 @@ public sealed class ParameterShapeTests {
             => AccessorEmitter.EmitMemberLoad(il, type, member);
 
         public Type GetStackType(Type type, MemberInfo member) => typeof(string);
-
         public void Validate(Type type, MemberInfo member) {
             if (ParameterMemberAccess.GetMemberType(member) != typeof(string))
                 throw new InvalidOperationException("ConditionalDynamic requires a string member");

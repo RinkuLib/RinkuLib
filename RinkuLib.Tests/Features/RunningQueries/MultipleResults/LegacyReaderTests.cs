@@ -7,7 +7,7 @@ using Xunit;
 
 #pragma warning disable SYSLIB0010 // These tests intentionally cover the legacy reader surface.
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.MultipleResults;
 
 /// <summary>
 /// <c>WrappedBasicReader</c> turns a plain <see cref="IDataReader"/> into a full

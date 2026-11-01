@@ -6,30 +6,32 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.RunningQueries.ParameterMetadata;
 
 /// <summary>
 /// How values become <see cref="IDbDataParameter"/>s: inference by default, pinned metadata through
-/// <see cref="QueryCommand.UpdateParamCache"/>, and metadata learned back from a live command.
+/// <see cref="QueryCommand.UpdateParamCache(string, DbParamInfo)"/>, and metadata learned back from a live command.
 /// </summary>
 public class ParameterBindingTests {
-    public static IEnumerable<object[]> Values => [
-        [42],
-        [42L],
-        [4.2],
-        [4.2m],
-        ["text"],
-        [true],
-        [new DateTime(2024, 5, 1)],
-        [new DateOnly(2024, 5, 1)],
-        [new TimeOnly(13, 30)],
-        [Guid.Parse("11111111-2222-3333-4444-555555555555")],
-        [new byte[] { 1, 2, 3 }],
-    ];
+    public static TheoryData<string> Values => ["Int32", "Int64", "Double", "Decimal", "String", "Boolean", "DateTime", "DateOnly", "TimeOnly", "Guid", "Bytes"];
 
     [Theory]
     [MemberData(nameof(Values))]
-    public void Bound_value_is_passed_through_unchanged(object value) {
+    public void Bound_value_is_passed_through_unchanged(string kind) {
+        object value = kind switch {
+            "Int32" => 42,
+            "Int64" => 42L,
+            "Double" => 4.2,
+            "Decimal" => 4.2m,
+            "String" => "text",
+            "Boolean" => true,
+            "DateTime" => new DateTime(2024, 5, 1),
+            "DateOnly" => new DateOnly(2024, 5, 1),
+            "TimeOnly" => new TimeOnly(13, 30),
+            "Guid" => Guid.Parse("11111111-2222-3333-4444-555555555555"),
+            "Bytes" => new byte[] { 1, 2, 3 },
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
         var query = new QueryCommand("SELECT * FROM T WHERE X = @X");
         var builder = query.StartBuilder();
         builder.Use("@X", value);
@@ -81,20 +83,20 @@ public class ParameterBindingTests {
         Assert.Equal(DbType.AnsiString, cmd.BoundParameters[0].DbType);
     }
 
-    public static TheoryData<string, DbParamInfo, DbType, int> StringMetadataCases => new() {
-        { "fixed ANSI", SizedDbParamCache.Get(DbType.AnsiStringFixedLength, 10), DbType.AnsiStringFixedLength, 10 },
-        { "fixed Unicode", SizedDbParamCache.Get(DbType.StringFixedLength, 10), DbType.StringFixedLength, 10 },
-        { "variable ANSI", SizedDbParamCache.Get(DbType.AnsiString, 10), DbType.AnsiString, 10 },
-        { "variable Unicode", SizedDbParamCache.Get(DbType.String, 10), DbType.String, 10 },
-        { "unbounded ANSI", TypedDbParamCache.Get(DbType.AnsiString), DbType.AnsiString, 0 },
-        { "unbounded Unicode", TypedDbParamCache.Get(DbType.String), DbType.String, 0 },
+    public static TheoryData<string, DbType, int> StringMetadataCases => new() {
+        { "fixed ANSI", DbType.AnsiStringFixedLength, 10 },
+        { "fixed Unicode", DbType.StringFixedLength, 10 },
+        { "variable ANSI", DbType.AnsiString, 10 },
+        { "variable Unicode", DbType.String, 10 },
+        { "unbounded ANSI", DbType.AnsiString, 0 },
+        { "unbounded Unicode", DbType.String, 0 },
     };
 
     [Theory]
     [MemberData(nameof(StringMetadataCases))]
-    public void String_parameter_metadata_matrix_is_applied(
-        string _, DbParamInfo info, DbType type, int size) {
+    public void String_parameter_metadata_matrix_is_applied(string _, DbType type, int size) {
         var query = new QueryCommand("SELECT * FROM T WHERE Name = @Name");
+        DbParamInfo info = size == 0 ? TypedDbParamCache.Get(type) : SizedDbParamCache.Get(type, size);
         Assert.True(query.UpdateParamCache("@Name", info));
         var builder = query.StartBuilder();
         builder.Use("@Name", "abcde");

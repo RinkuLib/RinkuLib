@@ -5,10 +5,10 @@ using Rinku.Mapping;
 using Rinku.Mapping.Defaults;
 using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Registration;
 
 [Collection("GlobalMappingConfiguration")]
 public class CustomDatabaseTypeTests {
@@ -77,7 +77,6 @@ sealed class RegisteredDateTypeInfo : ScalarTypeParsingInfo<RegisteredDate> {
     internal static readonly RegisteredDateTypeInfo Instance = new();
     private static readonly MethodInfo FromDateTimeMethod = typeof(RegisteredDateTypeInfo).GetMethod(nameof(FromDateTime), BindingFlags.Static | BindingFlags.NonPublic)!;
     private static readonly MethodInfo FromProviderDateMethod = typeof(RegisteredDateTypeInfo).GetMethod(nameof(FromProviderDate), BindingFlags.Static | BindingFlags.NonPublic)!;
-
     protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal) {
         MethodInfo? method = column.Type == typeof(DateTime) ? FromDateTimeMethod : column.Type == typeof(ProviderDate) ? FromProviderDateMethod : null;
         if (method is null)
@@ -95,7 +94,6 @@ sealed class RegisteredDateTypeInfo : ScalarTypeParsingInfo<RegisteredDate> {
 sealed class RegisteredNamesTypeInfo : ScalarTypeParsingInfo<RegisteredNames> {
     internal static readonly RegisteredNamesTypeInfo Instance = new();
     private static readonly MethodInfo FromStringMethod = typeof(RegisteredNamesTypeInfo).GetMethod(nameof(FromString), BindingFlags.Static | BindingFlags.NonPublic)!;
-
     protected override DbItemPlan? TryCreatePlan(Type targetType, Type parentType, ParamInfo parameter, ColumnInfo column, int ordinal)
         => column.Type == typeof(string)
             ? new ConvertedScalarPlan(parentType, new MethodCallConverter(FromStringMethod), parameter.NameComparer.GetDefaultName(), parameter.NullColHandler, ordinal)

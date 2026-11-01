@@ -38,10 +38,10 @@ jobs:
         run: dotnet tool update -g docfx
 
       - name: Generate API metadata
-        run: docfx metadata docs/docfx.json
+        run: docfx metadata docs/docfx.json --warningsAsErrors
 
       - name: Build the site
-        run: docfx build docs/docfx.json
+        run: docfx build docs/docfx.json --warningsAsErrors
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4

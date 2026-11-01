@@ -54,7 +54,7 @@ public abstract class TypeParsingInfo {
         if (type.IsGenericParameter || type.IsBaseType() || type.IsEnum)
             return true;
         if (type.IsArray)
-            return IsUsableType(type.GetElementType()!);
+            return IsUsableType(type.GetElementType() ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"Array type {type} has no element type."));
         if (TypeInfos.ContainsKey(type))
             return true;
         if (type.IsGenericType && TypeInfos.ContainsKey(type.GetGenericTypeDefinition()))
@@ -363,15 +363,14 @@ public static class TypeParsingInfoHelper {
         return true;
     }
     private static MemberParser BuildMemberParser(MemberInfo member) {
-        ParamInfo? param = member switch {
+        ParamInfo? param = member switch
+        {
             PropertyInfo prop => ParamInfo.TryNew(prop),
             FieldInfo field => ParamInfo.TryNew(field),
             MethodInfo method => ParamInfo.TryNew(method.GetParameters() is { Length: 2 } ps && method.IsStatic
                 ? ps[1] : method.GetParameters()[0]),
             _ => throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"{member} is not a field, property, or setter method")
-        };
-        if (param is null)
-            throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"The value type of {member} is not a usable type");
+        } ?? throw new RinkuConfigurationException(ErrorCodes.UnusableMember, $"The value type of {member} is not a usable type");
         return new MemberParser(member, param);
     }
     /// <summary>Adds a constructor or factory method to the available construction paths.</summary>

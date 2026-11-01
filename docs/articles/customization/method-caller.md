@@ -103,3 +103,28 @@ Func<SaveAlbumArgs, Task<int>> save = MethodCaller.Create<Func<SaveAlbumArgs, Ta
 ```
 
 If a target parameter is assigned to the mapped source but the current source value is not usable, invocation fails. It is not silently replaced by another source.
+
+## Constructors
+
+Constructor calls use the same parameter mapping and generated IL as method calls. The first argument supplies mapped members. Later arguments can override constructor parameters.
+
+```csharp
+var construct = MethodCaller.CreateConstructor<Func<IRuntimeMemberAccess, long, User>>(CallerParameter<long>.Named(nameof(User.Id)));
+User accepted = construct(item, returnedId);
+```
+
+`CreateConstructor<TDelegate>()` requires exactly one public constructor on the delegate return type. When there are several, select one explicitly with `MethodCaller.Create<TDelegate>(constructorInfo, callerParameters)`. It never guesses a constructor.
+
+## Output parameters
+
+A custom delegate can expose target `out` parameters directly. They use the same exact-type or named matching as other caller arguments. `CallerParameter<T>` describes the output element type.
+
+An exposed output must have a matching target output. Unexposed target outputs are discarded. Target and caller `ref`/`in` parameters remain unsupported.
+
+```csharp
+delegate DbCommand InsertCommand(IRuntimeMemberAccess source, DbConnection connection, out DbParameter id);
+var insert = MethodCaller.Create<InsertCommand>(typeof(DbCommands).GetMethod(nameof(DbCommands.InsertUser))!);
+DbCommand command = insert(item, connection, out DbParameter id);
+```
+
+The output is the factory's actual parameter handle. Its value is read after executing the command.

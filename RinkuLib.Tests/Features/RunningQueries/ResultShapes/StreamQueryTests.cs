@@ -5,7 +5,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.ResultShapes;
 
 /// <summary>
 /// <c>StreamQueryAsync</c> yields rows one at a time without buffering the result.
@@ -14,7 +14,6 @@ public class StreamQueryTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     private static readonly QueryCommand AllNames = new("SELECT Name FROM Users ORDER BY ID");
     private static readonly QueryCommand NoRows = new("SELECT Name FROM Users WHERE 1 = 0");
     private static readonly QueryCommand WithNull = new("SELECT 'value' AS Value UNION ALL SELECT CAST(NULL AS TEXT) UNION ALL SELECT @txt");
-
     [Fact]
     public async Task Streams_rows_in_order() {
         using var cnn = Db.GetConnection();

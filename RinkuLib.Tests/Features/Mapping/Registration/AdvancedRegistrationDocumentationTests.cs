@@ -1,8 +1,8 @@
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Registration;
 
 [Collection("GlobalMappingConfiguration")]
 public class AdvancedRegistrationDocumentationTests {
@@ -14,7 +14,6 @@ public class AdvancedRegistrationDocumentationTests {
     private sealed record AuditEntry(int Id, DbValue<string> Actor);
     private sealed record Line(int Id, decimal Price) : IDbReadable;
     private sealed record Order(int Id, List<Line> Lines);
-
     [Fact]
     [DocumentationExample("index.md", "foundation-composition")]
     public void Result_mapping_composes_cardinality_objects_and_multi_row_members() {

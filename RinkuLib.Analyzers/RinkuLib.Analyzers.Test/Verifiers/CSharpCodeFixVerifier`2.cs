@@ -33,7 +33,7 @@ namespace RinkuLib.Analyzers.Test {
             => await VerifyCodeFixAsync(source, DiagnosticResult.EmptyDiagnosticResults, fixedSource);
 
         public static async Task VerifyCodeFixAsync(string source, DiagnosticResult expected, string fixedSource)
-            => await VerifyCodeFixAsync(source, new[] { expected }, fixedSource);
+            => await VerifyCodeFixAsync(source, [expected], fixedSource);
 
         public static async Task VerifyCodeFixAsync(string source, DiagnosticResult[] expected, string fixedSource) {
             var test = new Test {

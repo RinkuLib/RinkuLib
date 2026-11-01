@@ -1,0 +1,3 @@
+<Project>
+  <Import Project="../../RinkuPowerTools.Cli.Build/build/RinkuPowerTools.Cli.Build.targets" />
+</Project>

@@ -41,8 +41,8 @@ public abstract class DbItemPlan {
                 return false;
         return true;
     }
-    internal static readonly ConstructorInfo NullAssignmentCtor = typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(Type), typeof(string)])!;
-    internal static readonly MethodInfo GetTypeHandle = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)])!;
+    internal static readonly ConstructorInfo NullAssignmentCtor = TypeExtensions.Require(typeof(NullValueAssignmentException).GetConstructor([typeof(Type), typeof(Type), typeof(string)]), nameof(NullAssignmentCtor));
+    internal static readonly MethodInfo GetTypeHandle = TypeExtensions.Require(typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle), [typeof(RuntimeTypeHandle)]), nameof(GetTypeHandle));
 
     /// <summary>
     /// Writes a throw for <see cref="NullValueAssignmentException"/>. Use it when a target rejects

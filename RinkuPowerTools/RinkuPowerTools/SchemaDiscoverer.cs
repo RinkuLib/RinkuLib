@@ -39,6 +39,7 @@ public abstract class SchemaDiscoverer {
                 target.UpdateType(parseType(overrideParam.Type), overrideParam.IsNullable);
             else if (overrideParam.IsNullable is { } nullable)
                 target.UpdateNullability(nullable);
+            target.DefaultValue = overrideParam.DefaultValue;
         }
 
         return discoveredParams;

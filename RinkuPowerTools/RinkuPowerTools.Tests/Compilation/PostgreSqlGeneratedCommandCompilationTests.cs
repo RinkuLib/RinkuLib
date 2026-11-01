@@ -23,7 +23,7 @@ public class PostgreSqlGeneratedCommandCompilationTests
             "string",
             new ProviderParameterType(DatabaseType.PostgreSql, "jsonb"));
 
-        var generated = await GeneratorTestHelper.GenerateAsync(
+        var (_, commandCode, supportCode) = await GeneratorTestHelper.GenerateAsync(
             temp.Path,
             new QuerySetting
             {
@@ -33,7 +33,7 @@ public class PostgreSqlGeneratedCommandCompilationTests
             },
             new DiscoveredSchema("SELECT @payload::jsonb", [parameter], []));
 
-        Assembly assembly = GeneratedAssemblyCompiler.Compile(generated.SupportCode, generated.CommandCode);
+        Assembly assembly = GeneratedAssemblyCompiler.Compile(supportCode, commandCode);
         Type commandType = assembly.GetType("TestApp.Generated.DbCommands")
             ?? throw new InvalidOperationException("Generated DbCommands type was not found.");
         MethodInfo method = commandType.GetMethod("SavePayload", BindingFlags.Public | BindingFlags.Static)

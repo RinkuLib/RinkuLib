@@ -1,8 +1,21 @@
 # Add queries
 
-![Rinku Power Tools query manager](../../images/codegen/query-manager.png)
-
 Each query entry produces one generated command method.
+
+For example, this entry produces a command that can be passed directly to Rinku parsing:
+
+```csharp
+static readonly CachedTypeParser<List<GetAlbumsByArtistResult>> Parser = new();
+
+using DbCommand command = cnn.GetAlbumsByArtist(artistId: 7);
+List<GetAlbumsByArtistResult> albums = Parser.Query(command);
+```
+
+<figure class="codegen-screenshot">
+<img class="codegen-dark" src="../../images/codegen/query-manager.png" alt="Rinku Power Tools query manager">
+<img class="codegen-light" src="../../images/codegen/query-manager-light.png" alt="Rinku Power Tools query manager">
+<figcaption>The query manager defines the command and its result metadata.</figcaption>
+</figure>
 
 ## SQL text
 
@@ -43,7 +56,13 @@ SQL Server and PostgreSQL expose stored procedure entries through the configured
 
 ## SQL file
 
-![Rinku Power Tools SQL file query controls](../../images/codegen/query-sql-file.png)
+Select <code>SQL File</code> and provide the project-relative SQL path:
+
+<figure class="codegen-screenshot">
+<img class="codegen-dark" src="../../images/codegen/query-sql-file.png" alt="Rinku Power Tools SQL file query controls">
+<img class="codegen-light" src="../../images/codegen/query-sql-file-light.png" alt="Rinku Power Tools SQL file query controls">
+<figcaption>A query can use a checked-in SQL file instead of inline SQL text.</figcaption>
+</figure>
 
 ```text
 Method Name    GetOpenInvoices
@@ -115,6 +134,23 @@ Is Nullable   false
 
 A correction updates metadata for the named discovered parameter.
 
+### Optional C# arguments
+
+A correction can supply only a default, leaving discovered type and nullability unchanged:
+
+```json
+{
+  "Name": "@Id",
+  "DefaultValue": "null"
+}
+```
+
+For a discovered nullable integer, this generates `int? Id = null`. `DefaultValue` is a C# expression string: examples include `"10"`, `"false"`, `"default"` and `"\"text\""`. Omit the property to keep the argument required. A JSON null also means no configured default; the string `"null"` supplies an optional null default. Configure exposes the same expression in its Default column.
+
+Defaults apply to input-only parameters and must form a trailing group in the discovered argument order. Generation fails for a required argument following an optional one, a default on an output/input-output parameter, or malformed expression syntax. Arguments are never reordered.
+
+The C# compiler checks whether the expression is a legal default for the discovered type. Configured defaults affect the generated C# factory arguments. They do not change database defaults or SQL text.
+
 ## PostgreSQL positional parameters
 
 ```sql
@@ -149,3 +185,56 @@ Generated method is removed
 ```
 
 [Refresh generated code](refresh.md)
+
+## Before/after hooks
+
+Select **Generate before/after hooks** on a query to generate optional partial methods around command construction:
+
+```json
+{
+  "MethodName": "Refresh",
+  "SQLFile": "Sql/Refresh.sql",
+  "GenerateHooks": true
+}
+```
+
+The command class is partial. Implement either hook in another source file in the same namespace and assembly. For a factory with an `int Id` argument, the three hooks are:
+
+```csharp
+using System;
+using System.Data.Common;
+
+namespace MyApp;
+
+public static partial class DbCommands
+{
+    static partial void BeforeRefresh(DbConnection connection);
+    static partial void BeforeRefresh(DbConnection connection, ref int Id);
+    static partial void AfterRefresh(DbCommand command);
+
+    static partial void BeforeRefresh(DbConnection connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+    }
+
+    static partial void BeforeRefresh(DbConnection connection, ref int Id)
+    {
+        Id = Math.Max(Id, 0);
+    }
+
+    static partial void AfterRefresh(DbCommand command)
+    {
+        command.CommandTimeout = 60;
+    }
+}
+```
+
+`BeforeRefresh(DbConnection)` runs first, followed by `BeforeRefresh(DbConnection, ref ...)` when the factory has input values. Both run before command creation and receive the connection by value. Only input values are passed by `ref`, using their discovered C# types.
+
+This includes the input value of an input/output SQL parameter, but excludes SQL output handles. Changes to input values are used when binding SQL parameters. Hook declarations omit optional argument defaults. A factory with no input values generates and calls only the connection-only before hook.
+
+`AfterRefresh` receives the completed command, with its text, command type and parameters already set. It runs before the factory returns, not after SQL execution. It is a direct call without generated exception handling. If its implementation throws, that implementation is responsible for disposing the command.
+
+Factories with the same name share the connection-only before hook and after hook. Parameterized before hooks are shared when their C# signatures match; distinct input types produce overloads. Each declaration is emitted once.
+
+Unimplemented partial hooks and their calls are removed by the C# compiler. Disabled queries generate neither hook declarations nor calls, and JSON omits the false flag. There is no shared callback or reflected method field. The CLI exposes the same flag through `query add` and `query set` with `--generate-hooks true` or `--generate-hooks false`.

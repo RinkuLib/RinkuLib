@@ -5,7 +5,7 @@ namespace Rinku.Internal;
 internal struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
     public Locked LockTransfer() {
         var res = new Locked(_array, _count);
-        _array = null!;
+        _array = [];
         _count = 0;
         return res;
     }
@@ -28,19 +28,20 @@ internal struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
         }
         public readonly Span<T> AsSpan(int start) => RawArray.AsSpan(start, Length - start);
         public void Dispose() {
-            if (_array is null)
+            if (_array.Length == 0)
                 return;
             if (_array.Length > 0)
                 ArrayPool<T>.Shared.Return(
                     _array,
                     clearArray: RuntimeHelpers.IsReferenceOrContainsReferences<T>()
                 );
-            _array = null!;
+            _array = [];
             _count = 0;
         }
     }
     private T[] _array = initialCapacity == 0 ? [] : ArrayPool<T>.Shared.Rent(initialCapacity);
     private int _count = 0;
+    private bool _disposed;
     public readonly T[] RawArray => _array;
     public readonly Span<T> Span => _array.AsSpan(0, _count);
     public readonly int Length => _count;
@@ -63,6 +64,8 @@ internal struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Add(T value) {
+        if (_disposed)
+            throw new NullReferenceException("The pooled array has been disposed.");
         if (_count >= _array.Length)
             Grow();
 
@@ -89,15 +92,16 @@ internal struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
         _array = next;
     }
     public void Dispose() {
-        if (_array is null)
+        if (_array.Length == 0)
             return;
         if (_array.Length > 0)
             ArrayPool<T>.Shared.Return(
                 _array,
                 clearArray: RuntimeHelpers.IsReferenceOrContainsReferences<T>()
             );
-        _array = null!;
+        _array = [];
         _count = 0;
+        _disposed = true;
     }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void RemoveAt(int index) {
@@ -106,8 +110,7 @@ internal struct PooledArray<T>(int initialCapacity = 4) : IDisposable {
             Span<T> arraySpan = _array.AsSpan();
             arraySpan.Slice(index + 1, remaining).CopyTo(arraySpan[index..]);
         }
-        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-            _array[_count] = default!;
+        Array.Clear(_array, _count, 1);
     }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Clear() {

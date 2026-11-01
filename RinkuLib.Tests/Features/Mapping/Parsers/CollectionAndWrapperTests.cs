@@ -1,11 +1,12 @@
 using Rinku;
 using Rinku.Mapping;
+using RinkuLib.Tests.Features.Mapping.Objects;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Parsers;
 
 /// <summary>
 /// Collection shapes read the whole result and wrapper shapes change how a missing or null first row
@@ -13,7 +14,6 @@ namespace RinkuLib.Tests.Mapping;
 /// </summary>
 public class CollectionAndWrapperTests {
     private static readonly ColumnInfo[] IdName = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
-
     [Fact]
     public void List_of_scalars_reads_every_row() {
         ColumnInfo[] cols = [new("V", typeof(int), false)];
@@ -162,7 +162,9 @@ public class CollectionAndWrapperTests {
 
     [Fact]
     public void Parser_from_a_delegate_uses_its_parameters_as_schema() {
-        var parser = TypeParser.GetTypeParser<PropUser>((int Id, string Name) => new PropUser { Id = Id, Name = Name }, out var cols);
+        var factory = (Func<int, string, PropUser>)((int Id, string Name) => new PropUser { Id = Id, Name = Name });
+        var cols = SchemaExtractor.FromMethod(factory.Method);
+        var parser = TypeParser.GetTypeParser<PropUser>(cols);
         Assert.Equal(2, cols.Length);
         using var reader = Rows.Reader(cols, [3, "made"]);
         reader.Read();

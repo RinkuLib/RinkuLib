@@ -11,7 +11,7 @@ public class ProviderNeutralParameterGenerationTests
         using var temp = new TempDirectory();
         var parameter = new ParameterMetadata("$value", null, true, 0, ParameterDirection.Input, 0, 0, "object");
 
-        var generated = await GeneratorTestHelper.GenerateAsync(
+        var (_, commandCode, supportCode) = await GeneratorTestHelper.GenerateAsync(
             temp.Path,
             new QuerySetting
             {
@@ -21,10 +21,10 @@ public class ProviderNeutralParameterGenerationTests
             },
             new DiscoveredSchema("SELECT $value", [parameter], []));
 
-        Assert.Contains("GetValue(this DbConnection connection, object? value)", generated.CommandCode);
-        Assert.Contains("command.Add(\"$value\", (object?)value ?? DBNull.Value);", generated.CommandCode);
-        Assert.DoesNotContain("DbType.Object", generated.CommandCode);
-        Assert.Contains("Add(this DbCommand command, string name, object value)", generated.SupportCode);
+        Assert.Contains("GetValue(this DbConnection connection, object? value)", commandCode);
+        Assert.Contains("command.Add(\"$value\", (object?)value ?? DBNull.Value);", commandCode);
+        Assert.DoesNotContain("DbType.Object", commandCode);
+        Assert.Contains("Add(this DbCommand command, string name, object value)", supportCode);
     }
 
     [Fact]
@@ -33,7 +33,7 @@ public class ProviderNeutralParameterGenerationTests
         using var temp = new TempDirectory();
         var parameter = new ParameterMetadata("$1", DbType.Int32, false, 0, ParameterDirection.Input, 0, 0, "int", binding: ParameterBinding.Positional);
 
-        var generated = await GeneratorTestHelper.GenerateAsync(
+        var (_, commandCode, supportCode) = await GeneratorTestHelper.GenerateAsync(
             temp.Path,
             new QuerySetting
             {
@@ -43,8 +43,9 @@ public class ProviderNeutralParameterGenerationTests
             },
             new DiscoveredSchema("SELECT $1", [parameter], []));
 
-        Assert.Contains("GetValue(this DbConnection connection, int p1)", generated.CommandCode);
-        Assert.Contains("command.Add(\"\", DbType.Int32, p1);", generated.CommandCode);
+        Assert.Contains("GetValue(this DbConnection connection, int p1)", commandCode);
+        Assert.Contains("command.Add(\"\", DbType.Int32, (object)p1);", commandCode);
+        GeneratedAssemblyCompiler.Compile(commandCode, supportCode);
     }
 
     [Fact]
@@ -52,7 +53,7 @@ public class ProviderNeutralParameterGenerationTests
     {
         using var temp = new TempDirectory();
 
-        var generated = await GeneratorTestHelper.GenerateAsync(
+        var (_, commandCode, _) = await GeneratorTestHelper.GenerateAsync(
             temp.Path,
             new QuerySetting
             {
@@ -62,7 +63,7 @@ public class ProviderNeutralParameterGenerationTests
             },
             new DiscoveredSchema("SELECT \"Value\" FROM \"Example\"", [], []));
 
-        Assert.Contains("command.CommandText = @\"SELECT \"\"Value\"\" FROM \"\"Example\"\"\";", generated.CommandCode);
+        Assert.Contains("command.CommandText = @\"SELECT \"\"Value\"\" FROM \"\"Example\"\"\";", commandCode);
     }
 
     [Fact]
@@ -80,7 +81,7 @@ public class ProviderNeutralParameterGenerationTests
             "string",
             new ProviderParameterType(DatabaseType.PostgreSql, "jsonb"));
 
-        var generated = await GeneratorTestHelper.GenerateAsync(
+        var (_, commandCode, _) = await GeneratorTestHelper.GenerateAsync(
             temp.Path,
             new QuerySetting
             {
@@ -90,8 +91,8 @@ public class ProviderNeutralParameterGenerationTests
             },
             new DiscoveredSchema("SELECT @payload::jsonb", [parameter], []));
 
-        Assert.Contains("var p_payload = command.Add(\"@payload\", DbType.String, payload);", generated.CommandCode);
-        Assert.Contains("p_payload is not Npgsql.NpgsqlParameter npgsql_p_payload", generated.CommandCode);
-        Assert.Contains("npgsql_p_payload.DataTypeName = \"jsonb\";", generated.CommandCode);
+        Assert.Contains("var p_payload = command.Add(\"@payload\", DbType.String, payload);", commandCode);
+        Assert.Contains("p_payload is not Npgsql.NpgsqlParameter npgsql_p_payload", commandCode);
+        Assert.Contains("npgsql_p_payload.DataTypeName = \"jsonb\";", commandCode);
     }
 }

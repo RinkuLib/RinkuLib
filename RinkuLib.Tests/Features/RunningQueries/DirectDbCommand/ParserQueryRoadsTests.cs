@@ -6,10 +6,10 @@ using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace RinkuLib.Tests.Execution;
+namespace RinkuLib.Tests.Features.RunningQueries.DirectDbCommand;
 
 /// <summary>
 /// The parsers' own Query plumbing: opening a closed connection, closing it after, disposing the command
@@ -26,7 +26,7 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         return TypeParser.GetTypeParser<T>(cols);
     }
 
-    SqliteCommand Cmd(SqliteConnection cnn, string sql) {
+    static SqliteCommand Cmd(SqliteConnection cnn, string sql) {
         var cmd = cnn.CreateCommand();
         cmd.CommandText = sql;
         return cmd;
@@ -171,12 +171,11 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
         var cache = new CachedTypeParser<List<int>>();
         var ct = TestContext.Current.CancellationToken;
 
-        Task<List<int>>[] calls = Enumerable.Range(0, 8)
+        Task<List<int>>[] calls = [.. Enumerable.Range(0, 8)
             .Select(async _ => {
                 using var command = BehaviorCmd();
                 return await cache.QueryAsync(command, ct: ct);
-            })
-            .ToArray();
+            })];
 
         List<int>[] results = await Task.WhenAll(calls);
 
@@ -336,7 +335,6 @@ public class ParserQueryRoadsTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     static readonly ColumnInfo[] ValueCol = [new("V", typeof(int), false)];
 
     public record UserRow(long ID, string Name) : IDbReadable;
-
     [Fact]
     public async Task The_remaining_shape_and_row_crossings() {
         var ct = TestContext.Current.CancellationToken;

@@ -177,7 +177,7 @@ using (command)
 
 ```csharp
 Album original = new(12, "Blue", new Artist(7, "Miles"));
-IRuntimeTrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
+ITrackingItem<Album> edit = RuntimeTracking.Default<Album>().Create(original);
 edit.Set(nameof(Album.Title), "Kind of Blue");
 
 foreach (TrackingChange change in edit.GetChanges())

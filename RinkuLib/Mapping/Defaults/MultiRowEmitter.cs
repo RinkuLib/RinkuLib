@@ -11,12 +11,15 @@ namespace Rinku.Mapping.Defaults;
 
 internal static class MultiRowEmitter {
     private static readonly Type[] ReadValueArgs = [typeof(object[]), typeof(DbDataReader)];
-    private static readonly MethodInfo BuildRecursiveMethod = typeof(MultiRowEmitter).GetMethod(nameof(BuildRecursiveClosed), BindingFlags.NonPublic | BindingFlags.Static)!;
+    private static readonly MethodInfo BuildRecursiveMethod = typeof(MultiRowEmitter).GetMethod(nameof(BuildRecursiveClosed), BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new MissingMethodException(typeof(MultiRowEmitter).FullName, nameof(BuildRecursiveClosed));
     private const MethodAttributes InterfaceMethod =
         MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.Final
         | MethodAttributes.HideBySig | MethodAttributes.NewSlot;
     private const MethodAttributes StateHelper = MethodAttributes.Private | MethodAttributes.Static;
     private const FieldAttributes Priv = FieldAttributes.Private;
+    private static T Require<T>(T? value, string name) where T : class
+        => value ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, $"emitted-state member {name} was not initialized");
 
     internal static ITypeParser<T> Build<T>(DbItemPlan rd, ColumnInfo[] cols) {
         return DbItemPlan.AllSimple(rd) ? BuildCollapsed<T>(rd, cols)
@@ -27,7 +30,8 @@ internal static class MultiRowEmitter {
 
     private static ITypeParser<T> BuildRecursive<T>(IMultiRowPlan plan, ColumnInfo[] cols) {
         try {
-            return (ITypeParser<T>)BuildRecursiveMethod.MakeGenericMethod(typeof(T), plan.ElementType, plan.BufferType).Invoke(null, [plan, cols])!;
+            return (ITypeParser<T>)(BuildRecursiveMethod.MakeGenericMethod(typeof(T), plan.ElementType, plan.BufferType).Invoke(null, [plan, cols])
+                ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The recursive parser factory returned null."));
         }
         catch (TargetInvocationException ex) when (ex.InnerException is not null) {
             ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
@@ -39,14 +43,16 @@ internal static class MultiRowEmitter {
         var elementParser = Build<TElement>(plan.Element, cols);
         var strategy = EmitAccumulatorStrategy<TResult, TElement, TBuffer>(plan);
         var parserType = typeof(RecursiveAccumulatorTypeParser<,,,>).MakeGenericType(typeof(TResult), typeof(TElement), typeof(TBuffer), strategy);
-        return (ITypeParser<TResult>)Activator.CreateInstance(parserType, [elementParser])!;
+        return (ITypeParser<TResult>)(Activator.CreateInstance(parserType, [elementParser])
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The recursive parser type could not be instantiated."));
     }
 
     private static Type EmitAccumulatorStrategy<TResult, TElement, TBuffer>(IMultiRowPlan plan) {
         StateTypeAssembly.AllowAccessTo(typeof(TResult));
         StateTypeAssembly.AllowAccessTo(typeof(TElement));
         StateTypeAssembly.AllowAccessTo(typeof(TBuffer));
-        StateTypeAssembly.AllowAccessTo(plan.AddMethod.DeclaringType!);
+        StateTypeAssembly.AllowAccessTo(plan.AddMethod.DeclaringType
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The accumulator add method had no declaring type."));
         if (plan.Construct?.DeclaringType is { } finishType)
             StateTypeAssembly.AllowAccessTo(finishType);
         var contract = typeof(IAccumulatorStrategy<,,>).MakeGenericType(typeof(TResult), typeof(TElement), typeof(TBuffer));
@@ -59,14 +65,16 @@ internal static class MultiRowEmitter {
     }
 
     private static void EmitStrategySeed(TypeBuilder tb, Type contract, MethodBase initialState) {
-        var method = tb.DefineMethod("Seed", InterfaceMethod, initialState is ConstructorInfo ctor ? ctor.DeclaringType! : ((MethodInfo)initialState).ReturnType, Type.EmptyTypes);
+        var method = tb.DefineMethod("Seed", InterfaceMethod, initialState is ConstructorInfo ctor
+            ? ctor.DeclaringType ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The seed constructor had no declaring type.")
+            : ((MethodInfo)initialState).ReturnType, Type.EmptyTypes);
         var il = method.GetILGenerator();
         if (initialState is ConstructorInfo seedCtor)
             il.Emit(OpCodes.Newobj, seedCtor);
         else
             il.Emit(OpCodes.Call, (MethodInfo)initialState);
         il.Emit(OpCodes.Ret);
-        tb.DefineMethodOverride(method, contract.GetMethod("Seed")!);
+        tb.DefineMethodOverride(method, Require(contract.GetMethod("Seed"), "Seed"));
     }
 
     private static void EmitStrategyAdd(TypeBuilder tb, Type contract, MethodInfo add) {
@@ -84,7 +92,7 @@ internal static class MultiRowEmitter {
         if (add.ReturnType != typeof(void))
             il.Emit(OpCodes.Pop);
         il.Emit(OpCodes.Ret);
-        tb.DefineMethodOverride(method, contract.GetMethod("Add")!);
+        tb.DefineMethodOverride(method, Require(contract.GetMethod("Add"), "Add"));
     }
 
     private static void EmitStrategyFinish(TypeBuilder tb, Type contract, MethodBase? finish) {
@@ -109,7 +117,7 @@ internal static class MultiRowEmitter {
             il.Emit(factory.IsVirtual && !factory.IsStatic && !bufferType.IsValueType ? OpCodes.Callvirt : OpCodes.Call, factory);
         }
         il.Emit(OpCodes.Ret);
-        tb.DefineMethodOverride(method, contract.GetMethod("Finish")!);
+        tb.DefineMethodOverride(method, Require(contract.GetMethod("Finish"), "Finish"));
     }
 
     private static ITypeParser<T> BuildCollectionRoot<T>(IMultiRowPlan acc, ColumnInfo[] cols) {
@@ -152,7 +160,7 @@ internal static class MultiRowEmitter {
         EmitReturnField(tb, stateInterface, "Build", valueField, resultType);
 
         var created = tb.CreateType();
-        created.GetField("_targets", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, targets);
+        Require(created.GetField("_targets", BindingFlags.NonPublic | BindingFlags.Static), "_targets").SetValue(null, targets);
         return Close<T>(created, cols, BehaviorFor(rd));
     }
 
@@ -160,16 +168,16 @@ internal static class MultiRowEmitter {
 
     private sealed class Slot {
         public SlotKind Kind;
-        public FieldBuilder Field = null!;
-        public MethodBuilder Reader = null!;
-        public Type ElementType = null!;
+        public FieldBuilder? Field;
+        public MethodBuilder? Reader;
+        public Type? ElementType;
         public MethodBase? Construct;
-        public MethodBase InitialState = null!;
+        public MethodBase? InitialState;
         public MethodInfo? Add;
-        public Level SubLevel = null!;
+        public Level? SubLevel;
         public MemberInfo? Member;
-        public FieldBuilder TargetsField = null!;
-        public object[] Targets = null!;
+        public FieldBuilder? TargetsField;
+        public object[]? Targets;
         public INullColHandler? NullRule;
         public bool CanCollapse;
         public bool IsBuffer => Kind is SlotKind.SimpleBuffer or SlotKind.SubLevelBuffer;
@@ -211,9 +219,9 @@ internal static class MultiRowEmitter {
     }
 
     private sealed class Level {
-        public Type ResultType = null!;
-        public MethodBase Construction = null!;
-        public Slot[] CtorSlots = null!;
+        public Type? ResultType;
+        public MethodBase? Construction;
+        public Slot[]? CtorSlots;
         public List<Slot> MemberSlots = [];
         public GroupingBoundary? Boundary;
         public List<Slot> Simples = [];
@@ -224,7 +232,7 @@ internal static class MultiRowEmitter {
         public Level? Child;
         public MethodInfo? ParentAdd;
         public MethodBuilder? CloseMethod;
-        public Level CaptureInto = null!;
+        public Level? CaptureInto;
         public bool BuildsFromBuffer => Construction is null;
     }
 
@@ -237,15 +245,15 @@ internal static class MultiRowEmitter {
     }
 
     private static void SetTargetsFields(Type created, Level level) {
-        foreach (var s in level.CtorSlots.Concat(level.MemberSlots)) {
-            if (s.TargetsField is not null)
-                created.GetField(s.TargetsField.Name, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, s.Targets);
+        foreach (var s in Require(level.CtorSlots, nameof(level.CtorSlots)).Concat(level.MemberSlots)) {
+            if (s.TargetsField is { } targetsField)
+                Require(created.GetField(targetsField.Name, BindingFlags.NonPublic | BindingFlags.Static), targetsField.Name).SetValue(null, Require(s.Targets, nameof(s.Targets)));
             if (s.Kind == SlotKind.SubLevelDirect)
-                SetTargetsFields(created, s.SubLevel);
+                SetTargetsFields(created, Require(s.SubLevel, nameof(s.SubLevel)));
         }
         if (level.Boundary is not null)
             foreach (var (field, targets) in level.Boundary.Targets)
-                created.GetField(field.Name, BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, targets);
+                Require(created.GetField(field.Name, BindingFlags.NonPublic | BindingFlags.Static), field.Name).SetValue(null, targets);
         if (level.Child is not null)
             SetTargetsFields(created, level.Child);
     }
@@ -256,7 +264,7 @@ internal static class MultiRowEmitter {
             il.Emit(OpCodes.Pop);
     }
 
-    private static void EmitLoadBuffer(ILGenerator il, FieldInfo field) {
+    private static void EmitLoadBuffer(ILGenerator il, FieldBuilder field) {
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(field.FieldType.IsValueType ? OpCodes.Ldflda : OpCodes.Ldfld, field);
     }
@@ -296,11 +304,12 @@ internal static class MultiRowEmitter {
                 return boundary;
         }
         return new InferredGroupingRule(node.ConstructorArguments, (MethodBase)node.Construction, node.ResultType)
-            .MakeBoundary(node.ResultType, cols, node.Context, build)!;
+            .MakeBoundary(node.ResultType, cols, node.Context, build)
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "Grouping rules did not produce a boundary.");
     }
 
     private static Slot ClassifySlot(DbItemPlan plan, Type slotType, MemberInfo? member, TypeBuilder tb, ColumnInfo[] cols, Level level, string tag) {
-        var into = level.CaptureInto;
+        var into = Require(level.CaptureInto, nameof(level.CaptureInto));
         Slot slot;
         if (plan is IMultiRowPlan acc) {
             var buffer = tb.DefineField($"_b{tag}", acc.BufferType, Priv);
@@ -358,7 +367,7 @@ internal static class MultiRowEmitter {
     };
 
     private static IEnumerable<Slot> BufferSlots(Level level) {
-        foreach (var s in level.CtorSlots)
+        foreach (var s in Require(level.CtorSlots, nameof(level.CtorSlots)))
             foreach (var b in BuffersOf(s))
                 yield return b;
         foreach (var s in level.MemberSlots)
@@ -370,7 +379,7 @@ internal static class MultiRowEmitter {
         if (slot.IsBuffer)
             yield return slot;
         else if (slot.Kind == SlotKind.SubLevelDirect)
-            foreach (var b in BufferSlots(slot.SubLevel))
+            foreach (var b in BufferSlots(Require(slot.SubLevel, nameof(slot.SubLevel))))
                 yield return b;
     }
 
@@ -390,11 +399,12 @@ internal static class MultiRowEmitter {
 
     private static void EmitSeed(ILGenerator il, Slot slot) {
         il.Emit(OpCodes.Ldarg_0);
-        if (slot.InitialState is ConstructorInfo ctor)
+        var initialState = Require(slot.InitialState, nameof(slot.InitialState));
+        if (initialState is ConstructorInfo ctor)
             il.Emit(OpCodes.Newobj, ctor);
         else
-            il.Emit(OpCodes.Call, (MethodInfo)slot.InitialState);
-        il.Emit(OpCodes.Stfld, slot.Field);
+            il.Emit(OpCodes.Call, (MethodInfo)initialState);
+        il.Emit(OpCodes.Stfld, Require(slot.Field, nameof(slot.Field)));
     }
 
     private static void CollectBuffers(Level level, List<Slot> into) {
@@ -411,9 +421,9 @@ internal static class MultiRowEmitter {
             return;
         var il = level.CloseMethod.GetILGenerator();
         EmitCascadeCloseChild(il, level);
-        EmitLoadBuffer(il, level.ParentBuffer!);
+        EmitLoadBuffer(il, Require(level.ParentBuffer, nameof(level.ParentBuffer)));
         EmitConstructNode(il, level);
-        EmitAdd(il, level.ParentAdd!);
+        EmitAdd(il, Require(level.ParentAdd, nameof(level.ParentAdd)));
         foreach (var s in BufferSlots(level))
             EmitSeed(il, s);
         if (level.Live is not null) {
@@ -437,43 +447,40 @@ internal static class MultiRowEmitter {
     }
 
     private static void EmitConstructNode(ILGenerator il, Level level) {
-        foreach (var s in level.CtorSlots)
+        foreach (var s in Require(level.CtorSlots, nameof(level.CtorSlots)))
             EmitLoadSlotValue(il, s);
-        if (level.Construction is ConstructorInfo ctor)
+        var construction = Require(level.Construction, nameof(level.Construction));
+        if (construction is ConstructorInfo ctor)
             il.Emit(OpCodes.Newobj, ctor);
         else
-            il.Emit(OpCodes.Call, (MethodInfo)level.Construction);
+            il.Emit(OpCodes.Call, (MethodInfo)construction);
         if (level.MemberSlots.Count == 0)
             return;
-        var instance = il.DeclareLocal(level.ResultType);
+        var resultType = Require(level.ResultType, nameof(level.ResultType));
+        var instance = il.DeclareLocal(resultType);
         il.Emit(OpCodes.Stloc, instance);
         var gen = Wrap(il);
-        var load = level.ResultType.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc;
+        var load = resultType.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc;
         foreach (var s in level.MemberSlots) {
             il.Emit(load, instance);
             EmitLoadSlotValue(il, s);
-            DbItemPlan.EmitMemberDispatch(gen, s.Member!);
+            DbItemPlan.EmitMemberDispatch(gen, Require(s.Member, nameof(s.Member)));
         }
         il.Emit(OpCodes.Ldloc, instance);
     }
 
     private static void EmitLoadSlotValue(ILGenerator il, Slot slot) {
         if (slot.Kind == SlotKind.SubLevelDirect) {
-            EmitConstructNode(il, slot.SubLevel);
+            EmitConstructNode(il, Require(slot.SubLevel, nameof(slot.SubLevel)));
             return;
         }
         il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Ldfld, slot.Field);
+        il.Emit(OpCodes.Ldfld, Require(slot.Field, nameof(slot.Field)));
         if (slot.IsBuffer && slot.Construct is not null)
             DbItemPlan.EmitMemberDispatch(Wrap(il), slot.Construct);
     }
 
-    private static Generator Wrap(ILGenerator il) =>
-#if DEBUG
-        new(il, []);
-#else
-        new(il);
-#endif
+    private static Generator Wrap(ILGenerator il) => new(il);
 
     private static MethodBuilder EmitRead(TypeBuilder tb, Type stateInterface, Level master) {
         var mb = tb.DefineMethod("Read", InterfaceMethod, typeof(bool), [typeof(DbDataReader)]);
@@ -481,7 +488,7 @@ internal static class MultiRowEmitter {
         EmitLevelRead(il, master);
         il.Emit(OpCodes.Ldc_I4_1);
         il.Emit(OpCodes.Ret);
-        tb.DefineMethodOverride(mb, stateInterface.GetMethod("Read")!);
+        tb.DefineMethodOverride(mb, Require(stateInterface.GetMethod("Read"), "Read"));
         return mb;
     }
 
@@ -491,7 +498,8 @@ internal static class MultiRowEmitter {
         if (gated) {
             absent = il.DefineLabel();
             il.Emit(OpCodes.Ldarg_1);
-            il.Emit(OpCodes.Ldc_I4, level.Boundary!.PresenceColumn!.Value);
+            il.Emit(OpCodes.Ldc_I4, level.Boundary?.PresenceColumn
+                ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "A gated level had no presence column."));
             il.Emit(OpCodes.Callvirt, TypeExtensions.IsNull);
             il.Emit(OpCodes.Brtrue, absent);
         }
@@ -515,7 +523,7 @@ internal static class MultiRowEmitter {
                     il.Emit(OpCodes.Br, afterCompare);
                     il.MarkLabel(changed);
                     il.Emit(OpCodes.Ldarg_0);
-                    il.Emit(OpCodes.Call, level.CloseMethod!);
+                    il.Emit(OpCodes.Call, Require(level.CloseMethod, nameof(level.CloseMethod)));
                 }
             }
             else
@@ -527,11 +535,14 @@ internal static class MultiRowEmitter {
             if (level.Boundary is { Captures: true } capturing)
                 capturing.EmitCapture(Wrap(il));
             foreach (var s in level.Simples) {
+                var targetsField = Require(s.TargetsField, nameof(s.TargetsField));
+                var reader = Require(s.Reader, nameof(s.Reader));
+                var field = Require(s.Field, nameof(s.Field));
                 il.Emit(OpCodes.Ldarg_0);
-                EmitTargets(il, s.TargetsField);
+                EmitTargets(il, targetsField);
                 il.Emit(OpCodes.Ldarg_1);
-                il.Emit(OpCodes.Call, s.Reader);
-                il.Emit(OpCodes.Stfld, s.Field);
+                il.Emit(OpCodes.Call, reader);
+                il.Emit(OpCodes.Stfld, field);
             }
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldc_I4_1);
@@ -540,24 +551,28 @@ internal static class MultiRowEmitter {
         }
 
         foreach (var b in level.SimpleBuffers) {
-            var element = il.DeclareLocal(b.ElementType);
-            EmitTargets(il, b.TargetsField);
+            var elementType = Require(b.ElementType, nameof(b.ElementType));
+            var targetsField = Require(b.TargetsField, nameof(b.TargetsField));
+            var reader = Require(b.Reader, nameof(b.Reader));
+            var field = Require(b.Field, nameof(b.Field));
+            var element = il.DeclareLocal(elementType);
+            EmitTargets(il, targetsField);
             il.Emit(OpCodes.Ldarg_1);
             il.Emit(OpCodes.Ldloca, element);
-            il.Emit(OpCodes.Call, b.Reader);
+            il.Emit(OpCodes.Call, reader);
             Label done = default;
             if (b.CanCollapse) {
                 var add = il.DefineLabel();
                 done = il.DefineLabel();
                 il.Emit(OpCodes.Brtrue, add);
-                b.NullRule!.HandleNullForMultiRow(b.Field.FieldType, b.ElementType, "element", element, Wrap(il), new(done, 0));
+                Require(b.NullRule, nameof(b.NullRule)).HandleNullForMultiRow(field.FieldType, elementType, "element", element, Wrap(il), new(done, 0));
                 il.MarkLabel(add);
             }
             else
                 il.Emit(OpCodes.Pop);
-            EmitLoadBuffer(il, b.Field);
+            EmitLoadBuffer(il, field);
             il.Emit(OpCodes.Ldloc, element);
-            EmitAdd(il, b.Add!);
+            EmitAdd(il, Require(b.Add, nameof(b.Add)));
             if (b.CanCollapse)
                 il.MarkLabel(done);
         }
@@ -574,22 +589,17 @@ internal static class MultiRowEmitter {
         var il = mb.GetILGenerator();
         EmitCascadeCloseChild(il, master);
         if (master.BuildsFromBuffer)
-            EmitLoadSlotValue(il, master.CtorSlots[0]);
+            EmitLoadSlotValue(il, Require(master.CtorSlots, nameof(master.CtorSlots))[0]);
         else
             EmitConstructNode(il, master);
         il.Emit(OpCodes.Ret);
-        tb.DefineMethodOverride(mb, stateInterface.GetMethod("Build")!);
+        tb.DefineMethodOverride(mb, Require(stateInterface.GetMethod("Build"), "Build"));
         return mb;
     }
 
     private static MethodBuilder EmitConstruct(TypeBuilder tb, DbItemPlan node, ColumnInfo[] cols, string name, Type resultType, out object[] targets) {
         var mb = tb.DefineMethod(name, StateHelper, resultType, ReadValueArgs);
-        Generator gen =
-#if DEBUG
-            new(mb.GetILGenerator(), cols);
-#else
-            new(mb.GetILGenerator());
-#endif
+        Generator gen = new(mb.GetILGenerator());
         Label? nullJump = node.NeedNullSetPoint(cols) ? gen.DefineLabel() : null;
         ((ISimpleDbItemPlan)node).Emit(cols, gen, nullJump.HasValue ? new(nullJump.Value, 0) : default);
         targets = gen.GetTargets();
@@ -608,12 +618,7 @@ internal static class MultiRowEmitter {
         var mb = tb.DefineMethod($"Elem_{tag}", StateHelper, typeof(bool),
             [typeof(object[]), typeof(DbDataReader), elementType.MakeByRefType()]);
         mb.DefineParameter(3, ParameterAttributes.Out, "value");
-        Generator gen =
-#if DEBUG
-            new(mb.GetILGenerator(), cols);
-#else
-            new(mb.GetILGenerator());
-#endif
+        Generator gen = new(mb.GetILGenerator());
         bool collapses = element.NeedNullSetPoint(cols);
         Label collapse = gen.DefineLabel();
         ((ISimpleDbItemPlan)element).Emit(cols, gen, collapses ? new(collapse, 0) : default);
@@ -655,7 +660,7 @@ internal static class MultiRowEmitter {
         il.Emit(OpCodes.Stfld, liveField);
         il.Emit(OpCodes.Ldc_I4_1);
         il.Emit(OpCodes.Ret);
-        tb.DefineMethodOverride(mb, stateInterface.GetMethod("Read")!);
+        tb.DefineMethodOverride(mb, Require(stateInterface.GetMethod("Read"), "Read"));
     }
 
     private static void EmitReturnField(TypeBuilder tb, Type stateInterface, string name, FieldInfo field, Type resultType) {
@@ -664,7 +669,7 @@ internal static class MultiRowEmitter {
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldfld, field);
         il.Emit(OpCodes.Ret);
-        tb.DefineMethodOverride(mb, stateInterface.GetMethod(name)!);
+        tb.DefineMethodOverride(mb, Require(stateInterface.GetMethod(name), name));
     }
 
     private static CommandBehavior BehaviorFor(DbItemPlan plan) {
@@ -674,7 +679,8 @@ internal static class MultiRowEmitter {
 
     private static ITypeParser<T> Close<T>(Type created, ColumnInfo[] schema, CommandBehavior behavior, bool collectionRoot = false) {
         var driver = (collectionRoot ? typeof(MultiRowCollectionTypeParser<,>) : typeof(MultiRowTypeParser<,>)).MakeGenericType(typeof(T), created);
-        return (ITypeParser<T>)Activator.CreateInstance(driver, [schema, behavior])!;
+        return (ITypeParser<T>)(Activator.CreateInstance(driver, [schema, behavior])
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The generated parser driver could not be instantiated."));
     }
 
     private static string StateName(Type resultType) => $"State_{resultType.Name}_{Guid.NewGuid():N}";

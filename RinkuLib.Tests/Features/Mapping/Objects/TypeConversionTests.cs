@@ -1,10 +1,10 @@
 using Rinku.Mapping;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Objects;
 
 /// <summary>
 /// The converter chain between a column's provider type and the slot's CLR type: numeric opcodes,

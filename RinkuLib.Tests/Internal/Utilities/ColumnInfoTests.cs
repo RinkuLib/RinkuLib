@@ -4,7 +4,7 @@ using System.Data.Common;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Utilities;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// <see cref="ColumnInfo"/> and its helpers: schema extraction from a reader, structural comparison, the
@@ -106,7 +106,6 @@ public class ColumnInfoTests {
         public override int FieldCount => Schema.Length;
         public override string GetName(int ordinal) => Schema[ordinal].ColumnName;
         public override Type GetFieldType(int ordinal) => Schema[ordinal].DataType!;
-
         public override object this[int ordinal] => throw new NotSupportedException();
         public override object this[string name] => throw new NotSupportedException();
         public override int Depth => 0;

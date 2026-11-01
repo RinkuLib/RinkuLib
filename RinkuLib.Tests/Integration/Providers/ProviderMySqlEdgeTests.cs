@@ -3,10 +3,9 @@ using Rinku;
 using Rinku.Querying;
 using Xunit;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.Providers;
 
 public sealed class ProviderMySqlEdgeFixture : DBFixture<MySqlConnection>;
-
 [Collection(DatabaseIntegrationCollection.Name)]
 public sealed class ProviderMySqlEdgeTests(ProviderMySqlEdgeFixture fixture)
     : IClassFixture<ProviderMySqlEdgeFixture> {

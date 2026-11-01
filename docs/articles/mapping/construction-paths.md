@@ -100,6 +100,8 @@ TypeParsingInfo.GetOrAdd<Album>().AddPossibleConstruction(constructor);
 
 The same registration surface accepts a reflected static factory.
 
+A factory with a fully closed signature can return a closed generic class or interface even when it is declared elsewhere. Rinku uses that method directly. Open generic factories must carry the return type's generic parameters in matching order so the mapping can close them.
+
 ## Non public members
 
 One construction can be registered explicitly.

@@ -2,7 +2,7 @@ using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Dictionary;
 
 /// <summary>
 /// Dictionary mapping deliberately reads the current reader schema per row: one root parser accepts changing
@@ -60,11 +60,11 @@ public class DictionaryTests {
         Assert.Same(firstParser, secondParser);
         using var reader = Rows.Reader(secondSchema, [3, "three@example.test", 42L]);
         Assert.True(reader.Read());
-        var value = firstParser.Parse(reader).Result;
-        Assert.Equal(3, value.Id);
-        Assert.Equal(["Email", "Score"], value.Remaining.Keys);
-        Assert.Equal("three@example.test", value.Remaining["Email"]);
-        Assert.Equal(42L, value.Remaining["Score"]);
+        var (Id, Remaining) = firstParser.Parse(reader).Result;
+        Assert.Equal(3, Id);
+        Assert.Equal(["Email", "Score"], Remaining.Keys);
+        Assert.Equal("three@example.test", Remaining["Email"]);
+        Assert.Equal(42L, Remaining["Score"]);
     }
 
     [Fact]
@@ -121,6 +121,7 @@ public class DictionaryTests {
 
 public record DictionaryGroups(int Id, Dictionary<string, object> Album, Dictionary<string, object> Artist);
 public record AlternateDictionaryGroup([Alt("Record")] Dictionary<string, object> Album);
-public record CustomDictionaryGroup([DynamicPrefix("Payload")] Dictionary<string, object> Details);
+public record CustomDictionaryGroup([RinkuLib.Tests.Features.Mapping.DynamicObjects.DynamicPrefixAttribute("Payload")] Dictionary<string, object> 
+    Details);
 public record MixedDictionaryLevels(Dictionary<string, object> Header, DictionaryBody Body);
 public record DictionaryBody(int Id, Dictionary<string, object> Album) : IDbReadable;

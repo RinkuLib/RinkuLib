@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Rinku.Facade;
 using Rinku.Internal;
 using Rinku.Mapping;
 using Rinku.Mapping.Parsers;
@@ -45,6 +46,8 @@ public enum QueryParserInvalidationScope : byte {
 /// One instance can be shared across threads. Dispose it when it has a shorter lifetime than the application.
 /// </remarks>
 public class QueryCommand : IQueryCommand, ICache, IDisposable {
+    private static object RequireRuntimeResult(object? result)
+        => result ?? throw new RinkuReadException(ErrorCodes.CannotConvert, "The runtime query produced a null result.");
     private bool _subscribedToParserDisposing;
     private int _disposed;
     /// <inheritdoc/>
@@ -266,7 +269,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
                 return !NeedToCache(usageMap);
         NextEntry:;
         }
-        parser = default!;
+        parser = default;
         return false;
     }
     /// <summary>Gets a cached parser for a runtime result type and parameter values.</summary>
@@ -292,7 +295,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
                 return !NeedToCache(usageMap);
         NextEntry:;
         }
-        parser = default!;
+        parser = default;
         return false;
     }
     /// <summary>
@@ -330,39 +333,15 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         }
     }
     /// <summary>
-    /// Removes every parser held by this command.
-    /// A parser is also removed from the global cache when nothing else uses it.
+    /// Removes the parsers selected by <paramref name="predicate"/> from this command using the selected scope.
     /// </summary>
     /// <returns>The number of cache entries removed.</returns>
-    public int InvalidateParsers() => InvalidateParsers(QueryParserInvalidationScope.GlobalIfUnused);
-    /// <summary>
-    /// Removes every parser held by this command using the selected scope.
-    /// </summary>
-    /// <returns>The number of cache entries this command held when invalidation began.</returns>
-    public int InvalidateParsers(QueryParserInvalidationScope scope) {
+    public int InvalidateParsers(Func<ITypeParser, bool> predicate, QueryParserInvalidationScope scope = QueryParserInvalidationScope.GlobalIfUnused) {
+        ArgumentNullException.ThrowIfNull(predicate);
         ValidateParserInvalidationScope(scope);
-        var count = TakeLocalParsers(out var parsers);
+        var count = TakeLocalParsers(predicate, out var parsers);
         for (int i = 0; i < parsers.Length; i++)
             InvalidateReleasedParser(parsers[i], scope);
-        return count;
-    }
-    /// <summary>
-    /// Removes one parser from this command.
-    /// It is also removed from the global cache when nothing else uses it.
-    /// </summary>
-    /// <returns>The number of this command's cache entries that referenced <paramref name="parser"/>.</returns>
-    public int InvalidateParser(ITypeParser parser)
-        => InvalidateParser(parser, QueryParserInvalidationScope.GlobalIfUnused);
-    /// <summary>
-    /// Removes one parser from this command using the selected scope.
-    /// </summary>
-    /// <returns>The number of this command's cache entries that referenced <paramref name="parser"/>.</returns>
-    public int InvalidateParser(ITypeParser parser, QueryParserInvalidationScope scope) {
-        ArgumentNullException.ThrowIfNull(parser);
-        ValidateParserInvalidationScope(scope);
-        var count = TakeLocalParser(parser);
-        if (count != 0)
-            InvalidateReleasedParser(parser, scope);
         return count;
     }
     private static void ValidateParserInvalidationScope(QueryParserInvalidationScope scope) {
@@ -376,50 +355,47 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
                 TypeParser.TryDisposeParser(parser, ParserInvalidationMode.CheckUsage);
         }
         else if (scope == QueryParserInvalidationScope.Global) {
-            if (!TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences))
+            if (TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences) == 0)
                 TypeParser.TryDisposeParser(parser, ParserInvalidationMode.InvalidateReferences);
         }
         else
             TypeParser.TryDisposeParser(parser, ParserInvalidationMode.CheckUsage);
     }
-    private int TakeLocalParsers(out ITypeParser[] parsers) {
+    private int TakeLocalParsers(Func<ITypeParser, bool> predicate, out ITypeParser[] parsers) {
         int count;
         lock (ParsingCacheSharedLock) {
             var current = ParsingCache;
-            count = current.Length;
+            count = 0;
+            for (int i = 0; i < current.Length; i++)
+                if (predicate(current[i].Parser))
+                    count++;
             if (count == 0) {
-                UnsubscribeFromParserDisposing();
+                if (current.Length == 0)
+                    UnsubscribeFromParserDisposing();
                 parsers = [];
                 return 0;
             }
-            parsers = GetDistinctParsers(current);
-            ParsingCache = [];
-            UnsubscribeFromParserDisposing();
-        }
-        return count;
-    }
-    private int TakeLocalParser(ITypeParser parser) {
-        lock (ParsingCacheSharedLock) {
-            var current = ParsingCache;
-            int removed = 0;
+            var removed = new ParsingCacheItem[count];
+            int removedIndex = 0;
             for (int i = 0; i < current.Length; i++)
-                if (ReferenceEquals(current[i].Parser, parser))
-                    removed++;
-            if (removed == 0)
-                return 0;
-            if (removed == current.Length) {
+                if (predicate(current[i].Parser))
+                    removed[removedIndex++] = current[i];
+            parsers = GetDistinctParsers(removed);
+            if (count == current.Length) {
                 ParsingCache = [];
                 UnsubscribeFromParserDisposing();
-                return removed;
+                return count;
             }
-            var updated = new ParsingCacheItem[current.Length - removed];
+            var updated = new ParsingCacheItem[current.Length - count];
             int destination = 0;
             for (int i = 0; i < current.Length; i++)
-                if (!ReferenceEquals(current[i].Parser, parser))
+                if (!predicate(current[i].Parser))
                     updated[destination++] = current[i];
             ParsingCache = updated;
-            return removed;
+            if (updated.Length == 0)
+                UnsubscribeFromParserDisposing();
         }
+        return count;
     }
     private void OnParserDisposing(object? sender, ParserDisposingEventArgs args) {
         lock (ParsingCacheSharedLock) {
@@ -486,7 +462,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool[] CreateUsageMap() {
         var count = Mapper.Count;
-        return count == 0 ? Array.Empty<bool>() : new bool[count];
+        return count == 0 ? [] : new bool[count];
     }
     internal bool[] CreateUsageMap(object?[] variables) {
         var usage = CreateUsageMap();
@@ -776,7 +752,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         var current = Volatile.Read(ref _accessors);
         var result = new (Type ParameterType, ParameterAccessorKinds Accessors)[current.Length];
         for (int i = 0; i < current.Length; i++)
-            result[i] = (Type.GetTypeFromHandle(current[i].Handle)!, GetAccessorKinds(current[i].Accessor));
+            result[i] = (Type.GetTypeFromHandle(current[i].Handle) ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "An accessor had an invalid runtime type handle."), GetAccessorKinds(current[i].Accessor));
         return result;
     }
 
@@ -837,13 +813,13 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         var cmd = cnn.GetCommand(transaction, timeout);
         var usage = CreateUsageMap();
         SetCommand(cmd, parametersObj, usage);
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), true));
     }
     internal object QueryRuntime(Type type, DbConnection cnn, out DbCommand cmd, object? parametersObj, DbTransaction? transaction, int? timeout) {
         cmd = cnn.GetCommand(transaction, timeout);
         var usage = CreateUsageMap();
         SetCommand(cmd, parametersObj, usage);
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), false)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), false));
     }
     internal Task<object> QueryRuntimeAsync(Type type, DbConnection cnn, object? parametersObj, DbTransaction? transaction, int? timeout, CancellationToken ct) {
         var cmd = cnn.GetCommand(transaction, timeout);
@@ -861,13 +837,13 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         var cmd = cnn.GetCommand(transaction, timeout);
         var usage = CreateUsageMap();
         SetCommand(cmd, parametersObj, usage);
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), true));
     }
     internal object QueryRuntime(Type type, IDbConnection cnn, out IDbCommand cmd, object? parametersObj, IDbTransaction? transaction, int? timeout) {
         cmd = cnn.GetCommand(transaction, timeout);
         var usage = CreateUsageMap();
         SetCommand(cmd, parametersObj, usage);
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), false)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), false));
     }
     internal Task<object> QueryRuntimeAsync(Type type, IDbConnection cnn, object? parametersObj, IDbTransaction? transaction, int? timeout, CancellationToken ct) {
         var cmd = cnn.GetCommand(transaction, timeout);
@@ -881,10 +857,10 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
         SetCommand(cmd, parametersObj, usage);
         return BoxRuntime(cmd.QueryAsync(type, new RuntimeParserLinker(this, type, usage), false, ct));
     }
-    private static async Task<object> BoxRuntime(Task<object?> result) => (object)(await result.ConfigureAwait(false))!;
+    private static async Task<object> BoxRuntime(Task<object?> result) => RequireRuntimeResult(await result.ConfigureAwait(false));
     internal object QueryRuntime<TObj>(Type type, DbConnection cnn, TObj parametersObj, DbTransaction? transaction, int? timeout) where TObj : notnull {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, parametersObj, usage);
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), true));
     }
     internal Task<object> QueryRuntimeAsync<TObj>(Type type, DbConnection cnn, TObj parametersObj, DbTransaction? transaction, int? timeout, CancellationToken ct) where TObj : notnull {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, parametersObj, usage);
@@ -892,7 +868,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
     internal object QueryRuntime<TObj>(Type type, IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction, int? timeout) where TObj : notnull {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, parametersObj, usage);
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), true));
     }
     internal Task<object> QueryRuntimeAsync<TObj>(Type type, IDbConnection cnn, TObj parametersObj, IDbTransaction? transaction, int? timeout, CancellationToken ct) where TObj : notnull {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, parametersObj, usage);
@@ -900,7 +876,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
     internal object QueryRuntime<TObj>(Type type, DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction, int? timeout) where TObj : notnull {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, ref parametersObj, usage);
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), true));
     }
     internal Task<object> QueryRuntimeAsync<TObj>(Type type, DbConnection cnn, ref TObj parametersObj, DbTransaction? transaction, int? timeout, CancellationToken ct) where TObj : notnull {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, ref parametersObj, usage);
@@ -908,7 +884,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
     internal object QueryRuntime<TObj>(Type type, IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction, int? timeout) where TObj : notnull {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, ref parametersObj, usage);
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), true));
     }
     internal Task<object> QueryRuntimeAsync<TObj>(Type type, IDbConnection cnn, ref TObj parametersObj, IDbTransaction? transaction, int? timeout, CancellationToken ct) where TObj : notnull {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = CreateUsageMap(); SetCommand(cmd, ref parametersObj, usage);
@@ -916,7 +892,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
     internal object QueryRuntime(Type type, DbConnection cnn, object?[] variables, DbTransaction? transaction, int? timeout) {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = variables.ToBoolArray(); SetText(cmd, QueryText.Parse(variables));
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), true));
     }
     internal Task<object> QueryRuntimeAsync(Type type, DbConnection cnn, object?[] variables, DbTransaction? transaction, int? timeout, CancellationToken ct) {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = variables.ToBoolArray(); SetText(cmd, QueryText.Parse(variables));
@@ -924,7 +900,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
     internal object QueryRuntime(Type type, IDbConnection cnn, object?[] variables, IDbTransaction? transaction, int? timeout) {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = variables.ToBoolArray(); SetText(cmd, QueryText.Parse(variables));
-        return cmd.Query(type, new RuntimeParserLinker(this, type, usage), true)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, usage), true));
     }
     internal Task<object> QueryRuntimeAsync(Type type, IDbConnection cnn, object?[] variables, IDbTransaction? transaction, int? timeout, CancellationToken ct) {
         var cmd = cnn.GetCommand(transaction, timeout); var usage = variables.ToBoolArray(); SetText(cmd, QueryText.Parse(variables));
@@ -932,7 +908,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     }
     internal object QueryRuntime(Type type, IDbCommand cmd, object?[] variables, bool disposeCommand) {
         SetText(cmd, QueryText.Parse(variables));
-        return cmd.Query(type, new RuntimeParserLinker(this, type, variables.ToBoolArray()), disposeCommand)!;
+        return RequireRuntimeResult(cmd.Query(type, new RuntimeParserLinker(this, type, variables.ToBoolArray()), disposeCommand));
     }
     internal Task<object> QueryRuntimeAsync(Type type, IDbCommand cmd, object?[] variables, bool disposeCommand, CancellationToken ct) {
         SetText(cmd, QueryText.Parse(variables));
@@ -946,7 +922,7 @@ public class QueryCommand : IQueryCommand, ICache, IDisposable {
     public void Dispose() {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
-        InvalidateParsers();
+        InvalidateParsers(static _ => true);
         ClearParameterAccessors();
         Mapper.Dispose();
         GC.SuppressFinalize(this);
@@ -993,7 +969,7 @@ internal class PeekableWrapper(object? first, IEnumerator enumerator) : IEnumera
         if (_enumerator == null)
             yield break;
 
-        yield return _first!;
+        yield return _first ?? throw new InvalidOperationException("A peekable wrapper must contain its first item before enumeration.");
         _first = null;
 
         while (_enumerator.MoveNext())

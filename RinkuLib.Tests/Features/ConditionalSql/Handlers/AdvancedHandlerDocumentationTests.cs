@@ -5,10 +5,10 @@ using System.Text;
 using Rinku.Internal;
 using Rinku.Querying.Defaults;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.ConditionalSql.Handlers;
 
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class GlobalConditionalHandlersCollection {
@@ -30,14 +30,12 @@ public class AdvancedHandlerDocumentationTests {
     private sealed class Utf8Handler : SpecialHandler {
         private readonly string name;
         private readonly DbParamInfo parameter = TypedDbParamCache.Get(DbType.Binary);
-
         public Utf8Handler(string name) {
             this.name = name;
             IsCached = true;
         }
 
         public override bool CanHandle(ref object? value) => value is string;
-
         public override bool Use(IDbCommand command, ref object? value) {
             if (value is not string text)
                 return false;
@@ -68,7 +66,6 @@ public class AdvancedHandlerDocumentationTests {
         }
 
         public override void Handle(ref ValueStringBuilder sql, object value) => sql.Append(name);
-
         public override bool UpdateCache<T>(T getter) => true;
     }
 

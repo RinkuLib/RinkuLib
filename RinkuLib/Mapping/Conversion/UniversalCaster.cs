@@ -20,13 +20,13 @@ public static class Caster {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryCast<TFrom, TTo>(TFrom value, [MaybeNullWhen(false)] out TTo val) => Caster<TFrom, TTo>.TryCast(value, out val);
     static Caster() {
-        AddParser((object v, out DateTimeOffset r) => { r = DateTimeOffset.Parse(v.ToString()!, CultureInfo.InvariantCulture); return true; });
-        AddParser((object v, out TimeSpan r) => { r = TimeSpan.Parse(v.ToString()!, CultureInfo.InvariantCulture); return true; });
+        AddParser((object v, out DateTimeOffset r) => { r = DateTimeOffset.Parse(v.ToString() ?? throw new InvalidOperationException("ToString returned null."), CultureInfo.InvariantCulture); return true; });
+        AddParser((object v, out TimeSpan r) => { r = TimeSpan.Parse(v.ToString() ?? throw new InvalidOperationException("ToString returned null."), CultureInfo.InvariantCulture); return true; });
         AddParser((object v, out Guid r) => {
             r = v switch {
                 string s => Guid.Parse(s),
                 byte[] b => new Guid(b),
-                _ => Guid.Parse(v.ToString()!)
+                _ => Guid.Parse(v.ToString() ?? throw new InvalidOperationException("ToString returned null."))
             };
             return true;
         });
@@ -37,8 +37,8 @@ public static class Caster {
     [return: NotNullIfNotNull(nameof(value))]
     public static T? Parse<T>(this object? value) {
         if (Caster<object?, T>.TryCast(value, out var val))
-            return val!;
-        throw new RinkuReadException(ErrorCodes.CannotConvert, $"Unable to parse from {value} (object : {value!.GetType()}) to {typeof(T)}");
+            return val;
+        throw new RinkuReadException(ErrorCodes.CannotConvert, $"Unable to parse from {value} (object : {value?.GetType()}) to {typeof(T)}");
     }
     internal static bool TryGetOperator(Type f, Type t, [NotNullWhen(true)] out MethodInfo? m) {
         m = f.GetMethod("op_Explicit", PublicStatic, [f]) ?? f.GetMethod("op_Implicit", PublicStatic, [f])
@@ -159,7 +159,7 @@ internal static class CasterEmit {
             var bridge = typeof(ConvertibleBridge<,>).MakeGenericType(f, t);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldarg_1);
-            il.Emit(OpCodes.Call, bridge.GetMethod("Execute")!);
+            il.Emit(OpCodes.Call, TypeExtensions.Require(bridge.GetMethod("Execute"), "Execute"));
             il.Emit(OpCodes.Ret);
             return;
         }
@@ -187,18 +187,18 @@ internal static class CasterEmit {
         Type nullF = typeof(Nullable<>).MakeGenericType(cF);
         Label absent = il.DefineLabel();
         il.Emit(OpCodes.Ldarga_S, (byte)0);
-        il.Emit(OpCodes.Call, nullF.GetMethod("get_HasValue")!);
+        il.Emit(OpCodes.Call, TypeExtensions.Require(nullF.GetMethod("get_HasValue"), "Nullable.HasValue"));
         il.Emit(OpCodes.Brfalse, absent);
         il.Emit(OpCodes.Ldarg_1);
         il.Emit(OpCodes.Ldarga_S, (byte)0);
-        il.Emit(OpCodes.Call, nullF.GetMethod("get_Value")!);
+        il.Emit(OpCodes.Call, TypeExtensions.Require(nullF.GetMethod("get_Value"), "Nullable.Value"));
         convert(il);
         StoreResult(il, cT, nullT);
         Return(il, true);
 
         il.MarkLabel(absent);
         if (toNull) {
-            StoreDefault(il, nullT!);
+            StoreDefault(il, nullT ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "Nullable target type was missing."));
             Return(il, true);
         }
         else {
@@ -209,7 +209,7 @@ internal static class CasterEmit {
 
     private static void StoreResult(ILGenerator il, Type cT, Type? nullT) {
         if (nullT is not null) {
-            il.Emit(OpCodes.Newobj, nullT.GetConstructor([cT])!);
+            il.Emit(OpCodes.Newobj, TypeExtensions.Require(nullT.GetConstructor([cT]), "Nullable constructor"));
             il.Emit(OpCodes.Stobj, nullT);
         } else {
             Store(il, cT);
@@ -219,7 +219,7 @@ internal static class CasterEmit {
     private static void EmitNumeric(ILGenerator il, Type reprF, Type reprT) {
         if (reprF == reprT)
             return;
-        var create = typeof(INumberBase<>).MakeGenericType(reprT).GetMethod("CreateTruncating")!.MakeGenericMethod(reprF);
+        var create = TypeExtensions.Require(typeof(INumberBase<>).MakeGenericType(reprT).GetMethod("CreateTruncating"), "CreateTruncating").MakeGenericMethod(reprF);
         il.Emit(OpCodes.Constrained, reprT);
         il.Emit(OpCodes.Call, create);
     }
@@ -244,8 +244,8 @@ internal static class CasterEmit {
     }
 
     private static void EmitParse(ILGenerator il, Type cT, bool toNull) {
-        var tryParse = typeof(IParsable<>).MakeGenericType(cT).GetMethod("TryParse")!;
-        var invariant = typeof(CultureInfo).GetProperty("InvariantCulture")!.GetGetMethod()!;
+        var tryParse = TypeExtensions.Require(typeof(IParsable<>).MakeGenericType(cT).GetMethod("TryParse"), "TryParse");
+        var invariant = TypeExtensions.Require(typeof(CultureInfo).GetProperty("InvariantCulture")?.GetGetMethod(), "InvariantCulture");
         if (!toNull) {
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Call, invariant);
@@ -273,7 +273,7 @@ internal static class CasterEmit {
         il.Emit(OpCodes.Brfalse, fail);
         il.Emit(OpCodes.Ldarg_1);
         il.Emit(OpCodes.Ldloc, tmp);
-        il.Emit(OpCodes.Newobj, nullT.GetConstructor([cT])!);
+        il.Emit(OpCodes.Newobj, TypeExtensions.Require(nullT.GetConstructor([cT]), "Nullable constructor"));
         il.Emit(OpCodes.Stobj, nullT);
         Return(il, true);
         il.MarkLabel(fail);
@@ -289,14 +289,14 @@ internal static class CasterEmit {
         var bridge = (toNull ? typeof(ObjectNullableBridge<>) : typeof(ObjectBridge<>)).MakeGenericType(cT);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldarg_1);
-        il.Emit(OpCodes.Call, bridge.GetMethod("Execute")!);
+            il.Emit(OpCodes.Call, TypeExtensions.Require(bridge.GetMethod("Execute"), "Execute"));
         il.Emit(OpCodes.Ret);
     }
 
     private static void EmitToString(ILGenerator il, Type f) {
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldarg_1);
-        il.Emit(OpCodes.Call, typeof(ToStringBridge<>).MakeGenericType(f).GetMethod("Execute")!);
+        il.Emit(OpCodes.Call, TypeExtensions.Require(typeof(ToStringBridge<>).MakeGenericType(f).GetMethod("Execute"), "Execute"));
         il.Emit(OpCodes.Ret);
     }
 
@@ -329,8 +329,8 @@ internal static class ObjectBridge<TTo> {
     private static readonly bool IsEnum = typeof(TTo).IsEnum;
     private static readonly Type EnumUnderlying = IsEnum ? Enum.GetUnderlyingType(typeof(TTo)) : typeof(TTo);
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Execute(object? input, out TTo output) {
-        if (input is null || input is DBNull) { output = default!; return true; }
+    public static bool Execute(object? input, [MaybeNull] out TTo output) {
+        if (input is null || input is DBNull) { output = default; return true; }
         if (IsEnum && TryReadEnum(input, out var asEnum)) {
             output = asEnum;
             return true;
@@ -342,7 +342,7 @@ internal static class ObjectBridge<TTo> {
             }
             catch { }
         }
-        output = default!;
+        output = default;
         return false;
     }
     internal static bool TryReadEnum(object input, [MaybeNullWhen(false)] out TTo output) {
@@ -407,13 +407,13 @@ internal static class ObjectNullableBridge<TTo> where TTo : struct {
 
 internal static class ConvertibleBridge<TFrom, TTo> where TFrom : IConvertible {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Execute(TFrom input, out TTo output) {
+    public static bool Execute(TFrom input, [MaybeNullWhen(false)] out TTo output) {
         try {
             output = ObjectBridge<TTo>.Dispatch(input);
             return true;
         }
         catch {
-            output = default!;
+            output = default;
             return false;
         }
     }

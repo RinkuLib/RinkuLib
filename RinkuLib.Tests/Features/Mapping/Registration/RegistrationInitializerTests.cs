@@ -1,17 +1,16 @@
 using System.Reflection;
 using Rinku.Mapping.Defaults;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Registration;
 
 [Collection("GlobalMappingConfiguration")]
 public class RegistrationInitializerTests {
     private sealed record GlobalReadableParent(GlobalReadableChild Child);
     private sealed record GlobalReadableChild(GlobalReadableGrandchild Grandchild);
     private sealed record GlobalReadableGrandchild(int Value);
-
     [Fact]
     [DocumentationExample("type-registration.md", "demand-driven-registration")]
     public void Type_initializer_can_enable_direct_readability_for_each_type_created_on_demand() {
@@ -88,7 +87,6 @@ public class RegistrationInitializerTests {
     private readonly record struct ConventionalChild(int Id, string Name) : IDbReadable;
     private sealed record ConventionalParent(int ParentId, ConventionalChild? Child) : IDbReadable;
     private sealed record StrictDefaultsRow(int Id, string Name) : IDbReadable;
-
     [Fact]
     [DocumentationExample("registration.md", "param-registration-default")]
     public void A_param_initializer_can_make_every_default_id_collapse_its_containing_object_on_null() {
@@ -113,7 +111,7 @@ public class RegistrationInitializerTests {
             ParamInfo.RegistrationInitializer = previous;
             TypeParsingInfo.TryRemove(childType, out _);
             TypeParsingInfo.TryRemove(parentType, out _);
-            TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(columns), ParserInvalidationMode.InvalidateReferences);
         }
     }
 
@@ -143,9 +141,9 @@ public class RegistrationInitializerTests {
         finally {
             ParamInfo.RegistrationInitializer = previous;
             TypeParsingInfo.TryRemove(type, out _);
-            TypeParser.Invalidate(matching, ParserInvalidationMode.InvalidateReferences);
-            TypeParser.Invalidate(reversed, ParserInvalidationMode.InvalidateReferences);
-            TypeParser.Invalidate(convertible, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(matching), ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(reversed), ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(convertible), ParserInvalidationMode.InvalidateReferences);
         }
     }
 
@@ -153,7 +151,6 @@ public class RegistrationInitializerTests {
     private sealed record ConventionGrouped(int Id, string Label, List<int> Values) : IDbReadable;
     private sealed record ConventionWithoutId(string Label, List<int> Values) : IDbReadable;
     private sealed record ReplacedConstruction(int Id) : IDbReadable;
-
     [Fact]
     [DocumentationExample("type-registration.md", "global-id-convention")]
     public void Registration_initializers_can_make_every_id_a_group_key_that_aborts_on_null() {
@@ -215,8 +212,8 @@ public class RegistrationInitializerTests {
             TypeParsingInfo.RegistrationInitializer = previousType;
             TypeParsingInfo.TryRemove(type, out _);
             TypeParsingInfo.TryRemove(noIdType, out _);
-            TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences);
-            TypeParser.Invalidate(noIdColumns, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(columns), ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(noIdColumns), ParserInvalidationMode.InvalidateReferences);
         }
     }
 
@@ -274,7 +271,7 @@ public class RegistrationInitializerTests {
         finally {
             MethodCtorInfo.RegistrationInitializer = previous;
             TypeParsingInfo.TryRemove(type, out _);
-            TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(columns), ParserInvalidationMode.InvalidateReferences);
         }
     }
 
@@ -288,9 +285,7 @@ public class RegistrationInitializerTests {
         private readonly DefaultTypeParsingInfo inner = new(type);
         public IGroupingRule? GroupKey { get => inner.GroupKey; set => inner.GroupKey = value; }
         public override void ValidateCanUseType(Type targetType) => inner.ValidateCanUseType(targetType);
-        public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages,
-            ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage,
-            MethodCtorInfo.AdditionalFlags callerFlags = default)
+        public override DbItemPlan? TryGetParser(Type currentClosedType, RecursiveInfo previousUsages, ParamInfo paramInfo, ColumnInfo[] columns, ColModifier colModifier, ref ColumnUsage colUsage, MethodCtorInfo.AdditionalFlags callerFlags = default)
             => inner.TryGetParser(currentClosedType, previousUsages, paramInfo, columns, colModifier, ref colUsage, callerFlags);
     }
 
@@ -298,7 +293,6 @@ public class RegistrationInitializerTests {
     private sealed class GeneratedObject;
     private sealed class GeneratedArrayElement;
     private enum GeneratedScalar { Value }
-
     private sealed class DelegatingTypeInfo(TypeParsingInfo inner) : TypeParsingInfo {
         public TypeParsingInfo Inner { get; } = inner;
         public override void ValidateCanUseType(Type targetType) => Inner.ValidateCanUseType(targetType);
@@ -308,7 +302,6 @@ public class RegistrationInitializerTests {
 
     private sealed record CacheAnchor(int Value) : IDbReadable;
     private sealed record ConventionConfigured(int Id) : IDbReadable;
-
     [Fact]
     public void Initializing_new_metadata_does_not_invalidate_an_existing_parser() {
         var anchorType = typeof(CacheAnchor);
@@ -338,7 +331,7 @@ public class RegistrationInitializerTests {
         };
         try {
             var configuredInfo = TypeParsingInfo.ForceGet(configuredType);
-            Assert.NotEmpty(Assert.IsAssignableFrom<ICanProvideParamInfos>(configuredInfo).GetParamInfos());
+            Assert.NotEmpty(Assert.IsType<ICanProvideParamInfos>(configuredInfo, exactMatch: false).GetParamInfos());
             TypeParser.GetTypeParser<ConventionConfigured>(configuredColumns);
 
             Assert.Same(anchor, TypeParser.GetTypeParser<CacheAnchor>(anchorColumns));
@@ -349,8 +342,8 @@ public class RegistrationInitializerTests {
             TypeParsingInfo.RegistrationInitializer = previousType;
             TypeParsingInfo.TryRemove(anchorType, out _);
             TypeParsingInfo.TryRemove(configuredType, out _);
-            TypeParser.Invalidate(anchorColumns, ParserInvalidationMode.InvalidateReferences);
-            TypeParser.Invalidate(configuredColumns, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(anchorColumns), ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(configuredColumns), ParserInvalidationMode.InvalidateReferences);
         }
     }
 
@@ -377,7 +370,7 @@ public class RegistrationInitializerTests {
             wasAbsentDuringInitialization = TypeParsingInfo.Get(type) is null;
             offered = info;
             replacement = new ReplacementTypeInfo(type);
-            var grouping = Assert.IsAssignableFrom<ICanUpdateGroupKey>(replacement);
+            var grouping = Assert.IsType<ICanUpdateGroupKey>(replacement, exactMatch: false);
             grouping.GroupKey = new EqualityGroupingRule(type.GetProperty(nameof(TypeGrouped.Id))!);
             return replacement;
         };
@@ -405,7 +398,7 @@ public class RegistrationInitializerTests {
             TypeParsingInfo.RegistrationInitializer = previous;
             TypeParsingInfo.TryRemove(type, out _);
             TypeParsingInfo.TryRemove(explicitType, out _);
-            TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(columns), ParserInvalidationMode.InvalidateReferences);
         }
     }
 

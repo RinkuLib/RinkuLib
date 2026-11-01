@@ -6,7 +6,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Building;
+namespace RinkuLib.Tests.Features.RunningQueries.ParameterMetadata;
 
 /// <summary>
 /// A pinned parameter's metadata drives not just the first bind but also the in-place updates and
@@ -20,20 +20,22 @@ public class PinnedParameterUpdateTests {
         return (query.StartBuilder((DbCommand)cmd), cmd);
     }
 
-    public static TheoryData<string, DbParamInfo> PinnedInfos => new() {
-        { "typed", TypedDbParamCache.Get(DbType.Int32) },
-        { "sized", SizedDbParamCache.Get(DbType.String, 100) },
-        { "scaled", new ScaledDbParamCache(DbType.Decimal, 18, 2) },
-        { "directional", new DirectionalDbParamCache(ParameterDirection.InputOutput, DbType.Int32) },
-        { "directional sized", new DirectionalSizedDbParamCache(ParameterDirection.Input, DbType.String, 500) },
-        { "directional scaled", new DirectionalScaledDbParamCache(ParameterDirection.Input, DbType.Decimal, 10, 2) },
+    public static TheoryData<string> PinnedInfos => ["typed", "sized", "scaled", "directional", "directional sized", "directional scaled"];
+
+    private static DbParamInfo GetPinnedInfo(string kind) => kind switch {
+        "typed" => TypedDbParamCache.Get(DbType.Int32),
+        "sized" => SizedDbParamCache.Get(DbType.String, 100),
+        "scaled" => new ScaledDbParamCache(DbType.Decimal, 18, 2),
+        "directional" => new DirectionalDbParamCache(ParameterDirection.InputOutput, DbType.Int32),
+        "directional sized" => new DirectionalSizedDbParamCache(ParameterDirection.Input, DbType.String, 500),
+        "directional scaled" => new DirectionalScaledDbParamCache(ParameterDirection.Input, DbType.Decimal, 10, 2),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
     [Theory]
     [MemberData(nameof(PinnedInfos))]
-    public void Update_replaces_the_value_in_place(string kind, DbParamInfo info) {
-        _ = kind;
-        var (builder, cmd) = StartPinned(info);
+    public void Update_replaces_the_value_in_place(string kind) {
+        var (builder, cmd) = StartPinned(GetPinnedInfo(kind));
         builder.Use("@X", 1);
         builder.Use("@X", 2);
         var p = Assert.Single(cmd.BoundParameters);
@@ -42,9 +44,8 @@ public class PinnedParameterUpdateTests {
 
     [Theory]
     [MemberData(nameof(PinnedInfos))]
-    public void Update_to_null_removes_the_parameter(string kind, DbParamInfo info) {
-        _ = kind;
-        var (builder, cmd) = StartPinned(info);
+    public void Update_to_null_removes_the_parameter(string kind) {
+        var (builder, cmd) = StartPinned(GetPinnedInfo(kind));
         builder.Use("@X", 1);
         builder.Use("@X", null);
         Assert.Empty(cmd.BoundParameters);
@@ -52,9 +53,8 @@ public class PinnedParameterUpdateTests {
 
     [Theory]
     [MemberData(nameof(PinnedInfos))]
-    public void Remove_takes_the_parameter_off(string kind, DbParamInfo info) {
-        _ = kind;
-        var (builder, cmd) = StartPinned(info);
+    public void Remove_takes_the_parameter_off(string kind) {
+        var (builder, cmd) = StartPinned(GetPinnedInfo(kind));
         builder.Use("@X", 1);
         builder.Remove("@X");
         Assert.Empty(cmd.BoundParameters);
@@ -62,9 +62,8 @@ public class PinnedParameterUpdateTests {
 
     [Theory]
     [MemberData(nameof(PinnedInfos))]
-    public void Reset_clears_the_pinned_parameter(string kind, DbParamInfo info) {
-        _ = kind;
-        var (builder, cmd) = StartPinned(info);
+    public void Reset_clears_the_pinned_parameter(string kind) {
+        var (builder, cmd) = StartPinned(GetPinnedInfo(kind));
         builder.Use("@X", 1);
         builder.Reset();
         Assert.Empty(cmd.BoundParameters);
@@ -76,10 +75,9 @@ public class PinnedParameterUpdateTests {
     /// </summary>
     [Theory]
     [MemberData(nameof(PinnedInfos))]
-    public void A_pinned_parameter_has_nothing_left_to_learn(string kind, DbParamInfo info) {
-        _ = kind;
+    public void A_pinned_parameter_has_nothing_left_to_learn(string kind) {
         var query = new QueryCommand("SELECT * FROM T WHERE X = @X");
-        Assert.True(query.UpdateParamCache("@X", info));
+        Assert.True(query.UpdateParamCache("@X", GetPinnedInfo(kind)));
 
         Span<bool> usage = stackalloc bool[query.Mapper.Count];
         usage[0] = true;

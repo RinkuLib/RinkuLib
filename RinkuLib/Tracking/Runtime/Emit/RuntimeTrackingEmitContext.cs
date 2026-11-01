@@ -7,23 +7,25 @@ namespace Rinku.Tracking.Runtime;
 public sealed class RuntimeTrackingEmitContext<TOriginal>
 {
     private Action<ILGenerator, string?>? _changedEmitter;
+    internal FieldBuilder ConfirmationField { get; set; } = null!;
     private int _snapshotFieldIndex;
     private int _directFieldIndex;
     private readonly List<Action<Type>> _initializers = [];
+    private readonly List<Action> _deferredEmitters = [];
 
-    internal RuntimeTrackingEmitContext(
-        RuntimeTrackingTypeDefinition<TOriginal> definition,
-        TypeBuilder typeBuilder,
-        TypeBuilder snapshotBuilder,
-        FieldBuilder originalField,
-        FieldBuilder editField,
-        FieldBuilder isNewField,
-        FieldBuilder mapperField)
+    internal void DeferEmission(Action emit) => _deferredEmitters.Add(emit);
+    internal void CompleteEmission() {
+        for (int i = 0; i < _deferredEmitters.Count; i++)
+            _deferredEmitters[i]();
+    }
+
+    internal RuntimeTrackingEmitContext(RuntimeTrackingTypeDefinition<TOriginal> definition, TypeBuilder typeBuilder, TypeBuilder snapshotBuilder, FieldBuilder originalField, FieldBuilder editField, FieldBuilder isNewField, FieldBuilder mapperField)
     {
         Definition = definition;
         TypeBuilder = typeBuilder;
         SnapshotBuilder = snapshotBuilder;
         OriginalField = originalField;
+        HasOriginalField = typeBuilder.DefineField("_hasOriginal", typeof(bool), FieldAttributes.Private);
         EditField = editField;
         IsNewField = isNewField;
         MapperField = mapperField;
@@ -37,6 +39,8 @@ public sealed class RuntimeTrackingEmitContext<TOriginal>
     public TypeBuilder SnapshotBuilder { get; }
     /// <summary>Gets the original value field.</summary>
     public FieldBuilder OriginalField { get; }
+    /// <summary>Gets the accepted-original availability field.</summary>
+    public FieldBuilder HasOriginalField { get; }
     /// <summary>Gets the edit snapshot field.</summary>
     public FieldBuilder EditField { get; }
     /// <summary>Gets the new state field.</summary>
@@ -72,7 +76,22 @@ public sealed class RuntimeTrackingEmitContext<TOriginal>
     internal string NextDirectFieldName(string member) => $"_v{_directFieldIndex++}_{Sanitize(member)}";
 
     /// <summary>Emits a change notification when one is configured.</summary>
-    public void EmitChanged(ILGenerator il, string? propertyName) => _changedEmitter?.Invoke(il, propertyName);
+    public void EmitChanged(ILGenerator il, string? propertyName) {
+        _changedEmitter?.Invoke(il, propertyName);
+        if (propertyName is null || _changedEmitter is null)
+            return;
+        var notified = new HashSet<string>(StringComparer.Ordinal) { propertyName };
+        NotifyDependents(propertyName);
+        void NotifyDependents(string dependency) {
+            foreach (var member in Definition.Members)
+                if (member.Emitter is IRuntimeComputedMember computed)
+                    foreach (string source in computed.Dependencies)
+                        if ((source == dependency || dependency.StartsWith(source + ".", StringComparison.Ordinal)) && notified.Add(member.Name)) {
+                            _changedEmitter(il, member.Name);
+                            NotifyDependents(member.Name);
+                        }
+        }
+    }
 
     /// <summary>Emits a load of the original value.</summary>
     public void EmitLoadOriginalValue(ILGenerator il)
@@ -80,10 +99,6 @@ public sealed class RuntimeTrackingEmitContext<TOriginal>
 
     /// <summary>Emits a load of the original target.</summary>
     public void EmitLoadOriginalTarget(ILGenerator il)
-        => Definition.OriginalStorage.EmitLoadTarget(il, OriginalField);
-
-    /// <summary>Emits a writable load of the original target.</summary>
-    public void EmitLoadOriginalForWrite(ILGenerator il)
         => Definition.OriginalStorage.EmitLoadTarget(il, OriginalField);
 
     /// <summary>Emits a load of the edit snapshot.</summary>

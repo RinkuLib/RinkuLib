@@ -81,7 +81,8 @@ public sealed class EqualityBoundary(IReadOnlyList<(IBoundaryReader Reader, IBou
             g.Emit(OpCodes.Brfalse, changed);
         }
     }
-    private static readonly MethodInfo StringEquals = typeof(string).GetMethod("op_Equality", [typeof(string), typeof(string)])!;
+    private static readonly MethodInfo StringEquals = typeof(string).GetMethod("op_Equality", [typeof(string), typeof(string)])
+        ?? throw new MissingMethodException(typeof(string).FullName, "op_Equality");
     private static void EmitEquals(Generator g, IBoundaryReader reader, IBoundaryField field) {
         var type = reader.Type;
         var underlying = type.IsEnum ? type.GetEnumUnderlyingType() : type;
@@ -97,10 +98,12 @@ public sealed class EqualityBoundary(IReadOnlyList<(IBoundaryReader Reader, IBou
         }
         else {
             var eq = typeof(EqualityComparer<>).MakeGenericType(type);
-            g.Emit(OpCodes.Call, eq.GetProperty("Default")!.GetGetMethod()!);
+            g.Emit(OpCodes.Call, eq.GetProperty("Default")?.GetGetMethod()
+                ?? throw new MissingMethodException(eq.FullName, "Default"));
             field.EmitLoad(g);
             reader.EmitRead(g);
-            g.Emit(OpCodes.Callvirt, eq.GetMethod("Equals", [type, type])!);
+            g.Emit(OpCodes.Callvirt, eq.GetMethod("Equals", [type, type])
+                ?? throw new MissingMethodException(eq.FullName, "Equals"));
         }
     }
     private static bool IsCeqType(Type t) =>
@@ -119,8 +122,10 @@ public sealed class MethodBoundary(MethodInfo method, Type keyType, IBoundaryFie
     private readonly Type KeyType = keyType;
     private readonly IBoundaryField Key = key;
     private readonly IReadOnlyList<IBoundaryReader> Parameters = parameters;
-    private FieldInfo Same => Method.ReturnType.GetField("Item1")!;
-    private FieldInfo Next => Method.ReturnType.GetField("Item2")!;
+    private FieldInfo Same => Method.ReturnType.GetField("Item1")
+        ?? throw new MissingFieldException(Method.ReturnType.FullName, "Item1");
+    private FieldInfo Next => Method.ReturnType.GetField("Item2")
+        ?? throw new MissingFieldException(Method.ReturnType.FullName, "Item2");
     /// <inheritdoc/>
     public override int? PresenceColumn => Parameters.Count > 0 ? Parameters[0].Column : null;
     /// <inheritdoc/>

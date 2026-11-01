@@ -12,12 +12,8 @@ internal static class ConstructorContract {
     };
 
     public static bool HasMatch(INamedTypeSymbol target, ISymbol reference) {
-        foreach (var targetConstructor in target.InstanceConstructors) {
-            foreach (var candidate in GetCandidates(reference)) {
-                if (Matches(targetConstructor, candidate))
-                    return true;
-            }
-        }
+        foreach (var candidate in GetCandidates(reference))
+            if (MatchesAny(target, candidate)) return true;
         return false;
     }
 

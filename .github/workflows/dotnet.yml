@@ -29,13 +29,40 @@ jobs:
             10.0
 
       - name: Restore dependencies
-        run: dotnet restore RinkuLib.slnx
+        run: |
+          dotnet restore RinkuLib/RinkuLib.csproj
+          dotnet restore RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj
+          dotnet restore RinkuLib.Tests/RinkuLib.Tests.csproj
+          dotnet restore RinkuPowerTools/RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj
+          dotnet restore RinkuPowerTools/RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj
+          dotnet restore RinkuPowerTools/RinkuPowerTools.Cli.Build/RinkuPowerTools.Cli.Build.csproj
 
-      - name: Build the solution
-        run: dotnet build RinkuLib.slnx --configuration Release --no-restore
+      - name: Build Rinku
+        run: dotnet build RinkuLib/RinkuLib.csproj --configuration Release --no-restore
+
+      - name: Generate API documentation metadata
+        run: |
+          dotnet tool update -g docfx
+          docfx metadata docs/docfx.json --warningsAsErrors
 
       - name: Run unit tests
         run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --verbosity normal --framework net10.0
 
       - name: Run analyzer tests
         run: dotnet test RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj --configuration Release --verbosity normal
+
+      - name: Run Power Tools tests
+        run: dotnet run --project RinkuPowerTools/RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj --configuration Release
+
+      - name: Run CLI tests
+        run: dotnet run --project RinkuPowerTools/RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj --configuration Release
+
+      - name: Pack and smoke-test Power Tools packages
+        shell: bash
+        run: |
+          mkdir -p artifacts .tool
+          dotnet pack RinkuPowerTools/RinkuPowerTools.Cli/RinkuPowerTools.Cli.csproj --configuration Release --output artifacts --no-restore -p:MinVerVersionOverride=0.0.0-ci
+          dotnet pack RinkuPowerTools/RinkuPowerTools.Cli.Build/RinkuPowerTools.Cli.Build.csproj --configuration Release --output artifacts --no-restore -p:MinVerVersionOverride=0.0.0-ci
+          dotnet tool install --tool-path .tool --add-source artifacts RinkuPowerTools.Cli --version 0.0.0-ci
+          ./.tool/rinku help
+          ./.tool/rinku refresh --project RinkuPowerTools/RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj

@@ -5,7 +5,7 @@ namespace RinkuPowerTools.VisualStudio.Commands;
 [VisualStudioContribution]
 public class UpdateCommand() : Command {
     public override CommandConfiguration CommandConfiguration => new("%RinkuPowerTools.VisualStudio.Configure.DisplayName%") {
-        Icon = new(ImageMoniker.KnownValues.DatabaseColumn, IconSettings.IconAndText),
+        Icon = new(ImageMoniker.Custom("Rinku"), IconSettings.IconAndText),
     };
     public override async Task ExecuteCommandAsync(IClientContext context, CancellationToken ct) {
         var (projectSnapshot, projectDirectory) = await context.GetProjectAndDirectoryAsync(ct);

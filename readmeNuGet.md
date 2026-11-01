@@ -10,6 +10,18 @@ dotnet add package Rinku
 
 The examples assume `cnn` is an open provider-specific `DbConnection`.
 
+## Power Tools code generation
+
+The Rinku Power Tools CLI and build integration are published as separate packages so the runtime package stays lightweight:
+
+```bash
+dotnet tool install --global RinkuPowerTools.Cli
+dotnet add package RinkuPowerTools.Cli.Build
+```
+
+The two Power Tools packages share their own release version, independent from `Rinku`; use
+matching versions when pinning them. See the [CLI and build integration guide](https://rinkulib.github.io/RinkuLib/articles/codegen/refresh.html).
+
 ## Quick start
 
 ```csharp

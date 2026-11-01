@@ -36,10 +36,11 @@ public sealed class AddBasedOnAnalyzer : DiagnosticAnalyzer {
     }
 
     private static void AnalyzeType(SyntaxNodeAnalysisContext context) {
-        if (context.Node is not TypeDeclarationSyntax declaration
-            || DocumentationTags.HasTag(declaration, DocumentationTags.Schema)
-            || DocumentationTags.HasTag(declaration, DocumentationTags.BasedOn)
-            || DocumentationTags.HasTag(declaration, DocumentationTags.MatchConstructor))
+        if (context.Node is not TypeDeclarationSyntax declaration)
+            return;
+
+        if (DocumentationTags.HasTag(declaration, DocumentationTags.Schema)
+            || DocumentationTags.HasTag(declaration, DocumentationTags.BasedOn))
             return;
 
         context.ReportDiagnostic(Diagnostic.Create(

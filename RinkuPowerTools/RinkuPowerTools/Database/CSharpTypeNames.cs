@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace RinkuPowerTools;
+namespace RinkuPowerTools.Database;
 
 internal static class CSharpTypeNames {
     public static string FromType(Type type) {

@@ -5,18 +5,13 @@ using System.Runtime.CompilerServices;
 using Rinku;
 using Xunit;
 
-namespace RinkuLib.Tests.Documentation;
+namespace RinkuLib.Tests.Features.Documentation;
 
-public class XmlApiDocumentationStyleTests {
+public partial class XmlApiDocumentationStyleTests {
     private static readonly char[] FancyPunctuation = [';', ':', '\u2014', '\u2013', '\u201C', '\u201D'];
-    private static readonly Regex FancyWords = new(
-        @"\b(implementation|internally|engine|negotiation|lifecycle|seam|dispatch|retained|compose|ledger|hot path|cold path|backing field|state machine|interlocked|volatile)\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    private static readonly Regex ConsumerImplementationWords = new(
-        @"\b(internal|compiled|optimized|high[ -]performance|road)\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex FancyWords = MyRegex();
+    private static readonly Regex ConsumerImplementationWords = ConsumerImplementationWordsRegex();
     private static readonly string[] ProseElements = ["summary", "remarks", "param", "typeparam", "returns", "value", "exception"];
-
     [Fact]
     public void Packaged_api_prose_stays_short_and_plain() {
         XDocument document = XDocument.Load(GetXmlPath());
@@ -107,11 +102,10 @@ public class XmlApiDocumentationStyleTests {
     public void Generated_api_contains_only_consumer_members() {
         XDocument document = XDocument.Load(GetXmlPath());
         HashSet<string> publicIds = GetAllPublicDocumentationIds();
-        string[] unexpected = document.Descendants("member")
+        string[] unexpected = [.. document.Descendants("member")
             .Select(member => (string)member.Attribute("name")!)
             .Where(name => !publicIds.Contains(name) && !IsConsumerCompilerEntry(name))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+            .Order(StringComparer.Ordinal)];
 
         Assert.True(unexpected.Length == 0, $"Non-public symbols in XML documentation\n{string.Join('\n', unexpected)}");
     }
@@ -123,14 +117,13 @@ public class XmlApiDocumentationStyleTests {
             || name.StartsWith("M:Rinku.QueryBuilderExtensions.<G>$", StringComparison.Ordinal)
             || name == "M:Rinku.Mapping.Parsers.ITypeParser.System#IDisposable#Dispose";
 
-    private static bool HasDocumentation(IReadOnlyDictionary<string, XElement> members, string name)
+    private static bool HasDocumentation(Dictionary<string, XElement> members, string name)
         => members.TryGetValue(name, out XElement? member)
             && (!string.IsNullOrWhiteSpace(member.Element("summary")?.Value) || member.Element("inheritdoc") is not null);
 
     private static bool IsSourceNamed(Type type) => !type.FullName!.Contains('<');
-
     private static HashSet<string> GetPublicDocumentationIds() {
-        Type[] types = typeof(QueryCommand).Assembly.GetExportedTypes().Where(IsSourceNamed).ToArray();
+        Type[] types = [.. typeof(QueryCommand).Assembly.GetExportedTypes().Where(IsSourceNamed)];
         return types.Select(type => $"T:{type.FullName!.Replace('+', '.')}")
             .Concat(types.SelectMany(GetConsumerMembers)
                 .Where(member => !member.IsDefined(typeof(CompilerGeneratedAttribute), false))
@@ -141,7 +134,7 @@ public class XmlApiDocumentationStyleTests {
     }
 
     private static HashSet<string> GetAllPublicDocumentationIds() {
-        Type[] types = typeof(QueryCommand).Assembly.GetExportedTypes().Where(IsSourceNamed).ToArray();
+        Type[] types = [.. typeof(QueryCommand).Assembly.GetExportedTypes().Where(IsSourceNamed)];
         return types.Select(type => $"T:{type.FullName!.Replace('+', '.')}")
             .Concat(types.SelectMany(GetConsumerMembers).Select(GetDocumentationId))
             .ToHashSet(StringComparer.Ordinal);
@@ -234,7 +227,7 @@ public class XmlApiDocumentationStyleTests {
     private static string VisibleProse(XElement block) {
         XElement copy = new(block);
         copy.Descendants().Where(element => element.Name.LocalName is "code" or "c").Remove();
-        return Regex.Replace(copy.Value, @"\s+", " ").Trim();
+        return WhitespaceRegex().Replace(copy.Value, " ").Trim();
     }
 
     private static string GetXmlPath() {
@@ -242,4 +235,11 @@ public class XmlApiDocumentationStyleTests {
         Assert.True(File.Exists(path), $"Missing generated XML documentation at {path}");
         return path;
     }
+
+    [GeneratedRegex(@"\b(implementation|internally|engine|negotiation|lifecycle|seam|dispatch|retained|compose|ledger|hot path|cold path|backing field|state machine|interlocked|volatile)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex MyRegex();
+    [GeneratedRegex(@"\b(internal|compiled|optimized|high[ -]performance|road)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ConsumerImplementationWordsRegex();
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex WhitespaceRegex();
 }

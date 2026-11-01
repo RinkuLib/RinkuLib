@@ -33,16 +33,19 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo, IMultiRowTypeParsingInfo
         Finish = finish;
     }
 
-    private static readonly ConstructorInfo ListCtor = typeof(List<>).GetConstructor(Type.EmptyTypes)!;
+    private static readonly ConstructorInfo ListCtor = typeof(List<>).GetConstructor(Type.EmptyTypes)
+        ?? throw new MissingMethodException(typeof(List<>).FullName, ".ctor");
     private static readonly MethodInfo ListAdd = typeof(List<>).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-        .First(m => m.Name == nameof(List<int>.Add) && m.GetParameters().Length == 1);
+        .First(m => m.Name == nameof(List<>.Add) && m.GetParameters().Length == 1);
     /// <summary>The built-in <c>List&lt;&gt;</c> mapping, where the accumulator is already the result.</summary>
     public static readonly MultiRowTypeParsingInfo ForList = new(ListCtor, ListAdd, null);
     /// <summary>
     /// Maps an array, folding into a <c>List&lt;element&gt;</c> and finishing with its <c>ToArray</c>. Register it
     /// against a specific array type, for example <c>AddOrSet(typeof(Child[]), MultiRowTypeParsingInfo.ForArray)</c>.
     /// </summary>
-    public static readonly MultiRowTypeParsingInfo ForArray = new(ListCtor, ListAdd, typeof(List<>).GetMethod(nameof(List<int>.ToArray), Type.EmptyTypes)!);
+    public static readonly MultiRowTypeParsingInfo ForArray = new(ListCtor, ListAdd,
+        typeof(List<>).GetMethod(nameof(List<>.ToArray), Type.EmptyTypes)
+            ?? throw new MissingMethodException(typeof(List<>).FullName, nameof(List<>.ToArray)));
 
     /// <inheritdoc/>
     public override void ValidateCanUseType(Type targetType) {
@@ -100,22 +103,29 @@ public class MultiRowTypeParsingInfo : TypeParsingInfo, IMultiRowTypeParsingInfo
             return paramType;
 
         if (currentClosedType.IsArray)
-            return paramType.CloseType([currentClosedType.GetElementType()!]);
+            return paramType.CloseType([currentClosedType.GetElementType()
+                ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "An array type had no element type.")]);
         return paramType.CloseType(currentClosedType.GetGenericArguments());
     }
 
     internal static Type AccumulatorOf(MethodBase initialState)
-        => initialState is ConstructorInfo ctor ? ctor.DeclaringType! : ((MethodInfo)initialState).ReturnType;
+        => initialState is ConstructorInfo ctor
+            ? ctor.DeclaringType ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "An accumulator constructor had no declaring type.")
+            : ((MethodInfo)initialState).ReturnType;
 
     private static Type ResultOf(MethodBase finish)
-        => finish is ConstructorInfo ctor ? ctor.DeclaringType! : ((MethodInfo)finish).ReturnType;
+        => finish is ConstructorInfo ctor
+            ? ctor.DeclaringType ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "A finish constructor had no declaring type.")
+            : ((MethodInfo)finish).ReturnType;
 
     internal static MethodBase Close(MethodBase construction, Type elementType) {
-        var declaring = construction.DeclaringType!;
+        var declaring = construction.DeclaringType
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "A generic construction had no declaring type.");
         if (!declaring.IsGenericTypeDefinition)
             return construction;
         var closed = declaring.MakeGenericType(elementType);
-        return MethodBase.GetMethodFromHandle(construction.MethodHandle, closed.TypeHandle)!;
+        return MethodBase.GetMethodFromHandle(construction.MethodHandle, closed.TypeHandle)
+            ?? throw new RinkuInternalException(ErrorCodes.InternalInvariant, "The closed construction could not be resolved.");
     }
 
     internal static MethodInfo ResolveAdd(Type elementType, MethodBase add) => (MethodInfo)Close(add, elementType);

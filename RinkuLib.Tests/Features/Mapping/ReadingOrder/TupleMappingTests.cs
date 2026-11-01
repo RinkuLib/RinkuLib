@@ -3,7 +3,7 @@ using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.ReadingOrder;
 
 /// <summary>
 /// A value tuple splits the row left to right, each item consuming the columns its own shape claims.
@@ -122,14 +122,14 @@ public class TupleMappingTests {
             new("M", typeof(int), false), new("N", typeof(int), false),
             new("O", typeof(int), false),
         ];
-        var value = Rows.ParseOne<(
+        var (A, _, _, _, _, _, _, H, _, _, _, _, _, _, O) = Rows.ParseOne<(
             int A, int B, int C, int D, int E, int F, int G, int H,
             int I, int J, int K, int L, int M, int N, int O)>(
             cols, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
 
-        Assert.Equal(1, value.A);
-        Assert.Equal(8, value.H);
-        Assert.Equal(15, value.O);
+        Assert.Equal(1, A);
+        Assert.Equal(8, H);
+        Assert.Equal(15, O);
     }
 
     [Fact]

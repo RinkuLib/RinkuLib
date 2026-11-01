@@ -6,6 +6,17 @@ namespace RinkuPowerTools.Tests.Configuration;
 public class ParameterOverrideTests
 {
     [Fact]
+    public void DefaultOnlyCorrectionPreservesDiscoveredMetadata()
+    {
+        var parameter = new ParameterMetadata("@Id", DbType.Int64, true, 0, ParameterDirection.Input, 0, 0);
+        var result = OverrideProbe.Apply([parameter], [new() { Name = "id", DefaultValue = "null" }], SqlServerTypeParser.Parse);
+        Assert.Same(parameter, Assert.Single(result));
+        Assert.Equal("long?", parameter.CSharpType);
+        Assert.Equal(DbType.Int64, parameter.DbType);
+        Assert.Equal("null", parameter.DefaultValue);
+    }
+
+    [Fact]
     public void ApplyUserOverrides_ChangesTypeAndNullability()
     {
         var parameters = new List<ParameterMetadata>

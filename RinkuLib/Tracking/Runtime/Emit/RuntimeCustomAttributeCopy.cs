@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Reflection.Emit;
 
-namespace Rinku.Tracking.Runtime;
+namespace Rinku.Tracking.Runtime.Emit;
 
 internal static class RuntimeCustomAttributeCopy
 {
@@ -81,10 +81,10 @@ internal static class RuntimeCustomAttributeCopy
         return new CustomAttributeBuilder(
             data.Constructor,
             constructorArguments,
-            properties.ToArray(),
-            propertyValues.ToArray(),
-            fields.ToArray(),
-            fieldValues.ToArray());
+            [.. properties],
+            [.. propertyValues],
+            [.. fields],
+            [.. fieldValues]);
     }
 
     private static object? Convert(CustomAttributeTypedArgument argument)

@@ -1,17 +1,115 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Reflection;
+using Rinku.Tracking.Binding;
 using Rinku.Tracking.Runtime;
+using Rinku.Querying.Parameters;
 using Xunit;
 
-namespace Rinku.Tracking.Tests;
+namespace RinkuLib.Tests.Tracking;
 
 public sealed class RuntimeTrackingGreenfieldTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_partial_interface_preserves_undeclared_members_and_runtime_command_mapping(bool binding)
+    {
+        var original = new Employee { Id = 7, Name = "Original" };
+        Employee[] source = [original];
+        TrackingList<IEmployeeId> rows = binding ? source.ToBindingList<Employee, IEmployeeId>() : source.ToTrackingList<Employee, IEmployeeId>();
+        IEmployeeId edit = rows[0];
+        var members = Assert.IsAssignableFrom<IRuntimeMemberAccess>(edit);
+        Assert.NotNull(edit.GetType().GetProperty(nameof(Employee.Name)));
+        Assert.Equal(7, edit.Id);
+        Assert.True(members.Set(nameof(Employee.Name), "Changed"));
+        var readName = MethodCaller.Create<Func<IRuntimeMemberAccess, string?>>(ReadEmployeeName);
+        Assert.Equal("Changed", readName(members));
+        Assert.Equal("Original", original.Name);
+        Assert.True(rows.ConfirmEditAt(0));
+        Assert.Equal("Changed", original.Name);
+
+        var readId = MethodCaller.Create<Func<IRuntimeMemberAccess, int>>(ReadEmployeeId);
+        int total = 0;
+        for (int i = 0; i < 10000; i++)
+        {
+            total += readId(members);
+        }
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 10000; i++)
+        {
+            total += readId(members);
+        }
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(140000, total);
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void Runtime_command_mapping_honors_names_aliases_exclusions_and_runtime_only_values()
+    {
+        var options = RuntimeTracking.CreateOptions<ParameterEmployee>();
+        options.Member<string>("Extra").SnapshotValue().Parameters();
+        var edit = options.GetRegistration<ITrackingItem<ParameterEmployee>>().Create(new() { Id = 7 });
+        edit.Set("Extra", "Runtime");
+        var read = MethodCaller.Create<Func<IRuntimeMemberAccess, (int, string?)>>(ReadEmployeeParameters);
+        Assert.Equal((7, (string?)null), read(edit));
+        var extra = MethodCaller.Create<Func<IRuntimeMemberAccess, string>>(ReadExtra);
+        Assert.Equal("Runtime", extra(edit));
+        var ignored = MethodCaller.Create<Func<IRuntimeMemberAccess, string>>(ReadHidden);
+        Assert.Throws<InvalidOperationException>(() => ignored(edit));
+
+        var excludedOptions = RuntimeTracking.CreateOptions<Employee>();
+        excludedOptions.Member<string>(nameof(Employee.Name)).Parameters(false);
+        var excluded = excludedOptions.GetRegistration<ITrackingItem<Employee>>().Create(new() { Name = "Visible" });
+        Assert.Equal("Visible", excluded.Get<string>(nameof(Employee.Name)));
+        var name = MethodCaller.Create<Func<IRuntimeMemberAccess, string?>>(ReadEmployeeName);
+        Assert.Throws<InvalidOperationException>(() => name(excluded));
+    }
+
+    private static int ReadEmployeeId(int Id) => Id;
+    private static string? ReadEmployeeName(string? Name) => Name;
+    private static (int, string?) ReadEmployeeParameters(int Key, string? Text) => (Key, Text);
+    private static string ReadExtra(string Extra) => Extra;
+    private static string ReadHidden(string Hidden) => Hidden;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Materialization_supports_default_plain_and_tracking_interfaces(bool binding)
+    {
+        Employee[] originals = [new() { Name = "Default" }, new() { Name = "Plain" }, new() { Name = "Tracking" }];
+        Employee[] defaultSource = [originals[0]];
+        Employee[] plainSource = [originals[1]];
+        Employee[] trackingSource = [originals[2]];
+        TrackingList<ITrackingItem<Employee>> defaults = binding ? defaultSource.ToBindingList() : defaultSource.ToTrackingList();
+        TrackingList<IEmployeeEdit> plain = binding ? plainSource.ToBindingList<Employee, IEmployeeEdit>() : plainSource.ToTrackingList<Employee, IEmployeeEdit>(RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert());
+        TrackingList<ITrackedEmployeeEdit> tracking = binding ? trackingSource.ToBindingList<Employee, ITrackedEmployeeEdit>() : trackingSource.ToTrackingList<Employee, ITrackedEmployeeEdit>();
+
+        Assert.False(typeof(ITrackingItem<Employee>).IsAssignableFrom(typeof(IEmployeeEdit)));
+        Assert.True(plain[0] is IRuntimeMemberAccess);
+        ITrackingItem<Employee>[] edits = [defaults[0], Assert.IsAssignableFrom<ITrackingItem<Employee>>(plain[0]), tracking[0]];
+        for (int i = 0; i < edits.Length; i++)
+        {
+            ITrackingItem<Employee> edit = edits[i];
+            Assert.True(edit.TryGetOriginal(out Employee? original));
+            Assert.Same(originals[i], original);
+            Assert.Equal(originals[i].Name, edit.Get<string>(nameof(Employee.Name)));
+            Assert.True(edit.Set(nameof(Employee.Name), "Changed"));
+            Assert.True(edit.IsEditing);
+            Assert.NotEqual("Changed", originals[i].Name);
+            Assert.True(edit.ConfirmEdit());
+            Assert.Equal("Changed", originals[i].Name);
+            Assert.False(edit.IsEditing);
+        }
+        Assert.Equal("Changed", plain[0].Name);
+        Assert.Equal("Changed", tracking[0].Name);
+    }
+
     [Fact]
     public void Default_generated_item_reads_without_starting_edit()
     {
         var original = new Employee { Id = 7, Name = "A" };
-        IRuntimeTrackingItem<Employee> edit = RuntimeTracking.Default<Employee>().Create(original);
+        ITrackingItem<Employee> edit = RuntimeTracking.Default<Employee>().Create(original);
 
         Assert.Equal("A", edit.Get<string>(nameof(Employee.Name)));
         Assert.False(edit.IsEditing);
@@ -25,7 +123,7 @@ public sealed class RuntimeTrackingGreenfieldTests
     public void First_set_allocates_the_separate_snapshot()
     {
         var original = new Employee { Id = 7, Name = "A" };
-        RuntimeTrackingRegistration<Employee, IEmployeeEdit> registration = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().GetRegistration<IEmployeeEdit>();
+        RuntimeTrackingRegistration<Employee, IEmployeeEdit> registration = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert().GetRegistration<IEmployeeEdit>();
         IEmployeeEdit edit = registration.Create(original);
         FieldInfo editField = RequireField(registration.GeneratedType, "_edit");
 
@@ -40,32 +138,29 @@ public sealed class RuntimeTrackingGreenfieldTests
     }
 
     [Fact]
-    public void New_generated_item_has_original_and_no_snapshot_until_edited()
+    public void New_generated_item_has_no_original_and_stores_its_values_in_the_edit_buffer()
     {
-        RuntimeTrackingRegistration<Employee, IEmployeeEdit> registration = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().GetRegistration<IEmployeeEdit>();
-        ITrackingListContext<IEmployeeEdit> context = registration.CreateContext();
+        RuntimeTrackingRegistration<Employee, IEmployeeEdit> registration = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert().GetRegistration<IEmployeeEdit>();
 
-        Assert.True(context.CanCreateNew);
-        IEmployeeEdit edit = context.CreateNew();
+        IEmployeeEdit edit = registration.CreateNew();
         FieldInfo editField = RequireField(registration.GeneratedType, "_edit");
 
         Assert.True(((ITrackingListNewState)edit).IsNew);
-        Assert.False(((IEditable)edit).IsEditing);
-        Assert.Null(editField.GetValue(edit));
-        Assert.True(((IOriginal<Employee>)edit).TryGetOriginal(out Employee? original));
-        Assert.NotNull(original);
-        Assert.Equal(0, original.Id);
+        Assert.True(((IEditable)edit).IsEditing);
+        Assert.NotNull(editField.GetValue(edit));
+        Assert.False(((IOriginal<Employee>)edit).TryGetOriginal(out Employee? original));
+        Assert.Null(original);
     }
 
     [Fact]
-    public void Generated_context_confirms_edit_and_new_state_together_for_added_item()
+    public void Generated_insert_capability_confirms_edit_and_new_state_together()
     {
-        RuntimeTrackingRegistration<Employee, IEmployeeEdit> registration = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().GetRegistration<IEmployeeEdit>();
-        ITrackingListContext<IEmployeeEdit> context = registration.CreateContext();
-        IEmployeeEdit edit = context.CreateNew();
+        RuntimeTrackingRegistration<Employee, IEmployeeEdit> registration = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert().GetRegistration<IEmployeeEdit>();
+        var list = new TrackingList<IEmployeeEdit>(newItemFactory: registration.CreateNew);
+        IEmployeeEdit edit = list.AddNew();
         edit.Name = "B";
 
-        Assert.True(context.ConfirmAdded(edit));
+        Assert.True(list.ConfirmAddedAt(0));
 
         Assert.False(((ITrackingListNewState)edit).IsNew);
         Assert.False(((IEditable)edit).IsEditing);
@@ -77,7 +172,7 @@ public sealed class RuntimeTrackingGreenfieldTests
     [Fact]
     public void Ensure_editing_is_success_and_is_idempotent()
     {
-        IRuntimeTrackingItem<Employee> edit = RuntimeTracking.Default<Employee>().Create(new Employee { Name = "A" });
+        ITrackingItem<Employee> edit = RuntimeTracking.Default<Employee>().Create(new Employee { Name = "A" });
 
         Assert.True(edit.EnsureEditing());
         Assert.True(edit.IsEditing);
@@ -89,7 +184,7 @@ public sealed class RuntimeTrackingGreenfieldTests
     public void Cancel_discards_snapshot_without_touching_original()
     {
         var original = new Employee { Name = "A" };
-        IEmployeeEdit edit = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().GetRegistration<IEmployeeEdit>().Create(original);
+        IEmployeeEdit edit = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert().GetRegistration<IEmployeeEdit>().Create(original);
         edit.Name = "B";
 
         Assert.True(((IEditable)edit).CancelEdit());
@@ -118,7 +213,7 @@ public sealed class RuntimeTrackingGreenfieldTests
     public void Change_enumeration_uses_effective_comparison_and_preserves_changed_to_null()
     {
         var original = new Employee { Name = "A" };
-        IEmployeeEdit edit = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().GetRegistration<IEmployeeEdit>().Create(original);
+        IEmployeeEdit edit = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert().GetRegistration<IEmployeeEdit>().Create(original);
         var changes = (ITrackingChanges)edit;
 
         edit.Name = "B";
@@ -167,7 +262,7 @@ public sealed class RuntimeTrackingGreenfieldTests
         options.Apply<IEmployeeId>();
         IEmployeeName edit = options.GetRegistration<IEmployeeName>().Create(new Employee { Id = 3, Name = "A" });
 
-        Assert.IsAssignableFrom<IEmployeeId>(edit);
+        Assert.IsType<IEmployeeId>(edit, exactMatch: false);
         Assert.Equal(3, ((IEmployeeId)edit).Id);
     }
 
@@ -182,22 +277,37 @@ public sealed class RuntimeTrackingGreenfieldTests
     }
 
     [Fact]
-    public void Metadata_is_direct_tedit_state_and_survives_edit_lifecycle()
+    public void Additional_direct_member_survives_edit_lifecycle()
     {
-        RuntimeTrackingOptions<Employee> options = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>();
-        options.Metadata<Employee, string>();
+        RuntimeTrackingOptions<Employee> options = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert();
+        options.Member<string>("Notes", member => member.Direct().Parameters(false));
         IEmployeeEdit edit = options.GetRegistration<IEmployeeEdit>().Create(new Employee { Name = "A" });
-        var writer = (IMetadataWriter<string>)edit;
-        var reader = (IMetadataReader<string>)edit;
-        writer.SetMetadata("meta");
+        var reader = Assert.IsAssignableFrom<IRuntimeMemberAccess>(edit);
+        reader.Set("Notes", "meta");
 
         edit.Name = "B";
         ((IEditable)edit).CancelEdit();
-        Assert.Equal("meta", reader.Metadata);
+        Assert.Equal("meta", reader.Get<string>("Notes"));
 
         edit.Name = "C";
         ((IEditable)edit).ConfirmEdit();
-        Assert.Equal("meta", reader.Metadata);
+        Assert.Equal("meta", reader.Get<string>("Notes"));
+    }
+
+    [Fact]
+    public void Result_validation_is_distinct_from_additional_member_storage()
+    {
+        int calls = 0;
+        RuntimeTrackingOptions<Employee> options = RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert();
+        options.Member<string>("Notes", member => member.Direct().Parameters(false));
+        options.ValidateResult<Employee, IEmployeeEdit, string>((edit, result) => { calls++; return edit.Name == result; });
+        IEmployeeEdit edit = options.GetRegistration<IEmployeeEdit>().Create(new Employee { Name = "A" });
+
+        var validation = Assert.IsType<IResultValidatable<string>>(edit, exactMatch: false);
+        Assert.IsAssignableFrom<IRuntimeMemberAccess>(edit);
+        Assert.True(validation.ValidateResult("A"));
+        Assert.False(validation.ValidateResult("B"));
+        Assert.Equal(2, calls);
     }
 
     [Fact]
@@ -251,11 +361,11 @@ public sealed class RuntimeTrackingGreenfieldTests
 
 
     [Fact]
-    public void List_source_context_confirms_add_edit_and_delete_back_to_original_list()
+    public void List_bindback_reflects_confirmed_add_edit_and_delete()
     {
         var original = new Employee { Id = 1, Name = "A" };
         var source = new List<Employee> { original };
-        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>();
+        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>(RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert());
 
         list[0].Name = "B";
         Assert.True(list.ConfirmEditAt(0));
@@ -276,11 +386,11 @@ public sealed class RuntimeTrackingGreenfieldTests
     }
 
     [Fact]
-    public void Array_source_context_can_confirm_edits_but_cannot_confirm_structural_changes()
+    public void Readonly_bindback_failure_occurs_after_tracking_confirmation()
     {
         var original = new Employee { Id = 1, Name = "A" };
         Employee[] source = [original];
-        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>();
+        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>(RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert());
 
         list[0].Name = "B";
         Assert.True(list.ConfirmEditAt(0));
@@ -289,12 +399,13 @@ public sealed class RuntimeTrackingGreenfieldTests
 
         IEmployeeEdit added = list.AddNew();
         added.Name = "C";
-        Assert.False(list.ConfirmAddedAt(1));
-        Assert.True(list.IsAddedAt(1));
+        Assert.Throws<NotSupportedException>(() => list.ConfirmAddedAt(1));
+        Assert.False(list.IsAddedAt(1));
+        Assert.False(((ITrackingListNewState)added).IsNew);
 
         list.RemoveAt(0);
-        Assert.False(list.ConfirmDeleteAt(0));
-        Assert.Single(list.Removed);
+        Assert.Throws<NotSupportedException>(() => list.ConfirmDeleteAt(0));
+        Assert.Empty(list.Removed);
         Assert.Same(original, source[0]);
     }
 
@@ -319,7 +430,7 @@ public sealed class RuntimeTrackingGreenfieldTests
     public void New_item_can_confirm_edit_before_it_has_a_source_slot()
     {
         var source = new List<Employee>();
-        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>();
+        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>(RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert());
         IEmployeeEdit added = list.AddNew();
         added.Name = "A";
 
@@ -331,6 +442,54 @@ public sealed class RuntimeTrackingGreenfieldTests
         Assert.True(list.ConfirmAddedAt(0));
         Assert.Single(source);
         Assert.Equal("A", source[0].Name);
+    }
+
+    [Fact]
+    public void Bindback_uses_matching_update_index_without_calling_indexof()
+    {
+        var original = new Employee { Name = "A" };
+        var source = new CountingList<Employee>(original);
+        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>(RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert());
+        source.ResetIndexOfCalls();
+        list[0].Name = "B";
+
+        Assert.True(list.ConfirmEditAt(0));
+
+        Assert.Equal(0, source.IndexOfCalls);
+        Assert.Equal("B", original.Name);
+    }
+
+    [Fact]
+    public void Bindback_falls_back_to_indexof_when_update_index_no_longer_matches()
+    {
+        var first = new Employee { Name = "A" };
+        var second = new Employee { Name = "B" };
+        var source = new CountingList<Employee>(first, second);
+        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>(RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert());
+        source.ResetIndexOfCalls();
+        list.Move(1, 0);
+        list[0].Name = "edited";
+
+        Assert.True(list.ConfirmEditAt(0));
+
+        Assert.Equal(1, source.IndexOfCalls);
+        Assert.Equal("A", first.Name);
+        Assert.Equal("edited", second.Name);
+    }
+
+    [Fact]
+    public void Delete_bindback_locates_the_original_without_an_index_hint()
+    {
+        var original = new Employee { Name = "A" };
+        var source = new CountingList<Employee>(original);
+        TrackingList<IEmployeeEdit> list = source.ToTrackingList<Employee, IEmployeeEdit>(RuntimeTracking.CreateOptions<Employee, IEmployeeEdit>().ConstructOnInsert());
+        source.ResetIndexOfCalls();
+        list.RemoveAt(0);
+
+        Assert.True(list.ConfirmDeleteAt(0));
+
+        Assert.Equal(1, source.IndexOfCalls);
+        Assert.Empty(source);
     }
 
     [Fact]
@@ -359,10 +518,24 @@ public sealed class RuntimeTrackingGreenfieldTests
         public string? Name { get; set; }
     }
 
+    public sealed class ParameterEmployee
+    {
+        [ParameterAlias("Key")]
+        public int Id { get; set; }
+        [ParameterName("Text")]
+        public string? Name { get; set; }
+        [ParameterIgnore]
+        public string Hidden { get; set; } = "Hidden";
+    }
+
     public interface IEmployeeEdit
     {
         int Id { get; }
         string? Name { get; set; }
+    }
+
+    public interface ITrackedEmployeeEdit : IEmployeeEdit, ITrackingItem<Employee>
+    {
     }
 
     public interface IEmployeeView
@@ -373,7 +546,6 @@ public sealed class RuntimeTrackingGreenfieldTests
     public interface IEmployeeName { string? Name { get; } }
     public interface IEmployeeId { int Id { get; } }
     public interface IMissingMember { string Foo { get; set; } }
-
     public sealed class ReadOnlyIdEmployee(int id)
     {
         public int Id { get; } = id;
@@ -395,7 +567,6 @@ public sealed class RuntimeTrackingGreenfieldTests
     }
 
     public interface ICountingEmployeeEdit { string? Name { get; set; } }
-
     public sealed class AttributedEmployee
     {
         [DisplayName("Employee name")]
@@ -405,12 +576,10 @@ public sealed class RuntimeTrackingGreenfieldTests
 
     public interface IAttributedEmployeeEdit { string? Name { get; set; } }
 
-
     public sealed class EqualEmployee(int id)
     {
         public int Id { get; } = id;
         public string? Name { get; set; }
-
         public override bool Equals(object? obj) => obj is EqualEmployee other && other.Id == Id;
         public override int GetHashCode() => Id;
     }
@@ -434,6 +603,27 @@ public sealed class RuntimeTrackingGreenfieldTests
 
     public interface IAlbumEdit
     {
-        Artist Artist { get; }
+        Artist 
+            Artist { get; }
+    }
+
+    private sealed class CountingList<T>(params T[] items) : IList<T>
+    {
+        private readonly List<T> _items = [.. items];
+        public int IndexOfCalls { get; private set; }
+        public T this[int index] { get => _items[index]; set => _items[index] = value; }
+        public int Count => _items.Count;
+        public bool IsReadOnly => false;
+        public void Add(T item) => _items.Add(item);
+        public void Clear() => _items.Clear();
+        public bool Contains(T item) => _items.Contains(item);
+        public void CopyTo(T[] array, int arrayIndex) => _items.CopyTo(array, arrayIndex);
+        public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
+        public int IndexOf(T item) { IndexOfCalls++; return _items.IndexOf(item); }
+        public void Insert(int index, T item) => _items.Insert(index, item);
+        public bool Remove(T item) => _items.Remove(item);
+        public void RemoveAt(int index) => _items.RemoveAt(index);
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public void ResetIndexOfCalls() => IndexOfCalls = 0;
     }
 }

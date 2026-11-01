@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>rinku</ToolCommandName>
+    <PackageId>RinkuPowerTools.Cli</PackageId>
+    <MinVerTagPrefix>rinku-powertools-v</MinVerTagPrefix>
+    <Description>Command-line frontend for Rinku Power Tools.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Authors>RinkuLib</Authors>
+    <PackageTags>rinku;powertools;sql;database;code-generation;cli</PackageTags>
+    <PackageProjectUrl>https://rinkulib.github.io/RinkuLib/articles/codegen/refresh.html</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/RinkuLib/RinkuLib</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RinkuPowerTools\RinkuPowerTools.csproj" />
+    <InternalsVisibleTo Include="RinkuPowerTools.Cli.Tests" />
+    <None Update="README.md" Pack="true" PackagePath="\" />
+    <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

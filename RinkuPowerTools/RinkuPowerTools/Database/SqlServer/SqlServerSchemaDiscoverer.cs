@@ -23,7 +23,7 @@ public sealed class SqlServerSchemaDiscoverer : SchemaDiscoverer {
 
         List<ParameterMetadata> parameters = query.SourceType == QuerySourceType.StoredProcedure
             ? await DiscoverStoredProcedureParametersAsync(sqlCnn, query.Target, ct)
-            : await DiscoverInlineQueryParametersAsync(sqlCnn, sqlText, ct);
+            : await DiscoverInlineQueryParametersAsync(sqlCnn, sqlText, query.Parameters, ct);
 
         ApplyUserOverrides(parameters, query.Parameters, SqlServerTypeParser.Parse);
 
@@ -109,13 +109,15 @@ ORDER BY p.parameter_id;", cnn);
             declarations.Add($"@{parameter.CleanName} {SqlServerTypeParser.MapCSharpToDeclaration(parameter.CSharpType)}");
 
         string paramBlock = string.Join(", ", declarations);
-        using var cmd = new SqlCommand("SELECT name, system_type_name, is_nullable FROM sys.dm_exec_describe_first_result_set(@sql, @params, 0)", cnn);
+        using var cmd = new SqlCommand("SELECT name, system_type_name, is_nullable, error_number, error_message FROM sys.dm_exec_describe_first_result_set(@sql, @params, 0)", cnn);
         cmd.Parameters.AddWithValue("@sql", sql);
         cmd.Parameters.AddWithValue("@params", string.IsNullOrEmpty(paramBlock) ? DBNull.Value : paramBlock);
 
         var columns = new List<ParameterMetadata>();
         using SqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) {
+            if (!reader.IsDBNull(3))
+                throw new InvalidOperationException($"SQL Server could not describe the result: {reader.GetString(4)}");
             if (await reader.IsDBNullAsync(0, ct))
                 continue;
 
@@ -134,22 +136,38 @@ ORDER BY p.parameter_id;", cnn);
         return columns;
     }
 
-    private static async Task<List<ParameterMetadata>> DiscoverInlineQueryParametersAsync(SqlConnection cnn, string sqlText, CancellationToken ct) =>
-        MergeDuplicateMetadata(await ExecuteAndTransformLoopAsync(cnn, sqlText, ct));
+    private static async Task<List<ParameterMetadata>> DiscoverInlineQueryParametersAsync(SqlConnection cnn, string sqlText, List<ParameterOverride> overrides, CancellationToken ct) {
+        var declared = new List<ParameterMetadata>();
+        var declarations = new List<string>();
+        List<string> names = NamedParameterScanner.Scan(sqlText);
+        foreach (ParameterOverride parameter in overrides) {
+            if (string.IsNullOrWhiteSpace(parameter.Type)) continue;
+            string name = "@" + parameter.Name.TrimStart('@');
+            if (!names.Contains(name, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Configuration error: Defined parameter override '{parameter.Name}' does not exist in the SQL script.");
+            ProviderTypeInfo type = SqlServerTypeParser.Parse(parameter.Type);
+            declared.Add(new(name, type.DbType, parameter.IsNullable ?? true, type.Size, ParameterDirection.Input, type.Precision, type.Scale, type.CSharpType));
+            declarations.Add($"{name} {parameter.Type}");
+        }
+        declared.AddRange(MergeDuplicateMetadata(await ExecuteAndTransformLoopAsync(cnn, sqlText, string.Join(", ", declarations), ct)));
+        declared.Sort((left, right) => names.FindIndex(name => string.Equals(name, left.DbName, StringComparison.OrdinalIgnoreCase)).CompareTo(names.FindIndex(name => string.Equals(name, right.DbName, StringComparison.OrdinalIgnoreCase))));
+        return declared;
+    }
 
-    private static async Task<List<ParameterMetadata>> ExecuteAndTransformLoopAsync(SqlConnection cnn, string sqlText, CancellationToken ct) {
+    private static async Task<List<ParameterMetadata>> ExecuteAndTransformLoopAsync(SqlConnection cnn, string sqlText, string declarations, CancellationToken ct) {
         try {
-            return await ExecuteParameterSnifferAsync(cnn, sqlText, ct);
+            return await ExecuteParameterSnifferAsync(cnn, sqlText, declarations, ct);
         }
         catch (SqlException ex) when (ex.Number == 11508) {
-            return await ExecuteAndTransformLoopAsync(cnn, DeduplicateParameterInText(sqlText, ExtractParamNameFromError(ex.Message)), ct);
+            return await ExecuteAndTransformLoopAsync(cnn, DeduplicateParameterInText(sqlText, ExtractParamNameFromError(ex.Message)), declarations, ct);
         }
     }
 
-    private static async Task<List<ParameterMetadata>> ExecuteParameterSnifferAsync(SqlConnection cnn, string sqlText, CancellationToken ct) {
+    private static async Task<List<ParameterMetadata>> ExecuteParameterSnifferAsync(SqlConnection cnn, string sqlText, string declarations, CancellationToken ct) {
         var parameters = new List<ParameterMetadata>();
-        using var cmd = new SqlCommand("EXEC sp_describe_undeclared_parameters @tsql = @QueryText", cnn);
+        using var cmd = new SqlCommand("EXEC sp_describe_undeclared_parameters @tsql = @QueryText, @params = @Declarations", cnn);
         cmd.Parameters.AddWithValue("@QueryText", sqlText);
+        cmd.Parameters.AddWithValue("@Declarations", string.IsNullOrEmpty(declarations) ? DBNull.Value : declarations);
         using SqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) {
             int typeOrdinal = reader.GetOrdinal("suggested_system_type_name");

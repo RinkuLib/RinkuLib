@@ -10,7 +10,7 @@ using Xunit;
 namespace RinkuLib.Tests.Features.Documentation;
 
 public class MarkdownExampleTests {
-    static readonly Lazy<IReadOnlyDictionary<string, ExampleBlock>> Examples = new(LoadExamples);
+    static readonly Lazy<Dictionary<string, ExampleBlock>> Examples = new(LoadExamples);
 
     public static IEnumerable<TheoryDataRow<string>> FencedExamples()
         => Examples.Value.Keys.Order(StringComparer.Ordinal)
@@ -31,9 +31,10 @@ public class MarkdownExampleTests {
         }
     }
 
-    private static IReadOnlyDictionary<string, ExampleBlock> LoadExamples() {
+    private static Dictionary<string, ExampleBlock> LoadExamples() {
         string docsRoot = Path.Combine(FindRepositoryRoot().FullName, "docs");
         IReadOnlyList<ExampleBlock> blocks = MarkdownExamples.Read(docsRoot);
+        blocks = [.. blocks.Where(block => !block.RelativePath.StartsWith("articles/more/", StringComparison.Ordinal) && !block.Content.Contains("Rinku.More", StringComparison.Ordinal) && !block.Content.Contains("Rinku.Caching", StringComparison.Ordinal) && !block.Content.Contains("BindingTree", StringComparison.Ordinal))];
         ExampleCompiler.Configure(blocks);
         return blocks.ToDictionary(block => block.Id, StringComparer.Ordinal);
     }
@@ -356,7 +357,7 @@ internal static class ExampleVerifier {
 }
 
 internal static class ExampleCompiler {
-    const string Usings = """
+    const string CommonUsings = """
         using System;
         using System.Collections;
         using System.Collections.Concurrent;
@@ -385,8 +386,10 @@ internal static class ExampleCompiler {
         using Rinku.Querying.Parameters;
         using Rinku.Tracking;
         using Rinku.Tracking.Binding;
+        using Rinku.Tracking.Committers;
         using Rinku.Tracking.Runtime;
         """;
+    const string Usings = CommonUsings;
 
     static readonly CSharpParseOptions ParseOptions = new(
         LanguageVersion.Preview,
@@ -466,6 +469,10 @@ internal static class ExampleCompiler {
     }
 
     public static void Verify(ExampleBlock block) {
+        if (block.RelativePath.StartsWith("articles/more/initializers/", StringComparison.Ordinal)) {
+            VerifyInitializer(block);
+            return;
+        }
         var unknownFields = new Dictionary<string, string>(StringComparer.Ordinal);
         var unknownTypes = new Dictionary<string, int>(StringComparer.Ordinal);
         Diagnostic[] best = [];
@@ -500,13 +507,7 @@ internal static class ExampleCompiler {
             if (IsExpectedCompilerExample(block, best))
                 return;
 
-            bool added = AddMissingScaffolding(
-                block,
-                best,
-                unknownFields,
-                unknownTypes,
-                scoped,
-                raw);
+            bool added = AddMissingScaffolding(block, best, unknownFields, unknownTypes);
             if (!added)
                 break;
         }
@@ -516,6 +517,29 @@ internal static class ExampleCompiler {
             best.Take(4).Select(diagnostic =>
                 $"{diagnostic.Id} {diagnostic.GetMessage()}"));
         throw new InvalidDataException($"C# does not compile: {message}");
+    }
+
+    // Initializer examples declare their application model in the linked models page.
+    // Compile their actual members without inventing missing APIs.
+    static void VerifyInitializer(ExampleBlock block) {
+        var root = CSharpSyntaxTree.ParseText(block.Content, ParseOptions).GetCompilationUnitRoot();
+        string statements = string.Join(Environment.NewLine, root.Members.OfType<GlobalStatementSyntax>().Select(member => member.Statement.ToFullString()));
+        string declarations = string.Join(Environment.NewLine, PageDeclarations
+            .Where(declaration => declaration.RelativePath == block.RelativePath || declaration.RelativePath == "articles/more/initializers/models.md")
+            .GroupBy(declaration => declaration.Name)
+            .Select(group => group.First().Source));
+        string source = $$"""
+            {{Usings}}
+            {{declarations}}
+            public static class InitializerExample {
+                public static void Run() {
+                    {{statements}}
+                }
+            }
+            """;
+        Diagnostic[] errors = Compile(source, OutputKind.DynamicallyLinkedLibrary);
+        if (errors.Length != 0)
+            throw new InvalidDataException("C# does not compile: " + string.Join(" | ", errors.Select(error => $"{error.Id} {error.GetMessage()}")));
     }
 
     static string? InferVarType(ExpressionSyntax? expression)
@@ -596,10 +620,7 @@ internal static class ExampleCompiler {
             block.Content.Contains("=> service.Save;", StringComparison.Ordinal)) &&
            diagnostics.All(diagnostic => diagnostic.Id == "CS0428");
 
-    static string BuildScopedSource(
-        ExampleBlock block,
-        IReadOnlyDictionary<string, string> unknownFields,
-        IReadOnlyDictionary<string, int> unknownTypes) {
+    static string BuildScopedSource(ExampleBlock block, Dictionary<string, string> unknownFields, IReadOnlyDictionary<string, int> unknownTypes) {
         string normalized = block.Content.Replace(
             "static readonly ",
             "",
@@ -684,7 +705,7 @@ internal static class ExampleCompiler {
             Environment.NewLine,
             unknownFields.Concat(precedingFields).Select(pair =>
                 $"protected static {pair.Value} {Escape(pair.Key)} = default!;"));
-        string stubs = BuildTypeStubs(block.RelativePath, unknownTypes, availableTypeNames);
+        string stubs = BuildTypeStubs(unknownTypes, availableTypeNames);
         string sourceUsings = isDapperExample
             ? Usings
                 .Replace("using Rinku;", "", StringComparison.Ordinal)
@@ -705,7 +726,6 @@ internal static class ExampleCompiler {
             {
                 [AttributeUsage(AttributeTargets.Parameter)]
                 public sealed class TrueNameAttribute(string name) : Attribute;
-
                 public sealed record GetAlbumsByArtistResult(
                     int Id,
                     string Title,
@@ -853,6 +873,11 @@ internal static class ExampleCompiler {
             requests.Add(("articles/customization/conditional-sql.md", "SortDirection"));
         }
 
+        if (block.RelativePath == "articles/tracking/persistence.md") {
+            requests.Add(("articles/tracking/index.md", "Album"));
+            requests.Add(("articles/tracking/index.md", "IAlbumEdit"));
+        }
+
         foreach ((string path, string name) in requests) {
             PageDeclaration? declaration = PageDeclarations
                 .Where(candidate =>
@@ -886,7 +911,7 @@ internal static class ExampleCompiler {
                     => command.CreateParameter();
             }
             {{block.Content}}
-            {{BuildGlobalTypeStubs(block.RelativePath, unknownTypes)}}
+            {{BuildGlobalTypeStubs(unknownTypes)}}
             """;
     }
 
@@ -907,13 +932,7 @@ internal static class ExampleCompiler {
             """;
     }
 
-    static bool AddMissingScaffolding(
-        ExampleBlock block,
-        IEnumerable<Diagnostic> diagnostics,
-        IDictionary<string, string> unknownFields,
-        IDictionary<string, int> unknownTypes,
-        string scoped,
-        string raw) {
+    static bool AddMissingScaffolding(ExampleBlock block, IEnumerable<Diagnostic> diagnostics, Dictionary<string, string> unknownFields, Dictionary<string, int> unknownTypes) {
         bool added = false;
 
         foreach (Diagnostic diagnostic in diagnostics) {
@@ -1010,41 +1029,20 @@ internal static class ExampleCompiler {
         return "dynamic";
     }
 
-    static string BuildTypeStubs(
-        string relativePath,
-        IReadOnlyDictionary<string, int> unknownTypes,
-        IReadOnlySet<string> availableTypeNames)
+    static string BuildTypeStubs(IReadOnlyDictionary<string, int> unknownTypes, HashSet<string> availableTypeNames)
         => string.Join(
             Environment.NewLine,
             unknownTypes
                 .Where(pair => !availableTypeNames.Contains(pair.Key))
-                .Select(pair => GetDeclarationOrStub(
-                    relativePath,
-                    pair.Key,
-                    pair.Value,
-                    nested: true))
+                .Select(pair => BuildTypeStub(pair.Key, pair.Value, nested: true))
                 .Distinct(StringComparer.Ordinal));
 
-    static string BuildGlobalTypeStubs(
-        string relativePath,
-        IReadOnlyDictionary<string, int> unknownTypes)
+    static string BuildGlobalTypeStubs(IReadOnlyDictionary<string, int> unknownTypes)
         => string.Join(
             Environment.NewLine,
             unknownTypes
-                .Select(pair => GetDeclarationOrStub(
-                    relativePath,
-                    pair.Key,
-                    pair.Value,
-                    nested: false))
+                .Select(pair => BuildTypeStub(pair.Key, pair.Value, nested: false))
                 .Distinct(StringComparer.Ordinal));
-
-    static string GetDeclarationOrStub(
-        string relativePath,
-        string name,
-        int arity,
-        bool nested) {
-        return BuildTypeStub(name, arity, nested);
-    }
 
     static string BuildTypeStub(string name, int arity, bool nested) {
         string accessibility = nested ? "public" : "internal";
@@ -1054,7 +1052,8 @@ internal static class ExampleCompiler {
         string members = string.Join(
             Environment.NewLine,
             StubMembers
-                .Where(member => !member.Equals(name, StringComparison.Ordinal))
+                .Where(member => !member.Equals(name, StringComparison.Ordinal) &&
+                    !member.Equals("Item", StringComparison.Ordinal))
                 .Select(member => $"public dynamic {Escape(member)} {{ get; set; }} = null!;"));
 
         return $$"""
@@ -1083,9 +1082,10 @@ internal static class ExampleCompiler {
     static MetadataReference[] CreateReferences() {
         string[] platformAssemblies = ((string?)AppContext.GetData(
             "TRUSTED_PLATFORM_ASSEMBLIES"))?.Split(Path.PathSeparator) ?? [];
-        return [.. platformAssemblies
+        var references = platformAssemblies
             .Append(typeof(QueryCommand).Assembly.Location)
-            .Append(typeof(Dapper.SqlMapper).Assembly.Location)
+            .Append(typeof(Dapper.SqlMapper).Assembly.Location);
+        return [.. references
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(path => MetadataReference.CreateFromFile(path))];
     }

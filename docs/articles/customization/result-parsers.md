@@ -87,7 +87,13 @@ The cached parser reports which returned schemas it can parse.
 ## Registration change after a parser was cached
 
 ```csharp
-GetAlbums.InvalidateParsers(QueryParserInvalidationScope.Global);
+GetAlbums.InvalidateParsers(static _ => true, QueryParserInvalidationScope.Global);
+```
+
+A predicate can target one result type on the command.
+
+```csharp
+GetAlbums.InvalidateParsers(parser => parser.Type == typeof(Album), QueryParserInvalidationScope.Global);
 ```
 
 [Cache control](caches.md)

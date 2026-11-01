@@ -8,14 +8,13 @@ using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Nullability;
 
 /// <summary>
 /// The null rules at work: AbortOnNull collapsing the owning object, defaults substituted per value
 /// kind, and the wrapper shapes built around non-simple element parsers.
 /// </summary>
 public class NullHandlingAndShapeTests {
-
     public record struct CollapseInner(int A, [AbortOnNull] int? B) : IDbReadable;
     public record CollapseOuter(int Id, CollapseInner? Inner) : IDbReadable;
 
@@ -53,8 +52,10 @@ public class NullHandlingAndShapeTests {
         [MaybeNull] float F,
         [MaybeNull] double D,
         [MaybeNull] decimal M,
-        [MaybeNull] Guid G,
-        [MaybeNull] DayOfWeek E,
+        [MaybeNull] Guid 
+            G,
+        [MaybeNull] DayOfWeek 
+            E,
         [MaybeNull] string? S) : IDbReadable;
 
     [Fact]
@@ -94,7 +95,8 @@ public class NullHandlingAndShapeTests {
 
     public class SkippingMember : IDbReadable {
         public int Id { get; set; }
-        [AbortOnNull] public int? Extra { get; set; }
+        [AbortOnNull] 
+            public int? Extra { get; set; }
     }
 
     [Fact]
@@ -127,7 +129,6 @@ public class NullHandlingAndShapeTests {
     public record DocTrackNullable(int Id, string Name, double? Weight) : IDbReadable;
     public record DocTrackCollapsing(int Id, string Name, [AbortOnNull] double Weight) : IDbReadable;
     public record DocTrackNotNull(int Id, [System.Diagnostics.CodeAnalysis.NotNull] string Name) : IDbReadable;
-
     static readonly ColumnInfo[] TrackCols = [
         new("Id", typeof(int), false), new("Name", typeof(string), true), new("Weight", typeof(double), true)];
 
@@ -238,7 +239,7 @@ public class NullHandlingAndShapeTests {
         reader.Read();
         Assert.Equal([1, null, 2], parser.Parse(reader).Result);
         var maker = new ReusingBaseTypeParserMaker([typeof(List<>)],
-            (Type def, Type item, ref object?[] _) => typeof(object));
+            (def, item, ref _) => typeof(object));
         Assert.False(maker.TryMakeParser<int>(NotNullHandle.Instance, cols, out _));  
     }
 

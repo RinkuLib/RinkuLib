@@ -3,43 +3,19 @@ using DataDbType = System.Data.DbType;
 
 namespace RinkuPowerTools;
 
-public class ParameterMetadata {
-    public ParameterMetadata(
-        string dbName,
-        DbType? dbType,
-        bool isNullable,
-        int size,
-        ParameterDirection direction,
-        byte precision,
-        byte scale,
-        string? csharpType = null,
-        ProviderParameterType? providerType = null,
-        ParameterBinding binding = ParameterBinding.Named) {
-
-        DbName = dbName;
-        CleanName = ToCSharpName(dbName);
-        DbType = dbType;
-        IsNullable = isNullable;
-        Size = size;
-        Direction = direction;
-        Precision = precision;
-        Scale = scale;
-        ProviderType = providerType;
-        Binding = binding;
-        CSharpType = ApplyNullability(csharpType ?? MapDbTypeToCSharpBase(dbType), isNullable);
-    }
-
-    public string DbName { get; }
-    public string CleanName { get; }
-    public DbType? DbType { get; set; }
-    public bool IsNullable { get; set; }
-    public int Size { get; set; }
-    public ParameterDirection Direction { get; }
-    public byte Precision { get; set; }
-    public byte Scale { get; set; }
-    public ProviderParameterType? ProviderType { get; set; }
-    public string CSharpType { get; set; }
-    public ParameterBinding Binding { get; }
+public class ParameterMetadata(string dbName, DbType? dbType, bool isNullable, int size, ParameterDirection direction, byte precision, byte scale, string? csharpType = null, ProviderParameterType? providerType = null, ParameterBinding binding = ParameterBinding.Named) {
+    public string DbName { get; } = dbName;
+    public string CleanName { get; } = ToCSharpName(dbName);
+    public DbType? DbType { get; set; } = dbType;
+    public bool IsNullable { get; set; } = isNullable;
+    public int Size { get; set; } = size;
+    public ParameterDirection Direction { get; } = direction;
+    public byte Precision { get; set; } = precision;
+    public byte Scale { get; set; } = scale;
+    public ProviderParameterType? ProviderType { get; set; } = providerType;
+    public string CSharpType { get; set; } = ApplyNullability(csharpType ?? MapDbTypeToCSharpBase(dbType), isNullable);
+    public ParameterBinding Binding { get; } = binding;
+    public string? DefaultValue { get; set; }
 
     public static string MapDbTypeToCSharp(DbType? dbType, bool isNullable) =>
         ApplyNullability(MapDbTypeToCSharpBase(dbType), isNullable);

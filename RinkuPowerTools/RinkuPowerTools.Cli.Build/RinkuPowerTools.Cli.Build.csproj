@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>RinkuPowerTools.Cli.Build</PackageId>
+        <MinVerTagPrefix>rinku-powertools-v</MinVerTagPrefix>
+    <Description>MSBuild integration for Rinku Power Tools CLI refresh.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PublishCliForPackage</TargetsForTfmSpecificContentInPackage>
+    <CliPublishDirectory>$(IntermediateOutputPath)RinkuPowerTools.Cli.Publish/</CliPublishDirectory>
+    <Authors>RinkuLib</Authors>
+    <PackageTags>rinku;powertools;msbuild;sql;database;code-generation</PackageTags>
+    <PackageProjectUrl>https://rinkulib.github.io/RinkuLib/articles/codegen/refresh.html</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/RinkuLib/RinkuLib</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="README.md;build/RinkuPowerTools.Cli.Build.targets" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="build/RinkuPowerTools.Cli.Build.targets" Pack="true" PackagePath="build/RinkuPowerTools.Cli.Build.targets" />
+    <None Include="build/RinkuPowerTools.Cli.Build.targets" Pack="true" PackagePath="buildTransitive/RinkuPowerTools.Cli.Build.targets" />
+    <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="PublishCliForPackage" Returns="@(TfmSpecificPackageFile)">
+    <MSBuild Projects="../RinkuPowerTools.Cli/RinkuPowerTools.Cli.csproj"
+             Targets="Restore;Publish"
+             Properties="Configuration=$(Configuration);PublishDir=$(MSBuildProjectDirectory)/$(CliPublishDirectory);TargetFramework=net8.0;SelfContained=false;DebugType=None;DebugSymbols=false;Version=$(Version)" />
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(CliPublishDirectory)**/*">
+        <PackagePath>tools/net8.0/any/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+      </TfmSpecificPackageFile>
+    </ItemGroup>
+  </Target>
+</Project>

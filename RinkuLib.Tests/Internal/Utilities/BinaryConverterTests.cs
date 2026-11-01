@@ -2,7 +2,7 @@
 using Rinku.Internal;
 using Xunit;
 
-namespace RinkuLib.Tests.Utilities;
+namespace RinkuLib.Tests.Internal.Utilities;
 
 /// <summary>
 /// <see cref="BinaryConverter"/> renders integers as space-grouped binary, one group per byte.

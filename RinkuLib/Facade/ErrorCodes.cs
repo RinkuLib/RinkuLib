@@ -69,8 +69,7 @@ public static class ErrorCodes {
     /// </summary>
     public const string UnusableMember = "RINKU5003";
     /// <summary>
-    /// A construction path or member was offered whose type does not line up with the target, a
-    /// construction that builds something else or a member that belongs to another type.
+    /// A construction path or member was offered whose declaring or result type does not match the target type.
     /// </summary>
     public const string TargetTypeMismatch = "RINKU5004";
     /// <summary>

@@ -81,6 +81,7 @@ public class ExtensionSettings {
     public string? Namespace { get; set; }
     public bool IsInternal { get; set; }
     public List<QuerySetting> Queries { get; set; } = [];
+    public ConstantsSource? Constants { get; set; }
     public async Task ResolveConnectionStringAsync(CancellationToken ct) {
         ConnectionString = await ConnectionResolver.ResolveAsync(ConnectionSourceType, ConnectionTarget, ConnectionExtractionPath, ProjectDirectory ?? throw new Exception("The project directory was not set"), ct);
         _databaseProvider = null;
@@ -100,6 +101,7 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
         string? @namespace = null;
         bool isInternal = false;
         List<QuerySetting> queries = [];
+        ConstantsSource? constants = null;
 
         while (reader.Read()) {
             if (reader.TokenType == JsonTokenType.EndObject)
@@ -127,6 +129,14 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
                     isInternal = reader.GetBoolean();
                 else if (string.Equals(propertyName, nameof(ExtensionSettings.Queries), StringComparison.OrdinalIgnoreCase))
                     queries = JsonSerializer.Deserialize<List<QuerySetting>>(ref reader, options) ?? [];
+                else if (ConstantsSource.TryGetSourceType(propertyName, out var constantsType)) {
+                    if (constants is not null) throw new JsonException("Specify only one ConstantsSQL, ConstantsPath or ConstantsProc source.");
+                    if (reader.TokenType != JsonTokenType.String || string.IsNullOrWhiteSpace(reader.GetString()))
+                        throw new JsonException($"{propertyName} must be a nonempty string; omit the property to disable constants generation.");
+                    constants = new(constantsType, reader.GetString()!);
+                }
+                else if (string.Equals(propertyName, "Definitions", StringComparison.OrdinalIgnoreCase) || string.Equals(propertyName, "Enums", StringComparison.OrdinalIgnoreCase) || string.Equals(propertyName, "Constants", StringComparison.OrdinalIgnoreCase))
+                    throw new JsonException("Use one top-level ConstantsSQL, ConstantsPath or ConstantsProc string returning Name, Value, Type, Description, Parent.");
                 else if (Enum.TryParse<ConnectionSourceType>(propertyName, true, out var parsedType)) {
                     connectionSourceType = parsedType;
                     connectionTarget = reader.GetString();
@@ -148,6 +158,7 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
             OutputPath = outputPath,
             Namespace = @namespace,
             IsInternal = isInternal,
+            Constants = constants,
             Queries = queries
         };
     }
@@ -172,6 +183,11 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
         if (value.IsInternal)
             writer.WriteBoolean(nameof(ExtensionSettings.IsInternal), value.IsInternal);
 
+        if (value.Constants is { } constants) {
+            constants.ToQuery();
+            writer.WriteString(constants.PropertyName, constants.Target);
+        }
+
         if (value.Queries != null && value.Queries.Count > 0) {
             writer.WritePropertyName(nameof(ExtensionSettings.Queries));
             JsonSerializer.Serialize(writer, value.Queries, options);
@@ -185,6 +201,7 @@ public class ExtensionSettingsConverter : JsonConverter<ExtensionSettings> {
 public class QuerySetting {
     public required string MethodName { get; set; }
     public string? ResultSetName { get; set; }
+    public bool GenerateHooks { get; set; }
     public required string Target { get; set; }
     public QuerySourceType SourceType { get; set; }
     public List<ParameterOverride> Parameters { get; set; } = [];
@@ -198,8 +215,12 @@ public class QuerySetting {
 
 public class ParameterOverride {
     public required string Name { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Type { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? IsNullable { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultValue { get; set; }
 }
 
 public class QuerySettingConverter : JsonConverter<QuerySetting> {
@@ -212,6 +233,7 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
         string? target = null;
         QuerySourceType sourceType = QuerySourceType.Text;
         List<ParameterOverride> parameters = [];
+        bool generateHooks = false;
 
         while (reader.Read()) {
             if (reader.TokenType == JsonTokenType.EndObject)
@@ -242,6 +264,9 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
                 else if (string.Equals(propertyName, nameof(QuerySetting.Parameters), StringComparison.OrdinalIgnoreCase)) {
                     parameters = JsonSerializer.Deserialize<List<ParameterOverride>>(ref reader, options) ?? [];
                 }
+                else if (string.Equals(propertyName, nameof(QuerySetting.GenerateHooks), StringComparison.OrdinalIgnoreCase)) {
+                    generateHooks = reader.GetBoolean();
+                }
                 else {
                     reader.Skip();
                 }
@@ -258,7 +283,8 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
             Target = target,
             ResultSetName = resultSetName,
             SourceType = sourceType,
-            Parameters = parameters
+            Parameters = parameters,
+            GenerateHooks = generateHooks
         };
     }
 
@@ -281,6 +307,8 @@ public class QuerySettingConverter : JsonConverter<QuerySetting> {
 
         if (value.ResultSetName != null)
             writer.WriteString(nameof(QuerySetting.ResultSetName), value.ResultSetName);
+        if (value.GenerateHooks)
+            writer.WriteBoolean(nameof(QuerySetting.GenerateHooks), true);
 
         if (value.Parameters != null && value.Parameters.Count > 0) {
             writer.WritePropertyName(nameof(QuerySetting.Parameters));

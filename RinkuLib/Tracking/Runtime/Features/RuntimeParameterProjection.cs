@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -8,16 +8,16 @@ using Rinku.Querying.Parameters;
 namespace Rinku.Tracking.Runtime;
 
 /// <summary>Provides query parameter access for a generated tracking type.</summary>
-[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Interface, Inherited = false)]
 public sealed class RuntimeTrackingParameterAccessorAttribute : AccessorEmitterHandler
 {
     /// <inheritdoc/>
     public override IAccessorEmitter? GetMemberEmitter(char varChar, int index, Type type, MemberInfo member, Mapper mapper)
     {
         if (!RuntimeTrackingParameterRegistry.TryGet(type, out RuntimeTrackingParameterShape? shape)) return null;
-        if (!shape.TryGetProperty(member.Name, out _)) return null;
+        if (!shape.HasProperty(member.Name)) return null;
         ReadOnlySpan<char> key = GetName(varChar, mapper.Keys[index]);
-        if (!shape.TryGetParameter(key, out RuntimeTrackingParameterMember? mapped))
+        if (!shape.TryGetParameter(key, out PropertyInfo? mapped))
             return RuntimeTrackingDisabledParameterEmitter.Instance;
         return CreateMemberAdapter(mapped, varChar, index, type, mapper);
     }
@@ -27,17 +27,29 @@ public sealed class RuntimeTrackingParameterAccessorAttribute : AccessorEmitterH
     {
         if (!RuntimeTrackingParameterRegistry.TryGet(type, out RuntimeTrackingParameterShape? shape)) return null;
         ReadOnlySpan<char> key = GetName(varChar, mapper.Keys[index]);
-        if (!shape.TryGetParameter(key, out RuntimeTrackingParameterMember? member)) return null;
-        return new RuntimeTrackingTypeEmitterAdapter(member.Property, ResolveEmitter(member, varChar, index, type, mapper));
+        if (!shape.TryGetParameter(key, out PropertyInfo? member)) return null;
+        return new RuntimeTrackingTypeEmitterAdapter(member, ResolveEmitter(member, varChar, index, type, mapper));
     }
 
-    private static IAccessorEmitter CreateMemberAdapter(RuntimeTrackingParameterMember member, char varChar, int index, Type type, Mapper mapper)
-        => new RuntimeTrackingMemberEmitterAdapter(member.Property, ResolveEmitter(member, varChar, index, type, mapper));
-
-    private static IAccessorEmitter ResolveEmitter(RuntimeTrackingParameterMember member, char varChar, int index, Type type, Mapper mapper)
+    /// <inheritdoc/>
+    public override ITypeAccessorEmitter? GetTypeEmitter(char varChar, int index, Type type, Mapper mapper, Type valueType)
     {
-        AccessorEmitterHandler? custom = member.Property.GetCustomAttribute<AccessorEmitterHandler>(inherit: true);
-        return custom?.GetMemberEmitter(varChar, index, type, member.Property, mapper)
+        if (RuntimeTrackingParameterRegistry.TryGet(type, out _))
+        {
+            return GetTypeEmitter(varChar, index, type, mapper);
+        }
+        return typeof(IRuntimeMemberAccess).IsAssignableFrom(type) ? new RuntimeMemberParameterEmitter(GetName(varChar, mapper.Keys[index]).ToString(), valueType) : null;
+    }
+
+    private static RuntimeTrackingMemberEmitterAdapter CreateMemberAdapter(PropertyInfo member, char varChar, int index, Type type, Mapper mapper)
+        => new(member, ResolveEmitter(member, varChar, index, type, mapper));
+
+    private static IAccessorEmitter ResolveEmitter(PropertyInfo member, char varChar, int index, Type type, Mapper mapper)
+    {
+        AccessorEmitterHandler? custom = member.GetCustomAttribute<AccessorEmitterHandler>(inherit: true);
+        if (custom is null && RuntimeTrackingParameterRegistry.TryGet(type, out var shape))
+            custom = shape.DefaultAccessor;
+        return custom?.GetMemberEmitter(varChar, index, type, member, mapper)
             ?? RuntimeTrackingDefaultParameterEmitter.Instance;
     }
 
@@ -45,6 +57,44 @@ public sealed class RuntimeTrackingParameterAccessorAttribute : AccessorEmitterH
     {
         ReadOnlySpan<char> span = key;
         return span.Length != 0 && varChar != default && span[0] == varChar ? span[1..] : span;
+    }
+}
+
+internal sealed class RuntimeMemberParameterEmitter(string name, Type valueType) : TypeAccessorEmitterBase
+{
+    private static readonly MethodInfo Read = typeof(RuntimeMemberParameterEmitter).GetMethod(nameof(TryRead), BindingFlags.Static | BindingFlags.NonPublic)!;
+    private LocalBuilder? _value;
+
+    protected override void EmitCondition(ILGenerator il, Type type)
+    {
+        _value = il.DeclareLocal(valueType);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldstr, name);
+        il.Emit(OpCodes.Ldloca, _value);
+        il.Emit(OpCodes.Call, Read.MakeGenericMethod(valueType));
+    }
+
+    protected override void EmitValue(ILGenerator il, Type type) => il.Emit(OpCodes.Ldloc, _value!);
+    protected override Type GetValueType(Type type) => valueType;
+
+    private static bool TryRead<T>(IRuntimeMemberAccess source, string key, [MaybeNullWhen(false)] out T value)
+    {
+        if (RuntimeTrackingParameterRegistry.TryGet(source.GetType(), out var shape))
+        {
+            if (!shape.TryGetParameter(key, out var member))
+            {
+                value = default;
+                return false;
+            }
+            key = member.Name;
+        }
+        int index = source.Mapper.GetIndex(key);
+        if (index >= 0)
+        {
+            return source.TryGet(index, out value);
+        }
+        value = default;
+        return false;
     }
 }
 
@@ -57,40 +107,50 @@ internal static class RuntimeTrackingParameterRegistry
 
 internal sealed class RuntimeTrackingParameterShape
 {
-    private readonly Dictionary<string, RuntimeTrackingParameterMember> _parameters = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, RuntimeTrackingParameterMember> _properties = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PropertyInfo> _parameters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PropertyInfo> _properties = new(StringComparer.OrdinalIgnoreCase);
 
-    internal RuntimeTrackingParameterShape(Type generatedType, IReadOnlyList<RuntimeTrackingParameterPlanMember> members, ParameterConflictBehavior conflictBehavior)
+    internal AccessorEmitterHandler? DefaultAccessor { get; }
+
+    internal RuntimeTrackingParameterShape(Type generatedType, IReadOnlyList<RuntimeTrackingParameterPlanMember> members, ParameterConflictBehavior conflictBehavior, AccessorEmitterHandler? defaultAccessor)
     {
+        DefaultAccessor = defaultAccessor;
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
         for (int i = 0; i < members.Count; i++)
         {
             RuntimeTrackingParameterPlanMember member = members[i];
             PropertyInfo? property = generatedType.GetProperty(member.Name, flags);
             if (property is null) continue;
-            var info = new RuntimeTrackingParameterMember(member.Name, property);
-            _properties.Add(member.Name, info);
+            _properties.Add(member.Name, property);
             if (!member.IncludeInParameters || property.IsDefined(typeof(ParameterIgnoreAttribute), inherit: true)) continue;
 
             ParameterNameAttribute? rename = property.GetCustomAttribute<ParameterNameAttribute>(inherit: true);
-            Add(rename?.Name ?? member.Name, info, conflictBehavior);
+            Add(rename?.Name ?? member.Name, property, conflictBehavior);
             foreach (ParameterAliasAttribute alias in property.GetCustomAttributes<ParameterAliasAttribute>(inherit: true))
-                Add(alias.Name, info, conflictBehavior);
+                Add(alias.Name, property, conflictBehavior);
         }
     }
 
-    internal bool TryGetParameter(ReadOnlySpan<char> name, [NotNullWhen(true)] out RuntimeTrackingParameterMember? member)
+    internal bool TryGetParameter(ReadOnlySpan<char> name, [NotNullWhen(true)] out PropertyInfo? member)
         => _parameters.TryGetValue(name.ToString(), out member);
 
-    internal bool TryGetProperty(string name, [NotNullWhen(true)] out RuntimeTrackingParameterMember? member)
-        => _properties.TryGetValue(name, out member);
+    internal bool TryGetParameter(string name, [NotNullWhen(true)] out PropertyInfo? member) => _parameters.TryGetValue(name, out member);
 
-    private void Add(string name, RuntimeTrackingParameterMember member, ParameterConflictBehavior conflictBehavior)
+    internal bool MatchesParameter(ReadOnlySpan<char> parameter, string member) {
+        foreach (var pair in _parameters)
+            if (parameter.Equals(pair.Key.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                return pair.Value.Name.Equals(member, StringComparison.OrdinalIgnoreCase);
+        return false;
+    }
+
+    internal bool HasProperty(string name) => _properties.ContainsKey(name);
+
+    private void Add(string name, PropertyInfo member, ParameterConflictBehavior conflictBehavior)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         string normalized = NormalizeName(name);
         if (normalized.Length == 0) throw new ArgumentException("A runtime parameter name cannot contain only a variable prefix.", nameof(name));
-        if (_parameters.TryGetValue(normalized, out RuntimeTrackingParameterMember? existing) && !ReferenceEquals(existing, member))
+        if (_parameters.TryGetValue(normalized, out PropertyInfo? existing) && !ReferenceEquals(existing, member))
         {
             if (conflictBehavior == ParameterConflictBehavior.TakeOne) return;
             throw new InvalidOperationException($"Runtime parameter name '{name}' is provided by both '{existing.Name}' and '{member.Name}'.");
@@ -106,12 +166,6 @@ internal sealed class RuntimeTrackingParameterShape
 }
 
 internal readonly record struct RuntimeTrackingParameterPlanMember(string Name, bool IncludeInParameters);
-
-internal sealed class RuntimeTrackingParameterMember(string name, PropertyInfo property)
-{
-    internal string Name { get; } = name;
-    internal PropertyInfo Property { get; } = property;
-}
 
 internal sealed class RuntimeTrackingMemberEmitterAdapter(PropertyInfo source, IAccessorEmitter emitter) : IAccessorEmitter
 {
@@ -167,14 +221,14 @@ internal sealed class RuntimeTrackingDefaultParameterEmitter : IAccessorEmitter
             il.Emit(OpCodes.Cgt_Un);
             return;
         }
-        if (Nullable.GetUnderlyingType(memberType) is Type)
+        if (Nullable.GetUnderlyingType(memberType) is not null)
         {
             AccessorEmitter.EmitMemberLoad(il, type, member, sourceArgument);
             LocalBuilder value = il.DeclareLocal(memberType);
             il.Emit(OpCodes.Stloc, value);
             il.Emit(OpCodes.Ldloca, value);
-            MethodInfo hasValue = memberType.GetProperty(nameof(Nullable<int>.HasValue))?.GetMethod
-                ?? throw new MissingMethodException(memberType.FullName, $"get_{nameof(Nullable<int>.HasValue)}");
+            MethodInfo hasValue = memberType.GetProperty(nameof(Nullable<>.HasValue))?.GetMethod
+                ?? throw new MissingMethodException(memberType.FullName, $"get_{nameof(Nullable<>.HasValue)}");
             il.Emit(OpCodes.Call, hasValue);
             return;
         }
@@ -225,6 +279,6 @@ internal sealed class RuntimeParameterProjectionEmitter<TOriginal> : IRuntimeTra
             RuntimeTrackingMemberDefinition<TOriginal> member = type.Definition.Members[i];
             members[i] = new(member.Name, member.IncludeInParameters);
         }
-        RuntimeTrackingParameterRegistry.Register(type.Type, new RuntimeTrackingParameterShape(type.Type, members, conflict));
+        RuntimeTrackingParameterRegistry.Register(type.Type, new RuntimeTrackingParameterShape(type.Type, members, conflict, typeof(TOriginal).GetCustomAttribute<AccessorEmitterHandler>(inherit: true)));
     }
 }

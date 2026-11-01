@@ -5,7 +5,7 @@ using Rinku.Querying;
 using Rinku.Querying.Parameters;
 using Xunit;
 
-namespace Rinku.Querying.Tests;
+namespace RinkuLib.Tests.Parameters;
 
 public sealed class StackParameterAccessorTests {
     private sealed class MethodArgs {
@@ -14,7 +14,6 @@ public sealed class StackParameterAccessorTests {
     }
 
     private static string CallTarget(int Id, string Name) => $"{Id}:{Name}";
-
     [Fact]
     public void Stack_accessor_can_feed_a_method_call_without_an_object_array() {
         Mapper mapper = Mapper.GetMapper(["Id", "Name"]);
@@ -56,7 +55,6 @@ public sealed class StackParameterAccessorTests {
     }
 
     private static string NestedTarget(int Id, string Name) => $"{Id}:{Name}";
-
     [Fact]
     public void Stack_usage_prepares_nested_values_before_arguments_are_pushed() {
         Mapper mapper = Mapper.GetMapper(["Id", "Name"]);
@@ -94,7 +92,6 @@ public sealed class StackParameterAccessorTests {
     }
 
     private static int? RawTarget(int? ParentId) => ParentId;
-
     [Fact]
     public void Stack_mode_emits_the_raw_typed_value_not_the_db_terminal_value() {
         Mapper mapper = Mapper.GetMapper(["ParentId"]);

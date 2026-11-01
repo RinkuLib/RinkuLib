@@ -7,7 +7,7 @@ using System.Text.Json;
 using RinkuPowerTools;
 using Xunit;
 
-namespace RinkuLib.Tests.Codegen;
+namespace RinkuLib.Tests.Features.CodeGeneration;
 
 public class CodegenDocumentationTests {
     [Fact]
@@ -67,7 +67,7 @@ public class CodegenDocumentationTests {
             CancellationToken.None);
 
         Assert.Contains("DbCommand GetTracksByAlbum(this DbConnection connection, int albumId)", code);
-        Assert.Contains("command.Add(\"@albumId\", DbType.Int32, albumId)", code);
+        Assert.Contains("command.Add(\"@albumId\", DbType.Int32, (object)albumId);", code);
         Assert.Contains("public partial record GetTracksByAlbumResult(int Id, [TrueName(\"Track Name\")] string? Track_Name, decimal UnitPrice)", code);
     }
 

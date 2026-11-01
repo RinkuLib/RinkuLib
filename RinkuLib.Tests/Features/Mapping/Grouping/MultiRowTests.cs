@@ -4,27 +4,25 @@ using Rinku.Mapping;
 using RinkuLib.Tests.Infrastructure;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace RinkuLib.Tests.DbParsing;
+namespace RinkuLib.Tests.Features.Mapping.Grouping;
 
 /// <summary>
 /// The multi-row road: a result whose rows are grouped by key folds into nested objects and collections. Every
 /// test drives a full in-memory result through the normal query path and checks the whole materialised graph.
 /// </summary>
 public class MultiRowTests {
-
     static MultiRowTests() =>
         TypeParsingInfo.AddOrSet(typeof(HashSet<>),
             new MultiRowTypeParsingInfo(
                 typeof(HashSet<>).GetConstructor(Type.EmptyTypes)!,
-                typeof(HashSet<>).GetMethod(nameof(HashSet<int>.Add)),
+                typeof(HashSet<>).GetMethod(nameof(HashSet<>.Add)),
                 null));
 
     public sealed record Point(int Id, string Name) : IDbReadable;
     public sealed record Boxed(int Id, Point Sub) : IDbReadable;
-
     public sealed record Child([AbortOnNull] int Id, string Value) : IDbReadable;
     public sealed record Parent([property: GroupKey] int Id, string Name, List<Child> Children) : IDbReadable;
     public sealed record RegionParent([property: GroupKey] int RegionId, [property: GroupKey] int Id, string Name, List<Child> Children) : IDbReadable;
@@ -66,7 +64,8 @@ public class MultiRowTests {
     }
 
     public sealed class MemberParent : IDbReadable {
-        [GroupKey] public int Id { get; set; }
+        [GroupKey] 
+            public int Id { get; set; }
         public string Name { get; set; } = "";
         public List<Child> Children { get; set; } = [];
     }
@@ -76,7 +75,8 @@ public class MultiRowTests {
             Id = id;
             Name = name;
         }
-        [GroupKey] public int Id { get; }
+        [GroupKey] 
+            public int Id { get; }
         public string Name { get; }
         public List<Child> Children { get; set; } = [];
     }
@@ -86,7 +86,8 @@ public class MultiRowTests {
     public readonly record struct NullPreservingList<T>([NoName][KeepNullElements] List<T> Values) : IDbReadable;
     public sealed record InferredParent(int Id, string Name, List<Child> Children) : IDbReadable;
     public sealed record ValueAfterCollection(List<Child> Children, int Trailing) : IDbReadable;
-    public sealed record DynaHolder([NoName] List<DynaObject> Rows) : IDbReadable {
+    public sealed record DynaHolder([NoName] List<global::Rinku.Mapping.DynaObject> 
+        Rows) : IDbReadable {
         [GroupKey]
         public static (bool Same, int Next) KeyOf(int stored, int id) => (id == stored, id);
     }
@@ -99,7 +100,7 @@ public class MultiRowTests {
     ];
 
     private static ITypeParser<T> ForceMultiRow<T>(ColumnInfo[] cols)
-        => Assert.IsType<DefaultTypeParserMaker>(TypeParser.DefaultTypeParserMaker).ForceMultiRow<T>(TypeParser.GetDefaultNullColHandler<T>(), cols);
+        => DefaultTypeParserMaker.ForceMultiRow<T>(TypeParser.GetDefaultNullColHandler<T>(), cols);
 
     // --- the single-row road reproduced through the multi-row machine -----------------------------------
 
@@ -130,9 +131,9 @@ public class MultiRowTests {
         using var reader = Rows.Reader(cols, [1, "one"], [2, "two"]);
         reader.Read();
 
-        var first = parser.Parse(reader);
-        Assert.True(first.CanContinue);
-        Assert.Equal(new Point(1, "one"), first.Result);
+        var (CanContinue, Result) = parser.Parse(reader);
+        Assert.True(CanContinue);
+        Assert.Equal(new Point(1, "one"), Result);
 
         var second = parser.Parse(reader);
         Assert.False(second.CanContinue);
@@ -283,7 +284,8 @@ public class MultiRowTests {
     }
 
     public sealed class AltKeyParent : IDbReadable {
-        [GroupKey, Alt("PKey")] public int Id { get; set; }
+        [GroupKey, Alt("PKey")] 
+            public int Id { get; set; }
         public string Name { get; set; } = "";
         public List<Child> Children { get; set; } = [];
     }
@@ -384,7 +386,7 @@ public class MultiRowTests {
     public void A_registered_collection_can_be_given_its_add_explicitly() {
         TypeParsingInfo.AddOrSet(typeof(SortedSet<int>), new MultiRowTypeParsingInfo(
             typeof(SortedSet<int>).GetConstructor(Type.EmptyTypes)!,
-            typeof(SortedSet<int>).GetMethod(nameof(SortedSet<int>.Add), [typeof(int)]),
+            typeof(SortedSet<int>).GetMethod(nameof(SortedSet<>.Add), [typeof(int)]),
             null));
         ColumnInfo[] cols = [new("V", typeof(int), false)];
         var parser = TypeParser.GetTypeParser<SortedSet<int>>(cols);
@@ -396,7 +398,6 @@ public class MultiRowTests {
     }
 
     public sealed record PairedAlbum(int Id, string Title);
-
     [Fact]
     public void A_tuple_pairs_a_grouping_id_with_a_built_object() {
         ColumnInfo[] cols = [new("ArtistId", typeof(int), false), new("Id", typeof(int), false), new("Title", typeof(string), false)];
@@ -617,7 +618,7 @@ public class MultiRowTests {
         };
 
         var parser = TypeParser.GetTypeParser<List<Parent>>(cols);
-        using var reader = Rows.Reader(cols, rows.Select(r => new object?[] { r.Id, r.Name, r.ChildId.HasValue ? r.ChildId.Value : DBNull.Value, r.ChildValue is null ? DBNull.Value : r.ChildValue }).ToArray());
+        using var reader = Rows.Reader(cols, [.. rows.Select(r => new object?[] { r.Id, r.Name, r.ChildId.HasValue ? r.ChildId.Value : DBNull.Value, r.ChildValue is null ? DBNull.Value : r.ChildValue })]);
         reader.Read();
         var result = parser.Parse(reader).Result;
 
@@ -869,7 +870,6 @@ public class MultiRowTests {
     }
 
     public sealed record UnregisteredElement(int Id, string Value);
-
     public sealed record WithUnregisteredCollection(int Id, List<UnregisteredElement> Items) : IDbReadable;
 
     [Fact]

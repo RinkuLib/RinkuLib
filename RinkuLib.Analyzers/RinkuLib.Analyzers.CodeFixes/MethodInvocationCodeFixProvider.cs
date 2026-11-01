@@ -137,13 +137,12 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
     }
 
     private static List<ISymbol> CollectAvailableSymbols(SemanticModel model, ExpressionSyntax expression) {
-        return model.LookupSymbols(expression.SpanStart)
+        return [.. model.LookupSymbols(expression.SpanStart)
             .Where(s =>
                 s is ILocalSymbol
                 or IParameterSymbol
                 or IFieldSymbol
-                or IPropertySymbol)
-            .ToList();
+                or IPropertySymbol)];
     }
 
     private static ExpressionSyntax? TryDirectMatch(IParameterSymbol parameter, List<ISymbol> available, bool callerIsStatic) {
@@ -248,7 +247,7 @@ public sealed class MethodInvocationCodeFixProvider : CodeFixProvider {
         if (additions.Count == 0)
             return caller;
 
-        var updated = paramList.AddParameters(additions.ToArray());
+        var updated = paramList.AddParameters([.. additions]);
 
         return caller switch {
             MethodDeclarationSyntax m => m.WithParameterList(updated),

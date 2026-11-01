@@ -13,7 +13,7 @@ public abstract class RinkuException : Exception {
 
     /// <summary>Creates a Rinku error with a stable code.</summary>
     /// <param name="code">One of the constants on <see cref="ErrorCodes"/>.</param>
-    /// <param name="message">What failed, naming the specific thing that failed.</param>
+    /// <param name="message">The error description, including the specific operation that failed.</param>
     /// <param name="innerException">The original error when one is available.</param>
     protected RinkuException(string code, string message, Exception? innerException = null)
         : base($"{code}: {message}", innerException) {

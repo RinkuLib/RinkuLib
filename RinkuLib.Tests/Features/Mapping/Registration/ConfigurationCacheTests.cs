@@ -7,10 +7,10 @@ using Rinku.Mapping.Defaults;
 using Rinku.Internal;
 using Rinku.Mapping.Parsers;
 using RinkuLib.Tests.Infrastructure;
-using RinkuLib.Tests.Documentation;
+using RinkuLib.Tests.Features.Documentation;
 using Xunit;
 
-namespace RinkuLib.Tests.Mapping;
+namespace RinkuLib.Tests.Features.Mapping.Registration;
 
 [Collection("GlobalMappingConfiguration")]
 public class ConfigurationCacheTests {
@@ -26,7 +26,7 @@ public class ConfigurationCacheTests {
             var first = TypeParser.GetTypeParser<DisposableValue>(columns);
             query.UpdateParseCache([], first);
 
-            Assert.True(TypeParser.Invalidate(equivalent, ParserInvalidationMode.CheckUsage) >= 1);
+            Assert.True(TypeParser.Invalidate(parser => parser.CanParse(equivalent), ParserInvalidationMode.CheckUsage) >= 1);
 
             Assert.False(((DisposableValueParser)first).IsDisposed);
             Assert.True(query.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out var retained));
@@ -52,7 +52,7 @@ public class ConfigurationCacheTests {
             var parser = TypeParser.GetTypeParser<DisposableValue>(columns);
             query.UpdateParseCache([], parser);
 
-            Assert.True(TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences));
+            Assert.True(TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences) >= 1);
 
             Assert.False(query.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
             Assert.True(((DisposableValueParser)parser).IsDisposed);
@@ -75,7 +75,7 @@ public class ConfigurationCacheTests {
             firstCommand.UpdateParseCache([], parser);
             secondCommand.UpdateParseCache([], parser);
 
-            Assert.Equal(1, firstCommand.InvalidateParsers(QueryParserInvalidationScope.Local));
+            Assert.Equal(1, firstCommand.InvalidateParsers(static _ => true, QueryParserInvalidationScope.Local));
 
             Assert.False(firstCommand.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
             Assert.True(secondCommand.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out var retained));
@@ -85,7 +85,7 @@ public class ConfigurationCacheTests {
         }
         finally {
             if (parser is not null)
-                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
             TypeParser.TypeParserMakers.Remove(maker);
         }
     }
@@ -103,7 +103,7 @@ public class ConfigurationCacheTests {
             firstCommand.UpdateParseCache([], parser);
             secondCommand.UpdateParseCache([], parser);
 
-            Assert.Equal(1, firstCommand.InvalidateParsers(QueryParserInvalidationScope.GlobalIfUnused));
+            Assert.Equal(1, firstCommand.InvalidateParsers(static _ => true, QueryParserInvalidationScope.GlobalIfUnused));
 
             Assert.False(firstCommand.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
             Assert.True(secondCommand.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out var retained));
@@ -113,7 +113,7 @@ public class ConfigurationCacheTests {
         }
         finally {
             if (parser is not null)
-                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
             TypeParser.TypeParserMakers.Remove(maker);
         }
     }
@@ -129,7 +129,7 @@ public class ConfigurationCacheTests {
             parser = (DisposableValueParser)TypeParser.GetTypeParser<DisposableValue>(columns);
             query.UpdateParseCache([], parser);
 
-            Assert.Equal(1, query.InvalidateParsers());
+            Assert.Equal(1, query.InvalidateParsers(static _ => true));
 
             Assert.False(query.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
             Assert.DoesNotContain(TypeParser.ReadingInfos, entry => ReferenceEquals(entry.Parser, parser));
@@ -137,7 +137,7 @@ public class ConfigurationCacheTests {
         }
         finally {
             if (parser is not null)
-                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
             TypeParser.TypeParserMakers.Remove(maker);
         }
     }
@@ -161,7 +161,7 @@ public class ConfigurationCacheTests {
         finally {
             query.Dispose();
             if (parser is not null)
-                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
             TypeParser.TypeParserMakers.Remove(maker);
         }
     }
@@ -179,7 +179,7 @@ public class ConfigurationCacheTests {
             firstCommand.UpdateParseCache([], parser);
             secondCommand.UpdateParseCache([], parser);
 
-            Assert.Equal(1, firstCommand.InvalidateParsers(QueryParserInvalidationScope.Global));
+            Assert.Equal(1, firstCommand.InvalidateParsers(static _ => true, QueryParserInvalidationScope.Global));
 
             Assert.False(firstCommand.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
             Assert.False(secondCommand.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
@@ -188,7 +188,7 @@ public class ConfigurationCacheTests {
         }
         finally {
             if (parser is not null)
-                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
             TypeParser.TypeParserMakers.Remove(maker);
         }
     }
@@ -196,7 +196,28 @@ public class ConfigurationCacheTests {
     [Fact]
     public void Query_command_invalidation_rejects_an_unknown_scope() {
         using var query = new QueryCommand("SELECT Value");
-        Assert.Throws<ArgumentOutOfRangeException>(() => query.InvalidateParsers((QueryParserInvalidationScope)42));
+        Assert.Throws<ArgumentOutOfRangeException>(() => query.InvalidateParsers(static _ => true, (QueryParserInvalidationScope)42));
+    }
+
+    [Fact]
+    public void Global_invalidation_can_filter_by_type_and_schema() {
+        var maker = new DisposableValueMaker();
+        TypeParser.TypeParserMakers.Insert(0, maker);
+        DisposableValueParser? parser = null;
+        try {
+            ColumnInfo[] columns = [new("Value", typeof(int), false)];
+            parser = (DisposableValueParser)TypeParser.GetTypeParser<DisposableValue>(columns);
+
+            Assert.Equal(1, TypeParser.Invalidate(parser => parser.Type == typeof(DisposableValue) && parser.CanParse(columns), ParserInvalidationMode.InvalidateReferences));
+
+            Assert.True(parser.IsDisposed);
+            Assert.DoesNotContain(TypeParser.ReadingInfos, entry => ReferenceEquals(entry.Parser, parser));
+        }
+        finally {
+            if (parser is not null)
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
+            TypeParser.TypeParserMakers.Remove(maker);
+        }
     }
 
     [Fact]
@@ -215,7 +236,7 @@ public class ConfigurationCacheTests {
             query.UpdateParseCache([], selected);
             query.UpdateParseCache([], other, resultSetIndex: 1);
 
-            Assert.Equal(1, query.InvalidateParser(selected, QueryParserInvalidationScope.Local));
+            Assert.Equal(1, query.InvalidateParsers(candidate => ReferenceEquals(candidate, selected), QueryParserInvalidationScope.Local));
 
             Assert.False(query.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
             Assert.True(query.TryGetCachedParser<SchemaIndependentValue>(Span<bool>.Empty, out var retained, resultSetIndex: 1));
@@ -225,9 +246,46 @@ public class ConfigurationCacheTests {
         }
         finally {
             if (selected is not null)
-                TypeParser.Invalidate(selected, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, selected), ParserInvalidationMode.InvalidateReferences);
             if (other is not null)
-                TypeParser.Invalidate(other, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, other), ParserInvalidationMode.InvalidateReferences);
+            TypeParser.TypeParserMakers.Remove(otherMaker);
+            TypeParser.TypeParserMakers.Remove(maker);
+        }
+    }
+
+    [Fact]
+    public void Query_command_can_invalidate_only_parsers_for_a_result_type() {
+        var maker = new DisposableValueMaker();
+        var otherMaker = new SchemaIndependentMaker();
+        TypeParser.TypeParserMakers.Insert(0, maker);
+        TypeParser.TypeParserMakers.Insert(0, otherMaker);
+        using var query = new QueryCommand("SELECT Value");
+        DisposableValueParser? selected = null;
+        ITypeParser<SchemaIndependentValue>? other = null;
+        try {
+            ColumnInfo[] columns = [new("Value", typeof(int), false)];
+            selected = (DisposableValueParser)TypeParser.GetTypeParser<DisposableValue>(columns);
+            other = TypeParser.GetTypeParser<SchemaIndependentValue>(columns);
+            query.UpdateParseCache([], selected);
+            query.UpdateParseCache([], other, resultSetIndex: 1);
+
+            Assert.Equal(0, query.InvalidateParsers(candidate => candidate.Type == typeof(string), QueryParserInvalidationScope.Local));
+            Assert.True(query.TryGetCachedParser<SchemaIndependentValue>(Span<bool>.Empty, out var before, resultSetIndex: 1));
+            Assert.Same(other, before);
+
+            Assert.Equal(1, query.InvalidateParsers(candidate => candidate.Type == typeof(DisposableValue), QueryParserInvalidationScope.Local));
+
+            Assert.False(query.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
+            Assert.True(query.TryGetCachedParser<SchemaIndependentValue>(Span<bool>.Empty, out var retained, resultSetIndex: 1));
+            Assert.Same(other, retained);
+            Assert.False(selected.IsDisposed);
+        }
+        finally {
+            if (selected is not null)
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, selected), ParserInvalidationMode.InvalidateReferences);
+            if (other is not null)
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, other), ParserInvalidationMode.InvalidateReferences);
             TypeParser.TypeParserMakers.Remove(otherMaker);
             TypeParser.TypeParserMakers.Remove(maker);
         }
@@ -244,7 +302,7 @@ public class ConfigurationCacheTests {
             parser = (DisposableValueParser)TypeParser.GetTypeParser<DisposableValue>(columns);
             query.UpdateParseCache([], parser);
 
-            Assert.Equal(1, query.InvalidateParser(parser));
+            Assert.Equal(1, query.InvalidateParsers(candidate => ReferenceEquals(candidate, parser)));
 
             Assert.False(query.TryGetCachedParser<DisposableValue>(Span<bool>.Empty, out _));
             Assert.DoesNotContain(TypeParser.ReadingInfos, entry => ReferenceEquals(entry.Parser, parser));
@@ -252,7 +310,7 @@ public class ConfigurationCacheTests {
         }
         finally {
             if (parser is not null)
-                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
             TypeParser.TypeParserMakers.Remove(maker);
         }
     }
@@ -267,13 +325,13 @@ public class ConfigurationCacheTests {
             ColumnInfo[] columns = [new("Value", typeof(int), false)];
             parser = (DisposableValueParser)TypeParser.GetTypeParser<DisposableValue>(columns);
 
-            Assert.Equal(0, query.InvalidateParser(parser, QueryParserInvalidationScope.Global));
+            Assert.Equal(0, query.InvalidateParsers(candidate => ReferenceEquals(candidate, parser), QueryParserInvalidationScope.Global));
             Assert.Contains(TypeParser.ReadingInfos, entry => ReferenceEquals(entry.Parser, parser));
             Assert.False(parser.IsDisposed);
         }
         finally {
             if (parser is not null)
-                TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences);
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
             TypeParser.TypeParserMakers.Remove(maker);
         }
     }
@@ -305,7 +363,7 @@ public class ConfigurationCacheTests {
         finally {
             TypeParser.ParserDisposing -= OnParserDisposing;
             TypeParsingInfo.AddOrSet(typeof(CacheValue), original);
-            TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences);
+            TypeParser.Invalidate(parser => parser.CanParse(columns), ParserInvalidationMode.InvalidateReferences);
         }
     }
 
@@ -325,7 +383,7 @@ public class ConfigurationCacheTests {
         }
         TypeParser.ParserDisposing += Handler;
         try {
-            Assert.True(TypeParser.Invalidate(parser, ParserInvalidationMode.InvalidateReferences));
+            Assert.True(TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences) >= 1);
         }
         finally {
             TypeParser.ParserDisposing -= Handler;
@@ -354,14 +412,14 @@ public class ConfigurationCacheTests {
     [Fact]
     public void Invalidating_a_multi_row_parser_releases_generated_static_mapper_targets() {
         ColumnInfo[] columns = [new("Id", typeof(int), false), new("Name", typeof(string), false)];
-        var parser = TypeParser.GetTypeParser<List<RinkuLib.Tests.DbParsing.MultiRowTests.DynaHolder>>(columns);
+        var parser = TypeParser.GetTypeParser<List<RinkuLib.Tests.Features.Mapping.Grouping.MultiRowTests.DynaHolder>>(columns);
         Assert.Contains(TypeParser.ReadingInfos, entry => ReferenceEquals(entry.Parser, parser));
         var stateType = parser.GetType().GetGenericArguments()[1];
         var targetFields = stateType.GetFields(BindingFlags.Static | BindingFlags.NonPublic)
             .Where(field => field.FieldType == typeof(object[])).ToArray();
         Assert.Contains(targetFields, field => field.GetValue(null) is object[] targets && targets.Any(target => target is Mapper));
 
-        Assert.True(TypeParser.Invalidate(columns, ParserInvalidationMode.InvalidateReferences) >= 1);
+        Assert.True(TypeParser.Invalidate(parser => parser.CanParse(columns), ParserInvalidationMode.InvalidateReferences) >= 1);
 
         Assert.DoesNotContain(targetFields, field => field.GetValue(null) is object[] targets && targets.Any(target => target is Mapper));
     }
@@ -377,7 +435,7 @@ public class ConfigurationCacheTests {
         try {
             var parser = (DisposableValueParser)cache.UpdateCache(command, reader);
 
-            Assert.True(TypeParser.Invalidate(columns, ParserInvalidationMode.CheckUsage) >= 1);
+            Assert.True(TypeParser.Invalidate(parser => parser.CanParse(columns), ParserInvalidationMode.CheckUsage) >= 1);
             Assert.False(parser.IsDisposed);
             Assert.True(cache.Invalidate());
             Assert.True(parser.IsDisposed);
@@ -389,8 +447,66 @@ public class ConfigurationCacheTests {
     }
 
     [Fact]
+    public void Cached_schema_parser_can_clear_the_learned_schema_and_all_parsers() {
+        var maker = new DisposableValueMaker();
+        var otherMaker = new SchemaIndependentMaker();
+        TypeParser.TypeParserMakers.Insert(0, maker);
+        TypeParser.TypeParserMakers.Insert(0, otherMaker);
+        ColumnInfo[] columns = [new("Value", typeof(int), false)];
+        using var cache = new CachedTypeParser(columns);
+        DisposableValueParser? parser = null;
+        ITypeParser<SchemaIndependentValue>? other = null;
+        try {
+            parser = (DisposableValueParser)cache.Get<DisposableValue>();
+            other = cache.Get<SchemaIndependentValue>();
+
+            Assert.True(cache.HasSchema);
+            Assert.True(cache.Invalidate());
+            Assert.False(cache.HasSchema);
+            Assert.Throws<InvalidOperationException>(() => cache.Get<DisposableValue>());
+        }
+        finally {
+            if (parser is not null)
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
+            if (other is not null)
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, other), ParserInvalidationMode.InvalidateReferences);
+            TypeParser.TypeParserMakers.Remove(otherMaker);
+            TypeParser.TypeParserMakers.Remove(maker);
+        }
+    }
+
+    [Fact]
+    public void Cached_schema_parser_clears_its_package_when_one_owned_parser_is_globally_invalidated() {
+        var maker = new DisposableValueMaker();
+        var otherMaker = new SchemaIndependentMaker();
+        TypeParser.TypeParserMakers.Insert(0, maker);
+        TypeParser.TypeParserMakers.Insert(0, otherMaker);
+        ColumnInfo[] columns = [new("Value", typeof(int), false)];
+        using var cache = new CachedTypeParser(columns);
+        DisposableValueParser? parser = null;
+        ITypeParser<SchemaIndependentValue>? other = null;
+        try {
+            parser = (DisposableValueParser)cache.Get<DisposableValue>();
+            other = cache.Get<SchemaIndependentValue>();
+
+            Assert.Equal(1, TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences));
+
+            Assert.False(cache.HasSchema);
+            Assert.Throws<InvalidOperationException>(() => cache.Get<DisposableValue>());
+        }
+        finally {
+            if (parser is not null)
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, parser), ParserInvalidationMode.InvalidateReferences);
+            if (other is not null)
+                TypeParser.Invalidate(candidate => ReferenceEquals(candidate, other), ParserInvalidationMode.InvalidateReferences);
+            TypeParser.TypeParserMakers.Remove(otherMaker);
+            TypeParser.TypeParserMakers.Remove(maker);
+        }
+    }
+
+    [Fact]
     public void Invalidation_mode_rejects_values_outside_the_two_policies() {
-        Assert.Throws<ArgumentOutOfRangeException>(() => TypeParser.InvalidateAll((ParserInvalidationMode)42));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TypeParser.Invalidate(static _ => true, (ParserInvalidationMode)42));
     }
 
     [Fact]
@@ -419,7 +535,7 @@ public class ConfigurationCacheTests {
         using var query = new QueryCommand("SELECT Value");
         query.UpdateParseCache([], first);
 
-        Assert.True(TypeParser.Invalidate(first, ParserInvalidationMode.CheckUsage));
+        Assert.True(TypeParser.Invalidate(candidate => ReferenceEquals(candidate, first), ParserInvalidationMode.CheckUsage) >= 1);
         var second = TypeParser.GetTypeParser<CacheValue>(columns);
 
         Assert.NotSame(first, second);
@@ -568,10 +684,8 @@ public class ConfigurationCacheTests {
     private sealed record AlternativeName(int Id, [Alt("Label")] string Name) : IDbReadable;
     private sealed record SchemaIndependentValue;
     private sealed record DisposableValue(int Value);
-
     private sealed class DisposableValueMaker : ITypeParserMaker {
         public bool CanHandle<T>() => typeof(T) == typeof(DisposableValue);
-
         public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
             if (typeof(T) != typeof(DisposableValue) || cols.Length != 1 || cols[0].Type != typeof(int)) {
                 parser = null;
@@ -597,9 +711,7 @@ public class ConfigurationCacheTests {
     private sealed class SchemaIndependentMaker : ITypeParserMaker {
         private readonly SchemaIndependentParser Parser = new();
         internal int BuildCount;
-
         public bool CanHandle<T>() => typeof(T) == typeof(SchemaIndependentValue);
-
         public bool TryMakeParser<T>(INullColHandler nullColHandler, ColumnInfo[] cols, [MaybeNullWhen(false)] out ITypeParser<T> parser) {
             if (typeof(T) != typeof(SchemaIndependentValue)) {
                 parser = null;
@@ -620,12 +732,10 @@ public class ConfigurationCacheTests {
     }
 
     private readonly record struct Last<T>(T Value);
-
     private sealed class LastParser<T>(ITypeParser<T> element) : BaseTypeParser<Last<T>> {
         public override bool CanParse(ColumnInfo[] schema) => element.CanParse(schema);
         public override CommandBehavior Behavior => element.Behavior & ~CommandBehavior.SingleRow;
         public override Last<T> Default() => throw new RinkuNoRowsException();
-
         public override (bool CanContinue, Last<T> Result) Parse(DbDataReader reader) {
             (bool more, T value) = element.Parse(reader);
             while (more)

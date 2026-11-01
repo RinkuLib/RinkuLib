@@ -15,7 +15,7 @@ using Xunit;
 using Xunit.Sdk;
 using Xunit.v3;
 
-namespace RinkuLib.Tests.TestContainers;
+namespace RinkuLib.Tests.Integration.Infrastructure;
 #pragma warning disable CS0618
 public delegate T CnnMaker<T>(string connectionString) where T : IDbConnection;
 public static class Connections {

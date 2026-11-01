@@ -3,7 +3,7 @@ using Rinku.Querying;
 using RinkuLib.Tests.Infrastructure;
 using Xunit;
 
-namespace RinkuLib.Tests.Templating;
+namespace RinkuLib.Tests.Features.RunningQueries.ParameterMetadata;
 
 public class EnumParameterTests(SqliteDb Db) : IClassFixture<SqliteDb> {
     [Fact]
