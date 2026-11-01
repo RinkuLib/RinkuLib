@@ -147,7 +147,9 @@ A correction can supply only a default, leaving discovered type and nullability 
 
 For a discovered nullable integer, this generates `int? Id = null`. `DefaultValue` is a C# expression string: examples include `"10"`, `"false"`, `"default"` and `"\"text\""`. Omit the property to keep the argument required. A JSON null also means no configured default; the string `"null"` supplies an optional null default. Configure exposes the same expression in its Default column.
 
-Defaults apply to input-only parameters and must form a trailing group in the discovered argument order. Generation fails for a required argument following an optional one, a default on an output/input-output parameter, or malformed expression syntax. Arguments are never reordered. The C# compiler checks whether the expression is a legal default for the discovered type. Configured defaults affect the generated C# factory arguments; they do not change database defaults or SQL text.
+Defaults apply to input-only parameters and must form a trailing group in the discovered argument order. Generation fails for a required argument following an optional one, a default on an output/input-output parameter, or malformed expression syntax. Arguments are never reordered.
+
+The C# compiler checks whether the expression is a legal default for the discovered type. Configured defaults affect the generated C# factory arguments. They do not change database defaults or SQL text.
 
 ## PostgreSQL positional parameters
 
@@ -223,7 +225,9 @@ public static partial class DbCommands
 }
 ```
 
-`BeforeRefresh(DbConnection)` runs first, followed by `BeforeRefresh(DbConnection, ref ...)` when the factory has input values. Both run before command creation and receive the connection by value. Only input values are passed by `ref`, using their discovered C# types. This includes the input value of an input/output SQL parameter, but excludes SQL output handles. Changes to input values are used when binding SQL parameters. Hook declarations omit optional argument defaults. A factory with no input values generates and calls only the connection-only before hook.
+`BeforeRefresh(DbConnection)` runs first, followed by `BeforeRefresh(DbConnection, ref ...)` when the factory has input values. Both run before command creation and receive the connection by value. Only input values are passed by `ref`, using their discovered C# types.
+
+This includes the input value of an input/output SQL parameter, but excludes SQL output handles. Changes to input values are used when binding SQL parameters. Hook declarations omit optional argument defaults. A factory with no input values generates and calls only the connection-only before hook.
 
 `AfterRefresh` receives the completed command, with its text, command type and parameters already set. It runs before the factory returns, not after SQL execution. It is a direct call without generated exception handling. If its implementation throws, that implementation is responsible for disposing the command.
 

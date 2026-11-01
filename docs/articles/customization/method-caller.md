@@ -106,7 +106,7 @@ If a target parameter is assigned to the mapped source but the current source va
 
 ## Constructors
 
-Constructor calls use the same parameter mapping and generated IL as method calls. The first argument supplies mapped members; later arguments can override constructor parameters.
+Constructor calls use the same parameter mapping and generated IL as method calls. The first argument supplies mapped members. Later arguments can override constructor parameters.
 
 ```csharp
 var construct = MethodCaller.CreateConstructor<Func<IRuntimeMemberAccess, long, User>>(CallerParameter<long>.Named(nameof(User.Id)));

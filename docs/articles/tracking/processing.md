@@ -30,7 +30,11 @@ Pending parameters are allocated only when a named value is supplied. They are s
 
 ## Confirmation ownership
 
-`ConstructOnInsert()` constructs the first accepted original from pending parameters and current edited values. Updates use the existing snapshot confirmation: editable values are applied to the same original instance. Use `ConstructOnConfirm()` explicitly when updates should instead replace the original. Pending values take precedence. Constructor selection happens once during configuration; supply an explicit constructor when several exist. Readonly original members require a pending value on insertion, or an existing original on update. Missing required values produce a typed binding exception.
+`ConstructOnInsert()` constructs the first accepted original from pending parameters and current edited values. Updates use the existing snapshot confirmation: editable values are applied to the same original instance.
+
+Use `ConstructOnConfirm()` explicitly when updates should instead replace the original. Pending values take precedence. Constructor selection happens once during configuration; supply an explicit constructor when several exist.
+
+Readonly original members require a pending value on insertion, or an existing original on update. Missing required values produce a typed binding exception.
 
 `ConfirmUsing(item => ..., TrackingConfirmation.Insert)` supplies custom insertion logic; use `TrackingConfirmation.Update` for custom update logic, or omit the operation to apply it to both. It returns the accepted original, which tracking stores and confirms. Without a construction callback, existing mutable-original snapshot confirmation remains available.
 
