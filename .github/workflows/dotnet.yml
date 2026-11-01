@@ -33,14 +33,23 @@ jobs:
           dotnet restore RinkuLib/RinkuLib.csproj
           dotnet restore RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj
           dotnet restore RinkuLib.Tests/RinkuLib.Tests.csproj
+          dotnet restore Rinku.More/Rinku.More.Tests/Rinku.More.Tests.csproj
           dotnet restore RinkuPowerTools/RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj
           dotnet restore RinkuPowerTools/RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj
 
       - name: Build Rinku
         run: dotnet build RinkuLib/RinkuLib.csproj --configuration Release --no-restore
 
+      - name: Generate API documentation metadata
+        run: |
+          dotnet tool update -g docfx
+          docfx metadata docs/docfx.json --warningsAsErrors
+
       - name: Run unit tests
         run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --verbosity normal --framework net10.0
+
+      - name: Run Rinku.More tests
+        run: dotnet test Rinku.More/Rinku.More.Tests/Rinku.More.Tests.csproj --configuration Release --verbosity normal
 
       - name: Run analyzer tests
         run: dotnet test RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj --configuration Release --verbosity normal
