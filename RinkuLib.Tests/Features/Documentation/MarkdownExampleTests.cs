@@ -1085,11 +1085,6 @@ internal static class ExampleCompiler {
         var references = platformAssemblies
             .Append(typeof(QueryCommand).Assembly.Location)
             .Append(typeof(Dapper.SqlMapper).Assembly.Location);
-#if NET10_0_OR_GREATER
-        string morePath = Path.Combine(AppContext.BaseDirectory, "Rinku.More.dll");
-        if (File.Exists(morePath))
-            references = references.Append(morePath);
-#endif
         return [.. references
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(path => MetadataReference.CreateFromFile(path))];

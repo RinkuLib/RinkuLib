@@ -15,22 +15,6 @@
         "TargetFramework": "net10.0",
         "DocsApiBuild": "true"
       }
-    },
-    {
-      "src": [
-        {
-          "src": "..",
-          "files": [
-            "Rinku.More/Rinku.More/Rinku.More.csproj"
-          ]
-        }
-      ],
-      "dest": "api/rinku-more",
-      "outputFormat": "mref",
-      "properties": {
-        "TargetFramework": "net10.0",
-        "DocsApiBuild": "true"
-      }
     }
   ],
   "build": {
@@ -44,16 +28,6 @@
         ],
         "exclude": [
           "api/rinku/toc.yml"
-        ]
-      },
-      {
-        "files": [
-          "api/rinku-more/index.md",
-          "api/rinku-more/**.yml"
-        ],
-        "exclude": [
-          "api/rinku-more/toc.yml",
-          "api/rinku-more/Rinku.yml"
         ]
       },
       {
