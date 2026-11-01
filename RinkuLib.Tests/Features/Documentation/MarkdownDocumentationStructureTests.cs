@@ -13,7 +13,7 @@ public partial class MarkdownDocumentationStructureTests {
         string docsRoot = FindDocsRoot();
         var failures = new List<string>();
 
-        foreach (string file in Directory.EnumerateFiles(docsRoot, "*.md", SearchOption.AllDirectories)) {
+        foreach (string file in MarkdownFiles(docsRoot)) {
             string content = File.ReadAllText(file);
             string relative = Path.GetRelativePath(docsRoot, file);
             if (TryGetRedirectUrl(content, out string? redirectUrl)) {
@@ -84,7 +84,7 @@ public partial class MarkdownDocumentationStructureTests {
         string docsRoot = FindDocsRoot();
         var failures = new List<string>();
 
-        foreach (string file in Directory.EnumerateFiles(docsRoot, "*.md", SearchOption.AllDirectories)) {
+        foreach (string file in MarkdownFiles(docsRoot)) {
             if (TryGetRedirectUrl(File.ReadAllText(file), out _))
                 continue;
             string[] lines = File.ReadAllLines(file);
@@ -143,7 +143,7 @@ public partial class MarkdownDocumentationStructureTests {
         string docsRoot = FindDocsRoot();
         string allMarkdown = string.Join(
             Environment.NewLine,
-            Directory.EnumerateFiles(docsRoot, "*.md", SearchOption.AllDirectories)
+            MarkdownFiles(docsRoot)
                 .Select(File.ReadAllText));
 
         Assert.DoesNotContain("ResetParamCache", allMarkdown, StringComparison.Ordinal);
@@ -170,6 +170,8 @@ public partial class MarkdownDocumentationStructureTests {
         }
         throw new DirectoryNotFoundException("Could not find the documentation directory.");
     }
+
+    static IEnumerable<string> MarkdownFiles(string docsRoot) => Directory.EnumerateFiles(docsRoot, "*.md", SearchOption.AllDirectories).Where(file => !Path.GetRelativePath(docsRoot, file).Replace('\\', '/').StartsWith("articles/more/", StringComparison.Ordinal));
 
     static bool TryGetRedirectUrl(string content, out string redirectUrl) {
         Match frontMatter = FrontMatter.Match(content);

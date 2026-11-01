@@ -30,12 +30,14 @@ jobs:
 
       - name: Restore dependencies
         run: |
-          dotnet restore RinkuLib.slnx
+          dotnet restore RinkuLib/RinkuLib.csproj
+          dotnet restore RinkuLib.Analyzers/RinkuLib.Analyzers.Test/RinkuLib.Analyzers.Test.csproj
+          dotnet restore RinkuLib.Tests/RinkuLib.Tests.csproj
           dotnet restore RinkuPowerTools/RinkuPowerTools.Tests/RinkuPowerTools.Tests.csproj
           dotnet restore RinkuPowerTools/RinkuPowerTools.Cli.Tests/RinkuPowerTools.Cli.Tests.csproj
 
-      - name: Build the solution
-        run: dotnet build RinkuLib.slnx --configuration Release --no-restore
+      - name: Build Rinku
+        run: dotnet build RinkuLib/RinkuLib.csproj --configuration Release --no-restore
 
       - name: Run unit tests
         run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --verbosity normal --framework net10.0

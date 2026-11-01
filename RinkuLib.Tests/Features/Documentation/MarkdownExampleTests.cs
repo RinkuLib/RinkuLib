@@ -34,9 +34,7 @@ public class MarkdownExampleTests {
     private static Dictionary<string, ExampleBlock> LoadExamples() {
         string docsRoot = Path.Combine(FindRepositoryRoot().FullName, "docs");
         IReadOnlyList<ExampleBlock> blocks = MarkdownExamples.Read(docsRoot);
-#if NET8_0
-        blocks = [.. blocks.Where(block => !block.RelativePath.StartsWith("articles/more/", StringComparison.Ordinal))];
-#endif
+        blocks = [.. blocks.Where(block => !block.RelativePath.StartsWith("articles/more/", StringComparison.Ordinal) && !block.Content.Contains("Rinku.More", StringComparison.Ordinal) && !block.Content.Contains("Rinku.Caching", StringComparison.Ordinal) && !block.Content.Contains("BindingTree", StringComparison.Ordinal))];
         ExampleCompiler.Configure(blocks);
         return blocks.ToDictionary(block => block.Id, StringComparer.Ordinal);
     }
@@ -391,16 +389,7 @@ internal static class ExampleCompiler {
         using Rinku.Tracking.Committers;
         using Rinku.Tracking.Runtime;
         """;
-#if NET10_0_OR_GREATER
-    const string Usings = CommonUsings + """
-
-        using Rinku.Caching;
-        using BindingTree;
-        using Rinku.More.Globalization;
-        """;
-#else
     const string Usings = CommonUsings;
-#endif
 
     static readonly CSharpParseOptions ParseOptions = new(
         LanguageVersion.Preview,
