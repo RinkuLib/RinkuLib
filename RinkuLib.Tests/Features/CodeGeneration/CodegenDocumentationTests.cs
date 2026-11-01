@@ -67,7 +67,7 @@ public class CodegenDocumentationTests {
             CancellationToken.None);
 
         Assert.Contains("DbCommand GetTracksByAlbum(this DbConnection connection, int albumId)", code);
-        Assert.Contains("command.Add(\"@albumId\", dbType: DbType.Int32, value: albumId)", code);
+        Assert.Contains("command.Add(\"@albumId\", DbType.Int32, (object)albumId);", code);
         Assert.Contains("public partial record GetTracksByAlbumResult(int Id, [TrueName(\"Track Name\")] string? Track_Name, decimal UnitPrice)", code);
     }
 

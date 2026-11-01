@@ -56,13 +56,6 @@ BindingTrackingList<IAlbumEdit> albums = await originals.ToBindingListAsync<Albu
 
 No intermediate original list is required. Failed or cancelled materialization disposes the incomplete tracking list. `ToTrackingListAsync` provides the same operation without requiring component-model binding.
 
-With Rinku.More, a consuming `QueryAsync` overload can return that source while keeping the command and connection open until consumption completes:
-
-```csharp
-var albums = await database.QueryAsync<Album, BindingTrackingList<IAlbumEdit>>(DbCommands.LoadAlbums,
-    (originals, token) => originals.ToBindingListAsync<Album, IAlbumEdit>(options, token), cancellationToken);
-```
-
 ## Structural operations
 
 ```csharp

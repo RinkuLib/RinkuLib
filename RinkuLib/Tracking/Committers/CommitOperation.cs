@@ -9,11 +9,17 @@ namespace Rinku.Tracking.Committers;
 /// <summary>A processing outcome, optionally carrying a value for postprocessing and pending parameters.</summary>
 public readonly struct CommitDecision<T> {
     private CommitDecision(bool accepted, bool hasValue, T value) { Accepted = accepted; HasValue = hasValue; Value = value; }
+    /// <summary>Gets whether processing accepted the item.</summary>
     public bool Accepted { get; }
+    /// <summary>Gets whether processing produced a result value.</summary>
     public bool HasValue { get; }
+    /// <summary>Gets the result value when <see cref="HasValue"/> is true.</summary>
     public T Value { get; }
+    /// <summary>Rejects the current item.</summary>
     public static CommitDecision<T> Reject() => default;
+    /// <summary>Accepts the current item without a result value.</summary>
     public static CommitDecision<T> Continue() => new(true, false, default!);
+    /// <summary>Accepts the current item with a result value.</summary>
     public static CommitDecision<T> Success(T value) => new(true, true, value);
 }
 
@@ -27,6 +33,7 @@ public sealed class CommitOperation<TItem, TResult>(Func<TItem, DbCommitState, C
         for (int index = 0; index < values.Length; index++) _parameters[index] = new(values[index].Name, values[index].ValueType, "Item" + (index + 2));
         return this;
     }
+    /// <summary>Names the result parameter stored on the pending tracking bag.</summary>
     public CommitOperation<TItem, TResult> Named(string name) {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _parameters = [new(name, typeof(TResult), null)];
@@ -61,28 +68,38 @@ public sealed class CommitOperation<TItem, TResult>(Func<TItem, DbCommitState, C
         };
     }
     internal CommitDecision<TResult> Execute(TItem item, DbCommitState connection) => process(item, connection);
+    /// <summary>Runs an action before each operation.</summary>
     public CommitOperation<TItem, TResult> BeforeEach(Action<TItem> before) => BeforeEach(item => { before(item); return true; });
+    /// <summary>Runs a predicate before each operation.</summary>
     public CommitOperation<TItem, TResult> BeforeEach(Func<TItem, bool> before) => new((item, connection) => before(item) ? Execute(item, connection) : CommitDecision<TResult>.Reject(), _parameters);
+    /// <summary>Runs an action after each successful operation.</summary>
     public CommitOperation<TItem, TResult> AfterEach(Action<TItem, TResult> after) => AfterEach((item, result) => { after(item, result); return true; });
+    /// <summary>Runs a predicate after each successful operation.</summary>
     public CommitOperation<TItem, TResult> AfterEach(Func<TItem, TResult, bool> after) => new((item, connection) => {
         var result = Execute(item, connection);
         return result.Accepted && result.HasValue && !after(item, result.Value) ? CommitDecision<TResult>.Reject() : result;
     }, _parameters);
+    /// <summary>Chains a result-dependent operation.</summary>
     public CommitOperation<TItem, TNext> Then<TNext>(Func<TItem, TResult, CommitDecision<TNext>> next) => new((item, connection) => {
         var result = Execute(item, connection);
         return !result.Accepted ? CommitDecision<TNext>.Reject() : result.HasValue ? next(item, result.Value) : CommitDecision<TNext>.Continue();
     });
+    /// <summary>Projects a successful result into another result type.</summary>
     public CommitOperation<TItem, TNext> Select<TNext>(Func<TItem, TResult, TNext> select) => Then<TNext>((item, result) => CommitDecision<TNext>.Success(select(item, result)));
 }
 
 
+/// <summary>Creates composed operations for database command processing.</summary>
 public static class CommitOperation {
     private delegate DbCommand OneOutput<TItem>(TItem item, DbConnection connection, out DbParameter output);
     private delegate DbCommand TwoOutputs<TItem>(TItem item, DbConnection connection, out DbParameter first, out DbParameter second);
     private delegate DbCommand ThreeOutputs<TItem>(TItem item, DbConnection connection, out DbParameter first, out DbParameter second, out DbParameter third);
 
+    /// <summary>Creates an operation with one named typed output.</summary>
     public static CommitOperation<TItem, (TResult Result, T1? Output)> Command<TItem, TResult, T1>(Delegate factory, Func<DbCommand, TResult> read, CommandOutput<T1> output) => Command<TItem, TResult, T1>(factory, read, OutputSources(factory.Method, [output])).WithOutputs(output);
+    /// <summary>Creates an operation with two named typed outputs.</summary>
     public static CommitOperation<TItem, (TResult Result, T1? Output1, T2? Output2)> Command<TItem, TResult, T1, T2>(Delegate factory, Func<DbCommand, TResult> read, CommandOutput<T1> first, CommandOutput<T2> second) => Command<TItem, TResult, T1, T2>(factory, read, OutputSources(factory.Method, [first, second])).WithOutputs(first, second);
+    /// <summary>Creates an operation with three named typed outputs.</summary>
     public static CommitOperation<TItem, (TResult Result, T1? Output1, T2? Output2, T3? Output3)> Command<TItem, TResult, T1, T2, T3>(Delegate factory, Func<DbCommand, TResult> read, CommandOutput<T1> first, CommandOutput<T2> second, CommandOutput<T3> third) => Command<TItem, TResult, T1, T2, T3>(factory, read, OutputSources(factory.Method, [first, second, third])).WithOutputs(first, second, third);
 
     /// <summary>Maps a command factory and reads its first output as the requested value type after execution.</summary>
@@ -153,12 +170,18 @@ public static class CommitOperation {
     }
 
     /// <summary>Runs a command factory as a non-query operation.</summary>
+    /// <summary>Creates an operation that executes a command and returns its affected-row count.</summary>
     public static CommitOperation<TItem, int> Command<TItem>(Delegate factory) => Command<TItem, int>(factory, static command => command.ExecuteNonQuery());
 
+    /// <summary>Creates an operation from a command factory and result reader.</summary>
     public static CommitOperation<TItem, TResult> Command<TItem, TResult>(Delegate factory, Func<DbCommand, TResult> read) => Command(MethodCaller.Create<Func<TItem, DbConnection, DbCommand>>(factory), read);
 
+    /// <summary>Creates an operation from the changes represented by a tracked item.</summary>
     public static CommitOperation<TItem, TResult> Changes<TItem, TResult>(QueryCommand query, Func<DbCommand, TResult> read) where TItem : ITrackingChanges => Command<TItem, TResult>((item, connection) => query.GetChangesCommand(item, connection), read);
+    /// <summary>Creates an operation from a processing delegate.</summary>
     public static CommitOperation<TItem, TResult> Process<TItem, TResult>(Func<TItem, DbCommitState, TResult> process) => new((item, connection) => CommitDecision<TResult>.Success(process(item, connection)));
+    /// <summary>Creates an operation with a value prepared before processing.</summary>
     public static CommitOperation<TItem, TResult> Process<TItem, TInput, TResult>(Func<TItem, TInput> before, Func<TItem, TInput, DbCommitState, TResult> process) => Process<TItem, TResult>((item, connection) => process(item, before(item), connection));
+    /// <summary>Creates an operation from a typed command factory and result reader.</summary>
     public static CommitOperation<TItem, TResult> Command<TItem, TResult>(Func<TItem, DbConnection, DbCommand> factory, Func<DbCommand, TResult> read) => Process<TItem, TResult>((item, connection) => { using var command = factory(item, connection.Connection); command.Transaction = connection.Transaction; return read(command); });
 }

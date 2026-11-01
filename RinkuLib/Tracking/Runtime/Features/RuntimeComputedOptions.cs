@@ -6,6 +6,7 @@ namespace Rinku.Tracking.Runtime;
 
 /// <summary>Adds readonly expressions evaluated against current tracked values and accepted originals.</summary>
 public static class RuntimeComputedOptions {
+    /// <summary>Configures a computed member backed by a getter expression.</summary>
     public static RuntimeTrackingOptions<TOriginal> Getter<TOriginal, TValue>(this RuntimeTrackingOptions<TOriginal> options, string name, Expression<Func<TOriginal, TValue>> expression) {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(expression);

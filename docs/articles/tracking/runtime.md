@@ -113,7 +113,7 @@ Member configuration carries the value type, so its factory return type and rese
 
 ```csharp
 var options = RuntimeTracking.CreateOptions<Album>()
-    .Member<string>("Password", member => member.Direct().ResetOnConfirmAndRevert(string.Empty));
+    .Member<string>("Password", member => member.Direct().OnConfirm(_ => { }).OnRevert(_ => { }));
 ```
 
 `CreateOnEdit` initializes a missing direct reference value when an edit snapshot is first created. It does not allocate when an existing item is loaded, and it preserves a value that is already present.
@@ -237,12 +237,12 @@ TrackingList<IAlbumEdit> albums = existingAlbums.ToTrackingList<Album, IAlbumEdi
 Declare a generated member in tracking options without adding a property to the original model:
 
 ```csharp
+public sealed class User { public int[] DiplomaIds { get; set; } = []; }
 public const string HasDiplomas = nameof(HasDiplomas);
 
 public static RuntimeTrackingOptions<User> Tracking { get; } = RuntimeTracking.CreateOptions<User, ITrackingItem<User>>()
     .Binding()
-    .DefaultNewValues()
-    .Getter(HasDiplomas, user => user.DiplomaIds.Length > 0);
+    .Getter(HasDiplomas, (User user) => user.DiplomaIds.Length > 0);
 ```
 
 `Getter` rewrites direct source property and field accesses to generated tracking property accesses. Those properties read edits before the accepted original. Nested access and calls such as `Calculate(user.Name, user.Count)` retain the expression's normal behavior. Passing the source itself, such as `Calculate(user)`, is rejected because accesses hidden inside that method cannot be rewritten. Getters should be side-effect-free.

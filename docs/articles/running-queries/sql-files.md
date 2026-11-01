@@ -12,7 +12,7 @@ WHERE Id = @Id;
 
 Configure the source root in the project:
 
-```xml
+```text
 <PropertyGroup>
   <RinkuSqlRoot>Sql</RinkuSqlRoot>
 </PropertyGroup>
@@ -21,7 +21,7 @@ Configure the source root in the project:
 The generated member is `Queries.Users.Save`, in the project's `RootNamespace`. It is a `static readonly QueryCommand`, so all existing command, builder, parameter and result APIs apply:
 
 ```csharp
-var save = Queries.Users.Save.StartBuilder();
+var save = new Queries().Users.Save.StartBuilder();
 save.Use("@Id", 74);
 save.Use("@DisplayName", "James");
 save.Execute(connection);
@@ -33,7 +33,7 @@ There is no inferred relationship between a command and database tables or opera
 
 Only `.rnksql` files are discovered automatically. Include ordinary `.sql` files individually or by folder:
 
-```xml
+```text
 <ItemGroup>
   <RinkuSql Include="Sql/Users/Save.sql" />
   <RinkuSql Include="Sql/Updates/**/*.sql" Pattern="\.sql$" />
@@ -79,7 +79,7 @@ SQL is embedded in generated C# by default. No SQL file is needed at runtime.
 
 For file loading, configure `RinkuSqlContent` as `File` globally, or set `Content` on individual items:
 
-```xml
+```text
 <ItemGroup>
   <RinkuSql Include="Sql/Users/Save.sql" Content="File" RuntimePath="Sql/Users/Save.sql" />
   <RinkuSql Include="../Shared/Load.sql" Root="../Shared" Class="SharedQueries" KeyPrefix="shared" Content="File" Link="Sql/Shared/Load.sql" />

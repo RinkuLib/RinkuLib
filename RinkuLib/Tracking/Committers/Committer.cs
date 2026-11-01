@@ -7,6 +7,7 @@ namespace Rinku.Tracking.Committers;
 /// <summary>Creates committers from reusable commands, command factories, or executors.</summary>
 public static class Committer
 {
+    /// <summary>Creates a processing committer for the specified item type.</summary>
     public static ProcessingCommitter<TItem> For<TItem>() => new();
 
     /// <summary>Creates a generated-command committer that assigns an inserted identity and clears transient members before confirmation.</summary>
@@ -15,9 +16,11 @@ public static class Committer
     public static DbCommandFactoryOutputCommitter<T, object?, int, object?, DbCommand> Create<T>(Func<T, DbConnection, DbCommand> insert, string outputMember, QueryCommand update, Func<T, DbConnection, DbCommand>? delete = null, string[]? clearInsertMembers = null) where T : ITrackingChanges, IRuntimeMemberAccess
         => new((item, connection) => { var command = insert(item, connection); return (command, command); }, static command => command.ExecuteScalar(), static (_, _, result) => result ?? throw new InvalidOperationException("The insert did not return an identity."), CommitterRuntime.OutputWriter<T, object?>(outputMember, clearInsertMembers), static command => command.ExecuteNonQuery(), (item, connection) => update.GetChangesCommand(item, connection), delete);
 
+    /// <summary>Creates an identity committer with a typed update result reader.</summary>
     public static DbCommandFactoryOutputCommitter<T, object?, TUpdateResult, object?, DbCommand> Create<T, TUpdateResult>(Func<T, DbConnection, DbCommand> insert, string outputMember, QueryCommand update, Func<DbCommand, TUpdateResult> readUpdate, Func<T, DbConnection, DbCommand>? delete = null, string[]? clearInsertMembers = null) where T : ITrackingChanges, IRuntimeMemberAccess
         => new((item, connection) => { var command = insert(item, connection); return (command, command); }, static command => command.ExecuteScalar(), static (_, _, result) => result ?? throw new InvalidOperationException("The insert did not return an identity."), CommitterRuntime.OutputWriter<T, object?>(outputMember, clearInsertMembers), readUpdate, (item, connection) => update.GetChangesCommand(item, connection), delete);
 
+    /// <summary>Creates a committer with typed insertion and update results.</summary>
     public static DbCommandFactoryOutputCommitter<T, TResult, TResult, TOutput, DbCommand> Create<T, TResult, TOutput>(Func<T, DbConnection, DbCommand> insert, Func<DbCommand, TResult> readInsert, Func<DbCommand, TResult, TOutput> readOutput, Action<T, TOutput> applyOutput, QueryCommand update, Func<DbCommand, TResult> readUpdate, Func<T, DbConnection, DbCommand>? delete = null) where T : ITrackingChanges
         => new((item, connection) => { var command = insert(item, connection); return (command, command); }, readInsert, (_, command, result) => readOutput(command, result), applyOutput, readUpdate, (item, connection) => update.GetChangesCommand(item, connection), delete);
     /// <summary>Retains typed command outputs and constructs the insertion output before transaction commit.</summary>

@@ -660,6 +660,7 @@ public class TrackingList<T> : IList<T>, ITrackingSource<T>, ITrackingConfirmati
         }
     }
 
+    /// <summary>Releases subscriptions and managed list resources.</summary>
     public void Dispose()
     {
         if (!_disposed)
@@ -670,6 +671,7 @@ public class TrackingList<T> : IList<T>, ITrackingSource<T>, ITrackingConfirmati
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>Releases managed resources owned by the list.</summary>
     protected virtual void Dispose(bool disposing)
     {
         if (disposing)

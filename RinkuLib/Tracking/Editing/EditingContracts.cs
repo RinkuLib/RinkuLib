@@ -11,6 +11,7 @@ public interface IOriginal<TOriginal>
 
 /// <summary>Supplies an accepted original after persistence succeeds.</summary>
 public interface IOriginalWriter<in TOriginal> {
+    /// <summary>Stores the accepted original value.</summary>
     void SetOriginal(TOriginal original);
 }
 

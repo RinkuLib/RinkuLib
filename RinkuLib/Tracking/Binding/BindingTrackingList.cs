@@ -228,6 +228,7 @@ public class BindingTrackingList<T> : TrackingList<T>, IBindingList, ITypedList,
         }
     }
 
+    /// <summary>Releases binding subscriptions and list resources.</summary>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

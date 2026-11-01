@@ -21,24 +21,35 @@ public abstract class DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDe
         return this;
     }
 
+    /// <summary>Registers an action that runs before each item.</summary>
     public virtual DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDeleteResult, TOutput> BeforeEach(Action<TItem> before) => BeforeEach(item => { before(item); return true; });
+    /// <summary>Registers a predicate that can reject an item before persistence.</summary>
     public virtual DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDeleteResult, TOutput> BeforeEach(Func<TItem, bool> before) {
         ArgumentNullException.ThrowIfNull(before);
         var previous = _beforeEach;
         _beforeEach = previous is null ? before : item => previous(item) & before(item);
         return this;
     }
+    /// <summary>Registers insertion-result acceptance logic.</summary>
     public DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDeleteResult, TOutput> AfterInsert(Func<TItem, TInsertResult, bool> after) { _acceptInsert = after; return this; }
+    /// <summary>Registers update-result acceptance logic.</summary>
     public DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDeleteResult, TOutput> AfterUpdate(Func<TItem, TUpdateResult, bool> after) { _acceptUpdate = after; return this; }
+    /// <summary>Registers deletion-result acceptance logic.</summary>
     public DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDeleteResult, TOutput> AfterDelete(Func<TItem, TDeleteResult, bool> after) { _acceptDelete = after; return this; }
 
+    /// <inheritdoc />
     protected override bool ValidateItem<T>(T item) => _beforeEach?.Invoke(CommitterRuntime.RequireItem<TItem, T>(item)) ?? true;
+    /// <inheritdoc />
     protected override bool HandleInsertResult<T>(T item, TInsertResult result) => _acceptInsert?.Invoke(CommitterRuntime.RequireItem<TItem, T>(item), result) ?? true;
+    /// <inheritdoc />
     protected override bool HandleUpdateResult<T>(T item, TUpdateResult result) => _acceptUpdate?.Invoke(CommitterRuntime.RequireItem<TItem, T>(item), result) ?? true;
+    /// <inheritdoc />
     protected override bool HandleDeleteResult<T>(T item, TDeleteResult result) => _acceptDelete?.Invoke(CommitterRuntime.RequireItem<TItem, T>(item), result) ?? true;
 
+    /// <summary>Sets the callback used to apply accepted output values.</summary>
     protected void SetAcceptance(Action<TItem, TOutput> accept) => _applyOutput = accept ?? throw new ArgumentNullException(nameof(accept));
 
+    /// <summary>Initializes an output committer with its output application callback.</summary>
     protected DbOutputCommitter(Action<TItem, TOutput> applyOutput, IsolationLevel? isolationLevel = null, int? timeout = null) {
         ArgumentNullException.ThrowIfNull(applyOutput);
         _applyOutput = applyOutput;
@@ -46,8 +57,10 @@ public abstract class DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDe
         _timeout = timeout;
     }
 
+    /// <inheritdoc />
     protected override DbOutputState<TItem, TOutput> StartCommit(DbConnection connection) => new(connection, _isolationLevel, _timeout);
 
+    /// <inheritdoc />
     protected override bool CommitState(DbOutputState<TItem, TOutput> state) {
         if (_prepare is { } prepare)
             for (int index = 0; index < state.Outputs.Count; index++) {
@@ -58,6 +71,7 @@ public abstract class DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDe
         return true;
     }
 
+    /// <inheritdoc />
     protected override void FailCommit(DbOutputState<TItem, TOutput> state) {
         try {
             state.Database.Rollback();
@@ -67,6 +81,7 @@ public abstract class DbOutputCommitter<TItem, TInsertResult, TUpdateResult, TDe
         }
     }
 
+    /// <inheritdoc />
     protected override void BeforeConfirm(DbOutputState<TItem, TOutput> state) {
         foreach (var (item, output) in state.Outputs)
             _applyOutput(item, output);

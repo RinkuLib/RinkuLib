@@ -113,15 +113,17 @@ var construct = MethodCaller.CreateConstructor<Func<IRuntimeMemberAccess, long, 
 User accepted = construct(item, returnedId);
 ```
 
-`CreateConstructor<TDelegate>()` requires exactly one public constructor on the delegate return type. When there are several, select one explicitly with `MethodCaller.Create<TDelegate>(constructorInfo, callerParameters)`; it never guesses a constructor.
+`CreateConstructor<TDelegate>()` requires exactly one public constructor on the delegate return type. When there are several, select one explicitly with `MethodCaller.Create<TDelegate>(constructorInfo, callerParameters)`. It never guesses a constructor.
 
 ## Output parameters
 
-A custom delegate can expose target `out` parameters directly. They use the same exact-type or named matching as other caller arguments. `CallerParameter<T>` describes the output element type. An exposed output must have a matching target output; unexposed target outputs are discarded. Target and caller `ref`/`in` parameters remain unsupported.
+A custom delegate can expose target `out` parameters directly. They use the same exact-type or named matching as other caller arguments. `CallerParameter<T>` describes the output element type.
+
+An exposed output must have a matching target output. Unexposed target outputs are discarded. Target and caller `ref`/`in` parameters remain unsupported.
 
 ```csharp
 delegate DbCommand InsertCommand(IRuntimeMemberAccess source, DbConnection connection, out DbParameter id);
-var insert = MethodCaller.Create<InsertCommand>(DbCommands.InsertUser);
+var insert = MethodCaller.Create<InsertCommand>(typeof(DbCommands).GetMethod(nameof(DbCommands.InsertUser))!);
 DbCommand command = insert(item, connection, out DbParameter id);
 ```
 

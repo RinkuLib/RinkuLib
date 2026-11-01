@@ -142,6 +142,7 @@ public abstract class TrackingCommitterCore<TConnection, TState, TInsertResult, 
         finally { ResetItemParameters(item); }
     }
 
+    /// <summary>Clears transient parameters after an item is processed.</summary>
     protected virtual void ResetItemParameters<TItem>(TItem item) { }
 
     private bool CompleteState(TState state)

@@ -6,13 +6,16 @@ namespace Rinku.Tracking.Runtime;
 
 /// <summary>Pending confirmation values, separate from editable and accepted values.</summary>
 public interface ITrackingParameters {
+    /// <summary>Gets or sets values produced by the current processing operation.</summary>
     TrackingParameters? PendingParameters { get; set; }
 }
 
 /// <summary>Allocated only when a processing operation supplies named values.</summary>
 public sealed class TrackingParameters {
     private readonly Dictionary<string, object?> _values = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Stores a pending value by name.</summary>
     public void Set<T>(string name, T value) => _values[name] = value;
+    /// <summary>Attempts to read and convert a pending value by name.</summary>
     public bool TryGet<T>(string name, out T? value) {
         if (_values.TryGetValue(name, out var stored)) {
             if ((stored is null || stored is DBNull) && typeof(T).IsValueType && Nullable.GetUnderlyingType(typeof(T)) is null)
@@ -25,7 +28,9 @@ public sealed class TrackingParameters {
     }
 }
 
+/// <summary>Reads constructor values from pending parameters or tracked members.</summary>
 public static class TrackingConstruction {
+    /// <summary>Gets a named value from pending parameters or the tracked item.</summary>
     public static T Get<T>(IRuntimeMemberAccess item, string name) {
         if (item is ITrackingParameters { PendingParameters: { } parameters } && parameters.TryGet<T>(name, out var value)) {
             if (value is null && typeof(T).IsValueType && Nullable.GetUnderlyingType(typeof(T)) is null)
@@ -35,6 +40,7 @@ public static class TrackingConstruction {
         return item.Get<T>(name)!;
     }
 
+    /// <summary>Gets a required named value while respecting the nullability policy.</summary>
     public static TValue Required<TOriginal, TValue>(ITrackingItem<TOriginal> item, string name, bool allowNull) {
         if (item.PendingParameters is { } parameters && parameters.TryGet<TValue>(name, out var value)) {
             if (value is null && !allowNull) throw new RinkuBindingException(ErrorCodes.ValueNotSet, name);

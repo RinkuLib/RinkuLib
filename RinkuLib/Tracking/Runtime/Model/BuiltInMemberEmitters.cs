@@ -10,6 +10,7 @@ public static class RuntimeTrackingValue
 {
     /// <summary>Returns whether two values differ.</summary>
     public static bool Different<T>(T left, T right) => !EqualityComparer<T>.Default.Equals(left, right);
+    /// <summary>Copies a value through its tracking-value contract.</summary>
     public static T? Copy<T>(T? value) where T : ITrackingValue<T> => value is null ? value : value.Copy();
 }
 

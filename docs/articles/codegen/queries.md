@@ -208,6 +208,10 @@ namespace MyApp;
 
 public static partial class DbCommands
 {
+    static partial void BeforeRefresh(DbConnection connection);
+    static partial void BeforeRefresh(DbConnection connection, ref int Id);
+    static partial void AfterRefresh(DbCommand command);
+
     static partial void BeforeRefresh(DbConnection connection)
     {
         ArgumentNullException.ThrowIfNull(connection);

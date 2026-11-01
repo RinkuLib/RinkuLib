@@ -109,8 +109,9 @@ public sealed class RuntimeTrackingOptions<TOriginal>
             throw new ArgumentOutOfRangeException(nameof(operation));
         return Add(new RuntimeConfirmationOption<TOriginal>(confirm, operation));
     }
+    /// <summary>Configures confirmation to construct a fresh original value.</summary>
     public RuntimeTrackingOptions<TOriginal> ConstructOnConfirm(ConstructorInfo? constructor = null) => ConfirmUsing(TrackingConstruction.Constructor<TOriginal>(constructor));
-    /// <summary>Constructs an original only on insertion; updates keep normal in-place snapshot confirmation.</summary>
+    /// <summary>Constructs an original only on insertion. Updates keep normal in-place snapshot confirmation.</summary>
     public RuntimeTrackingOptions<TOriginal> ConstructOnInsert(ConstructorInfo? constructor = null) => ConfirmUsing(TrackingConstruction.Constructor<TOriginal>(constructor), TrackingConfirmation.Insert);
 
     /// <summary>Treats a null original reference as unavailable.</summary>
@@ -183,6 +184,7 @@ public sealed class RuntimeTrackingMemberOptions<TOriginal, TValue> : IRuntimeTr
     private readonly Action _changing;
     private Action<ITrackingItem<TOriginal>>? _confirmed;
     private Action<ITrackingItem<TOriginal>>? _reverted;
+    /// <summary>Gets the source member name.</summary>
     public string Name => _name;
     private readonly List<Action<RuntimeTrackingMemberConfigurator>> _changes = [];
 
@@ -201,7 +203,7 @@ public sealed class RuntimeTrackingMemberOptions<TOriginal, TValue> : IRuntimeTr
     public RuntimeTrackingMemberOptions<TOriginal, TValue> Direct() => Change(static member => member.Direct());
     /// <summary>Stores a direct value in the edit snapshot.</summary>
     public RuntimeTrackingMemberOptions<TOriginal, TValue> SnapshotValue() => Change(static member => member.SnapshotValue());
-    /// <summary>Creates a missing direct reference value when editing first starts.</summary>
+    /// <summary>Creates a member value when editing begins.</summary>
     public RuntimeTrackingMemberOptions<TOriginal, TValue> CreateOnEdit(Func<TValue> factory) {
         ArgumentNullException.ThrowIfNull(factory);
         return Change(member => member.CreateOnEdit(factory));
@@ -215,6 +217,7 @@ public sealed class RuntimeTrackingMemberOptions<TOriginal, TValue> : IRuntimeTr
     /// <summary>Sets whether parameter projection includes the member.</summary>
     public RuntimeTrackingMemberOptions<TOriginal, TValue> Parameters(bool enabled = true) => Change(member => member.Parameters(enabled));
 
+    /// <summary>Registers a policy that runs when the member is confirmed.</summary>
     public RuntimeTrackingMemberOptions<TOriginal, TValue> OnConfirm(Action<ITrackingItem<TOriginal>> policy) {
         ArgumentNullException.ThrowIfNull(policy);
         _changing();
@@ -222,6 +225,7 @@ public sealed class RuntimeTrackingMemberOptions<TOriginal, TValue> : IRuntimeTr
         return this;
     }
 
+    /// <summary>Registers a policy that runs when the member is reverted.</summary>
     public RuntimeTrackingMemberOptions<TOriginal, TValue> OnRevert(Action<ITrackingItem<TOriginal>> policy) {
         ArgumentNullException.ThrowIfNull(policy);
         _changing();
@@ -296,6 +300,7 @@ public sealed class RuntimeTrackingMemberConfigurator
     public void RuntimeAccess(bool enabled = true) => _runtimeAccess(enabled);
     /// <summary>Sets whether parameter projection includes the member.</summary>
     public void Parameters(bool enabled = true) => _parameters(enabled);
+    /// <summary>Creates a member value when editing begins.</summary>
     public void CreateOnEdit<TValue>(Func<TValue> factory) => _createOnEdit(factory);
 
     internal static RuntimeTrackingMemberConfigurator Create<TOriginal>(RuntimeTrackingTypeDefinition<TOriginal> type, RuntimeTrackingMemberDefinition<TOriginal> member)

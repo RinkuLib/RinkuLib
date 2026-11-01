@@ -30,9 +30,13 @@ public sealed class RuntimeTrackingTypeDefinition<TOriginal>
     public IReadOnlyList<RuntimeTrackingMethodDefinition<TOriginal>> Methods => _methods;
     /// <summary>Gets or sets the typed initializer for a new edit.</summary>
     public Delegate? NewItemInitializer { get; set; }
+    /// <summary>Gets or sets the policy invoked after confirmation.</summary>
     public Action<ITrackingItem<TOriginal>>? ConfirmedPolicy { get; set; }
+    /// <summary>Gets or sets the policy invoked after a revert.</summary>
     public Action<ITrackingItem<TOriginal>>? RevertedPolicy { get; set; }
+    /// <summary>Gets or sets the original factory used when confirming insertion.</summary>
     public Func<ITrackingItem<TOriginal>, TOriginal>? InsertConfirmation { get; set; }
+    /// <summary>Gets or sets the original factory used when confirming an update.</summary>
     public Func<ITrackingItem<TOriginal>, TOriginal>? UpdateConfirmation { get; set; }
     /// <summary>Gets or sets the original storage emitter.</summary>
     public IRuntimeOriginalStorageEmitter<TOriginal> OriginalStorage { get; set; }

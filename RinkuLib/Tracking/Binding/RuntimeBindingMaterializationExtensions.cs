@@ -28,6 +28,7 @@ public static class RuntimeBindingMaterializationExtensions
         }
     }
 
+    /// <summary>Materializes one original value as a generated tracking item.</summary>
     public static ITrackingItem<TOriginal> ToBindingItem<TOriginal>(this TOriginal original) => RuntimeBindingCache<TOriginal, ITrackingItem<TOriginal>>.Registration.Create(original);
 
     /// <summary>Creates a binding list with the default runtime contract.</summary>

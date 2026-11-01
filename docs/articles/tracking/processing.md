@@ -6,13 +6,11 @@ A committer runs preprocessing, database operations, and postprocessing. It stor
 public static RuntimeTrackingOptions<User> Tracking { get; } = RuntimeTracking.CreateOptions<User, ITrackingItem<User>>()
     .ConstructOnInsert();
 
-var insert = CommitOperation.Command<ITrackingItem<User>, ValidationErrors, long?>(DbCommands.InsertUser, ReadErrors, CommandOutput.Named<long?>(nameof(User.Id)))
-    .AfterEach(static (item, result) => item.ApplyValidation(result.Result));
-var update = CommitOperation.Changes<ITrackingItem<User>, ValidationErrors>(Queries.SaveUser, ReadErrors)
-    .AfterEach(static (item, errors) => item.ApplyValidation(errors));
-var delete = CommitOperation.Command<ITrackingItem<User>, int>(DbCommands.DeleteUser, static command => command.ExecuteNonQuery());
+var insert = CommitOperation.Process<ITrackingItem<User>, bool>(static (_, _) => true);
+var update = CommitOperation.Process<ITrackingItem<User>, bool>(static (_, _) => true);
+var delete = CommitOperation.Process<ITrackingItem<User>, bool>(static (_, _) => true);
 var committer = Committer.For<ITrackingItem<User>>()
-    .BeforeEach(Validate)
+    .BeforeEach(static _ => true)
     .Insert(insert)
     .Update(update)
     .Delete(delete);
