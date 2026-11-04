@@ -1,0 +1,117 @@
+name: Release Rinku.More (NuGet)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Rinku.More package version
+        required: true
+        default: 0.0.1
+        type: string
+
+concurrency:
+  group: release-rinku-more
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and test Rinku.More
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must be a stable semantic version such as 0.0.1." >&2
+            exit 1
+          fi
+          if git rev-parse "rinku-more-v$INPUT_VERSION" >/dev/null 2>&1; then
+            echo "Tag rinku-more-v$INPUT_VERSION already exists." >&2
+            exit 1
+          fi
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=rinku-more-v$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0
+
+      - name: Restore
+        run: |
+          dotnet restore Rinku.More/Rinku.More/Rinku.More.csproj
+          dotnet restore Rinku.More/Rinku.More.Tests/Rinku.More.Tests.csproj
+
+      - name: Build package
+        run: dotnet build Rinku.More/Rinku.More/Rinku.More.csproj --configuration Release --no-restore
+
+      - name: Test package
+        run: dotnet test Rinku.More/Rinku.More.Tests/Rinku.More.Tests.csproj --configuration Release --no-restore --verbosity normal
+
+      - name: Pack package
+        run: dotnet pack Rinku.More/Rinku.More/Rinku.More.csproj --configuration Release --no-restore --output artifacts -p:MinVerVersionOverride=${{ steps.version.outputs.version }}
+
+      - name: Upload package for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: rinku-more-${{ steps.version.outputs.version }}
+          path: artifacts/Rinku.More.${{ steps.version.outputs.version }}.nupkg
+
+  publish:
+    name: Publish Rinku.More
+    needs: build
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: rinku-more-${{ needs.build.outputs.version }}
+          path: artifacts
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0
+
+      - name: Get a short-lived NuGet key (Trusted Publishing)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to NuGet.org
+        run: dotnet nuget push "artifacts/Rinku.More.${{ needs.build.outputs.version }}.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
+
+      - name: Tag the release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@github.com"
+          git tag -a "${{ needs.build.outputs.tag }}" -m "Release Rinku.More ${{ needs.build.outputs.version }}"
+          git push origin "${{ needs.build.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ needs.build.outputs.tag }}" "artifacts/Rinku.More.${{ needs.build.outputs.version }}.nupkg" --title "Rinku.More ${{ needs.build.outputs.version }}" --generate-notes

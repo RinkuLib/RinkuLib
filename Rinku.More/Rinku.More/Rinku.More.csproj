@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <PackageId>Rinku.More</PackageId>
+    <RootNamespace>Rinku</RootNamespace>
+    <MinVerTagPrefix>rinku-more-v</MinVerTagPrefix>
+    <Authors>RinkuLib</Authors>
+    <Product>Rinku.More</Product>
+    <Title>Rinku.More</Title>
+    <Description>Optional globalization, localization, cached-list, binding-tree, and executor helpers for Rinku.</Description>
+    <PackageTags>rinku;globalization;localization;caching;binding-tree;executor;sql;database</PackageTags>
+    <PackageProjectUrl>https://github.com/RinkuLib/RinkuLib</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/RinkuLib/RinkuLib</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Rinku.More.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../RinkuLib/RinkuLib.csproj" />
+    <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Remove="Globalization/Localization/WordEdit*.resx" />
+    <None Include="Globalization/Localization/WordEdit*.resx" Link="Localization/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles/any/any/Localization" />
+  </ItemGroup>
+</Project>

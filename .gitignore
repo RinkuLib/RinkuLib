@@ -408,8 +408,7 @@ RinkuDemo/
 # DevExpress demo, kept in its own repository until reworked
 DevExpressDemo/
 
-# Rinku.More is not ready for release yet
-Rinku.More/
+# Rinku.More is released independently from Rinku.
 docs/api/rinku-more/
 docs/articles/more/
 *.generated.sql
