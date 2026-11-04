@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Rinku.More/Rinku.More.csproj" />
+  <Project Path="Rinku.More.Tests/Rinku.More.Tests.csproj" />
+</Solution>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="EditTranslations" xml:space="preserve"><value>Modifier les traductions</value></data>
+  <data name="AddLanguage" xml:space="preserve"><value>Ajouter une langue</value></data>
+  <data name="Language" xml:space="preserve"><value>Langue</value></data>
+  <data name="Invariant" xml:space="preserve"><value>Invariant</value></data>
+</root>
