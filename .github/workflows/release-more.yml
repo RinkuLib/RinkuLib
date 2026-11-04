@@ -45,6 +45,18 @@ jobs:
           echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=rinku-more-v$INPUT_VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve current published Rinku version
+        id: rinku
+        shell: bash
+        run: |
+          rinku_version=$(curl --fail --silent https://api.nuget.org/v3-flatcontainer/rinku/index.json | jq -r '[.versions[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))] | last')
+          if [[ -z "$rinku_version" || "$rinku_version" == "null" ]]; then
+            echo "Could not resolve a stable published Rinku version." >&2
+            exit 1
+          fi
+          echo "version=$rinku_version" >> "$GITHUB_OUTPUT"
+          echo "Using published Rinku $rinku_version"
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -62,7 +74,29 @@ jobs:
         run: dotnet test Rinku.More/Rinku.More.Tests/Rinku.More.Tests.csproj --configuration Release --no-restore --verbosity normal
 
       - name: Pack package
-        run: dotnet pack Rinku.More/Rinku.More/Rinku.More.csproj --configuration Release --no-restore --output artifacts -p:MinVerVersionOverride=${{ steps.version.outputs.version }}
+        run: |
+          dotnet restore Rinku.More/Rinku.More/Rinku.More.csproj -p:RinkuMorePack=true -p:RinkuPackageVersion=${{ steps.rinku.outputs.version }}
+          dotnet pack Rinku.More/Rinku.More/Rinku.More.csproj --configuration Release --no-restore --output artifacts -p:RinkuMorePack=true -p:RinkuPackageVersion=${{ steps.rinku.outputs.version }} -p:MinVerVersionOverride=${{ steps.version.outputs.version }}
+
+      - name: Verify published Rinku dependency
+        shell: bash
+        env:
+          MORE_VERSION: ${{ steps.version.outputs.version }}
+          RINKU_VERSION: ${{ steps.rinku.outputs.version }}
+        run: |
+          nuspec=$(unzip -p "artifacts/Rinku.More.${MORE_VERSION}.nupkg" Rinku.More.nuspec)
+          rinku_version=$(printf '%s' "$nuspec" | sed -n 's/.*<dependency id="Rinku" version="\([^"]*\)".*/\1/p')
+          if [ -z "$rinku_version" ]; then
+            echo "Rinku.More does not declare its Rinku dependency." >&2
+            exit 1
+          fi
+          if [ "$rinku_version" != "$RINKU_VERSION" ]; then
+            echo "Rinku.More $MORE_VERSION declares Rinku $rinku_version, expected $RINKU_VERSION." >&2
+            exit 1
+          fi
+          dependency_url="https://api.nuget.org/v3-flatcontainer/rinku/${rinku_version}/rinku.${rinku_version}.nupkg"
+          curl --fail --silent --show-error --head "$dependency_url" >/dev/null
+          echo "Verified published dependency: Rinku $rinku_version"
 
       - name: Upload package for review
         uses: actions/upload-artifact@v4

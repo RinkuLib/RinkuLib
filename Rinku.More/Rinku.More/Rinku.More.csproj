@@ -32,7 +32,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../RinkuLib/RinkuLib.csproj" />
+    <ProjectReference Include="../../RinkuLib/RinkuLib.csproj" Condition="'$(RinkuMorePack)' != 'true'" />
+    <PackageReference Include="Rinku" Version="$(RinkuPackageVersion)" Condition="'$(RinkuMorePack)' == 'true'" />
     <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
