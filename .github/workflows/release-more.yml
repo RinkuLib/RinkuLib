@@ -3,11 +3,12 @@ name: Release Rinku.More (NuGet)
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: Rinku.More package version
+      bump:
+        description: Which Rinku.More version part to bump
         required: true
-        default: 0.0.1
-        type: string
+        default: patch
+        type: choice
+        options: [patch, minor, major]
 
 concurrency:
   group: release-rinku-more
@@ -32,18 +33,25 @@ jobs:
         id: version
         shell: bash
         env:
-          INPUT_VERSION: ${{ inputs.version }}
+          BUMP: ${{ inputs.bump }}
         run: |
-          if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Version must be a stable semantic version such as 0.0.1." >&2
+          latest=$(git tag -l 'rinku-more-v*' --sort=-v:refname | head -n1)
+          base="${latest#rinku-more-v}"
+          [ -z "$base" ] && base="0.0.0"
+          IFS='.' read -r major minor patch <<< "$base"
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            *) echo "Unsupported version bump: $BUMP" >&2; exit 1 ;;
+          esac
+          next="$major.$minor.$patch"
+          if git rev-parse "rinku-more-v$next" >/dev/null 2>&1; then
+            echo "Tag rinku-more-v$next already exists." >&2
             exit 1
           fi
-          if git rev-parse "rinku-more-v$INPUT_VERSION" >/dev/null 2>&1; then
-            echo "Tag rinku-more-v$INPUT_VERSION already exists." >&2
-            exit 1
-          fi
-          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=rinku-more-v$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=rinku-more-v$next" >> "$GITHUB_OUTPUT"
 
       - name: Resolve current published Rinku version
         id: rinku
