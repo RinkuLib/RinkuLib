@@ -63,6 +63,11 @@ jobs:
       - name: Build Rinku
         run: dotnet build RinkuLib/RinkuLib.csproj --configuration Release --no-restore
 
+      - name: Generate API documentation metadata
+        run: |
+          dotnet tool update -g docfx
+          docfx metadata docs/docfx.json --warningsAsErrors
+
       - name: Test
         run: cd ./RinkuLib.Tests/ && dotnet run --configuration Release --framework net10.0
 
